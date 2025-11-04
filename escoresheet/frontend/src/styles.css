@@ -93,6 +93,10 @@ button:disabled { opacity: .6; cursor: default; }
 .w-200 { width: 200px; }
 .w-240 { width: 240px; }
 .w-300 { width: 300px; }
+
+/* Lists */
+.roster-list { margin: 8px 0; padding-left: 18px; }
+.roster-list li { margin: 4px 0; }
 .col-2 { grid-column: span 2; }
 .col-3 { grid-column: span 3; }
 .col-4 { grid-column: span 4; }
