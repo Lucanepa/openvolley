@@ -87,6 +87,12 @@ button:disabled { opacity: .6; cursor: default; }
 .w-num { width: 72px; }
 .w-dob { width: 140px; }
 .w-name { flex: 0 0 200px; }
+.w-120 { width: 120px; }
+.w-140 { width: 140px; }
+.w-160 { width: 160px; }
+.w-200 { width: 200px; }
+.w-240 { width: 240px; }
+.w-300 { width: 300px; }
 .col-2 { grid-column: span 2; }
 .col-3 { grid-column: span 3; }
 .col-4 { grid-column: span 4; }

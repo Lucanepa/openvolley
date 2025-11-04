@@ -136,31 +136,33 @@ export default function MatchSetup({ onStart }) {
       <h2>Create Match</h2>
       <div className="panel" style={{ padding: 12 }}>
         <h3>Match info</h3>
-        <label>Date <input type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
-        <label>Time <input type="time" value={time} onChange={e=>setTime(e.target.value)} /></label>
-        <label>Hall <input value={hall} onChange={e=>setHall(e.target.value)} /></label>
-        <label>City <input value={city} onChange={e=>setCity(e.target.value)} /></label>
-        <label>Match type 1
-          <select value={type1} onChange={e=>setType1(e.target.value)}>
-            <option value="championship">championship</option>
-            <option value="cup">cup</option>
-          </select>
-        </label>
-        <label>Match type 2
-          <select value={type2} onChange={e=>setType2(e.target.value)}>
-            <option value="men">men</option>
-            <option value="women">women</option>
-          </select>
-        </label>
-        <label>Match type 3
-          <select value={type3} onChange={e=>setType3(e.target.value)}>
-            <option value="senior">senior</option>
-            <option value="U23">U23</option>
-            <option value="U19">U19</option>
-          </select>
-        </label>
-        <label>Game # <input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></label>
-        <label>League <input value={league} onChange={e=>setLeague(e.target.value)} /></label>
+        <div className="row">
+          <label className="inline"><span>Date</span><input className="w-160" type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
+          <label className="inline"><span>Time</span><input className="w-140" type="time" value={time} onChange={e=>setTime(e.target.value)} /></label>
+          <label className="inline"><span>Hall</span><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></label>
+          <label className="inline"><span>City</span><input className="w-200 capitalize" value={city} onChange={e=>setCity(e.target.value)} /></label>
+          <label className="inline"><span>Type 1</span>
+            <select className="w-200" value={type1} onChange={e=>setType1(e.target.value)}>
+              <option value="championship">championship</option>
+              <option value="cup">cup</option>
+            </select>
+          </label>
+          <label className="inline"><span>Type 2</span>
+            <select className="w-200" value={type2} onChange={e=>setType2(e.target.value)}>
+              <option value="men">men</option>
+              <option value="women">women</option>
+            </select>
+          </label>
+          <label className="inline"><span>Type 3</span>
+            <select className="w-200" value={type3} onChange={e=>setType3(e.target.value)}>
+              <option value="senior">senior</option>
+              <option value="U23">U23</option>
+              <option value="U19">U19</option>
+            </select>
+          </label>
+          <label className="inline"><span>Game #</span><input className="w-120" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></label>
+          <label className="inline"><span>League</span><input className="w-300 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></label>
+        </div>
       </div>
 
       <label>Home Team <input value={home} onChange={e=>setHome(e.target.value)} /></label>
