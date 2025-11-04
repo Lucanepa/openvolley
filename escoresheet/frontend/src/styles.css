@@ -82,6 +82,11 @@ button:disabled { opacity: .6; cursor: default; }
 @media (min-width: 900px) { .two-col { grid-template-columns: 1fr 1fr; } }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .capitalize { text-transform: capitalize; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inline { display: flex; align-items: center; gap: 8px; }
+.w-num { width: 72px; }
+.w-dob { width: 140px; }
+.w-name { flex: 0 0 200px; }
 .col-2 { grid-column: span 2; }
 .col-3 { grid-column: span 3; }
 .col-4 { grid-column: span 4; }
