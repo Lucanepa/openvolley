@@ -21,14 +21,16 @@ export default function App() {
   }
 
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
+    <div className="container">
       <h1>Open eScoresheet</h1>
-      {!matchId ? (
-        <MatchSetup onStart={setMatchId} />
-      ) : (
-        <Scoreboard matchId={matchId} onFinishSet={finishSet} />
-      )}
-      <p style={{ opacity: .7 }}>Offline-first PWA. Data is saved locally and syncs when online.</p>
+      <div className="panel">
+        {!matchId ? (
+          <MatchSetup onStart={setMatchId} />
+        ) : (
+          <Scoreboard matchId={matchId} onFinishSet={finishSet} />
+        )}
+      </div>
+      <p>Offline-first PWA. Data is saved locally and syncs when online.</p>
     </div>
   )
 }
