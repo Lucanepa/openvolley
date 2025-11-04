@@ -16,17 +16,27 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Scoreboard } from './components/Scoreboard'
-import { OnlineStatus } from './components/OnlineStatus'
-import './App.css'
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import LanguageDetector from 'i18next-browser-languagedetector';
 
-function App() {
-  return (
-    <>
-      <OnlineStatus />
-      <Scoreboard />
-    </>
-  )
-}
+import en from './locales/en.json';
+import de from './locales/de.json';
+import it from './locales/it.json';
 
-export default App
+i18n
+  .use(LanguageDetector)
+  .use(initReactI18next)
+  .init({
+    resources: {
+      en: { translation: en },
+      de: { translation: de },
+      it: { translation: it },
+    },
+    fallbackLng: 'en',
+    interpolation: {
+      escapeValue: false,
+    },
+  });
+
+export default i18n;

@@ -16,17 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Scoreboard } from './components/Scoreboard'
-import { OnlineStatus } from './components/OnlineStatus'
-import './App.css'
+import { createClient } from '@supabase/supabase-js';
 
-function App() {
-  return (
-    <>
-      <OnlineStatus />
-      <Scoreboard />
-    </>
-  )
-}
+// Environment variables - should be set in production
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export default App
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+export const isSupabaseConfigured = !!supabase;

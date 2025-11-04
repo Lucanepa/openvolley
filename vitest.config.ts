@@ -16,17 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Scoreboard } from './components/Scoreboard'
-import { OnlineStatus } from './components/OnlineStatus'
-import './App.css'
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 
-function App() {
-  return (
-    <>
-      <OnlineStatus />
-      <Scoreboard />
-    </>
-  )
-}
-
-export default App
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+  },
+});

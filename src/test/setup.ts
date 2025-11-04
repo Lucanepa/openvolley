@@ -16,17 +16,4 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Scoreboard } from './components/Scoreboard'
-import { OnlineStatus } from './components/OnlineStatus'
-import './App.css'
-
-function App() {
-  return (
-    <>
-      <OnlineStatus />
-      <Scoreboard />
-    </>
-  )
-}
-
-export default App
+import '@testing-library/jest-dom';

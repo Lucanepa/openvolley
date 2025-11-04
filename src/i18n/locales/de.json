@@ -1,0 +1,65 @@
+{
+  "app": {
+    "title": "OpenVolley",
+    "subtitle": "Volleyball Anzeigetafel"
+  },
+  "scoreboard": {
+    "teamA": "Team A",
+    "teamB": "Team B",
+    "set": "Satz",
+    "points": "Punkte",
+    "sets": "Sätze",
+    "newMatch": "Neues Spiel",
+    "resetSet": "Satz zurücksetzen",
+    "exportPDF": "PDF exportieren",
+    "lineup": "Aufstellung",
+    "substitution": "Auswechslung"
+  },
+  "match": {
+    "inProgress": "Spiel läuft",
+    "complete": "Spiel beendet",
+    "winner": "{{team}} gewinnt!",
+    "setWinner": "Satz gewonnen von {{team}}",
+    "tiebreak": "Entscheidungssatz (15 Pkt)",
+    "regular": "Normaler Satz (25 Pkt)"
+  },
+  "lineup": {
+    "title": "Team Aufstellung",
+    "position": "Position",
+    "player": "Spieler",
+    "number": "Nummer",
+    "positions": {
+      "setter": "Zuspieler",
+      "oppositeHitter": "Diagonal",
+      "outsideHitter": "Außenangreifer",
+      "middleBlocker": "Mittelblocker",
+      "libero": "Libero"
+    },
+    "addPlayer": "Spieler hinzufügen",
+    "save": "Speichern",
+    "cancel": "Abbrechen"
+  },
+  "substitution": {
+    "title": "Auswechslung",
+    "playerOut": "Spieler raus",
+    "playerIn": "Spieler rein",
+    "execute": "Auswechslung durchführen",
+    "remaining": "Verbleibende Auswechslungen: {{count}}",
+    "maxReached": "Maximale Auswechslungen erreicht"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "syncing": "Synchronisierung...",
+    "synced": "Synchronisiert"
+  },
+  "common": {
+    "close": "Schließen",
+    "confirm": "Bestätigen",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "back": "Zurück"
+  }
+}

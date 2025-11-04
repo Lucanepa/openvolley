@@ -1,0 +1,65 @@
+{
+  "app": {
+    "title": "OpenVolley",
+    "subtitle": "Tabellone Segnapunti Pallavolo"
+  },
+  "scoreboard": {
+    "teamA": "Squadra A",
+    "teamB": "Squadra B",
+    "set": "Set",
+    "points": "Punti",
+    "sets": "Set",
+    "newMatch": "Nuova Partita",
+    "resetSet": "Ripristina Set",
+    "exportPDF": "Esporta PDF",
+    "lineup": "Formazione",
+    "substitution": "Sostituzione"
+  },
+  "match": {
+    "inProgress": "Partita in Corso",
+    "complete": "Partita Completata",
+    "winner": "{{team}} Vince!",
+    "setWinner": "Set vinto da {{team}}",
+    "tiebreak": "Set di spareggio (15 pt)",
+    "regular": "Set regolare (25 pt)"
+  },
+  "lineup": {
+    "title": "Formazione Squadra",
+    "position": "Posizione",
+    "player": "Giocatore",
+    "number": "Numero",
+    "positions": {
+      "setter": "Palleggiatore",
+      "oppositeHitter": "Opposto",
+      "outsideHitter": "Schiacciatore",
+      "middleBlocker": "Centrale",
+      "libero": "Libero"
+    },
+    "addPlayer": "Aggiungi Giocatore",
+    "save": "Salva",
+    "cancel": "Annulla"
+  },
+  "substitution": {
+    "title": "Sostituzione",
+    "playerOut": "Giocatore Uscente",
+    "playerIn": "Giocatore Entrante",
+    "execute": "Esegui Sostituzione",
+    "remaining": "Sostituzioni rimanenti: {{count}}",
+    "maxReached": "Sostituzioni massime raggiunte"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "syncing": "Sincronizzazione...",
+    "synced": "Sincronizzato"
+  },
+  "common": {
+    "close": "Chiudi",
+    "confirm": "Conferma",
+    "cancel": "Annulla",
+    "save": "Salva",
+    "delete": "Elimina",
+    "edit": "Modifica",
+    "back": "Indietro"
+  }
+}
