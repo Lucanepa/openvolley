@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Set base from env for GitHub Pages project site deployments.
+  // If deploying to a custom domain (CNAME), use '/'. Otherwise set to '/<repo-name>/'
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [
     react(),
     VitePWA({
@@ -11,13 +14,13 @@ export default defineConfig({
       manifest: {
         name: process.env.VITE_APP_TITLE || 'Open eScoresheet',
         short_name: 'eScoresheet',
-        start_url: '/',
+        start_url: '.',
         display: 'standalone',
         background_color: '#ffffff',
         theme_color: '#111827',
         icons: [
-          { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' }
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' }
         ]
       }
     })
