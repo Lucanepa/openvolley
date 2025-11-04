@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { db } from '../db/db'
+import Modal from './Modal'
 
 export default function MatchSetup({ onStart }) {
   const [home, setHome] = useState('Home')
@@ -15,6 +16,8 @@ export default function MatchSetup({ onStart }) {
   const [type3, setType3] = useState('senior') // senior | U23 | U19
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
+  const [homeColor, setHomeColor] = useState('#e11d48')
+  const [awayColor, setAwayColor] = useState('#3b82f6')
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -57,15 +60,23 @@ export default function MatchSetup({ onStart }) {
   // Bench
   const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
   const [benchHome, setBenchHome] = useState([
-    initBench('coach'), initBench('assistant coach 1'), initBench('assistant coach 2'), initBench('medic'), initBench('physiotherapist')
+    initBench('Coach'), initBench('Assistant Coach 1'), initBench('Assistant Coach 2'), initBench('Medic'), initBench('Physiotherapist')
   ])
   const [benchAway, setBenchAway] = useState([
-    initBench('coach'), initBench('assistant coach 1'), initBench('assistant coach 2'), initBench('medic'), initBench('physiotherapist')
+    initBench('Coach'), initBench('Assistant Coach 1'), initBench('Assistant Coach 2'), initBench('Medic'), initBench('Physiotherapist')
   ])
 
+  // UI state for modals
+  const [openInfo, setOpenInfo] = useState(false)
+  const [openOfficials, setOpenOfficials] = useState(false)
+  const [openHome, setOpenHome] = useState(false)
+  const [openAway, setOpenAway] = useState(false)
+
+  const teamColors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
+
   async function createMatch() {
-    const homeId = await db.teams.add({ name: home, createdAt: new Date().toISOString() })
-    const awayId = await db.teams.add({ name: away, createdAt: new Date().toISOString() })
+    const homeId = await db.teams.add({ name: home, color: homeColor, createdAt: new Date().toISOString() })
+    const awayId = await db.teams.add({ name: away, color: awayColor, createdAt: new Date().toISOString() })
 
     const scheduledAt = (() => {
       if (!date && !time) return new Date().toISOString()
@@ -134,8 +145,42 @@ export default function MatchSetup({ onStart }) {
   return (
     <div className="setup">
       <h2>Create Match</h2>
-      <div className="panel" style={{ padding: 12 }}>
-        <h3>Match info</h3>
+      <div className="grid-4">
+        <div className="card">
+          <div>
+            <h3>Match info</h3>
+            <p className="text-sm">{date || time || hall || city || league ? 'Configured' : 'Not set'}</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setOpenInfo(true)}>Edit</button></div>
+        </div>
+        <div className="card">
+          <div>
+            <h3>Match officials</h3>
+            <p className="text-sm">Edit referees and table crew</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setOpenOfficials(true)}>Edit</button></div>
+        </div>
+        <div className="card">
+          <div>
+            <h3>Home team</h3>
+            <p className="text-sm">{home}</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setOpenHome(true)}>Edit</button></div>
+        </div>
+        <div className="card">
+          <div>
+            <h3>Away team</h3>
+            <p className="text-sm">{away}</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setOpenAway(true)}>Edit</button></div>
+        </div>
+      </div>
+
+      <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
+        <button onClick={createMatch}>Start Match</button>
+      </div>
+
+      <Modal title="Match info" open={openInfo} onClose={()=>setOpenInfo(false)} width={900}>
         <div className="row">
           <label className="inline"><span>Date</span><input className="w-160" type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
           <label className="inline"><span>Time</span><input className="w-140" type="time" value={time} onChange={e=>setTime(e.target.value)} /></label>
@@ -164,11 +209,18 @@ export default function MatchSetup({ onStart }) {
           <label className="inline"><span>Game #</span><input className="w-120" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></label>
           <label className="inline"><span>League</span><input className="w-300 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></label>
         </div>
-      </div>
+      </Modal>
 
-      <label>Home Team <input value={home} onChange={e=>setHome(e.target.value)} /></label>
-      <div className="panel" style={{ padding: 12 }}>
-        <h3>Roster — Home</h3>
+      <Modal title="Home team" open={openHome} onClose={()=>setOpenHome(false)} width={1000}>
+        <div className="row" style={{ alignItems:'center' }}>
+          <label className="inline"><span>Name</span><input className="w-300 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
+          <div className="inline" style={{ gap:6 }}>
+            {teamColors.map(c => (
+              <button key={c} type="button" className="secondary" onClick={()=>setHomeColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: homeColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
+            ))}
+          </div>
+        </div>
+        <h4>Roster</h4>
         <div className="row">
           <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
           <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
@@ -212,11 +264,18 @@ export default function MatchSetup({ onStart }) {
             <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
           </div>
         ))}
-      </div>
+      </Modal>
 
-      <label>Away Team <input value={away} onChange={e=>setAway(e.target.value)} /></label>
-      <div className="panel" style={{ padding: 12 }}>
-        <h3>Roster — Away</h3>
+      <Modal title="Away team" open={openAway} onClose={()=>setOpenAway(false)} width={1000}>
+        <div className="row" style={{ alignItems:'center' }}>
+          <label className="inline"><span>Name</span><input className="w-300 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
+          <div className="inline" style={{ gap:6 }}>
+            {teamColors.map(c => (
+              <button key={c} type="button" className="secondary" onClick={()=>setAwayColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: awayColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
+            ))}
+          </div>
+        </div>
+        <h4>Roster</h4>
         <div className="row">
           <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
           <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
@@ -260,37 +319,38 @@ export default function MatchSetup({ onStart }) {
             <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
           </div>
         ))}
-      </div>
+      </Modal>
 
-      <div className="panel" style={{ padding: 12 }}>
-        <h3>Match officials</h3>
-        <div className="form-grid">
-          <div className="col-12"><h4>1st Referee</h4></div>
-          <div className="col-3"><input placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} /></div>
-
-          <div className="col-12"><h4>2nd Referee</h4></div>
-          <div className="col-3"><input placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} /></div>
-
-          <div className="col-12"><h4>Scorer</h4></div>
-          <div className="col-3"><input placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} /></div>
-
-          <div className="col-12"><h4>Assistant Scorer</h4></div>
-          <div className="col-3"><input placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} /></div>
+      <Modal title="Match officials" open={openOfficials} onClose={()=>setOpenOfficials(false)} width={1000}>
+        <div className="row">
+          <h4>1st Referee</h4>
+          <input className="w-200 capitalize" placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} />
+          <input className="w-200 capitalize" placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} />
+          <input className="w-120" placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} />
+          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} />
         </div>
-      </div>
-      <button onClick={createMatch}>Start Match</button>
+        <div className="row">
+          <h4>2nd Referee</h4>
+          <input className="w-200 capitalize" placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} />
+          <input className="w-200 capitalize" placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} />
+          <input className="w-120" placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} />
+          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} />
+        </div>
+        <div className="row">
+          <h4>Scorer</h4>
+          <input className="w-200 capitalize" placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} />
+          <input className="w-200 capitalize" placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} />
+          <input className="w-120" placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} />
+          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} />
+        </div>
+        <div className="row">
+          <h4>Assistant Scorer</h4>
+          <input className="w-200 capitalize" placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} />
+          <input className="w-200 capitalize" placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} />
+          <input className="w-120" placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} />
+          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} />
+        </div>
+      </Modal>
     </div>
   )
 }
