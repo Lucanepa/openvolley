@@ -166,23 +166,26 @@ export default function MatchSetup({ onStart }) {
       <label>Home Team <input value={home} onChange={e=>setHome(e.target.value)} /></label>
       <div className="panel" style={{ padding: 12 }}>
         <h3>Roster — Home</h3>
-        <div className="form-grid">
-          <div className="col-3"><input placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} /></div>
-          <div className="col-4"><select value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}><option value="">none</option><option value="libero1">libero 1</option><option value="libero2">libero 2</option></select></div>
-          <div className="col-4" style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <input type="checkbox" checked={homeCaptain} onChange={e=>setHomeCaptain(e.target.checked)} />
-            <span>Captain</span>
-          </div>
-          <div className="col-4" style={{ display:'flex', justifyContent:'flex-end' }}>
-            <button type="button" className="secondary" onClick={() => {
-              if (!homeLast || !homeFirst) return
-              setHomeRoster(list => [...list, { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }])
-              setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
-            }}>Add</button>
-          </div>
+        <div className="row">
+          <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
+          <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
+          <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
+          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} />
+          <select value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
+            <option value="">none</option>
+            <option value="libero1">libero 1</option>
+            <option value="libero2">libero 2</option>
+          </select>
+          <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
+          <button type="button" className="secondary" onClick={() => {
+            if (!homeLast || !homeFirst) return
+            const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
+            setHomeRoster(list => {
+              const next = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+              return [...next, newPlayer]
+            })
+            setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
+          }}>Add</button>
         </div>
         <ul style={{ margin: 8, paddingLeft: 18 }}>
           {homeRoster.map((p, i) => (
@@ -206,23 +209,26 @@ export default function MatchSetup({ onStart }) {
       <label>Away Team <input value={away} onChange={e=>setAway(e.target.value)} /></label>
       <div className="panel" style={{ padding: 12 }}>
         <h3>Roster — Away</h3>
-        <div className="form-grid">
-          <div className="col-3"><input placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} /></div>
-          <div className="col-4"><select value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}><option value="">none</option><option value="libero1">libero 1</option><option value="libero2">libero 2</option></select></div>
-          <div className="col-4" style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <input type="checkbox" checked={awayCaptain} onChange={e=>setAwayCaptain(e.target.checked)} />
-            <span>Captain</span>
-          </div>
-          <div className="col-4" style={{ display:'flex', justifyContent:'flex-end' }}>
-            <button type="button" className="secondary" onClick={() => {
-              if (!awayLast || !awayFirst) return
-              setAwayRoster(list => [...list, { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }])
-              setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
-            }}>Add</button>
-          </div>
+        <div className="row">
+          <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
+          <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
+          <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
+          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} />
+          <select value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
+            <option value="">none</option>
+            <option value="libero1">libero 1</option>
+            <option value="libero2">libero 2</option>
+          </select>
+          <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
+          <button type="button" className="secondary" onClick={() => {
+            if (!awayLast || !awayFirst) return
+            const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
+            setAwayRoster(list => {
+              const next = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+              return [...next, newPlayer]
+            })
+            setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
+          }}>Add</button>
         </div>
         <ul style={{ margin: 8, paddingLeft: 18 }}>
           {awayRoster.map((p, i) => (
