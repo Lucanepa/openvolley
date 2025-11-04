@@ -139,24 +139,25 @@ export default function MatchSetup({ onStart }) {
         <div className="row">
           <label className="inline"><span>Date</span><input className="w-160" type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
           <label className="inline"><span>Time</span><input className="w-140" type="time" value={time} onChange={e=>setTime(e.target.value)} /></label>
-          <label className="inline"><span>Hall</span><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></label>
           <label className="inline"><span>City</span><input className="w-200 capitalize" value={city} onChange={e=>setCity(e.target.value)} /></label>
-          <label className="inline"><span>Type 1</span>
+          <label className="inline"><span>Hall</span><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></label>
+          <label className="inline"><span>Match Type</span>
             <select className="w-200" value={type1} onChange={e=>setType1(e.target.value)}>
-              <option value="championship">championship</option>
-              <option value="cup">cup</option>
+              <option value="championship">Championship</option>
+              <option value="cup">Cup</option>
             </select>
           </label>
-          <label className="inline"><span>Type 2</span>
+          <label className="inline"><span>Match Category</span>
             <select className="w-200" value={type2} onChange={e=>setType2(e.target.value)}>
-              <option value="men">men</option>
-              <option value="women">women</option>
+              <option value="men">Men</option>
+              <option value="women">Women</option>
             </select>
           </label>
-          <label className="inline"><span>Type 3</span>
+          <label className="inline"><span>Match Level</span>
             <select className="w-200" value={type3} onChange={e=>setType3(e.target.value)}>
-              <option value="senior">senior</option>
+              <option value="enior">Senior</option>
               <option value="U23">U23</option>
+              <option value="U21">U21</option>
               <option value="U19">U19</option>
             </select>
           </label>
@@ -173,23 +174,28 @@ export default function MatchSetup({ onStart }) {
           <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
           <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
           <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} />
-          <select value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
+          <select className="w-120" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
             <option value="">none</option>
-            <option value="libero1">libero 1</option>
-            <option value="libero2">libero 2</option>
+            <option value="libero1">Libero 1</option>
+            <option value="libero2">Libero 2</option>
           </select>
           <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
           <button type="button" className="secondary" onClick={() => {
             if (!homeLast || !homeFirst) return
             const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
             setHomeRoster(list => {
-              const next = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-              return [...next, newPlayer]
+              const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+              const next = [...cleared, newPlayer].sort((a,b) => {
+                const an = a.number ?? 999
+                const bn = b.number ?? 999
+                return an - bn
+              })
+              return next
             })
             setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
           }}>Add</button>
         </div>
-        <ul style={{ margin: 8, paddingLeft: 18 }}>
+        <ul className="roster-list">
           {homeRoster.map((p, i) => (
             <li key={`h-${i}`} style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', gap:8 }}>
               <span>#{p.number ?? ''} {p.lastName} {p.firstName} {p.libero ? `(${p.libero})` : ''} {p.isCaptain ? '[C]' : ''}</span>
@@ -216,7 +222,7 @@ export default function MatchSetup({ onStart }) {
           <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
           <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
           <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} />
-          <select value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
+          <select className="w-120" value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
             <option value="">none</option>
             <option value="libero1">libero 1</option>
             <option value="libero2">libero 2</option>
@@ -226,13 +232,18 @@ export default function MatchSetup({ onStart }) {
             if (!awayLast || !awayFirst) return
             const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
             setAwayRoster(list => {
-              const next = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-              return [...next, newPlayer]
+              const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+              const next = [...cleared, newPlayer].sort((a,b) => {
+                const an = a.number ?? 999
+                const bn = b.number ?? 999
+                return an - bn
+              })
+              return next
             })
             setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
           }}>Add</button>
         </div>
-        <ul style={{ margin: 8, paddingLeft: 18 }}>
+        <ul className="roster-list">
           {awayRoster.map((p, i) => (
             <li key={`a-${i}`} style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', gap:8 }}>
               <span>#{p.number ?? ''} {p.lastName} {p.firstName} {p.libero ? `(${p.libero})` : ''} {p.isCaptain ? '[C]' : ''}</span>
