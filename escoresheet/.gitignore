@@ -1,0 +1,14 @@
+# Node
+node_modules
+.vite
+.dist
+frontend/dist
+
+# Env
+frontend/.env
+
+# Mac/Windows
+.DS_Store
+Thumbs.db
+
+
