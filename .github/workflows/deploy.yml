@@ -1,0 +1,40 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'escoresheet/frontend/**'
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    env:
+      PAGES_CNAME: app.openvolley.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build
+        working-directory: escoresheet/frontend
+        run: |
+          npm ci
+          # Determine base path: use '/' when CNAME set, else '/<repo-name>/'
+          if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
+          export VITE_BASE_PATH="$BASE_PATH"
+          npm run build
+          # Create SPA fallback for GitHub Pages
+          cp dist/index.html dist/404.html
+          # Write CNAME when provided
+          if [ -n "$PAGES_CNAME" ]; then echo $PAGES_CNAME > dist/CNAME; fi
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: escoresheet/frontend/dist
+
