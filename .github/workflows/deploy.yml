@@ -24,7 +24,7 @@ jobs:
       - name: Build
         working-directory: escoresheet/frontend
         run: |
-          npm ci
+          npm install
           # Determine base path: use '/' when CNAME set, else '/<repo-name>/'
           if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
           export VITE_BASE_PATH="$BASE_PATH"
