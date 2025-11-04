@@ -257,11 +257,11 @@ export default function MatchSetup({ onStart }) {
         </ul>
         <h4>Bench — Home</h4>
         {benchHome.map((m, i) => (
-          <div key={`bh-${i}`} className="form-grid" style={{ alignItems:'end' }}>
-            <div className="col-3"><input disabled value={m.role} /></div>
-            <div className="col-3"><input placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
+          <div key={`bh-${i}`} className="row" style={{ alignItems:'center' }}>
+            <input disabled className="w-220" value={m.role} />
+            <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
+            <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
+            <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
           </div>
         ))}
       </Modal>
@@ -312,43 +312,40 @@ export default function MatchSetup({ onStart }) {
         </ul>
         <h4>Bench — Away</h4>
         {benchAway.map((m, i) => (
-          <div key={`ba-${i}`} className="form-grid" style={{ alignItems:'end' }}>
-            <div className="col-3"><input disabled value={m.role} /></div>
-            <div className="col-3"><input placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
+          <div key={`ba-${i}`} className="row" style={{ alignItems:'center' }}>
+            <input disabled className="w-220" value={m.role} />
+            <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
+            <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
+            <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
           </div>
         ))}
       </Modal>
 
       <Modal title="Match officials" open={openOfficials} onClose={()=>setOpenOfficials(false)} width={1000}>
-        <div className="row">
-          <h4>1st Referee</h4>
-          <input className="w-200 capitalize" placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} />
-          <input className="w-200 capitalize" placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} />
-          <input className="w-120" placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} />
-          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} />
-        </div>
-        <div className="row">
-          <h4>2nd Referee</h4>
-          <input className="w-200 capitalize" placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} />
-          <input className="w-200 capitalize" placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} />
-          <input className="w-120" placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} />
-          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} />
-        </div>
-        <div className="row">
-          <h4>Scorer</h4>
-          <input className="w-200 capitalize" placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} />
-          <input className="w-200 capitalize" placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} />
-          <input className="w-120" placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} />
-          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} />
-        </div>
-        <div className="row">
-          <h4>Assistant Scorer</h4>
-          <input className="w-200 capitalize" placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} />
-          <input className="w-200 capitalize" placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} />
-          <input className="w-120" placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} />
-          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} />
+        <div className="officials-grid">
+          <strong>1st Referee</strong>
+          <input className="capitalize" placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} />
+          <input placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} />
+          <input placeholder="Date of birth" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} />
+
+          <strong>2nd Referee</strong>
+          <input className="capitalize" placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} />
+          <input placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} />
+          <input placeholder="Date of birth" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} />
+
+          <strong>Scorer</strong>
+          <input className="capitalize" placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} />
+          <input placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} />
+          <input placeholder="Date of birth" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} />
+
+          <strong>Assistant Scorer</strong>
+          <input className="capitalize" placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} />
+          <input placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} />
+          <input placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} />
         </div>
       </Modal>
     </div>

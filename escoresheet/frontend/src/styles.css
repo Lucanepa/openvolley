@@ -42,9 +42,6 @@ p { color: var(--muted); }
 @media (min-width: 900px) {
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
 }
-@media (min-width: 1200px) {
-  .grid-4 { grid-template-columns: repeat(4, 1fr); }
-}
 .card {
   background: var(--panel);
   border: 1px solid rgba(255,255,255,0.08);
@@ -58,6 +55,24 @@ p { color: var(--muted); }
 .card h3 { margin: 0 0 6px; font-size: 16px; }
 .card p { margin: 0; color: var(--muted); }
 .card .actions { display:flex; gap:8px; justify-content:flex-end; }
+
+.shirt {
+  width: 36px; height: 30px; position: relative; border-radius: 4px; background: #64748b;
+}
+.shirt:before, .shirt:after { content: ''; position: absolute; top: -8px; width: 16px; height: 14px; background: inherit; border-radius: 3px; }
+.shirt:before { left: -10px; transform: rotate(-15deg); }
+.shirt:after { right: -10px; transform: rotate(15deg); }
+
+/* Officials aligned grid */
+.officials-grid {
+  display: grid;
+  grid-template-columns: 140px 200px 200px 120px 140px; /* role, last, first, country, dob */
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .officials-grid { grid-template-columns: 120px 1fr 1fr 100px 120px; }
+}
 
 label { display: block; margin: 8px 0; }
 input {
