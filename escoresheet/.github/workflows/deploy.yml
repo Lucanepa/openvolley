@@ -24,7 +24,13 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          # Determine base path: use '/' when CNAME set, else '/<repo-name>/'
+          if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
+          export VITE_BASE_PATH="$BASE_PATH"
           npm run build
+          # Create SPA fallback for GitHub Pages
+          cp dist/index.html dist/404.html
+          # Write CNAME when provided
           if [ -n "$PAGES_CNAME" ]; then echo $PAGES_CNAME > dist/CNAME; fi
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
