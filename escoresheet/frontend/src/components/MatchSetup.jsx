@@ -168,9 +168,9 @@ export default function MatchSetup({ onStart }) {
         <h3>Roster — Home</h3>
         <div className="form-grid">
           <div className="col-3"><input placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="Last name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} /></div>
           <div className="col-4"><select value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}><option value="">none</option><option value="libero1">libero 1</option><option value="libero2">libero 2</option></select></div>
           <div className="col-4" style={{ display:'flex', alignItems:'center', gap:8 }}>
             <input type="checkbox" checked={homeCaptain} onChange={e=>setHomeCaptain(e.target.checked)} />
@@ -196,9 +196,9 @@ export default function MatchSetup({ onStart }) {
         {benchHome.map((m, i) => (
           <div key={`bh-${i}`} className="form-grid" style={{ alignItems:'end' }}>
             <div className="col-3"><input disabled value={m.role} /></div>
-            <div className="col-3"><input placeholder="Last name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="First name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
+            <div className="col-3"><input placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} /></div>
+            <div className="col-3"><input placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} /></div>
+            <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
           </div>
         ))}
       </div>
@@ -208,9 +208,9 @@ export default function MatchSetup({ onStart }) {
         <h3>Roster — Away</h3>
         <div className="form-grid">
           <div className="col-3"><input placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="Last name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="First name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} /></div>
           <div className="col-4"><select value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}><option value="">none</option><option value="libero1">libero 1</option><option value="libero2">libero 2</option></select></div>
           <div className="col-4" style={{ display:'flex', alignItems:'center', gap:8 }}>
             <input type="checkbox" checked={awayCaptain} onChange={e=>setAwayCaptain(e.target.checked)} />
@@ -236,9 +236,9 @@ export default function MatchSetup({ onStart }) {
         {benchAway.map((m, i) => (
           <div key={`ba-${i}`} className="form-grid" style={{ alignItems:'end' }}>
             <div className="col-3"><input disabled value={m.role} /></div>
-            <div className="col-3"><input placeholder="Last name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="First name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} /></div>
-            <div className="col-3"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
+            <div className="col-3"><input placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} /></div>
+            <div className="col-3"><input placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} /></div>
+            <div className="col-3"><input placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} /></div>
           </div>
         ))}
       </div>
@@ -246,25 +246,29 @@ export default function MatchSetup({ onStart }) {
       <div className="panel" style={{ padding: 12 }}>
         <h3>Match officials</h3>
         <div className="form-grid">
-          <div className="col-3"><input placeholder="1st Referee last" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="first" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} /></div>
+          <div className="col-12"><h4>1st Referee</h4></div>
+          <div className="col-3"><input placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
+          <div className="col-2"><input placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
+          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} /></div>
 
-          <div className="col-3"><input placeholder="2nd Referee last" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="first" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} /></div>
+          <div className="col-12"><h4>2nd Referee</h4></div>
+          <div className="col-3"><input placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
+          <div className="col-2"><input placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
+          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} /></div>
 
-          <div className="col-3"><input placeholder="Scorer last" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="first" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} /></div>
+          <div className="col-12"><h4>Scorer</h4></div>
+          <div className="col-3"><input placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
+          <div className="col-2"><input placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
+          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} /></div>
 
-          <div className="col-3"><input placeholder="Asst scorer last" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
-          <div className="col-3"><input placeholder="first" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
-          <div className="col-2"><input placeholder="country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
-          <div className="col-4"><input placeholder="DOB (YYYYMMDD)" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} /></div>
+          <div className="col-12"><h4>Assistant Scorer</h4></div>
+          <div className="col-3"><input placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
+          <div className="col-3"><input placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
+          <div className="col-2"><input placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
+          <div className="col-4"><input placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} /></div>
         </div>
       </div>
       <button onClick={createMatch}>Start Match</button>

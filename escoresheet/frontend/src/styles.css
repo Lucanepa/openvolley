@@ -78,6 +78,11 @@ button:disabled { opacity: .6; cursor: default; }
   grid-template-columns: repeat(12, 1fr);
   gap: 12px;
 }
+.two-col { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) { .two-col { grid-template-columns: 1fr 1fr; } }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.capitalize { text-transform: capitalize; }
+.col-2 { grid-column: span 2; }
 .col-3 { grid-column: span 3; }
 .col-4 { grid-column: span 4; }
 .col-6 { grid-column: span 6; }
@@ -85,6 +90,8 @@ button:disabled { opacity: .6; cursor: default; }
 @media (max-width: 800px) {
   .col-3, .col-4, .col-6 { grid-column: span 12; }
 }
+.w-80 { width: 80px; }
+.w-120 { width: 120px; }
 
 .scoreboard { display: grid; gap: 12px; }
 .scores { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
