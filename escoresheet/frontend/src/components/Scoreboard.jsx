@@ -3,7 +3,12 @@ import { db } from '../db/db'
 
 export default function Scoreboard({ matchId, onFinishSet }) {
   const set = useLiveQuery(async () => {
-    return await db.sets.where({ matchId, finished: false }).first()
+    // Use indexed query on matchId, then filter unfinished
+    return await db.sets
+      .where('matchId')
+      .equals(matchId)
+      .and(s => !s.finished)
+      .first()
   }, [matchId])
 
   if (!set) return <p>Loading…</p>
