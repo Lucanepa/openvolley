@@ -5,6 +5,19 @@
   --muted: #9ca3af;
   --accent: #22c55e;
   --danger: #ef4444;
+  /* Layout variables */
+  --w-num: 72px;
+  --w-dob: 140px;
+  --w-name: 200px;
+  --info-c1: 22%;
+  --info-c2: 22%;
+  --info-c3: 22%;
+  --info-c4: 22%;
+  --off-c1: 15%;
+  --off-c2: 15%;
+  --off-c3: 15%;
+  --off-c4: 15%;
+  --off-c5: 15%;
 }
 
 html, body, #root { height: 100%; }
@@ -63,15 +76,18 @@ p { color: var(--muted); }
 .shirt:before { left: -10px; transform: rotate(-15deg); }
 .shirt:after { right: -10px; transform: rotate(15deg); }
 
+/* Bench row spacing */
+.bench-row { margin-bottom: 4px; }
+
 /* Officials aligned grid */
 .officials-grid {
   display: grid;
-  grid-template-columns: 140px 200px 200px 120px 140px; /* role, last, first, country, dob */
+  grid-template-columns: var(--off-c1) var(--off-c2) var(--off-c3) var(--off-c4) var(--off-c5);
   gap: 8px;
   align-items: center;
 }
 @media (max-width: 900px) {
-  .officials-grid { grid-template-columns: 120px 1fr 1fr 100px 120px; }
+  .officials-grid { grid-template-columns: 25% 25% 25% 12.5% 12.5%; }
 }
 
 label { display: block; margin: 8px 0; }
@@ -132,11 +148,19 @@ button:disabled { opacity: .6; cursor: default; }
 @media (min-width: 900px) { .two-col { grid-template-columns: 1fr 1fr; } }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .capitalize { text-transform: capitalize; }
+.grid-c4 { display:grid; grid-template-columns: var(--info-c1) var(--info-c2) var(--info-c3) var(--info-c4); gap:8px; align-items:flex-start; }
+.grid-c3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; align-items:flex-start; }
+.grid-c2 { display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; align-items:flex-start; }
+@media (max-width: 900px) {
+  .grid-c4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-c3 { grid-template-columns: repeat(2, 1fr); }
+  .grid-c2 { grid-template-columns: 1fr; }
+}
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .inline { display: flex; align-items: center; gap: 8px; }
-.w-num { width: 72px; }
-.w-dob { width: 140px; }
-.w-name { flex: 0 0 200px; }
+.w-num { width: var(--w-num); }
+.w-dob { width: var(--w-dob); }
+.w-name { flex: 0 0 var(--w-name); }
 .w-120 { width: 120px; }
 .w-140 { width: 140px; }
 .w-160 { width: 160px; }

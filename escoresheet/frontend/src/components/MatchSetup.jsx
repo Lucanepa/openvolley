@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { db } from '../db/db'
 import Modal from './Modal'
+import LayoutEditor from './LayoutEditor'
+import Modal from './Modal'
 
 export default function MatchSetup({ onStart }) {
   const [home, setHome] = useState('Home')
@@ -16,6 +18,8 @@ export default function MatchSetup({ onStart }) {
   const [type3, setType3] = useState('senior') // senior | U23 | U19
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
+  const [homeColor, setHomeColor] = useState('#ef4444')
+  const [awayColor, setAwayColor] = useState('#3b82f6')
   const [homeColor, setHomeColor] = useState('#e11d48')
   const [awayColor, setAwayColor] = useState('#3b82f6')
 
@@ -71,8 +75,38 @@ export default function MatchSetup({ onStart }) {
   const [openOfficials, setOpenOfficials] = useState(false)
   const [openHome, setOpenHome] = useState(false)
   const [openAway, setOpenAway] = useState(false)
+  const [openLayout, setOpenLayout] = useState(false)
 
   const teamColors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
+
+  const homeCounts = {
+    players: homeRoster.length,
+    liberos: homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
+    bench: benchHome.filter(m => m.firstName || m.lastName || m.dob).length
+  }
+  const awayCounts = {
+    players: awayRoster.length,
+    liberos: awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
+    bench: benchAway.filter(m => m.firstName || m.lastName || m.dob).length
+  }
+
+  // Signatures and lock
+  const [homeCoachSigned, setHomeCoachSigned] = useState(false)
+  const [homeCaptainSigned, setHomeCaptainSigned] = useState(false)
+  const [awayCoachSigned, setAwayCoachSigned] = useState(false)
+  const [awayCaptainSigned, setAwayCaptainSigned] = useState(false)
+  const isHomeLocked = homeCoachSigned && homeCaptainSigned
+  const isAwayLocked = awayCoachSigned && awayCaptainSigned
+
+  function unlockTeam(side) {
+    const pass = typeof window !== 'undefined' ? window.prompt('Enter 1st Referee password to unlock:') : ''
+    if (pass === '1234') {
+      if (side === 'home') { setHomeCoachSigned(false); setHomeCaptainSigned(false) }
+      if (side === 'away') { setAwayCoachSigned(false); setAwayCaptainSigned(false) }
+    } else if (pass !== null) {
+      alert('Wrong password')
+    }
+  }
 
   async function createMatch() {
     const homeId = await db.teams.add({ name: home, color: homeColor, createdAt: new Date().toISOString() })
@@ -146,68 +180,81 @@ export default function MatchSetup({ onStart }) {
     <div className="setup">
       <h2>Create Match</h2>
       <div className="grid-4">
-        <div className="card">
+        <div className="card" style={{ order: 1 }}>
           <div>
             <h3>Match info</h3>
             <p className="text-sm">{date || time || hall || city || league ? 'Configured' : 'Not set'}</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setOpenInfo(true)}>Edit</button></div>
         </div>
-        <div className="card">
+        <div className="card" style={{ order: 2 }}>
           <div>
             <h3>Match officials</h3>
             <p className="text-sm">Edit referees and table crew</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setOpenOfficials(true)}>Edit</button></div>
         </div>
-        <div className="card">
+        <div className="card" style={{ order: 3 }}>
           <div>
             <h3>Home team</h3>
-            <p className="text-sm">{home}</p>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
+              <p className="text-sm">{home}</p>
+              <div className="shirt" style={{ background: homeColor }} />
+            </div>
+            <p className="text-sm">{homeCounts.players} players • {homeCounts.liberos} liberos • {homeCounts.bench} bench</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setOpenHome(true)}>Edit</button></div>
         </div>
-        <div className="card">
+        <div className="card" style={{ order: 4 }}>
           <div>
             <h3>Away team</h3>
-            <p className="text-sm">{away}</p>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
+              <p className="text-sm">{away}</p>
+              <div className="shirt" style={{ background: awayColor }} />
+            </div>
+            <p className="text-sm">{awayCounts.players} players • {awayCounts.liberos} liberos • {awayCounts.bench} bench</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setOpenAway(true)}>Edit</button></div>
         </div>
       </div>
 
-      <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12 }}>
+        <button className="secondary" onClick={()=>setOpenLayout(true)}>Layout</button>
         <button onClick={createMatch}>Start Match</button>
       </div>
 
       <Modal title="Match info" open={openInfo} onClose={()=>setOpenInfo(false)} width={900}>
-        <div className="row">
-          <label className="inline"><span>Date</span><input className="w-160" type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
-          <label className="inline"><span>Time</span><input className="w-140" type="time" value={time} onChange={e=>setTime(e.target.value)} /></label>
-          <label className="inline"><span>City</span><input className="w-200 capitalize" value={city} onChange={e=>setCity(e.target.value)} /></label>
-          <label className="inline"><span>Hall</span><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></label>
-          <label className="inline"><span>Match Type</span>
-            <select className="w-200" value={type1} onChange={e=>setType1(e.target.value)}>
+        <div className="grid-c4">
+          <div className="field"><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
+          <div className="field"><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
+          <div className="field"><label>City</label><input className="capitalize" value={city} onChange={e=>setCity(e.target.value)} /></div>
+          <div className="field"><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
+        </div>
+        <div className="grid-c3" style={{ marginTop:8 }}>
+          <div className="field"><label>Match Type</label>
+            <select value={type1} onChange={e=>setType1(e.target.value)}>
               <option value="championship">Championship</option>
               <option value="cup">Cup</option>
             </select>
-          </label>
-          <label className="inline"><span>Match Category</span>
-            <select className="w-200" value={type2} onChange={e=>setType2(e.target.value)}>
+          </div>
+          <div className="field"><label>Match Category</label>
+            <select value={type2} onChange={e=>setType2(e.target.value)}>
               <option value="men">Men</option>
               <option value="women">Women</option>
             </select>
-          </label>
-          <label className="inline"><span>Match Level</span>
-            <select className="w-200" value={type3} onChange={e=>setType3(e.target.value)}>
-              <option value="enior">Senior</option>
+          </div>
+          <div className="field"><label>Match Level</label>
+            <select value={type3} onChange={e=>setType3(e.target.value)}>
+              <option value="senior">Senior</option>
               <option value="U23">U23</option>
               <option value="U21">U21</option>
               <option value="U19">U19</option>
             </select>
-          </label>
-          <label className="inline"><span>Game #</span><input className="w-120" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></label>
-          <label className="inline"><span>League</span><input className="w-300 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></label>
+          </div>
+        </div>
+        <div className="grid-c2" style={{ marginTop:8 }}>
+          <div className="field"><label>Game #</label><input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
+          <div className="field"><label>League</label><input className="capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
       </Modal>
 
@@ -220,19 +267,24 @@ export default function MatchSetup({ onStart }) {
             ))}
           </div>
         </div>
+        {isHomeLocked && (
+          <div className="panel" style={{ marginTop:8 }}>
+            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>unlockTeam('home')}>Unlock</button></p>
+          </div>
+        )}
         <h4>Roster</h4>
         <div className="row">
-          <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
-          <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
-          <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} />
-          <select className="w-120" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
+          <input disabled={isHomeLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
+          <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
+          <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
+          <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} />
+          <select disabled={isHomeLocked} className="w-120" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
             <option value="">none</option>
             <option value="libero1">Libero 1</option>
             <option value="libero2">Libero 2</option>
           </select>
-          <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
-          <button type="button" className="secondary" onClick={() => {
+          <label className="inline"><input disabled={isHomeLocked} type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
+          <button disabled={isHomeLocked} type="button" className="secondary" onClick={() => {
             if (!homeLast || !homeFirst) return
             const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
             setHomeRoster(list => {
@@ -257,13 +309,18 @@ export default function MatchSetup({ onStart }) {
         </ul>
         <h4>Bench — Home</h4>
         {benchHome.map((m, i) => (
-          <div key={`bh-${i}`} className="row" style={{ alignItems:'center' }}>
+          <div key={`bh-${i}`} className="row bench-row" style={{ alignItems:'center' }}>
             <input disabled className="w-220" value={m.role} />
-            <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
-            <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
-            <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
+            <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
+            <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
+            <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
           </div>
         ))}
+        <h4>Signatures</h4>
+        <div className="row">
+          <label className="inline"><span>Coach</span><input type="checkbox" checked={homeCoachSigned} onChange={e=>setHomeCoachSigned(e.target.checked)} /></label>
+          <label className="inline"><span>Captain</span><input type="checkbox" checked={homeCaptainSigned} onChange={e=>setHomeCaptainSigned(e.target.checked)} /></label>
+        </div>
       </Modal>
 
       <Modal title="Away team" open={openAway} onClose={()=>setOpenAway(false)} width={1000}>
@@ -275,19 +332,24 @@ export default function MatchSetup({ onStart }) {
             ))}
           </div>
         </div>
+        {isAwayLocked && (
+          <div className="panel" style={{ marginTop:8 }}>
+            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>unlockTeam('away')}>Unlock</button></p>
+          </div>
+        )}
         <h4>Roster</h4>
         <div className="row">
-          <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
-          <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
-          <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-          <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} />
-          <select className="w-120" value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
+          <input disabled={isAwayLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
+          <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
+          <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
+          <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} />
+          <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
             <option value="">none</option>
             <option value="libero1">libero 1</option>
             <option value="libero2">libero 2</option>
           </select>
-          <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
-          <button type="button" className="secondary" onClick={() => {
+          <label className="inline"><input disabled={isAwayLocked} type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
+          <button disabled={isAwayLocked} type="button" className="secondary" onClick={() => {
             if (!awayLast || !awayFirst) return
             const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
             setAwayRoster(list => {
@@ -312,13 +374,18 @@ export default function MatchSetup({ onStart }) {
         </ul>
         <h4>Bench — Away</h4>
         {benchAway.map((m, i) => (
-          <div key={`ba-${i}`} className="row" style={{ alignItems:'center' }}>
+          <div key={`ba-${i}`} className="row bench-row" style={{ alignItems:'center' }}>
             <input disabled className="w-220" value={m.role} />
-            <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
-            <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
-            <input className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
+            <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
+            <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
+            <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
           </div>
         ))}
+        <h4>Signatures</h4>
+        <div className="row">
+          <label className="inline"><span>Coach</span><input type="checkbox" checked={awayCoachSigned} onChange={e=>setAwayCoachSigned(e.target.checked)} /></label>
+          <label className="inline"><span>Captain</span><input type="checkbox" checked={awayCaptainSigned} onChange={e=>setAwayCaptainSigned(e.target.checked)} /></label>
+        </div>
       </Modal>
 
       <Modal title="Match officials" open={openOfficials} onClose={()=>setOpenOfficials(false)} width={1000}>
@@ -348,6 +415,7 @@ export default function MatchSetup({ onStart }) {
           <input placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} />
         </div>
       </Modal>
+      <LayoutEditor open={openLayout} onClose={()=>setOpenLayout(false)} />
     </div>
   )
 }
