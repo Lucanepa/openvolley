@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { db } from '../db/db'
 import Modal from './Modal'
 import LayoutEditor from './LayoutEditor'
+import SignaturePad from './SignaturePad'
 
 export default function MatchSetup({ onStart }) {
   const [home, setHome] = useState('Home')
@@ -73,6 +74,7 @@ export default function MatchSetup({ onStart }) {
   const [openHome, setOpenHome] = useState(false)
   const [openAway, setOpenAway] = useState(false)
   const [openLayout, setOpenLayout] = useState(false)
+  const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
 
   const teamColors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
 
@@ -88,21 +90,75 @@ export default function MatchSetup({ onStart }) {
   }
 
   // Signatures and lock
-  const [homeCoachSigned, setHomeCoachSigned] = useState(false)
-  const [homeCaptainSigned, setHomeCaptainSigned] = useState(false)
-  const [awayCoachSigned, setAwayCoachSigned] = useState(false)
-  const [awayCaptainSigned, setAwayCaptainSigned] = useState(false)
-  const isHomeLocked = homeCoachSigned && homeCaptainSigned
-  const isAwayLocked = awayCoachSigned && awayCaptainSigned
+  const [homeCoachSignature, setHomeCoachSignature] = useState(null)
+  const [homeCaptainSignature, setHomeCaptainSignature] = useState(null)
+  const [awayCoachSignature, setAwayCoachSignature] = useState(null)
+  const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
+  const isHomeLocked = homeCoachSignature && homeCaptainSignature
+  const isAwayLocked = awayCoachSignature && awayCaptainSignature
 
   function unlockTeam(side) {
     const pass = typeof window !== 'undefined' ? window.prompt('Enter 1st Referee password to unlock:') : ''
     if (pass === '1234') {
-      if (side === 'home') { setHomeCoachSigned(false); setHomeCaptainSigned(false) }
-      if (side === 'away') { setAwayCoachSigned(false); setAwayCaptainSigned(false) }
+      if (side === 'home') { setHomeCoachSignature(null); setHomeCaptainSignature(null) }
+      if (side === 'away') { setAwayCoachSignature(null); setAwayCaptainSignature(null) }
     } else if (pass !== null) {
       alert('Wrong password')
     }
+  }
+
+  // Date formatting helpers
+  function formatDateToDDMMYYYY(dateStr) {
+    if (!dateStr) return ''
+    // If already in DD/MM/YYYY format, return as-is
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr
+    // If in ISO format (YYYY-MM-DD), convert to DD/MM/YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-')
+      return `${day}/${month}/${year}`
+    }
+    // Try to parse as date
+    const date = new Date(dateStr)
+    if (!isNaN(date.getTime())) {
+      const day = String(date.getDate()).padStart(2, '0')
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const year = date.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+    return dateStr
+  }
+
+  function formatDateToISO(dateStr) {
+    if (!dateStr) return ''
+    // If already in ISO format (YYYY-MM-DD), return as-is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+    // If in DD/MM/YYYY format, convert to YYYY-MM-DD
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      const [day, month, year] = dateStr.split('/')
+      return `${year}-${month}-${day}`
+    }
+    // Try to parse as date
+    const date = new Date(dateStr)
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    return dateStr
+  }
+
+  function handleSignatureSave(signatureImage) {
+    if (openSignature === 'home-coach') {
+      setHomeCoachSignature(signatureImage)
+    } else if (openSignature === 'home-captain') {
+      setHomeCaptainSignature(signatureImage)
+    } else if (openSignature === 'away-coach') {
+      setAwayCoachSignature(signatureImage)
+    } else if (openSignature === 'away-captain') {
+      setAwayCaptainSignature(signatureImage)
+    }
+    setOpenSignature(null)
   }
 
   async function createMatch() {
@@ -274,7 +330,7 @@ export default function MatchSetup({ onStart }) {
           <input disabled={isHomeLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
           <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
           <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-          <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={homeDob} onChange={e=>setHomeDob(e.target.value)} />
+          <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
           <select disabled={isHomeLocked} className="w-120" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
             <option value="">none</option>
             <option value="libero1">Libero 1</option>
@@ -310,13 +366,33 @@ export default function MatchSetup({ onStart }) {
             <input disabled className="w-220" value={m.role} />
             <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
             <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
-            <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
+            <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
           </div>
         ))}
         <h4>Signatures</h4>
-        <div className="row">
-          <label className="inline"><span>Coach</span><input type="checkbox" checked={homeCoachSigned} onChange={e=>setHomeCoachSigned(e.target.checked)} /></label>
-          <label className="inline"><span>Captain</span><input type="checkbox" checked={homeCaptainSigned} onChange={e=>setHomeCaptainSigned(e.target.checked)} /></label>
+        <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span>Coach</span>
+            {homeCoachSignature ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <img src={homeCoachSignature} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                <button className="secondary" onClick={() => setHomeCoachSignature(null)}>Remove</button>
+              </div>
+            ) : (
+              <button className="secondary" onClick={() => setOpenSignature('home-coach')}>Sign</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span>Captain</span>
+            {homeCaptainSignature ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <img src={homeCaptainSignature} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                <button className="secondary" onClick={() => setHomeCaptainSignature(null)}>Remove</button>
+              </div>
+            ) : (
+              <button className="secondary" onClick={() => setOpenSignature('home-captain')}>Sign</button>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -339,7 +415,7 @@ export default function MatchSetup({ onStart }) {
           <input disabled={isAwayLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
           <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
           <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-          <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={awayDob} onChange={e=>setAwayDob(e.target.value)} />
+          <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
           <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
             <option value="">none</option>
             <option value="libero1">libero 1</option>
@@ -375,13 +451,33 @@ export default function MatchSetup({ onStart }) {
             <input disabled className="w-220" value={m.role} />
             <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
             <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
-            <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth" type="number" inputMode="numeric" value={m.dob} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value}; return a })} />
+            <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
           </div>
         ))}
         <h4>Signatures</h4>
-        <div className="row">
-          <label className="inline"><span>Coach</span><input type="checkbox" checked={awayCoachSigned} onChange={e=>setAwayCoachSigned(e.target.checked)} /></label>
-          <label className="inline"><span>Captain</span><input type="checkbox" checked={awayCaptainSigned} onChange={e=>setAwayCaptainSigned(e.target.checked)} /></label>
+        <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span>Coach</span>
+            {awayCoachSignature ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <img src={awayCoachSignature} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                <button className="secondary" onClick={() => setAwayCoachSignature(null)}>Remove</button>
+              </div>
+            ) : (
+              <button className="secondary" onClick={() => setOpenSignature('away-coach')}>Sign</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span>Captain</span>
+            {awayCaptainSignature ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <img src={awayCaptainSignature} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                <button className="secondary" onClick={() => setAwayCaptainSignature(null)}>Remove</button>
+              </div>
+            ) : (
+              <button className="secondary" onClick={() => setOpenSignature('away-captain')}>Sign</button>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -391,28 +487,37 @@ export default function MatchSetup({ onStart }) {
           <input className="capitalize" placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} />
           <input className="capitalize" placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} />
           <input placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} />
-          <input placeholder="Date of birth" type="number" inputMode="numeric" value={ref1Dob} onChange={e=>setRef1Dob(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
 
           <strong>2nd Referee</strong>
           <input className="capitalize" placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} />
           <input className="capitalize" placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} />
           <input placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} />
-          <input placeholder="Date of birth" type="number" inputMode="numeric" value={ref2Dob} onChange={e=>setRef2Dob(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
 
           <strong>Scorer</strong>
           <input className="capitalize" placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} />
           <input className="capitalize" placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} />
           <input placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} />
-          <input placeholder="Date of birth" type="number" inputMode="numeric" value={scorerDob} onChange={e=>setScorerDob(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
 
           <strong>Assistant Scorer</strong>
           <input className="capitalize" placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} />
           <input className="capitalize" placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} />
           <input placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} />
-          <input placeholder="Date of birth" type="number" inputMode="numeric" value={asstDob} onChange={e=>setAsstDob(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
         </div>
       </Modal>
       <LayoutEditor open={openLayout} onClose={()=>setOpenLayout(false)} />
+      <SignaturePad 
+        open={openSignature !== null} 
+        onClose={() => setOpenSignature(null)} 
+        onSave={handleSignatureSave}
+        title={openSignature === 'home-coach' ? 'Home Coach Signature' : 
+               openSignature === 'home-captain' ? 'Home Captain Signature' :
+               openSignature === 'away-coach' ? 'Away Coach Signature' :
+               openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+      />
     </div>
   )
 }
