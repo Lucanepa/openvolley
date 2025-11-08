@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { db } from '../db/db'
 import Modal from './Modal'
 import LayoutEditor from './LayoutEditor'
-import Modal from './Modal'
 
 export default function MatchSetup({ onStart }) {
   const [home, setHome] = useState('Home')
@@ -19,8 +18,6 @@ export default function MatchSetup({ onStart }) {
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState('#ef4444')
-  const [awayColor, setAwayColor] = useState('#3b82f6')
-  const [homeColor, setHomeColor] = useState('#e11d48')
   const [awayColor, setAwayColor] = useState('#3b82f6')
 
   // Rosters
