@@ -246,10 +246,16 @@ export default function MatchSetup({ onStart }) {
           <div className="field" style={{ width:120 }}><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
           <div className="field" style={{ width:200 }}>
             <label>City</label>
-            <select value={city} onChange={e=>setCity(e.target.value)}>
-              <option value="">Select city</option>
-              {citiesZurich.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <input 
+              className="capitalize" 
+              value={city} 
+              onChange={e=>setCity(e.target.value)}
+              list="cities-zurich"
+              placeholder="Enter city"
+            />
+            <datalist id="cities-zurich">
+              {citiesZurich.map(c => <option key={c} value={c} />)}
+            </datalist>
           </div>
           <div className="field" style={{ flex:1, minWidth:250 }}><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
         </div>
