@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { db } from '../db/db'
-import Modal from './Modal'
 import LayoutEditor from './LayoutEditor'
 import SignaturePad from './SignaturePad'
 
@@ -68,11 +67,8 @@ export default function MatchSetup({ onStart }) {
     initBench('Coach'), initBench('Assistant Coach 1'), initBench('Assistant Coach 2'), initBench('Medic'), initBench('Physiotherapist')
   ])
 
-  // UI state for modals
-  const [openInfo, setOpenInfo] = useState(false)
-  const [openOfficials, setOpenOfficials] = useState(false)
-  const [openHome, setOpenHome] = useState(false)
-  const [openAway, setOpenAway] = useState(false)
+  // UI state for views
+  const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'officials', 'home', 'away'
   const [openLayout, setOpenLayout] = useState(false)
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
 
@@ -229,61 +225,21 @@ export default function MatchSetup({ onStart }) {
     onStart(matchId)
   }
 
-  return (
-    <div className="setup">
-      <h2>Create Match</h2>
-      <div className="grid-4">
-        <div className="card" style={{ order: 1 }}>
-          <div>
-            <h3>Match info</h3>
-            <p className="text-sm">{date || time || hall || city || league ? 'Configured' : 'Not set'}</p>
-          </div>
-          <div className="actions"><button className="secondary" onClick={()=>setOpenInfo(true)}>Edit</button></div>
+  if (currentView === 'info') {
+    return (
+      <div className="setup">
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <h2>Match info</h2>
+          <div style={{ width: 80 }}></div>
         </div>
-        <div className="card" style={{ order: 2 }}>
-          <div>
-            <h3>Match officials</h3>
-            <p className="text-sm">Edit referees and table crew</p>
-          </div>
-          <div className="actions"><button className="secondary" onClick={()=>setOpenOfficials(true)}>Edit</button></div>
-        </div>
-        <div className="card" style={{ order: 3 }}>
-          <div>
-            <h3>Home team</h3>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
-              <p className="text-sm">{home}</p>
-              <div className="shirt" style={{ background: homeColor }} />
-            </div>
-            <p className="text-sm">{homeCounts.players} players • {homeCounts.liberos} liberos • {homeCounts.bench} bench</p>
-          </div>
-          <div className="actions"><button className="secondary" onClick={()=>setOpenHome(true)}>Edit</button></div>
-        </div>
-        <div className="card" style={{ order: 4 }}>
-          <div>
-            <h3>Away team</h3>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
-              <p className="text-sm">{away}</p>
-              <div className="shirt" style={{ background: awayColor }} />
-            </div>
-            <p className="text-sm">{awayCounts.players} players • {awayCounts.liberos} liberos • {awayCounts.bench} bench</p>
-          </div>
-          <div className="actions"><button className="secondary" onClick={()=>setOpenAway(true)}>Edit</button></div>
-        </div>
-      </div>
-
-      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12 }}>
-        <button className="secondary" onClick={()=>setOpenLayout(true)}>Layout</button>
-        <button onClick={createMatch}>Start Match</button>
-      </div>
-
-      <Modal title="Match info" open={openInfo} onClose={()=>setOpenInfo(false)} width={900}>
-        <div className="grid-c4">
+        <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap:12 }}>
           <div className="field"><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
           <div className="field"><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
           <div className="field"><label>City</label><input className="capitalize" value={city} onChange={e=>setCity(e.target.value)} /></div>
           <div className="field"><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
         </div>
-        <div className="grid-c3" style={{ marginTop:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap:12, marginTop:12 }}>
           <div className="field"><label>Match Type</label>
             <select value={type1} onChange={e=>setType1(e.target.value)}>
               <option value="championship">Championship</option>
@@ -305,13 +261,59 @@ export default function MatchSetup({ onStart }) {
             </select>
           </div>
         </div>
-        <div className="grid-c2" style={{ marginTop:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap:12, marginTop:12 }}>
           <div className="field"><label>Game #</label><input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
           <div className="field"><label>League</label><input className="capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
-      </Modal>
+      </div>
+    )
+  }
 
-      <Modal title="Home team" open={openHome} onClose={()=>setOpenHome(false)} width={1000}>
+  if (currentView === 'officials') {
+    return (
+      <div className="setup">
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <h2>Match officials</h2>
+          <div style={{ width: 80 }}></div>
+        </div>
+        <div className="officials-grid">
+          <strong>1st Referee</strong>
+          <input className="capitalize" placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} />
+          <input placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+
+          <strong>2nd Referee</strong>
+          <input className="capitalize" placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} />
+          <input placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+
+          <strong>Scorer</strong>
+          <input className="capitalize" placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} />
+          <input placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+
+          <strong>Assistant Scorer</strong>
+          <input className="capitalize" placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} />
+          <input className="capitalize" placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} />
+          <input placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} />
+          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+        </div>
+      </div>
+    )
+  }
+
+  if (currentView === 'home') {
+    return (
+      <div className="setup">
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <h2>Home team</h2>
+          <div style={{ width: 80 }}></div>
+        </div>
         <div className="row" style={{ alignItems:'center' }}>
           <label className="inline"><span>Name</span><input className="w-300 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
           <div className="inline" style={{ gap:6 }}>
@@ -394,9 +396,18 @@ export default function MatchSetup({ onStart }) {
             )}
           </div>
         </div>
-      </Modal>
+      </div>
+    )
+  }
 
-      <Modal title="Away team" open={openAway} onClose={()=>setOpenAway(false)} width={1000}>
+  if (currentView === 'away') {
+    return (
+      <div className="setup">
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <h2>Away team</h2>
+          <div style={{ width: 80 }}></div>
+        </div>
         <div className="row" style={{ alignItems:'center' }}>
           <label className="inline"><span>Name</span><input className="w-300 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
           <div className="inline" style={{ gap:6 }}>
@@ -479,35 +490,57 @@ export default function MatchSetup({ onStart }) {
             )}
           </div>
         </div>
-      </Modal>
+      </div>
+    )
+  }
 
-      <Modal title="Match officials" open={openOfficials} onClose={()=>setOpenOfficials(false)} width={1000}>
-        <div className="officials-grid">
-          <strong>1st Referee</strong>
-          <input className="capitalize" placeholder="Last Name" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} />
-          <input className="capitalize" placeholder="First Name" value={ref1First} onChange={e=>setRef1First(e.target.value)} />
-          <input placeholder="Country" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} />
-          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-
-          <strong>2nd Referee</strong>
-          <input className="capitalize" placeholder="Last Name" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} />
-          <input className="capitalize" placeholder="First Name" value={ref2First} onChange={e=>setRef2First(e.target.value)} />
-          <input placeholder="Country" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} />
-          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-
-          <strong>Scorer</strong>
-          <input className="capitalize" placeholder="Last Name" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} />
-          <input className="capitalize" placeholder="First Name" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} />
-          <input placeholder="Country" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} />
-          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-
-          <strong>Assistant Scorer</strong>
-          <input className="capitalize" placeholder="Last Name" value={asstLast} onChange={e=>setAsstLast(e.target.value)} />
-          <input className="capitalize" placeholder="First Name" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} />
-          <input placeholder="Country" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} />
-          <input placeholder="Date of birth (dd/mm/yyyy)" type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+  return (
+    <div className="setup">
+      <h2>Create Match</h2>
+      <div className="grid-4">
+        <div className="card" style={{ order: 1 }}>
+          <div>
+            <h3>Match info</h3>
+            <p className="text-sm">{date || time || hall || city || league ? 'Configured' : 'Not set'}</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button></div>
         </div>
-      </Modal>
+        <div className="card" style={{ order: 2 }}>
+          <div>
+            <h3>Match officials</h3>
+            <p className="text-sm">Edit referees and table crew</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button></div>
+        </div>
+        <div className="card" style={{ order: 3 }}>
+          <div>
+            <h3>Home team</h3>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
+              <p className="text-sm">{home}</p>
+              <div className="shirt" style={{ background: homeColor }} />
+            </div>
+            <p className="text-sm">{homeCounts.players} players • {homeCounts.liberos} liberos • {homeCounts.bench} bench</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('home')}>Edit</button></div>
+        </div>
+        <div className="card" style={{ order: 4 }}>
+          <div>
+            <h3>Away team</h3>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
+              <p className="text-sm">{away}</p>
+              <div className="shirt" style={{ background: awayColor }} />
+            </div>
+            <p className="text-sm">{awayCounts.players} players • {awayCounts.liberos} liberos • {awayCounts.bench} bench</p>
+          </div>
+          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('away')}>Edit</button></div>
+        </div>
+      </div>
+
+      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12 }}>
+        <button className="secondary" onClick={()=>setOpenLayout(true)}>Layout</button>
+        <button onClick={createMatch}>Start Match</button>
+      </div>
+
       <LayoutEditor open={openLayout} onClose={()=>setOpenLayout(false)} />
       <SignaturePad 
         open={openSignature !== null} 
@@ -521,5 +554,3 @@ export default function MatchSetup({ onStart }) {
     </div>
   )
 }
-
-
