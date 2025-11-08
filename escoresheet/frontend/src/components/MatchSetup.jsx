@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { db } from '../db/db'
-import LayoutEditor from './LayoutEditor'
 import SignaturePad from './SignaturePad'
 
 export default function MatchSetup({ onStart }) {
@@ -69,8 +68,17 @@ export default function MatchSetup({ onStart }) {
 
   // UI state for views
   const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'officials', 'home', 'away'
-  const [openLayout, setOpenLayout] = useState(false)
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
+
+  // Cities in Kanton Zürich
+  const citiesZurich = [
+    'Zürich', 'Winterthur', 'Uster', 'Dübendorf', 'Dietikon', 'Wetzikon', 'Horgen', 
+    'Bülach', 'Kloten', 'Meilen', 'Adliswil', 'Thalwil', 'Küsnacht', 'Opfikon', 
+    'Volketswil', 'Schlieren', 'Wallisellen', 'Regensdorf', 'Pfäffikon', 'Illnau-Effretikon',
+    'Stäfa', 'Wädenswil', 'Männedorf', 'Rüti', 'Gossau', 'Bassersdorf', 'Richterswil',
+    'Wald', 'Affoltern am Albis', 'Dielsdorf', 'Embrach', 'Hinwil', 'Küssnacht', 
+    'Oberrieden', 'Uitikon', 'Egg', 'Fällanden', 'Maur', 'Rümlang', 'Zollikon'
+  ].sort()
 
   const teamColors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
 
@@ -233,26 +241,35 @@ export default function MatchSetup({ onStart }) {
           <h2>Match info</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap:12 }}>
-          <div className="field"><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
-          <div className="field"><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
-          <div className="field"><label>City</label><input className="capitalize" value={city} onChange={e=>setCity(e.target.value)} /></div>
-          <div className="field"><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
+          <div className="field" style={{ width:160 }}><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
+          <div className="field" style={{ width:120 }}><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
+          <div className="field" style={{ width:200 }}>
+            <label>City</label>
+            <select value={city} onChange={e=>setCity(e.target.value)}>
+              <option value="">Select city</option>
+              {citiesZurich.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ flex:1, minWidth:250 }}><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap:12, marginTop:12 }}>
-          <div className="field"><label>Match Type</label>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12, marginTop:12 }}>
+          <div className="field" style={{ width:180 }}>
+            <label>Match Type</label>
             <select value={type1} onChange={e=>setType1(e.target.value)}>
               <option value="championship">Championship</option>
               <option value="cup">Cup</option>
             </select>
           </div>
-          <div className="field"><label>Match Category</label>
+          <div className="field" style={{ width:180 }}>
+            <label>Match Category</label>
             <select value={type2} onChange={e=>setType2(e.target.value)}>
               <option value="men">Men</option>
               <option value="women">Women</option>
             </select>
           </div>
-          <div className="field"><label>Match Level</label>
+          <div className="field" style={{ width:140 }}>
+            <label>Match Level</label>
             <select value={type3} onChange={e=>setType3(e.target.value)}>
               <option value="senior">Senior</option>
               <option value="U23">U23</option>
@@ -261,9 +278,9 @@ export default function MatchSetup({ onStart }) {
             </select>
           </div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap:12, marginTop:12 }}>
-          <div className="field"><label>Game #</label><input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
-          <div className="field"><label>League</label><input className="capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12, marginTop:12 }}>
+          <div className="field" style={{ width:100 }}><label>Game #</label><input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
+          <div className="field" style={{ flex:1, minWidth:250 }}><label>League</label><input className="capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
       </div>
     )
@@ -536,12 +553,10 @@ export default function MatchSetup({ onStart }) {
         </div>
       </div>
 
-      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12 }}>
-        <button className="secondary" onClick={()=>setOpenLayout(true)}>Layout</button>
+      <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
         <button onClick={createMatch}>Start Match</button>
       </div>
 
-      <LayoutEditor open={openLayout} onClose={()=>setOpenLayout(false)} />
       <SignaturePad 
         open={openSignature !== null} 
         onClose={() => setOpenSignature(null)} 
