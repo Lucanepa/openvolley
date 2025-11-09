@@ -242,12 +242,12 @@ export default function MatchSetup({ onStart }) {
           <div style={{ width: 80 }}></div>
         </div>
         <div className="row">
-          <div className="field"><label>Date</label><input className="w-160" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
-          <div className="field"><label>Time</label><input className="w-120" type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
+          <div className="field"><label>Date</label><input className="w-80" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
+          <div className="field"><label>Time</label><input className="w-80" type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
           <div className="field">
             <label>City</label>
             <input 
-              className="w-200 capitalize" 
+              className="w-120 capitalize" 
               value={city} 
               onChange={e=>setCity(e.target.value)}
               list="cities-zurich"
@@ -262,21 +262,21 @@ export default function MatchSetup({ onStart }) {
         <div className="row" style={{ marginTop:12 }}>
           <div className="field">
             <label>Match Type</label>
-            <select className="w-180" value={type1} onChange={e=>setType1(e.target.value)}>
+            <select className="w-120" value={type1} onChange={e=>setType1(e.target.value)}>
               <option value="championship">Championship</option>
               <option value="cup">Cup</option>
             </select>
           </div>
           <div className="field">
             <label>Match Category</label>
-            <select className="w-180" value={type2} onChange={e=>setType2(e.target.value)}>
+            <select className="w-120" value={type2} onChange={e=>setType2(e.target.value)}>
               <option value="men">Men</option>
               <option value="women">Women</option>
             </select>
           </div>
           <div className="field">
             <label>Match Level</label>
-            <select className="w-140" value={type3} onChange={e=>setType3(e.target.value)}>
+            <select className="w-90" value={type3} onChange={e=>setType3(e.target.value)}>
               <option value="senior">Senior</option>
               <option value="U23">U23</option>
               <option value="U21">U21</option>
@@ -286,7 +286,7 @@ export default function MatchSetup({ onStart }) {
         </div>
         <div className="row" style={{ marginTop:12 }}>
           <div className="field"><label>Game #</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
-          <div className="field"><label>League</label><input className="w-200 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
+          <div className="field"><label>League</label><input className="w-100 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
       </div>
     )
@@ -306,7 +306,7 @@ export default function MatchSetup({ onStart }) {
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-120" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
+              <div className="field"><label>Country</label><input className="w-90" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
               <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
@@ -316,7 +316,7 @@ export default function MatchSetup({ onStart }) {
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-120" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
+              <div className="field"><label>Country</label><input className="w-90" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
               <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
@@ -326,7 +326,7 @@ export default function MatchSetup({ onStart }) {
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-120" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
+              <div className="field"><label>Country</label><input className="w-90" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
               <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
@@ -336,7 +336,7 @@ export default function MatchSetup({ onStart }) {
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-120" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
+              <div className="field"><label>Country</label><input className="w-90" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
               <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
@@ -354,7 +354,7 @@ export default function MatchSetup({ onStart }) {
           <div style={{ width: 80 }}></div>
         </div>
         <div className="row" style={{ alignItems:'center' }}>
-          <label className="inline"><span>Name</span><input className="w-300 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
+          <label className="inline"><span>Name</span><input className="w-180 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
           <div className="inline" style={{ gap:6 }}>
             {teamColors.map(c => (
               <button key={c} type="button" className="secondary" onClick={()=>setHomeColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: homeColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
@@ -367,12 +367,12 @@ export default function MatchSetup({ onStart }) {
           </div>
         )}
         <h4>Roster</h4>
-        <div className="row">
+        <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
           <input disabled={isHomeLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
           <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
           <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
           <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-          <select disabled={isHomeLocked} className="w-120" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
+          <select disabled={isHomeLocked} className="w-90" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
             <option value="">none</option>
             <option value="libero1">Libero 1</option>
             <option value="libero2">Libero 2</option>
@@ -461,7 +461,7 @@ export default function MatchSetup({ onStart }) {
           </div>
         )}
         <h4>Roster</h4>
-        <div className="row">
+        <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
           <input disabled={isAwayLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
           <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
           <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />

@@ -131,6 +131,11 @@
   max-width: 100%;
   overflow-x: hidden;
   box-sizing: border-box;
+  min-width: 0;
+}
+.setup > * {
+  min-width: 0;
+  max-width: 100%;
 }
   
   .form-grid {
@@ -185,15 +190,19 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 .row > * {
   flex-shrink: 0;
+  flex-grow: 0;
   box-sizing: border-box;
+  min-width: 0;
 }
   .inline { display: flex; align-items: center; gap: 8px; }
   .w-num { width: 70px; }
-  .w-dob { width: 150px; }
+  .w-dob { width: 90px; }
   .w-name { width: 150px; }
+  .w-90 { width: 90px; }
   .w-120 { width: 120px; }
 .w-140 { width: 140px; }
 .w-160 { width: 160px; }
