@@ -124,7 +124,14 @@
   button.danger { background: var(--danger); }
   button:disabled { opacity: .6; cursor: default; }
   
-  .setup { display: grid; gap: 12px; }
+  .setup { 
+  display: grid; 
+  gap: 12px; 
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
   
   .form-grid {
     display: grid;

@@ -241,10 +241,10 @@ export default function MatchSetup({ onStart }) {
           <h2>Match info</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12 }}>
-          <div className="field"><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
-          <div className="field"><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
-          <div className="field">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap:12, width:'100%', maxWidth:'100%', overflow:'hidden' }}>
+          <div className="field" style={{ minWidth:0 }}><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
+          <div className="field" style={{ minWidth:0 }}><label>Time</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
+          <div className="field" style={{ minWidth:0 }}>
             <label>City</label>
             <input 
               className="capitalize" 
@@ -257,24 +257,24 @@ export default function MatchSetup({ onStart }) {
               {citiesZurich.map(c => <option key={c} value={c} />)}
             </datalist>
           </div>
-          <div className="field"><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
+          <div className="field" style={{ minWidth:0 }}><label>Hall</label><input className="capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:12, marginTop:12 }}>
-          <div className="field">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap:12, marginTop:12, width:'100%', maxWidth:'100%', overflow:'hidden' }}>
+          <div className="field" style={{ minWidth:0 }}>
             <label>Match Type</label>
             <select value={type1} onChange={e=>setType1(e.target.value)}>
               <option value="championship">Championship</option>
               <option value="cup">Cup</option>
             </select>
           </div>
-          <div className="field">
+          <div className="field" style={{ minWidth:0 }}>
             <label>Match Category</label>
             <select value={type2} onChange={e=>setType2(e.target.value)}>
               <option value="men">Men</option>
               <option value="women">Women</option>
             </select>
           </div>
-          <div className="field">
+          <div className="field" style={{ minWidth:0 }}>
             <label>Match Level</label>
             <select value={type3} onChange={e=>setType3(e.target.value)}>
               <option value="senior">Senior</option>
@@ -284,9 +284,9 @@ export default function MatchSetup({ onStart }) {
             </select>
           </div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginTop:12 }}>
-          <div className="field"><label>Game #</label><input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
-          <div className="field"><label>League</label><input className="capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap:12, marginTop:12, width:'100%', maxWidth:'100%', overflow:'hidden' }}>
+          <div className="field" style={{ minWidth:0 }}><label>Game #</label><input type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
+          <div className="field" style={{ minWidth:0 }}><label>League</label><input className="capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
       </div>
     )
@@ -300,44 +300,44 @@ export default function MatchSetup({ onStart }) {
           <h2>Match officials</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div>
+        <div style={{ display:'flex', flexDirection:'column', gap:16, width:'100%', maxWidth:'100%', overflow:'hidden' }}>
+          <div style={{ width:'100%', maxWidth:'100%' }}>
             <h4 style={{ marginTop:0 }}>1st Referee</h4>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:8 }}>
-              <div className="field"><label>Last Name</label><input className="capitalize" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="capitalize" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap:8, width:'100%', maxWidth:'100%' }}>
+              <div className="field" style={{ minWidth:0 }}><label>Last Name</label><input className="capitalize" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>First Name</label><input className="capitalize" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Country</label><input value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Date of birth</label><input type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
 
-          <div>
+          <div style={{ width:'100%', maxWidth:'100%' }}>
             <h4 style={{ marginTop:0 }}>2nd Referee</h4>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:8 }}>
-              <div className="field"><label>Last Name</label><input className="capitalize" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="capitalize" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap:8, width:'100%', maxWidth:'100%' }}>
+              <div className="field" style={{ minWidth:0 }}><label>Last Name</label><input className="capitalize" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>First Name</label><input className="capitalize" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Country</label><input value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Date of birth</label><input type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
 
-          <div>
+          <div style={{ width:'100%', maxWidth:'100%' }}>
             <h4 style={{ marginTop:0 }}>Scorer</h4>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:8 }}>
-              <div className="field"><label>Last Name</label><input className="capitalize" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="capitalize" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap:8, width:'100%', maxWidth:'100%' }}>
+              <div className="field" style={{ minWidth:0 }}><label>Last Name</label><input className="capitalize" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>First Name</label><input className="capitalize" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Country</label><input value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Date of birth</label><input type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
 
-          <div>
+          <div style={{ width:'100%', maxWidth:'100%' }}>
             <h4 style={{ marginTop:0 }}>Assistant Scorer</h4>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:8 }}>
-              <div className="field"><label>Last Name</label><input className="capitalize" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="capitalize" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap:8, width:'100%', maxWidth:'100%' }}>
+              <div className="field" style={{ minWidth:0 }}><label>Last Name</label><input className="capitalize" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>First Name</label><input className="capitalize" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Country</label><input value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
+              <div className="field" style={{ minWidth:0 }}><label>Date of birth</label><input type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
         </div>
