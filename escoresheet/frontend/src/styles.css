@@ -177,15 +177,28 @@
   
   /* === FIXED GRID CLASSES END === */
   
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: 8px; 
+  align-items: center; 
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.row > * {
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
   .inline { display: flex; align-items: center; gap: 8px; }
   .w-num { width: 70px; }
   .w-dob { width: 150px; }
-  .w-name { width: 180px; }
+  .w-name { width: 150px; }
   .w-120 { width: 120px; }
-  .w-140 { width: 140px; }
-  .w-160 { width: 160px; }
-  .w-200 { width: 200px; }
+.w-140 { width: 140px; }
+.w-160 { width: 160px; }
+.w-180 { width: 180px; }
+.w-200 { width: 200px; }
   .w-220 { width: 220px; }
   .w-240 { width: 240px; }
   .w-300 { width: 300px; }
