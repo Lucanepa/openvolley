@@ -73,11 +73,14 @@ export default function MatchSetup({ onStart }) {
   const [savedStatus, setSavedStatus] = useState({ info: false, officials: false, home: false, away: false })
   
   // Coin toss state
-  const [teamA, setTeamA] = useState(null) // 'home' or 'away'
-  const [teamB, setTeamB] = useState(null) // 'home' or 'away'
-  const [serveA, setServeA] = useState(null) // 'serve' or 'receive'
-  const [serveB, setServeB] = useState(null) // 'serve' or 'receive'
+  const [teamA, setTeamA] = useState('home') // 'home' or 'away'
+  const [teamB, setTeamB] = useState('away') // 'home' or 'away'
+  const [serveA, setServeA] = useState(true) // true = serves, false = receives
+  const [serveB, setServeB] = useState(false) // true = serves, false = receives
   const [pendingMatchId, setPendingMatchId] = useState(null) // Store match ID before coin toss
+  const [showBothRosters, setShowBothRosters] = useState(false) // Show both rosters in match setup
+  const [homeHasAds, setHomeHasAds] = useState(false) // Has ads on uniform
+  const [awayHasAds, setAwayHasAds] = useState(false) // Has ads on uniform
 
   // Cities in Kanton Zürich
   const citiesZurich = [
@@ -89,7 +92,7 @@ export default function MatchSetup({ onStart }) {
     'Oberrieden', 'Uitikon', 'Egg', 'Fällanden', 'Maur', 'Rümlang', 'Zollikon'
   ].sort()
 
-  const teamColors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
+  const teamColors = ['#FFFFFF','#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
 
   const homeCounts = {
     players: homeRoster.length,
@@ -412,11 +415,18 @@ export default function MatchSetup({ onStart }) {
     setCurrentView('coin-toss')
   }
 
+  function switchTeams() {
+    const temp = teamA
+    setTeamA(teamB)
+    setTeamB(temp)
+  }
+
+  function switchServe() {
+    setServeA(!serveA)
+    setServeB(!serveB)
+  }
+
   async function confirmCoinToss() {
-    if (!teamA || !teamB || !serveA || !serveB) {
-      alert('Please complete the coin toss selection')
-      return
-    }
     if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
       alert('Please complete all signatures')
       return
@@ -574,6 +584,10 @@ export default function MatchSetup({ onStart }) {
               <button key={c} type="button" className="secondary" onClick={()=>setHomeColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: homeColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
             ))}
           </div>
+          <label className="inline" style={{ marginLeft: 12 }}>
+            <input type="checkbox" checked={homeHasAds} onChange={e=>setHomeHasAds(e.target.checked)} />
+            <span style={{ marginLeft: 6 }}>Ads</span>
+          </label>
         </div>
         {isHomeLocked && (
           <div className="panel" style={{ marginTop:8 }}>
@@ -648,6 +662,10 @@ export default function MatchSetup({ onStart }) {
               <button key={c} type="button" className="secondary" onClick={()=>setAwayColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: awayColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
             ))}
           </div>
+          <label className="inline" style={{ marginLeft: 12 }}>
+            <input type="checkbox" checked={awayHasAds} onChange={e=>setAwayHasAds(e.target.checked)} />
+            <span style={{ marginLeft: 6 }}>Ads</span>
+          </label>
         </div>
         {isAwayLocked && (
           <div className="panel" style={{ marginTop:8 }}>
@@ -708,13 +726,22 @@ export default function MatchSetup({ onStart }) {
   }
 
   if (currentView === 'coin-toss') {
-    const teamAInfo = teamA === 'home' ? { name: home, color: homeColor, roster: homeRoster, bench: benchHome } : teamA === 'away' ? { name: away, color: awayColor, roster: awayRoster, bench: benchAway } : null
-    const teamBInfo = teamB === 'home' ? { name: home, color: homeColor, roster: homeRoster, bench: benchHome } : teamB === 'away' ? { name: away, color: awayColor, roster: awayRoster, bench: benchAway } : null
+    const teamAInfo = teamA === 'home' ? { name: home, color: homeColor, roster: homeRoster, bench: benchHome } : { name: away, color: awayColor, roster: awayRoster, bench: benchAway }
+    const teamBInfo = teamB === 'home' ? { name: home, color: homeColor, roster: homeRoster, bench: benchHome } : { name: away, color: awayColor, roster: awayRoster, bench: benchAway }
     
-    const teamACoachSig = teamA === 'home' ? homeCoachSignature : teamA === 'away' ? awayCoachSignature : null
-    const teamACaptainSig = teamA === 'home' ? homeCaptainSignature : teamA === 'away' ? awayCaptainSignature : null
-    const teamBCoachSig = teamB === 'home' ? homeCoachSignature : teamB === 'away' ? awayCoachSignature : null
-    const teamBCaptainSig = teamB === 'home' ? homeCaptainSignature : teamB === 'away' ? awayCaptainSignature : null
+    const teamACoachSig = teamA === 'home' ? homeCoachSignature : awayCoachSignature
+    const teamACaptainSig = teamA === 'home' ? homeCaptainSignature : awayCaptainSignature
+    const teamBCoachSig = teamB === 'home' ? homeCoachSignature : awayCoachSignature
+    const teamBCaptainSig = teamB === 'home' ? homeCaptainSignature : awayCaptainSignature
+
+    // Volleyball SVG
+    const volleyballIcon = (
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/>
+        <path d="M12 2 L12 22 M2 12 L22 12 M6.34 6.34 L17.66 17.66 M17.66 6.34 L6.34 17.66" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+        <path d="M8.49 4.24 L15.51 19.76 M15.51 4.24 L8.49 19.76" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+      </svg>
+    )
 
     return (
       <div className="setup">
@@ -724,340 +751,301 @@ export default function MatchSetup({ onStart }) {
           <div style={{ width: 80 }}></div>
         </div>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 24, marginBottom: 24, alignItems: 'start' }}>
           {/* Team A */}
           <div>
             <h3>Team A</h3>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', marginBottom: 8 }}>Select Team</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <button 
-                  type="button"
-                  className={teamA === 'home' ? '' : 'secondary'}
-                  onClick={() => {
-                    setTeamA('home')
-                    setTeamB('away')
-                  }}
-                  style={teamA === 'home' ? { background: homeColor, color: '#fff' } : {}}
-                >
-                  {home}
-                </button>
-                <button 
-                  type="button"
-                  className={teamA === 'away' ? '' : 'secondary'}
-                  onClick={() => {
-                    setTeamA('away')
-                    setTeamB('home')
-                  }}
-                  style={teamA === 'away' ? { background: awayColor, color: '#fff' } : {}}
-                >
-                  {away}
-                </button>
-              </div>
+              <button 
+                type="button"
+                style={{ 
+                  background: teamAInfo.color, 
+                  color: '#fff', 
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '8px'
+                }}
+              >
+                {teamAInfo.name}
+              </button>
             </div>
             
-            {teamA && (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', marginBottom: 8 }}>Serve / Receive</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button 
-                      type="button"
-                      className={serveA === 'serve' ? '' : 'secondary'}
-                      onClick={() => {
-                        setServeA('serve')
-                        setServeB('receive')
-                      }}
-                    >
-                      Serve
-                    </button>
-                    <button 
-                      type="button"
-                      className={serveA === 'receive' ? '' : 'secondary'}
-                      onClick={() => {
-                        setServeA('receive')
-                        setServeB('serve')
-                      }}
-                    >
-                      Receive
-                    </button>
-                  </div>
-                </div>
-                
-                <div style={{ marginBottom: 16 }}>
-                  <button className="secondary" onClick={() => setShowRoster({ ...showRoster, home: teamA === 'home' ? !showRoster.home : showRoster.home, away: teamA === 'away' ? !showRoster.away : showRoster.away })}>
-                    {((teamA === 'home' && showRoster.home) || (teamA === 'away' && showRoster.away)) ? 'Hide' : 'Show'} Roster
-                  </button>
-                </div>
-                
-                {((teamA === 'home' && showRoster.home) || (teamA === 'away' && showRoster.away)) && teamAInfo && (() => {
-                  const { players, liberos, bench } = formatRoster(teamAInfo.roster, teamAInfo.bench)
-                  return (
-                    <div className="panel" style={{ marginBottom: 16 }}>
-                      {players.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <strong>Players</strong>
-                          <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                            {players.map((p, i) => (
-                              <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                {p.isCaptain ? (
-                                  <span style={{ 
-                                    display: 'inline-flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    width: 24, 
-                                    height: 24, 
-                                    borderRadius: '50%', 
-                                    border: '2px solid var(--text)',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                  }}>#{p.number ?? ''}</span>
-                                ) : (
-                                  <span>#{p.number ?? ''}</span>
-                                )}
-                                {p.libero && (
-                                  <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                                    {p.libero === 'libero1' ? 'L1' : 'L2'}
-                                  </span>
-                                )}
-                                <span>{p.lastName} {p.firstName}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {liberos.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <strong>Liberos</strong>
-                          <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                            {liberos.map((p, i) => (
-                              <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                {p.isCaptain ? (
-                                  <span style={{ 
-                                    display: 'inline-flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    width: 24, 
-                                    height: 24, 
-                                    borderRadius: '50%', 
-                                    border: '2px solid var(--text)',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                  }}>#{p.number ?? ''}</span>
-                                ) : (
-                                  <span>#{p.number ?? ''}</span>
-                                )}
-                                <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                                  {p.libero === 'libero1' ? 'L1' : 'L2'}
-                                </span>
-                                <span>{p.lastName} {p.firstName}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {bench.length > 0 && (
-                        <div>
-                          <strong>Bench</strong>
-                          <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                            {bench.map((m, i) => (
-                              <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+              {serveA && volleyballIcon}
+            </div>
+            
+            <div style={{ marginBottom: 16 }}>
+              <button className="secondary" onClick={() => setShowRoster({ ...showRoster, home: teamA === 'home' ? !showRoster.home : showRoster.home, away: teamA === 'away' ? !showRoster.away : showRoster.away })}>
+                {((teamA === 'home' && showRoster.home) || (teamA === 'away' && showRoster.away)) ? 'Hide' : 'Show'} Roster
+              </button>
+            </div>
+            
+            {((teamA === 'home' && showRoster.home) || (teamA === 'away' && showRoster.away)) && (() => {
+              const { players, liberos, bench } = formatRoster(teamAInfo.roster, teamAInfo.bench)
+              return (
+                <div className="panel" style={{ marginBottom: 16 }}>
+                  {players.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Players</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {players.map((p, i) => (
+                          <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            {p.libero && (
+                              <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+                              </span>
+                            )}
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  )
-                })()}
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <span style={{ display: 'block', marginBottom: 8 }}>Coach</span>
-                    {teamACoachSig ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <img src={teamACoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                        <button className="secondary" onClick={() => {
-                          if (teamA === 'home') setHomeCoachSignature(null)
-                          else setAwayCoachSignature(null)
-                        }}>Remove</button>
-                      </div>
-                    ) : (
-                      <button className="secondary" onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')}>Sign</button>
-                    )}
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', marginBottom: 8 }}>Captain</span>
-                    {teamACaptainSig ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <img src={teamACaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                        <button className="secondary" onClick={() => {
-                          if (teamA === 'home') setHomeCaptainSignature(null)
-                          else setAwayCaptainSignature(null)
-                        }}>Remove</button>
-                      </div>
-                    ) : (
-                      <button className="secondary" onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')}>Sign</button>
-                    )}
-                  </div>
+                  )}
+                  {liberos.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Liberos</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {liberos.map((p, i) => (
+                          <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                              {p.libero === 'libero1' ? 'L1' : 'L2'}
+                            </span>
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {bench.length > 0 && (
+                    <div>
+                      <strong>Bench</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {bench.map((m, i) => (
+                          <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
+              )
+            })()}
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+              <div>
+                <span style={{ display: 'block', marginBottom: 8 }}>Coach</span>
+                {teamACoachSig ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <img src={teamACoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                    <button className="secondary" onClick={() => {
+                      if (teamA === 'home') setHomeCoachSignature(null)
+                      else setAwayCoachSignature(null)
+                    }}>Remove</button>
+                  </div>
+                ) : (
+                  <button className="secondary" onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')}>Sign</button>
+                )}
+              </div>
+              <div>
+                <span style={{ display: 'block', marginBottom: 8 }}>Captain</span>
+                {teamACaptainSig ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <img src={teamACaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                    <button className="secondary" onClick={() => {
+                      if (teamA === 'home') setHomeCaptainSignature(null)
+                      else setAwayCaptainSignature(null)
+                    }}>Remove</button>
+                  </div>
+                ) : (
+                  <button className="secondary" onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')}>Sign</button>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Middle buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, justifyContent: 'center', alignItems: 'center', paddingTop: 40 }}>
+            <button className="secondary" onClick={switchTeams} style={{ padding: '8px 16px' }}>
+              Switch Teams
+            </button>
+            <button className="secondary" onClick={switchServe} style={{ padding: '8px 16px' }}>
+              Switch Serve
+            </button>
           </div>
           
           {/* Team B */}
           <div>
             <h3>Team B</h3>
-            {teamA && (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', marginBottom: 8 }}>Team</label>
-                  <button 
-                    type="button"
-                    disabled
-                    style={{ background: teamBInfo?.color || '#334155', color: '#fff', width: '100%' }}
-                  >
-                    {teamBInfo?.name || (teamB === 'home' ? home : away)}
-                  </button>
-                </div>
-                
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', marginBottom: 8 }}>Serve / Receive</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button 
-                      type="button"
-                      disabled
-                      className={serveB === 'serve' ? '' : 'secondary'}
-                    >
-                      Serve
-                    </button>
-                    <button 
-                      type="button"
-                      disabled
-                      className={serveB === 'receive' ? '' : 'secondary'}
-                    >
-                      Receive
-                    </button>
-                  </div>
-                </div>
-                
-                <div style={{ marginBottom: 16 }}>
-                  <button className="secondary" onClick={() => setShowRoster({ ...showRoster, home: teamB === 'home' ? !showRoster.home : showRoster.home, away: teamB === 'away' ? !showRoster.away : showRoster.away })}>
-                    {((teamB === 'home' && showRoster.home) || (teamB === 'away' && showRoster.away)) ? 'Hide' : 'Show'} Roster
-                  </button>
-                </div>
-                
-                {((teamB === 'home' && showRoster.home) || (teamB === 'away' && showRoster.away)) && teamBInfo && (() => {
-                  const { players, liberos, bench } = formatRoster(teamBInfo.roster, teamBInfo.bench)
-                  return (
-                    <div className="panel" style={{ marginBottom: 16 }}>
-                      {players.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <strong>Players</strong>
-                          <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                            {players.map((p, i) => (
-                              <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                {p.isCaptain ? (
-                                  <span style={{ 
-                                    display: 'inline-flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    width: 24, 
-                                    height: 24, 
-                                    borderRadius: '50%', 
-                                    border: '2px solid var(--text)',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                  }}>#{p.number ?? ''}</span>
-                                ) : (
-                                  <span>#{p.number ?? ''}</span>
-                                )}
-                                {p.libero && (
-                                  <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                                    {p.libero === 'libero1' ? 'L1' : 'L2'}
-                                  </span>
-                                )}
-                                <span>{p.lastName} {p.firstName}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {liberos.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <strong>Liberos</strong>
-                          <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                            {liberos.map((p, i) => (
-                              <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                {p.isCaptain ? (
-                                  <span style={{ 
-                                    display: 'inline-flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    width: 24, 
-                                    height: 24, 
-                                    borderRadius: '50%', 
-                                    border: '2px solid var(--text)',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                  }}>#{p.number ?? ''}</span>
-                                ) : (
-                                  <span>#{p.number ?? ''}</span>
-                                )}
-                                <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                                  {p.libero === 'libero1' ? 'L1' : 'L2'}
-                                </span>
-                                <span>{p.lastName} {p.firstName}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {bench.length > 0 && (
-                        <div>
-                          <strong>Bench</strong>
-                          <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                            {bench.map((m, i) => (
-                              <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+            <div style={{ marginBottom: 16 }}>
+              <button 
+                type="button"
+                style={{ 
+                  background: teamBInfo.color, 
+                  color: '#fff', 
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '8px'
+                }}
+              >
+                {teamBInfo.name}
+              </button>
+            </div>
+            
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+              {serveB && volleyballIcon}
+            </div>
+            
+            <div style={{ marginBottom: 16 }}>
+              <button className="secondary" onClick={() => setShowRoster({ ...showRoster, home: teamB === 'home' ? !showRoster.home : showRoster.home, away: teamB === 'away' ? !showRoster.away : showRoster.away })}>
+                {((teamB === 'home' && showRoster.home) || (teamB === 'away' && showRoster.away)) ? 'Hide' : 'Show'} Roster
+              </button>
+            </div>
+            
+            {((teamB === 'home' && showRoster.home) || (teamB === 'away' && showRoster.away)) && (() => {
+              const { players, liberos, bench } = formatRoster(teamBInfo.roster, teamBInfo.bench)
+              return (
+                <div className="panel" style={{ marginBottom: 16 }}>
+                  {players.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Players</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {players.map((p, i) => (
+                          <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            {p.libero && (
+                              <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+                              </span>
+                            )}
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  )
-                })()}
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <span style={{ display: 'block', marginBottom: 8 }}>Coach</span>
-                    {teamBCoachSig ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <img src={teamBCoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                        <button className="secondary" onClick={() => {
-                          if (teamB === 'home') setHomeCoachSignature(null)
-                          else setAwayCoachSignature(null)
-                        }}>Remove</button>
-                      </div>
-                    ) : (
-                      <button className="secondary" onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')}>Sign</button>
-                    )}
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', marginBottom: 8 }}>Captain</span>
-                    {teamBCaptainSig ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <img src={teamBCaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                        <button className="secondary" onClick={() => {
-                          if (teamB === 'home') setHomeCaptainSignature(null)
-                          else setAwayCaptainSignature(null)
-                        }}>Remove</button>
-                      </div>
-                    ) : (
-                      <button className="secondary" onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')}>Sign</button>
-                    )}
-                  </div>
+                  )}
+                  {liberos.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Liberos</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {liberos.map((p, i) => (
+                          <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                              {p.libero === 'libero1' ? 'L1' : 'L2'}
+                            </span>
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {bench.length > 0 && (
+                    <div>
+                      <strong>Bench</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {bench.map((m, i) => (
+                          <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
+              )
+            })()}
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+              <div>
+                <span style={{ display: 'block', marginBottom: 8 }}>Coach</span>
+                {teamBCoachSig ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <img src={teamBCoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                    <button className="secondary" onClick={() => {
+                      if (teamB === 'home') setHomeCoachSignature(null)
+                      else setAwayCoachSignature(null)
+                    }}>Remove</button>
+                  </div>
+                ) : (
+                  <button className="secondary" onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')}>Sign</button>
+                )}
+              </div>
+              <div>
+                <span style={{ display: 'block', marginBottom: 8 }}>Captain</span>
+                {teamBCaptainSig ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <img src={teamBCaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
+                    <button className="secondary" onClick={() => {
+                      if (teamB === 'home') setHomeCaptainSignature(null)
+                      else setAwayCaptainSignature(null)
+                    }}>Remove</button>
+                  </div>
+                ) : (
+                  <button className="secondary" onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')}>Sign</button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
         
@@ -1122,9 +1110,181 @@ export default function MatchSetup({ onStart }) {
         </div>
       </div>
 
-      <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center' }}>
+        <button className="secondary" onClick={() => setShowBothRosters(!showBothRosters)}>
+          {showBothRosters ? 'Hide' : 'Show'} Rosters
+        </button>
         <button onClick={createMatch}>Start Match</button>
       </div>
+
+      {showBothRosters && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
+          <div className="panel">
+            <h3>Home Team Roster</h3>
+            {(() => {
+              const { players, liberos, bench } = formatRoster(homeRoster, benchHome)
+              return (
+                <>
+                  {players.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Players</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {players.map((p, i) => (
+                          <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            {p.libero && (
+                              <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+                              </span>
+                            )}
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {liberos.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Liberos</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {liberos.map((p, i) => (
+                          <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                              {p.libero === 'libero1' ? 'L1' : 'L2'}
+                            </span>
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {bench.length > 0 && (
+                    <div>
+                      <strong>Bench</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {bench.map((m, i) => (
+                          <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+          <div className="panel">
+            <h3>Away Team Roster</h3>
+            {(() => {
+              const { players, liberos, bench } = formatRoster(awayRoster, benchAway)
+              return (
+                <>
+                  {players.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Players</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {players.map((p, i) => (
+                          <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            {p.libero && (
+                              <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+                              </span>
+                            )}
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {liberos.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Liberos</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {liberos.map((p, i) => (
+                          <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            {p.isCaptain ? (
+                              <span style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                border: '2px solid var(--text)',
+                                fontSize: 12,
+                                fontWeight: 600
+                              }}>#{p.number ?? ''}</span>
+                            ) : (
+                              <span>#{p.number ?? ''}</span>
+                            )}
+                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                              {p.libero === 'libero1' ? 'L1' : 'L2'}
+                            </span>
+                            <span>{p.lastName} {p.firstName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {bench.length > 0 && (
+                    <div>
+                      <strong>Bench</strong>
+                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+                        {bench.map((m, i) => (
+                          <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+        </div>
+      )}
 
       <SignaturePad 
         open={openSignature !== null} 
