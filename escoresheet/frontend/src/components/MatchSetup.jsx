@@ -783,7 +783,7 @@ export default function MatchSetup({ onStart }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.05)',
+        background: 'rgba(20, 24, 39)',
         flexShrink: 0
       }}>
         <div style={{ 
@@ -806,13 +806,13 @@ export default function MatchSetup({ onStart }) {
           {/* Team A */}
           <div>
             <h3>Team A</h3>
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, height: '48px' }}>
               <button 
                 type="button"
                 style={{ 
                   background: teamAInfo.color, 
                   color: isBrightColor(teamAInfo.color) ? '#000' : '#fff', 
-                  width: '100%',
+                  flex: 1,
                   padding: '12px',
                   fontSize: '14px',
                   fontWeight: 600,
@@ -824,7 +824,7 @@ export default function MatchSetup({ onStart }) {
               </button>
             </div>
             
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', height: '64px', alignItems: 'center' }}>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', height: '64px', alignItems: 'center', gap: 12 }}>
               {serveA ? volleyballImage : volleyballPlaceholder}
             </div>
             
@@ -947,10 +947,12 @@ export default function MatchSetup({ onStart }) {
           </div>
           
           {/* Middle buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, justifyContent: 'center', alignItems: 'center', alignSelf: 'stretch' }}>
-            <button className="secondary" onClick={switchTeams} style={{ padding: '8px 16px' }}>
-              Switch Teams
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', alignSelf: 'stretch' }}>
+            <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '30px' }}>
+              <button className="secondary" onClick={switchTeams} style={{ padding: '8px 16px' }}>
+                Switch Teams
+              </button>
+            </div>
             <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <button className="secondary" onClick={switchServe} style={{ padding: '8px 16px' }}>
                 Switch Serve
@@ -961,13 +963,13 @@ export default function MatchSetup({ onStart }) {
           {/* Team B */}
           <div>
             <h3>Team B</h3>
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, height: '48px' }}>
               <button 
                 type="button"
                 style={{ 
                   background: teamBInfo.color, 
                   color: isBrightColor(teamBInfo.color) ? '#000' : '#fff', 
-                  width: '100%',
+                  flex: 1,
                   padding: '12px',
                   fontSize: '14px',
                   fontWeight: 600,
@@ -979,7 +981,7 @@ export default function MatchSetup({ onStart }) {
               </button>
             </div>
             
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', height: '64px', alignItems: 'center' }}>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', height: '64px', alignItems: 'center', gap: 12 }}>
               {serveB ? volleyballImage : volleyballPlaceholder}
             </div>
             
