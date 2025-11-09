@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
+import mikasaVolleyball from '../mikasa_v200w.png'
 
 export default function MatchSetup({ onStart }) {
   const [home, setHome] = useState('Home')
@@ -741,31 +742,23 @@ export default function MatchSetup({ onStart }) {
     // Volleyball images
     const volleyballImage = (
       <img 
-        src="https://mikasa-sports.com/wp-content/uploads/2020/06/V200W-1.png" 
+        src={mikasaVolleyball} 
         alt="Mikasa V200W Volleyball" 
         style={{ width: '64px', height: '64px', objectFit: 'contain' }}
-        onError={(e) => {
-          // Fallback to a generic volleyball image if the Mikasa image fails to load
-          e.target.src = 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=200&h=200&fit=crop'
-        }}
       />
     )
     const volleyballPlaceholder = (
       <div style={{ 
         width: '64px', 
         height: '64px', 
-        border: '2px dashed rgba(255,255,255,0.3)',
-        borderRadius: '50%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(255,255,255,0.05)'
+        background: 'rgba(0, 0, 0, 0.05)'
       }}>
         <div style={{ 
           width: '32px', 
           height: '32px', 
-          border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: '50%',
           background: 'transparent'
         }} />
       </div>
@@ -1110,7 +1103,7 @@ export default function MatchSetup({ onStart }) {
         <div className="card" style={{ order: 2 }}>
           <div>
             <h3>Match officials</h3>
-            <p className="text-sm">Edit referees and table crew</p>
+            <p className="text-sm">Edit referees and scorers</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button></div>
         </div>
