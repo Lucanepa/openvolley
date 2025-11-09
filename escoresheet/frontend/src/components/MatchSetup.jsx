@@ -584,9 +584,26 @@ export default function MatchSetup({ onStart }) {
               <button key={c} type="button" className="secondary" onClick={()=>setHomeColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: homeColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
             ))}
           </div>
-          <label className="inline" style={{ marginLeft: 12 }}>
-            <input type="checkbox" checked={homeHasAds} onChange={e=>setHomeHasAds(e.target.checked)} />
-            <span style={{ marginLeft: 6 }}>Ads</span>
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          <label className="inline" style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 8, 
+            padding: '8px 12px',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '8px',
+            background: homeHasAds ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+            cursor: 'pointer',
+            width: 'fit-content'
+          }}>
+            <input 
+              type="checkbox" 
+              checked={homeHasAds} 
+              onChange={e=>setHomeHasAds(e.target.checked)}
+              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+            />
+            <span style={{ fontWeight: 500 }}>Ads</span>
           </label>
         </div>
         {isHomeLocked && (
@@ -662,9 +679,26 @@ export default function MatchSetup({ onStart }) {
               <button key={c} type="button" className="secondary" onClick={()=>setAwayColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: awayColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
             ))}
           </div>
-          <label className="inline" style={{ marginLeft: 12 }}>
-            <input type="checkbox" checked={awayHasAds} onChange={e=>setAwayHasAds(e.target.checked)} />
-            <span style={{ marginLeft: 6 }}>Ads</span>
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          <label className="inline" style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 8, 
+            padding: '8px 12px',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '8px',
+            background: awayHasAds ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+            cursor: 'pointer',
+            width: 'fit-content'
+          }}>
+            <input 
+              type="checkbox" 
+              checked={awayHasAds} 
+              onChange={e=>setAwayHasAds(e.target.checked)}
+              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+            />
+            <span style={{ fontWeight: 500 }}>Ads</span>
           </label>
         </div>
         {isAwayLocked && (
