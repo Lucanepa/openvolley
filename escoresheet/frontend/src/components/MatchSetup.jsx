@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 
@@ -70,6 +70,7 @@ export default function MatchSetup({ onStart }) {
   const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'officials', 'home', 'away'
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
+  const [savedStatus, setSavedStatus] = useState({ info: false, officials: false, home: false, away: false })
 
   // Cities in Kanton Zürich
   const citiesZurich = [
@@ -111,6 +112,149 @@ export default function MatchSetup({ onStart }) {
       alert('Wrong password')
     }
   }
+
+  // Load saved draft data on mount
+  useEffect(() => {
+    async function loadDraft() {
+      try {
+        const draft = await db.match_setup.orderBy('updatedAt').last()
+        if (draft) {
+          if (draft.home !== undefined) setHome(draft.home)
+          if (draft.away !== undefined) setAway(draft.away)
+          if (draft.date !== undefined) setDate(draft.date)
+          if (draft.time !== undefined) setTime(draft.time)
+          if (draft.hall !== undefined) setHall(draft.hall)
+          if (draft.city !== undefined) setCity(draft.city)
+          if (draft.type1 !== undefined) setType1(draft.type1)
+          if (draft.type2 !== undefined) setType2(draft.type2)
+          if (draft.type3 !== undefined) setType3(draft.type3)
+          if (draft.gameN !== undefined) setGameN(draft.gameN)
+          if (draft.league !== undefined) setLeague(draft.league)
+          if (draft.homeColor !== undefined) setHomeColor(draft.homeColor)
+          if (draft.awayColor !== undefined) setAwayColor(draft.awayColor)
+          if (draft.homeRoster !== undefined) setHomeRoster(draft.homeRoster)
+          if (draft.awayRoster !== undefined) setAwayRoster(draft.awayRoster)
+          if (draft.benchHome !== undefined) setBenchHome(draft.benchHome)
+          if (draft.benchAway !== undefined) setBenchAway(draft.benchAway)
+          if (draft.ref1First !== undefined) setRef1First(draft.ref1First)
+          if (draft.ref1Last !== undefined) setRef1Last(draft.ref1Last)
+          if (draft.ref1Country !== undefined) setRef1Country(draft.ref1Country)
+          if (draft.ref1Dob !== undefined) setRef1Dob(draft.ref1Dob)
+          if (draft.ref2First !== undefined) setRef2First(draft.ref2First)
+          if (draft.ref2Last !== undefined) setRef2Last(draft.ref2Last)
+          if (draft.ref2Country !== undefined) setRef2Country(draft.ref2Country)
+          if (draft.ref2Dob !== undefined) setRef2Dob(draft.ref2Dob)
+          if (draft.scorerFirst !== undefined) setScorerFirst(draft.scorerFirst)
+          if (draft.scorerLast !== undefined) setScorerLast(draft.scorerLast)
+          if (draft.scorerCountry !== undefined) setScorerCountry(draft.scorerCountry)
+          if (draft.scorerDob !== undefined) setScorerDob(draft.scorerDob)
+          if (draft.asstFirst !== undefined) setAsstFirst(draft.asstFirst)
+          if (draft.asstLast !== undefined) setAsstLast(draft.asstLast)
+          if (draft.asstCountry !== undefined) setAsstCountry(draft.asstCountry)
+          if (draft.asstDob !== undefined) setAsstDob(draft.asstDob)
+          if (draft.homeCoachSignature !== undefined) setHomeCoachSignature(draft.homeCoachSignature)
+          if (draft.homeCaptainSignature !== undefined) setHomeCaptainSignature(draft.homeCaptainSignature)
+          if (draft.awayCoachSignature !== undefined) setAwayCoachSignature(draft.awayCoachSignature)
+          if (draft.awayCaptainSignature !== undefined) setAwayCaptainSignature(draft.awayCaptainSignature)
+        }
+      } catch (error) {
+        console.error('Error loading draft:', error)
+      }
+    }
+    loadDraft()
+  }, [])
+
+  // Save draft data to database
+  async function saveDraft() {
+    try {
+      const draft = {
+        home,
+        away,
+        date,
+        time,
+        hall,
+        city,
+        type1,
+        type2,
+        type3,
+        gameN,
+        league,
+        homeColor,
+        awayColor,
+        homeRoster,
+        awayRoster,
+        benchHome,
+        benchAway,
+        ref1First,
+        ref1Last,
+        ref1Country,
+        ref1Dob,
+        ref2First,
+        ref2Last,
+        ref2Country,
+        ref2Dob,
+        scorerFirst,
+        scorerLast,
+        scorerCountry,
+        scorerDob,
+        asstFirst,
+        asstLast,
+        asstCountry,
+        asstDob,
+        homeCoachSignature,
+        homeCaptainSignature,
+        awayCoachSignature,
+        awayCaptainSignature,
+        updatedAt: new Date().toISOString()
+      }
+      // Get existing draft or create new one
+      const existing = await db.match_setup.orderBy('updatedAt').last()
+      if (existing) {
+        await db.match_setup.update(existing.id, draft)
+      } else {
+        await db.match_setup.add(draft)
+      }
+      return true
+    } catch (error) {
+      console.error('Error saving draft:', error)
+      alert('Error saving data')
+      return false
+    }
+  }
+
+  // Save functions for each page
+  async function saveInfo() {
+    const success = await saveDraft()
+    if (success) {
+      setSavedStatus(prev => ({ ...prev, info: true }))
+    }
+  }
+
+  async function saveOfficials() {
+    const success = await saveDraft()
+    if (success) {
+      setSavedStatus(prev => ({ ...prev, officials: true }))
+    }
+  }
+
+  async function saveHome() {
+    const success = await saveDraft()
+    if (success) {
+      setSavedStatus(prev => ({ ...prev, home: true }))
+    }
+  }
+
+  async function saveAway() {
+    const success = await saveDraft()
+    if (success) {
+      setSavedStatus(prev => ({ ...prev, away: true }))
+    }
+  }
+
+  // Reset saved status when data changes
+  useEffect(() => {
+    setSavedStatus({ info: false, officials: false, home: false, away: false })
+  }, [date, time, hall, city, type1, type2, type3, gameN, league, home, away, homeColor, awayColor, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature])
 
   // Date formatting helpers
   function formatDateToDDMMYYYY(dateStr) {
@@ -269,7 +413,7 @@ export default function MatchSetup({ onStart }) {
           <div style={{ width: 80 }}></div>
         </div>
         <div className="row">
-          <div className="field"><label>Date</label><input className="w-80" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
+          <div className="field"><label>Date</label><input className="w-dob" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
           <div className="field"><label>Time</label><input className="w-80" type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
           <div className="field">
             <label>City</label>
@@ -314,6 +458,11 @@ export default function MatchSetup({ onStart }) {
         <div className="row" style={{ marginTop:12 }}>
           <div className="field"><label>Game #</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
           <div className="field"><label>League</label><input className="w-100 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+          <button disabled={savedStatus.info} onClick={saveInfo}>
+            {savedStatus.info ? 'Data saved' : 'Save'}
+          </button>
         </div>
       </div>
     )
@@ -367,6 +516,11 @@ export default function MatchSetup({ onStart }) {
               <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
             </div>
           </div>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+          <button disabled={savedStatus.officials} onClick={saveOfficials}>
+            {savedStatus.officials ? 'Data saved' : 'Save'}
+          </button>
         </div>
       </div>
     )
@@ -545,6 +699,11 @@ export default function MatchSetup({ onStart }) {
               <button className="secondary" onClick={() => setOpenSignature('home-captain')}>Sign</button>
             )}
           </div>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+          <button disabled={savedStatus.home} onClick={saveHome}>
+            {savedStatus.home ? 'Data saved' : 'Save'}
+          </button>
         </div>
         <SignaturePad 
           open={openSignature !== null && (openSignature === 'home-coach' || openSignature === 'home-captain')} 
@@ -730,6 +889,11 @@ export default function MatchSetup({ onStart }) {
               <button className="secondary" onClick={() => setOpenSignature('away-captain')}>Sign</button>
             )}
           </div>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+          <button disabled={savedStatus.away} onClick={saveAway}>
+            {savedStatus.away ? 'Data saved' : 'Save'}
+          </button>
         </div>
         <SignaturePad 
           open={openSignature !== null && (openSignature === 'away-coach' || openSignature === 'away-captain')} 

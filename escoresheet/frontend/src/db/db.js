@@ -29,4 +29,15 @@ db.version(2).stores({
   })
 })
 
+// Version 3: Add match_setup table for storing draft data
+db.version(3).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt' // Single record to store current draft
+})
+
 
