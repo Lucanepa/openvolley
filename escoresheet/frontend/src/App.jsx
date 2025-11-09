@@ -1,12 +1,35 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { db } from './db/db'
 import MatchSetup from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
 import { useSyncQueue } from './hooks/useSyncQueue'
+import mikasaVolleyball from './mikasa_v200w.png'
 
 export default function App() {
   const [matchId, setMatchId] = useState(null)
   useSyncQueue()
+
+  // Preload volleyball image when app loads
+  useEffect(() => {
+    // Preload the image
+    const img = new Image()
+    img.src = mikasaVolleyball
+    
+    // Also add a preload link to the document head for early loading
+    const link = document.createElement('link')
+    link.rel = 'preload'
+    link.as = 'image'
+    link.href = mikasaVolleyball
+    document.head.appendChild(link)
+    
+    return () => {
+      // Cleanup: remove preload link if component unmounts
+      const existingLink = document.querySelector(`link[href="${mikasaVolleyball}"]`)
+      if (existingLink) {
+        document.head.removeChild(existingLink)
+      }
+    }
+  }, [])
 
   async function finishSet(cur) {
     await db.sets.update(cur.id, { finished: true })
