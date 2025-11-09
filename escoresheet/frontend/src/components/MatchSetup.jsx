@@ -70,7 +70,6 @@ export default function MatchSetup({ onStart }) {
   const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'officials', 'home', 'away', 'coin-toss'
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
-  const [savedStatus, setSavedStatus] = useState({ info: false, officials: false, home: false, away: false })
   
   // Coin toss state
   const [teamA, setTeamA] = useState('home') // 'home' or 'away'
@@ -175,7 +174,7 @@ export default function MatchSetup({ onStart }) {
   }, [])
 
   // Save draft data to database
-  async function saveDraft() {
+  async function saveDraft(silent = false) {
     try {
       const draft = {
         home,
@@ -227,44 +226,23 @@ export default function MatchSetup({ onStart }) {
       return true
     } catch (error) {
       console.error('Error saving draft:', error)
-      alert('Error saving data')
+      if (!silent) {
+        alert('Error saving data')
+      }
       return false
     }
   }
 
-  // Save functions for each page
-  async function saveInfo() {
-    const success = await saveDraft()
-    if (success) {
-      setSavedStatus(prev => ({ ...prev, info: true }))
-    }
-  }
-
-  async function saveOfficials() {
-    const success = await saveDraft()
-    if (success) {
-      setSavedStatus(prev => ({ ...prev, officials: true }))
-    }
-  }
-
-  async function saveHome() {
-    const success = await saveDraft()
-    if (success) {
-      setSavedStatus(prev => ({ ...prev, home: true }))
-    }
-  }
-
-  async function saveAway() {
-    const success = await saveDraft()
-    if (success) {
-      setSavedStatus(prev => ({ ...prev, away: true }))
-    }
-  }
-
-  // Reset saved status when data changes
+  // Auto-save when data changes (debounced)
   useEffect(() => {
-    setSavedStatus({ info: false, officials: false, home: false, away: false })
-  }, [date, time, hall, city, type1, type2, type3, gameN, league, home, away, homeColor, awayColor, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature])
+    if (currentView === 'info' || currentView === 'officials' || currentView === 'home' || currentView === 'away') {
+      const timeoutId = setTimeout(() => {
+        saveDraft(true) // Silent auto-save
+      }, 500) // Debounce 500ms
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [date, time, hall, city, type1, type2, type3, gameN, league, home, away, homeColor, awayColor, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
 
   // Date formatting helpers
   function formatDateToDDMMYYYY(dateStr) {
@@ -503,9 +481,7 @@ export default function MatchSetup({ onStart }) {
           <div className="field"><label>League</label><input className="w-100 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button disabled={savedStatus.info} onClick={saveInfo}>
-            {savedStatus.info ? 'Data saved' : 'Save'}
-          </button>
+          <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
       </div>
     )
@@ -561,9 +537,7 @@ export default function MatchSetup({ onStart }) {
           </div>
         </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button disabled={savedStatus.officials} onClick={saveOfficials}>
-            {savedStatus.officials ? 'Data saved' : 'Save'}
-          </button>
+          <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
       </div>
     )
@@ -656,9 +630,7 @@ export default function MatchSetup({ onStart }) {
           </div>
         ))}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button disabled={savedStatus.home} onClick={saveHome}>
-            {savedStatus.home ? 'Data saved' : 'Save'}
-          </button>
+          <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
       </div>
     )
@@ -751,9 +723,7 @@ export default function MatchSetup({ onStart }) {
           </div>
         ))}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button disabled={savedStatus.away} onClick={saveAway}>
-            {savedStatus.away ? 'Data saved' : 'Save'}
-          </button>
+          <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
       </div>
     )
@@ -768,13 +738,37 @@ export default function MatchSetup({ onStart }) {
     const teamBCoachSig = teamB === 'home' ? homeCoachSignature : awayCoachSignature
     const teamBCaptainSig = teamB === 'home' ? homeCaptainSignature : awayCaptainSignature
 
-    // Volleyball SVG
-    const volleyballIcon = (
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/>
-        <path d="M12 2 L12 22 M2 12 L22 12 M6.34 6.34 L17.66 17.66 M17.66 6.34 L6.34 17.66" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-        <path d="M8.49 4.24 L15.51 19.76 M15.51 4.24 L8.49 19.76" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-      </svg>
+    // Volleyball images
+    const volleyballImage = (
+      <img 
+        src="https://mikasa-sports.com/wp-content/uploads/2020/06/V200W-1.png" 
+        alt="Mikasa V200W Volleyball" 
+        style={{ width: '64px', height: '64px', objectFit: 'contain' }}
+        onError={(e) => {
+          // Fallback to a generic volleyball image if the Mikasa image fails to load
+          e.target.src = 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=200&h=200&fit=crop'
+        }}
+      />
+    )
+    const volleyballPlaceholder = (
+      <div style={{ 
+        width: '64px', 
+        height: '64px', 
+        border: '2px dashed rgba(255,255,255,0.3)',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(255,255,255,0.05)'
+      }}>
+        <div style={{ 
+          width: '32px', 
+          height: '32px', 
+          border: '1px solid rgba(255,255,255,0.2)',
+          borderRadius: '50%',
+          background: 'transparent'
+        }} />
+      </div>
     )
 
     return (
@@ -807,8 +801,8 @@ export default function MatchSetup({ onStart }) {
               </button>
             </div>
             
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
-              {serveA && volleyballIcon}
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', minHeight: '64px', alignItems: 'center' }}>
+              {serveA ? volleyballImage : volleyballPlaceholder}
             </div>
             
             <div style={{ marginBottom: 16 }}>
@@ -960,8 +954,8 @@ export default function MatchSetup({ onStart }) {
               </button>
             </div>
             
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
-              {serveB && volleyballIcon}
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', minHeight: '64px', alignItems: 'center' }}>
+              {serveB ? volleyballImage : volleyballPlaceholder}
             </div>
             
             <div style={{ marginBottom: 16 }}>
