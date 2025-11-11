@@ -40,4 +40,15 @@ db.version(3).stores({
   match_setup: '++id,updatedAt' // Single record to store current draft
 })
 
+// Version 4: Add externalId index to matches
+db.version(4).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt'
+})
+
 

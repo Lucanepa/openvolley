@@ -1,40 +1,280 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
 
+// Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error'
 export function useSyncQueue() {
   const busy = useRef(false)
+  const [syncStatus, setSyncStatus] = useState('offline')
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  )
 
-  const flush = useCallback(async () => {
-    if (busy.current) return
-    if (!supabase) return // offline-only mode or no env
-    busy.current = true
+  // Check Supabase connection
+  const checkSupabaseConnection = useCallback(async () => {
+    if (!supabase) {
+      setSyncStatus('online_no_supabase')
+      return false
+    }
+
     try {
-      const queued = await db.sync_queue.where('status').equals('queued').toArray()
-      for (const job of queued) {
-        if (job.resource === 'event' && job.action === 'insert') {
-          const { error } = await supabase.from('events').insert(job.payload)
-          if (error) {
-            await db.sync_queue.update(job.id, { status: 'error' })
-          } else {
-            await db.sync_queue.update(job.id, { status: 'sent' })
-          }
+      setSyncStatus('connecting')
+      // Try a simple query to check connection
+      // Use a table that should exist, or just check auth status
+      const { error } = await supabase.from('events').select('id').limit(1)
+      if (error) {
+        // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
+        if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
+          // Table doesn't exist - this is expected if tables aren't set up yet
+          console.warn('Supabase table "events" does not exist. Please run the SQL scripts from SUPABASE_SETUP.md')
+          setSyncStatus('online_no_supabase')
+          return false
         }
-        // extend with other resources as needed
+        // Check if using secret key instead of anon key
+        if (error.message?.includes('secret API key') || error.message?.includes('Forbidden use of secret')) {
+          console.error('❌ SECURITY ERROR: You are using the SECRET API key instead of the ANON key!')
+          console.error('Please use the "anon/public" key from Supabase Settings → API, NOT the "service_role" key!')
+          setSyncStatus('error')
+          return false
+        }
+        // Check for 401 Unauthorized (RLS or auth issues)
+        if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+          console.error('Supabase authentication error (401). Check:')
+          console.error('1. Are you using the correct anon/public key?')
+          console.error('2. Are Row Level Security (RLS) policies set up correctly?')
+          console.error('3. See SUPABASE_SETUP.md for RLS policy setup')
+          setSyncStatus('error')
+          return false
+        }
+        console.error('Supabase connection error:', error)
+        setSyncStatus('error')
+        return false
       }
-    } finally {
-      busy.current = false
+      return true
+    } catch (err) {
+      console.error('Supabase connection exception:', err)
+      // Network errors might mean we're actually offline
+      if (err.message?.includes('fetch') || err.message?.includes('network')) {
+        setSyncStatus('offline')
+        return false
+      }
+      setSyncStatus('error')
+      return false
     }
   }, [])
 
-  useEffect(() => {
-    const onOnline = () => flush()
-    window.addEventListener('online', onOnline)
-    flush()
-    return () => window.removeEventListener('online', onOnline)
-  }, [flush])
+  const flush = useCallback(async () => {
+    if (busy.current) return
+    if (!supabase) {
+      setSyncStatus('online_no_supabase')
+      return
+    }
+    
+    const connected = await checkSupabaseConnection()
+    if (!connected) return
 
-  return { flush }
+    busy.current = true
+    setSyncStatus('syncing')
+    
+    try {
+      const queued = await db.sync_queue.where('status').equals('queued').toArray()
+      
+      if (queued.length === 0) {
+        setSyncStatus('synced')
+        busy.current = false
+        return
+      }
+
+      let hasError = false
+      for (const job of queued) {
+        try {
+          if (job.resource === 'event' && job.action === 'insert') {
+            const { error } = await supabase.from('events').insert(job.payload)
+            if (error) {
+              console.error('Error syncing event:', error)
+              await db.sync_queue.update(job.id, { status: 'error' })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          } else if (job.resource === 'match' && job.action === 'insert') {
+            // Resolve home_team_id and away_team_id from external_id if they're strings
+            let matchPayload = { ...job.payload }
+            if (matchPayload.home_team_id && typeof matchPayload.home_team_id === 'string') {
+              const { data: homeTeamData } = await supabase
+                .from('teams')
+                .select('id')
+                .eq('external_id', matchPayload.home_team_id)
+                .single()
+              matchPayload.home_team_id = homeTeamData?.id || null
+            }
+            if (matchPayload.away_team_id && typeof matchPayload.away_team_id === 'string') {
+              const { data: awayTeamData } = await supabase
+                .from('teams')
+                .select('id')
+                .eq('external_id', matchPayload.away_team_id)
+                .single()
+              matchPayload.away_team_id = awayTeamData?.id || null
+            }
+            
+            const { error } = await supabase.from('matches').insert(matchPayload)
+            if (error) {
+              console.error('Error syncing match:', error)
+              await db.sync_queue.update(job.id, { status: 'error' })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          } else if (job.resource === 'team' && job.action === 'insert') {
+            const { error } = await supabase.from('teams').insert(job.payload)
+            if (error) {
+              console.error('Error syncing team:', error)
+              await db.sync_queue.update(job.id, { status: 'error' })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          } else if (job.resource === 'player' && job.action === 'insert') {
+            // Resolve team_id from external_id if it's a string (local Dexie ID)
+            let playerPayload = { ...job.payload }
+            if (playerPayload.team_id && typeof playerPayload.team_id === 'string') {
+              // Look up the Supabase team ID using external_id
+              const { data: teamData, error: teamError } = await supabase
+                .from('teams')
+                .select('id')
+                .eq('external_id', playerPayload.team_id)
+                .single()
+              
+              if (teamError || !teamData) {
+                console.error('Error finding team for player:', teamError)
+                // If team not found, set team_id to null (or skip this player)
+                playerPayload.team_id = null
+              } else {
+                playerPayload.team_id = teamData.id
+              }
+            }
+            
+            const { error } = await supabase.from('players').insert(playerPayload)
+            if (error) {
+              console.error('Error syncing player:', error)
+              await db.sync_queue.update(job.id, { status: 'error' })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          } else if (job.resource === 'set' && job.action === 'insert') {
+            // Resolve match_id from external_id if it's a string
+            let setPayload = { ...job.payload }
+            if (setPayload.match_id && typeof setPayload.match_id === 'string') {
+              const { data: matchData } = await supabase
+                .from('matches')
+                .select('id')
+                .eq('external_id', setPayload.match_id)
+                .single()
+              setPayload.match_id = matchData?.id || null
+            }
+            
+            const { error } = await supabase.from('sets').insert(setPayload)
+            if (error) {
+              console.error('Error syncing set:', error)
+              await db.sync_queue.update(job.id, { status: 'error' })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          } else if (job.resource === 'match' && job.action === 'update') {
+            const { id, ...updateData } = job.payload
+            const { error } = await supabase.from('matches').update(updateData).eq('external_id', id)
+            if (error) {
+              console.error('Error updating match:', error)
+              await db.sync_queue.update(job.id, { status: 'error' })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          }
+        } catch (err) {
+          console.error('Error processing sync job:', err)
+          await db.sync_queue.update(job.id, { status: 'error' })
+          hasError = true
+        }
+      }
+      
+      if (hasError) {
+        setSyncStatus('error')
+      } else {
+        setSyncStatus('synced')
+      }
+    } catch (err) {
+      setSyncStatus('error')
+    } finally {
+      busy.current = false
+    }
+  }, [checkSupabaseConnection])
+
+  // Monitor online/offline status
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleOnline = () => {
+      setIsOnline(true)
+      // Check connection when coming online
+      setTimeout(() => {
+        if (supabase) {
+          checkSupabaseConnection().then(connected => {
+            if (connected) {
+              flush()
+            }
+          })
+        } else {
+          setSyncStatus('online_no_supabase')
+        }
+      }, 500)
+    }
+    
+    const handleOffline = () => {
+      setIsOnline(false)
+      setSyncStatus('offline')
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    // Initial check
+    if (isOnline) {
+      if (supabase) {
+        checkSupabaseConnection().then(connected => {
+          if (connected) {
+            flush()
+          }
+        })
+      } else {
+        setSyncStatus('online_no_supabase')
+      }
+    } else {
+      setSyncStatus('offline')
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [isOnline, checkSupabaseConnection, flush])
+
+  // Periodically check sync status when online and connected
+  useEffect(() => {
+    if (!isOnline || syncStatus === 'offline' || syncStatus === 'online_no_supabase') return
+
+    const interval = setInterval(() => {
+      if (!busy.current) {
+        flush()
+      }
+    }, 10000) // Check every 10 seconds
+
+    return () => clearInterval(interval)
+  }, [isOnline, syncStatus, flush])
+
+  return { flush, syncStatus, isOnline }
 }
 
 

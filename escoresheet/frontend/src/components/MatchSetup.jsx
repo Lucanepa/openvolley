@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
+import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
-export default function MatchSetup({ onStart }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showCoinToss = false, onCoinTossClose }) {
   const [home, setHome] = useState('Home')
   const [away, setAway] = useState('Away')
 
@@ -59,6 +61,29 @@ export default function MatchSetup({ onStart }) {
   const [asstDob, setAsstDob] = useState('')
 
   // Bench
+  const BENCH_ROLES = [
+    { value: 'Coach', label: 'C', fullLabel: 'Coach' },
+    { value: 'Assistant Coach 1', label: 'AC1', fullLabel: 'Assistant Coach 1' },
+    { value: 'Assistant Coach 2', label: 'AC2', fullLabel: 'Assistant Coach 2' },
+    { value: 'Physiotherapist', label: 'P', fullLabel: 'Physiotherapist' },
+    { value: 'Medic', label: 'M', fullLabel: 'Medic' }
+  ]
+  
+  const getRoleOrder = (role) => {
+    const roleMap = {
+      'Coach': 0,
+      'Assistant Coach 1': 1,
+      'Assistant Coach 2': 2,
+      'Physiotherapist': 3,
+      'Medic': 4
+    }
+    return roleMap[role] ?? 999
+  }
+  
+  const sortBenchByHierarchy = (bench) => {
+    return [...bench].sort((a, b) => getRoleOrder(a.role) - getRoleOrder(b.role))
+  }
+  
   const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
   const [benchHome, setBenchHome] = useState([
     initBench('Coach'), initBench('Assistant Coach 1'), initBench('Assistant Coach 2'), initBench('Medic'), initBench('Physiotherapist')
@@ -81,6 +106,11 @@ export default function MatchSetup({ onStart }) {
   const [showBothRosters, setShowBothRosters] = useState(false) // Show both rosters in match setup
   const [homeHasAds, setHomeHasAds] = useState(false) // Has ads on uniform
   const [awayHasAds, setAwayHasAds] = useState(false) // Has ads on uniform
+  
+  // Coin toss modals
+  const [addPlayerModal, setAddPlayerModal] = useState(null) // 'teamA' | 'teamB' | null
+  const [deletePlayerModal, setDeletePlayerModal] = useState(null) // { team: 'teamA'|'teamB', index: number } | null
+  const [showCoinTossRoster, setShowCoinTossRoster] = useState(false) // Show/hide roster in coin toss
 
   // Cities in Kanton Zürich
   const citiesZurich = [
@@ -110,8 +140,18 @@ export default function MatchSetup({ onStart }) {
   const [homeCaptainSignature, setHomeCaptainSignature] = useState(null)
   const [awayCoachSignature, setAwayCoachSignature] = useState(null)
   const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
+  const [savedSignatures, setSavedSignatures] = useState({ homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null })
   const isHomeLocked = homeCoachSignature && homeCaptainSignature
   const isAwayLocked = awayCoachSignature && awayCaptainSignature
+  
+  // Check if coin toss was previously confirmed (all signatures match saved ones)
+  const isCoinTossConfirmed = useMemo(() => {
+    return homeCoachSignature && homeCaptainSignature && awayCoachSignature && awayCaptainSignature &&
+           homeCoachSignature === savedSignatures.homeCoach &&
+           homeCaptainSignature === savedSignatures.homeCaptain &&
+           awayCoachSignature === savedSignatures.awayCoach &&
+           awayCaptainSignature === savedSignatures.awayCaptain
+  }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
 
   function unlockTeam(side) {
     const pass = typeof window !== 'undefined' ? window.prompt('Enter 1st Referee password to unlock:') : ''
@@ -123,8 +163,174 @@ export default function MatchSetup({ onStart }) {
     }
   }
 
-  // Load saved draft data on mount
+  // Load match data if matchId is provided
+  const match = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return await db.matches.get(matchId)
+    } catch (error) {
+      console.error('Unable to load match', error)
+      return null
+    }
+  }, [matchId])
+
+  const isMatchOngoing = match?.status === 'live'
+
+  // Load match data if matchId is provided
   useEffect(() => {
+    if (!matchId || !match) return
+    
+    async function loadMatchData() {
+      try {
+        // Load teams
+        const [homeTeam, awayTeam] = await Promise.all([
+          match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+          match.awayTeamId ? db.teams.get(match.awayTeamId) : null
+        ])
+        
+        if (homeTeam) {
+          setHome(homeTeam.name)
+          setHomeColor(homeTeam.color || '#ef4444')
+        }
+        if (awayTeam) {
+          setAway(awayTeam.name)
+          setAwayColor(awayTeam.color || '#3b82f6')
+        }
+        
+        // Load match info
+        if (match.scheduledAt) {
+          const scheduledDate = new Date(match.scheduledAt)
+          setDate(scheduledDate.toISOString().split('T')[0])
+          const hours = String(scheduledDate.getHours()).padStart(2, '0')
+          const minutes = String(scheduledDate.getMinutes()).padStart(2, '0')
+          setTime(`${hours}:${minutes}`)
+        }
+        if (match.hall) setHall(match.hall)
+        if (match.city) setCity(match.city)
+        if (match.league) setLeague(match.league)
+        if (match.match_type_1) setType1(match.match_type_1)
+        if (match.match_type_2) setType2(match.match_type_2)
+        if (match.match_type_3) setType3(match.match_type_3)
+        if (match.game_n) setGameN(String(match.game_n))
+        
+        // Load players
+        if (match.homeTeamId) {
+          const homePlayers = await db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
+          setHomeRoster(homePlayers.map(p => ({
+            number: p.number,
+            firstName: p.firstName || '',
+            lastName: p.lastName || p.name || '',
+            dob: p.dob || '',
+            libero: p.libero || '',
+            isCaptain: p.isCaptain || false
+          })))
+        }
+        if (match.awayTeamId) {
+          const awayPlayers = await db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
+          setAwayRoster(awayPlayers.map(p => ({
+            number: p.number,
+            firstName: p.firstName || '',
+            lastName: p.lastName || p.name || '',
+            dob: p.dob || '',
+            libero: p.libero || '',
+            isCaptain: p.isCaptain || false
+          })))
+        }
+        
+        // Load bench officials
+        if (match.bench_home) setBenchHome(match.bench_home)
+        if (match.bench_away) setBenchAway(match.bench_away)
+        
+        // Load match officials
+        if (match.officials && match.officials.length > 0) {
+          const ref1 = match.officials.find(o => o.role === '1st referee')
+          if (ref1) {
+            setRef1First(ref1.firstName || '')
+            setRef1Last(ref1.lastName || '')
+            setRef1Country(ref1.country || 'CH')
+            setRef1Dob(ref1.dob || '')
+          }
+          const ref2 = match.officials.find(o => o.role === '2nd referee')
+          if (ref2) {
+            setRef2First(ref2.firstName || '')
+            setRef2Last(ref2.lastName || '')
+            setRef2Country(ref2.country || 'CH')
+            setRef2Dob(ref2.dob || '')
+          }
+          const scorer = match.officials.find(o => o.role === 'scorer')
+          if (scorer) {
+            setScorerFirst(scorer.firstName || '')
+            setScorerLast(scorer.lastName || '')
+            setScorerCountry(scorer.country || 'CH')
+            setScorerDob(scorer.dob || '')
+          }
+          const asst = match.officials.find(o => o.role === 'assistant scorer')
+          if (asst) {
+            setAsstFirst(asst.firstName || '')
+            setAsstLast(asst.lastName || '')
+            setAsstCountry(asst.country || 'CH')
+            setAsstDob(asst.dob || '')
+          }
+        }
+        
+        // Load signatures
+        if (match.homeCoachSignature) {
+          setHomeCoachSignature(match.homeCoachSignature)
+          setSavedSignatures(prev => ({ ...prev, homeCoach: match.homeCoachSignature }))
+        }
+        if (match.homeCaptainSignature) {
+          setHomeCaptainSignature(match.homeCaptainSignature)
+          setSavedSignatures(prev => ({ ...prev, homeCaptain: match.homeCaptainSignature }))
+        }
+        if (match.awayCoachSignature) {
+          setAwayCoachSignature(match.awayCoachSignature)
+          setSavedSignatures(prev => ({ ...prev, awayCoach: match.awayCoachSignature }))
+        }
+        if (match.awayCaptainSignature) {
+          setAwayCaptainSignature(match.awayCaptainSignature)
+          setSavedSignatures(prev => ({ ...prev, awayCaptain: match.awayCaptainSignature }))
+        }
+        
+        // Load coin toss data if available
+        if (match.coinTossTeamA && match.coinTossTeamB !== undefined) {
+          // Load saved coin toss result
+          setTeamA(match.coinTossTeamA)
+          setTeamB(match.coinTossTeamB)
+          setServeA(match.coinTossServeA !== undefined ? match.coinTossServeA : true)
+          setServeB(match.coinTossServeB !== undefined ? match.coinTossServeB : false)
+          console.log('Loaded coin toss:', { teamA: match.coinTossTeamA, teamB: match.coinTossTeamB, serveA: match.coinTossServeA, serveB: match.coinTossServeB })
+        } else if (match.firstServe) {
+          // Fallback: use firstServe to determine serve (but not team assignment)
+          // Default team assignment
+          setTeamA('home')
+          setTeamB('away')
+          if (match.firstServe === 'home') {
+            setServeA(true)
+            setServeB(false)
+          } else {
+            setServeA(false)
+            setServeB(true)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading match data:', error)
+      }
+    }
+    
+    loadMatchData()
+  }, [matchId, match])
+  
+  // Show coin toss view if requested
+  useEffect(() => {
+    if (showCoinToss && matchId) {
+      setCurrentView('coin-toss')
+    }
+  }, [showCoinToss, matchId])
+
+  // Load saved draft data on mount (only if no matchId)
+  useEffect(() => {
+    if (matchId) return // Skip draft loading if matchId is provided
+    
     async function loadDraft() {
       try {
         const draft = await db.match_setup.orderBy('updatedAt').last()
@@ -172,7 +378,7 @@ export default function MatchSetup({ onStart }) {
       }
     }
     loadDraft()
-  }, [])
+  }, [matchId])
 
   // Save draft data to database
   async function saveDraft(silent = false) {
@@ -325,18 +531,44 @@ export default function MatchSetup({ onStart }) {
       const bn = b.number ?? 999
       return an - bn
     })
-    // Bench sorted by role: C, AC1, AC2, M, P
-    const benchOrder = ['Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Medic', 'Physiotherapist']
-    const benchSorted = bench
-      .filter(m => m.firstName || m.lastName || m.dob)
-      .sort((a, b) => benchOrder.indexOf(a.role) - benchOrder.indexOf(b.role))
+    // Bench sorted by hierarchy: C, AC1, AC2, P, M
+    const benchSorted = sortBenchByHierarchy(bench.filter(m => m.firstName || m.lastName || m.dob))
     
     return { players, liberos, bench: benchSorted }
   }
 
   async function createMatch() {
+    await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
     const homeId = await db.teams.add({ name: home, color: homeColor, createdAt: new Date().toISOString() })
     const awayId = await db.teams.add({ name: away, color: awayColor, createdAt: new Date().toISOString() })
+
+      // Add teams to sync queue (official match, so test: false)
+      await db.sync_queue.add({
+        resource: 'team',
+        action: 'insert',
+        payload: {
+          external_id: String(homeId),
+          name: home,
+          color: homeColor,
+          test: false,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+      await db.sync_queue.add({
+        resource: 'team',
+        action: 'insert',
+        payload: {
+          external_id: String(awayId),
+          name: away,
+          color: awayColor,
+          test: false,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
 
     const scheduledAt = (() => {
       if (!date && !time) return new Date().toISOString()
@@ -370,8 +602,29 @@ export default function MatchSetup({ onStart }) {
       awayCaptainSignature: null,
       createdAt: new Date().toISOString()
     })
+
+      // Add match to sync queue (official match, so test: false)
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'insert',
+        payload: {
+          external_id: String(matchId),
+          home_team_id: String(homeId),
+          away_team_id: String(awayId),
+          status: 'live',
+          hall: hall || null,
+          city: city || null,
+          league: league || null,
+          scheduled_at: scheduledAt || null,
+          test: false,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+
     if (homeRoster.length) {
-      await db.players.bulkAdd(
+        const homePlayerIds = await db.players.bulkAdd(
         homeRoster.map(p => ({
           teamId: homeId,
           number: p.number,
@@ -385,9 +638,33 @@ export default function MatchSetup({ onStart }) {
           createdAt: new Date().toISOString()
         }))
       )
+        
+        // Add home players to sync queue
+        for (let i = 0; i < homeRoster.length; i++) {
+          const p = homeRoster[i]
+          await db.sync_queue.add({
+            resource: 'player',
+            action: 'insert',
+            payload: {
+              external_id: String(homePlayerIds[i]),
+              team_id: String(homeId),
+              number: p.number,
+              name: `${p.lastName} ${p.firstName}`,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              dob: p.dob || null,
+              libero: p.libero || null,
+              is_captain: !!p.isCaptain,
+              role: null,
+              created_at: new Date().toISOString()
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
     }
     if (awayRoster.length) {
-      await db.players.bulkAdd(
+        const awayPlayerIds = await db.players.bulkAdd(
         awayRoster.map(p => ({
           teamId: awayId,
           number: p.number,
@@ -401,10 +678,37 @@ export default function MatchSetup({ onStart }) {
           createdAt: new Date().toISOString()
         }))
       )
-    }
+        
+        // Add away players to sync queue (official match, so test: false)
+        for (let i = 0; i < awayRoster.length; i++) {
+          const p = awayRoster[i]
+          await db.sync_queue.add({
+            resource: 'player',
+            action: 'insert',
+            payload: {
+              external_id: String(awayPlayerIds[i]),
+              team_id: String(awayId),
+              number: p.number,
+              name: `${p.lastName} ${p.firstName}`,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              dob: p.dob || null,
+              libero: p.libero || null,
+              is_captain: !!p.isCaptain,
+              role: null,
+              test: false,
+              created_at: new Date().toISOString()
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
+      }
+      
     // Don't start match yet - go to coin toss first
     setPendingMatchId(matchId)
     setCurrentView('coin-toss')
+    })
   }
 
   function switchTeams() {
@@ -424,18 +728,130 @@ export default function MatchSetup({ onStart }) {
       return
     }
     
-    // Update match with signatures
-    await db.matches.update(pendingMatchId, {
+    const matchData = await db.matches.get(pendingMatchId)
+    if (!matchData) return
+    
+    // Determine which team serves first
+    const firstServeTeam = serveA ? teamA : teamB
+    console.log('confirmCoinToss - firstServeTeam:', firstServeTeam, 'serveA:', serveA, 'teamA:', teamA, 'teamB:', teamB)
+    
+    // Update match with signatures and rosters
+    await db.transaction('rw', db.matches, db.players, db.sync_queue, async () => {
+    // Update match with signatures, first serve, and coin toss result
+    const updateResult = await db.matches.update(pendingMatchId, {
       homeCoachSignature,
       homeCaptainSignature,
       awayCoachSignature,
-      awayCaptainSignature
+      awayCaptainSignature,
+      firstServe: firstServeTeam, // 'home' or 'away'
+      coinTossTeamA: teamA, // 'home' or 'away'
+      coinTossTeamB: teamB, // 'home' or 'away'
+      coinTossServeA: serveA, // true or false
+      coinTossServeB: serveB // true or false
+      })
+    console.log('confirmCoinToss - update result:', updateResult, 'coinTossTeamA:', teamA, 'coinTossTeamB:', teamB, 'coinTossServeA:', serveA)
+    
+    // Add match update to sync queue (only sync fields that exist in Supabase)
+    const updatedMatch = await db.matches.get(pendingMatchId)
+    if (updatedMatch) {
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'update',
+        payload: {
+          id: String(pendingMatchId),
+          status: updatedMatch.status || null,
+          hall: updatedMatch.hall || null,
+          city: updatedMatch.city || null,
+          league: updatedMatch.league || null,
+          scheduled_at: updatedMatch.scheduledAt || null
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
+    
+    // Update saved signatures to match current state
+    setSavedSignatures({
+      homeCoach: homeCoachSignature,
+      homeCaptain: homeCaptainSignature,
+      awayCoach: awayCoachSignature,
+      awayCaptain: awayCaptainSignature
+    })
+      
+      // Update players for both teams
+      if (matchData.homeTeamId && homeRoster.length) {
+        // Delete existing players
+        await db.players.where('teamId').equals(matchData.homeTeamId).delete()
+        // Add updated players
+        await db.players.bulkAdd(
+          homeRoster.map(p => ({
+            teamId: matchData.homeTeamId,
+            number: p.number,
+            name: `${p.lastName} ${p.firstName}`,
+            lastName: p.lastName,
+            firstName: p.firstName,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+      }
+      
+      if (matchData.awayTeamId && awayRoster.length) {
+        // Delete existing players
+        await db.players.where('teamId').equals(matchData.awayTeamId).delete()
+        // Add updated players
+        await db.players.bulkAdd(
+          awayRoster.map(p => ({
+            teamId: matchData.awayTeamId,
+            number: p.number,
+            name: `${p.lastName} ${p.firstName}`,
+            lastName: p.lastName,
+            firstName: p.firstName,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+      }
     })
     
     // Create first set
-    await db.sets.add({ matchId: pendingMatchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
+    const firstSetId = await db.sets.add({ matchId: pendingMatchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
     
-    // Start the match
+    // Get match to check if it's a test match
+    const matchForSet = await db.matches.get(pendingMatchId)
+    const isTest = matchForSet?.test || false
+    
+    // Add first set to sync queue
+    await db.sync_queue.add({
+      resource: 'set',
+      action: 'insert',
+      payload: {
+        external_id: String(firstSetId),
+        match_id: String(pendingMatchId),
+        index: 1,
+        home_points: 0,
+        away_points: 0,
+        finished: false,
+        test: isTest,
+        created_at: new Date().toISOString()
+      },
+      ts: new Date().toISOString(),
+      status: 'queued'
+    })
+    
+    // Update match status to 'live' to indicate match has started
+    await db.matches.update(pendingMatchId, { status: 'live' })
+    
+    // Start the match - directly navigate to scoreboard
+    // Don't use onStart which goes through continueMatch logic
+    // Instead, we'll handle navigation in the parent component
+    // For now, just call onStart which should handle it
     onStart(pendingMatchId)
   }
 
@@ -445,7 +861,11 @@ export default function MatchSetup({ onStart }) {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Match info</h2>
+          {onGoHome ? (
+            <button className="secondary" onClick={onGoHome}>Home</button>
+          ) : (
           <div style={{ width: 80 }}></div>
+          )}
         </div>
         <div className="row">
           <div className="field"><label>Date</label><input className="w-dob" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
@@ -507,7 +927,11 @@ export default function MatchSetup({ onStart }) {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Match officials</h2>
+          {onGoHome ? (
+            <button className="secondary" onClick={onGoHome}>Home</button>
+          ) : (
           <div style={{ width: 80 }}></div>
+          )}
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div>
@@ -563,7 +987,11 @@ export default function MatchSetup({ onStart }) {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Home team</h2>
+          {onGoHome ? (
+            <button className="secondary" onClick={onGoHome}>Home</button>
+          ) : (
           <div style={{ width: 80 }}></div>
+          )}
         </div>
         <div className="row" style={{ alignItems:'center' }}>
           <label className="inline"><span>Name</span><input className="w-180 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
@@ -605,10 +1033,21 @@ export default function MatchSetup({ onStart }) {
           <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
           <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
           <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-          <select disabled={isHomeLocked} className="w-90" value={homeLibero} onChange={e=>setHomeLibero(e.target.value)}>
+          <select disabled={isHomeLocked} className="w-90" value={homeLibero} onChange={e => {
+            let newValue = e.target.value
+            // If L2 is selected but no L1 exists, automatically change L2 to L1
+            if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
+              newValue = 'libero1'
+            }
+            setHomeLibero(newValue)
+          }}>
             <option value="">none</option>
+            {!homeRoster.some(p => p.libero === 'libero1') && (
             <option value="libero1">Libero 1</option>
+            )}
+            {!homeRoster.some(p => p.libero === 'libero2') && (
             <option value="libero2">Libero 2</option>
+            )}
           </select>
           <label className="inline"><input disabled={isHomeLocked} type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
           <button disabled={isHomeLocked} type="button" className="secondary" onClick={() => {
@@ -626,23 +1065,137 @@ export default function MatchSetup({ onStart }) {
             setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
           }}>Add</button>
         </div>
-        <ul className="roster-list">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {homeRoster.map((p, i) => (
-            <li key={`h-${i}`} style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', gap:8 }}>
-              <span>#{p.number ?? ''} {p.lastName} {p.firstName} {p.libero ? `(${p.libero})` : ''} {p.isCaptain ? '[C]' : ''}</span>
-              <button type="button" className="secondary" onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>Remove</button>
-            </li>
+            <div key={`h-${i}`} className="row" style={{ alignItems: 'center' }}>
+              <input 
+                disabled={isHomeLocked} 
+                className="w-num" 
+                placeholder="#" 
+                type="number" 
+                inputMode="numeric" 
+                value={p.number ?? ''} 
+                onChange={e => {
+                  const updated = [...homeRoster]
+                  updated[i] = { ...updated[i], number: e.target.value ? Number(e.target.value) : null }
+                  setHomeRoster(updated)
+                }} 
+              />
+              <input 
+                disabled={isHomeLocked} 
+                className="w-name capitalize" 
+                placeholder="Last Name" 
+                value={p.lastName || ''} 
+                onChange={e => {
+                  const updated = [...homeRoster]
+                  updated[i] = { ...updated[i], lastName: e.target.value }
+                  setHomeRoster(updated)
+                }} 
+              />
+              <input 
+                disabled={isHomeLocked} 
+                className="w-name capitalize" 
+                placeholder="First Name" 
+                value={p.firstName || ''} 
+                onChange={e => {
+                  const updated = [...homeRoster]
+                  updated[i] = { ...updated[i], firstName: e.target.value }
+                  setHomeRoster(updated)
+                }} 
+              />
+              <input 
+                disabled={isHomeLocked} 
+                className="w-dob" 
+                placeholder="Date of birth (dd/mm/yyyy)" 
+                type="date" 
+                value={p.dob ? formatDateToISO(p.dob) : ''} 
+                onChange={e => {
+                  const updated = [...homeRoster]
+                  updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
+                  setHomeRoster(updated)
+                }} 
+              />
+              <select 
+                disabled={isHomeLocked} 
+                className="w-90" 
+                value={p.libero || ''} 
+                onChange={e => {
+                  const updated = [...homeRoster]
+                  updated[i] = { ...updated[i], libero: e.target.value }
+                  
+                  // If L2 is selected but no L1 exists, automatically change L2 to L1
+                  if (e.target.value === 'libero2') {
+                    const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                    if (!hasL1) {
+                      updated[i] = { ...updated[i], libero: 'libero1' }
+                    }
+                  }
+                  
+                  setHomeRoster(updated)
+                }}
+              >
+                <option value="">none</option>
+                {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                  <option value="libero1">Libero 1</option>
+                )}
+                {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                  <option value="libero2">Libero 2</option>
+                )}
+              </select>
+              <label className="inline">
+                <input 
+                  disabled={isHomeLocked} 
+                  type="radio" 
+                  name={`homeCaptain-${i}`} 
+                  checked={p.isCaptain || false} 
+                  onChange={e => {
+                    const updated = homeRoster.map((player, idx) => ({
+                      ...player,
+                      isCaptain: idx === i ? e.target.checked : false
+                    }))
+                    setHomeRoster(updated)
+                  }} 
+                /> 
+                Captain
+              </label>
+              <button 
+                type="button" 
+                className="secondary" 
+                onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
+              >
+                Remove
+              </button>
+            </div>
           ))}
-        </ul>
-        <h4>Bench — Home</h4>
-        {benchHome.map((m, i) => (
-          <div key={`bh-${i}`} className="row bench-row" style={{ alignItems:'center' }}>
-            <input disabled className="w-220" value={m.role} />
-            <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
-            <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
-            <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
           </div>
-        ))}
+        <h4>Bench — Home</h4>
+        {sortBenchByHierarchy(benchHome).map((m, i) => {
+          const originalIdx = benchHome.findIndex(b => b === m)
+          return (
+            <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
+              <select disabled={isHomeLocked} className="w-220" value={m.role} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], role:e.target.value}; return a })}>
+                {BENCH_ROLES.map(role => (
+                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
+                ))}
+              </select>
+              <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
+              <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
+              <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              {!isHomeLocked && (
+                <button type="button" className="secondary" onClick={() => setBenchHome(benchHome.filter((_, idx) => idx !== originalIdx))} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                  Remove
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {!isHomeLocked && (
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" className="secondary" onClick={() => setBenchHome([...benchHome, initBench('Coach')])} style={{ padding: '4px 8px', fontSize: '12px' }}>
+              Add Bench Official
+            </button>
+          </div>
+        )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
@@ -656,7 +1209,11 @@ export default function MatchSetup({ onStart }) {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Away team</h2>
+          {onGoHome ? (
+            <button className="secondary" onClick={onGoHome}>Home</button>
+          ) : (
           <div style={{ width: 80 }}></div>
+          )}
         </div>
         <div className="row" style={{ alignItems:'center' }}>
           <label className="inline"><span>Name</span><input className="w-300 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
@@ -698,10 +1255,21 @@ export default function MatchSetup({ onStart }) {
           <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
           <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
           <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-          <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e=>setAwayLibero(e.target.value)}>
+          <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e => {
+            let newValue = e.target.value
+            // If L2 is selected but no L1 exists, automatically change L2 to L1
+            if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
+              newValue = 'libero1'
+            }
+            setAwayLibero(newValue)
+          }}>
             <option value="">none</option>
+            {!awayRoster.some(p => p.libero === 'libero1') && (
             <option value="libero1">libero 1</option>
+            )}
+            {!awayRoster.some(p => p.libero === 'libero2') && (
             <option value="libero2">libero 2</option>
+            )}
           </select>
           <label className="inline"><input disabled={isAwayLocked} type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
           <button disabled={isAwayLocked} type="button" className="secondary" onClick={() => {
@@ -719,23 +1287,137 @@ export default function MatchSetup({ onStart }) {
             setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
           }}>Add</button>
         </div>
-        <ul className="roster-list">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {awayRoster.map((p, i) => (
-            <li key={`a-${i}`} style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', gap:8 }}>
-              <span>#{p.number ?? ''} {p.lastName} {p.firstName} {p.libero ? `(${p.libero})` : ''} {p.isCaptain ? '[C]' : ''}</span>
-              <button type="button" className="secondary" onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>Remove</button>
-            </li>
+            <div key={`a-${i}`} className="row" style={{ alignItems: 'center' }}>
+              <input 
+                disabled={isAwayLocked} 
+                className="w-num" 
+                placeholder="#" 
+                type="number" 
+                inputMode="numeric" 
+                value={p.number ?? ''} 
+                onChange={e => {
+                  const updated = [...awayRoster]
+                  updated[i] = { ...updated[i], number: e.target.value ? Number(e.target.value) : null }
+                  setAwayRoster(updated)
+                }} 
+              />
+              <input 
+                disabled={isAwayLocked} 
+                className="w-name capitalize" 
+                placeholder="Last Name" 
+                value={p.lastName || ''} 
+                onChange={e => {
+                  const updated = [...awayRoster]
+                  updated[i] = { ...updated[i], lastName: e.target.value }
+                  setAwayRoster(updated)
+                }} 
+              />
+              <input 
+                disabled={isAwayLocked} 
+                className="w-name capitalize" 
+                placeholder="First Name" 
+                value={p.firstName || ''} 
+                onChange={e => {
+                  const updated = [...awayRoster]
+                  updated[i] = { ...updated[i], firstName: e.target.value }
+                  setAwayRoster(updated)
+                }} 
+              />
+              <input 
+                disabled={isAwayLocked} 
+                className="w-dob" 
+                placeholder="Date of birth (dd/mm/yyyy)" 
+                type="date" 
+                value={p.dob ? formatDateToISO(p.dob) : ''} 
+                onChange={e => {
+                  const updated = [...awayRoster]
+                  updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
+                  setAwayRoster(updated)
+                }} 
+              />
+              <select 
+                disabled={isAwayLocked} 
+                className="w-90" 
+                value={p.libero || ''} 
+                onChange={e => {
+                  const updated = [...awayRoster]
+                  updated[i] = { ...updated[i], libero: e.target.value }
+                  
+                  // If L2 is selected but no L1 exists, automatically change L2 to L1
+                  if (e.target.value === 'libero2') {
+                    const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                    if (!hasL1) {
+                      updated[i] = { ...updated[i], libero: 'libero1' }
+                    }
+                  }
+                  
+                  setAwayRoster(updated)
+                }}
+              >
+                <option value="">none</option>
+                {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                  <option value="libero1">Libero 1</option>
+                )}
+                {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                  <option value="libero2">Libero 2</option>
+                )}
+              </select>
+              <label className="inline">
+                <input 
+                  disabled={isAwayLocked} 
+                  type="radio" 
+                  name={`awayCaptain-${i}`} 
+                  checked={p.isCaptain || false} 
+                  onChange={e => {
+                    const updated = awayRoster.map((player, idx) => ({
+                      ...player,
+                      isCaptain: idx === i ? e.target.checked : false
+                    }))
+                    setAwayRoster(updated)
+                  }} 
+                /> 
+                Captain
+              </label>
+              <button 
+                type="button" 
+                className="secondary" 
+                onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
+              >
+                Remove
+              </button>
+            </div>
           ))}
-        </ul>
-        <h4>Bench — Away</h4>
-        {benchAway.map((m, i) => (
-          <div key={`ba-${i}`} className="row bench-row" style={{ alignItems:'center' }}>
-            <input disabled className="w-220" value={m.role} />
-            <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], lastName:e.target.value}; return a })} />
-            <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], firstName:e.target.value}; return a })} />
-            <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[i]={...a[i], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
           </div>
-        ))}
+        <h4>Bench — Away</h4>
+        {sortBenchByHierarchy(benchAway).map((m, i) => {
+          const originalIdx = benchAway.findIndex(b => b === m)
+          return (
+            <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
+              <select disabled={isAwayLocked} className="w-220" value={m.role} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], role:e.target.value}; return a })}>
+                {BENCH_ROLES.map(role => (
+                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
+                ))}
+              </select>
+              <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
+              <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
+              <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              {!isAwayLocked && (
+                <button type="button" className="secondary" onClick={() => setBenchAway(benchAway.filter((_, idx) => idx !== originalIdx))} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                  Remove
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {!isAwayLocked && (
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" className="secondary" onClick={() => setBenchAway([...benchAway, initBench('Coach')])} style={{ padding: '4px 8px', fontSize: '12px' }}>
+              Add Bench Official
+            </button>
+          </div>
+        )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
@@ -783,7 +1465,7 @@ export default function MatchSetup({ onStart }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(20, 24, 39)',
+        background:'transparent',
         flexShrink: 0
       }}>
         <div style={{ 
@@ -797,9 +1479,16 @@ export default function MatchSetup({ onStart }) {
     return (
       <div className="setup">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <button className="secondary" onClick={() => {
+            setCurrentView('main')
+            if (onCoinTossClose) onCoinTossClose()
+          }}>← Back</button>
           <h2>Coin Toss</h2>
+          {onGoHome ? (
+            <button className="secondary" onClick={onGoHome}>Home</button>
+          ) : (
           <div style={{ width: 80 }}></div>
+          )}
         </div>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 24, marginBottom: 24, alignItems: 'start' }}>
@@ -829,118 +1518,367 @@ export default function MatchSetup({ onStart }) {
             </div>
             
             <div style={{ marginBottom: 16 }}>
-              <button className="secondary" onClick={() => setShowRoster({ ...showRoster, home: teamA === 'home' ? !showRoster.home : showRoster.home, away: teamA === 'away' ? !showRoster.away : showRoster.away })}>
-                {((teamA === 'home' && showRoster.home) || (teamA === 'away' && showRoster.away)) ? 'Hide' : 'Show'} Roster
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px' }}>Roster</h4>
+                  <button type="button" className="secondary" onClick={() => setShowCoinTossRoster(!showCoinTossRoster)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                    {showCoinTossRoster ? 'Hide' : 'Show'}
               </button>
             </div>
-            
-            {((teamA === 'home' && showRoster.home) || (teamA === 'away' && showRoster.away)) && (() => {
-              const { players, liberos, bench } = formatRoster(teamAInfo.roster, teamAInfo.bench)
-          return (
-            <div className="panel" style={{ marginBottom: 16 }}>
-              {players.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <strong>Players</strong>
-                  <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                    {players.map((p, i) => (
-                      <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        {p.isCaptain ? (
-                          <span style={{ 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 24, 
-                            height: 24, 
-                            borderRadius: '50%', 
-                            border: '2px solid var(--text)',
-                            fontSize: 12,
-                            fontWeight: 600
-                          }}>#{p.number ?? ''}</span>
-                        ) : (
-                          <span>#{p.number ?? ''}</span>
-                        )}
+                {showCoinTossRoster && (
+                  <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamA')} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                    Add Player
+                  </button>
+                )}
+              </div>
+              {showCoinTossRoster && (
+              <table className="roster-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th style={{ width: '90px' }}>DOB</th>
+                    <th>Role</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(teamA === 'home' ? homeRoster : awayRoster).map((p, i) => (
+                    <tr key={`${teamA}-${i}`}>
+                      <td className="coin-toss-number" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input 
+                            type="number" 
+                            inputMode="numeric" 
+                            min="1"
+                            max="99"
+                            value={p.number ?? ''} 
+                            onChange={e => {
+                              const val = e.target.value ? Number(e.target.value) : null
+                              if (val !== null && (val < 1 || val > 99)) return
+                              if (teamA === 'home') {
+                                const updated = [...homeRoster]
+                                updated[i] = { ...updated[i], number: val }
+                                setHomeRoster(updated)
+                              } else {
+                                const updated = [...awayRoster]
+                                updated[i] = { ...updated[i], number: val }
+                                setAwayRoster(updated)
+                              }
+                            }}
+                            style={{ 
+                              width: p.isCaptain ? '24px' : '28px',
+                              height: p.isCaptain ? '24px' : 'auto',
+                              padding: '0', 
+                              margin: '0', 
+                              background: 'transparent', 
+                              border: p.isCaptain ? '2px solid var(--accent)' : 'none', 
+                              borderRadius: p.isCaptain ? '50%' : '0',
+                              color: 'var(--text)', 
+                              textAlign: 'center', 
+                              fontSize: '12px', 
+                              lineHeight: 'normal', 
+                              verticalAlign: 'baseline'
+                            }}
+                          />
                         {p.libero && (
-                          <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                            <span style={{ 
+                              color: 'var(--accent)', 
+                              fontSize: '10px', 
+                              fontWeight: 700,
+                              lineHeight: '1'
+                            }}>
                             {p.libero === 'libero1' ? 'L1' : 'L2'}
                           </span>
                         )}
-                        <span>{p.lastName} {p.firstName}</span>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
-              )}
-              {liberos.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <strong>Liberos</strong>
-                  <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                    {liberos.map((p, i) => (
-                      <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        {p.isCaptain ? (
-                          <span style={{ 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 24, 
-                            height: 24, 
-                            borderRadius: '50%', 
-                            border: '2px solid var(--text)',
-                            fontSize: 12,
-                            fontWeight: 600
-                          }}>#{p.number ?? ''}</span>
-                        ) : (
-                          <span>#{p.number ?? ''}</span>
-                        )}
-                        <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                          {p.libero === 'libero1' ? 'L1' : 'L2'}
-                        </span>
-                        <span>{p.lastName} {p.firstName}</span>
-                      </li>
-                    ))}
-                  </ul>
+                      </td>
+                      <td className="coin-toss-name" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', maxWidth: '150px' }}>
+                        <input 
+                          type="text" 
+                          value={`${p.lastName || ''} ${p.firstName || ''}`.trim() || ''} 
+                          onChange={e => {
+                            const parts = e.target.value.split(' ').filter(p => p)
+                            const lastName = parts.length > 0 ? parts[0] : ''
+                            const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
+                            if (teamA === 'home') {
+                              const updated = [...homeRoster]
+                              updated[i] = { ...updated[i], lastName, firstName }
+                              setHomeRoster(updated)
+                            } else {
+                              const updated = [...awayRoster]
+                              updated[i] = { ...updated[i], lastName, firstName }
+                              setAwayRoster(updated)
+                            }
+                          }}
+                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                        />
+                      </td>
+                      <td className="coin-toss-dob" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
+                        <input 
+                          type="date" 
+                          value={p.dob ? formatDateToISO(p.dob) : ''} 
+                          onChange={e => {
+                            const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                            if (teamA === 'home') {
+                              const updated = [...homeRoster]
+                              updated[i] = { ...updated[i], dob: value }
+                              setHomeRoster(updated)
+                            } else {
+                              const updated = [...awayRoster]
+                              updated[i] = { ...updated[i], dob: value }
+                              setAwayRoster(updated)
+                            }
+                          }}
+                          className="coin-toss-date-input"
+                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                        />
+                      </td>
+                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <select 
+                            value={p.libero || ''} 
+                            onChange={e => {
+                              if (teamA === 'home') {
+                                const updated = [...homeRoster]
+                                updated[i] = { ...updated[i], libero: e.target.value }
+                                
+                                // If L2 is selected but no L1 exists, automatically change L2 to L1
+                                if (e.target.value === 'libero2') {
+                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  if (!hasL1) {
+                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                  }
+                                }
+                                
+                                setHomeRoster(updated)
+                              } else {
+                                const updated = [...awayRoster]
+                                updated[i] = { ...updated[i], libero: e.target.value }
+                                
+                                // If L2 is selected but no L1 exists, automatically change L2 to L1
+                                if (e.target.value === 'libero2') {
+                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  if (!hasL1) {
+                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                  }
+                                }
+                                
+                                setAwayRoster(updated)
+                              }
+                            }}
+                            style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0' }}
+                            className="coin-toss-select"
+                          >
+                            <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
+                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                              <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
+                            )}
+                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                              <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
+                            )}
+                          </select>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input 
+                              type="radio" 
+                              name={`${teamA}-captain`}
+                              checked={p.isCaptain || false} 
+                              onChange={e => {
+                                if (teamA === 'home') {
+                                  const updated = homeRoster.map((player, idx) => ({
+                                    ...player,
+                                    isCaptain: idx === i ? e.target.checked : false
+                                  }))
+                                  setHomeRoster(updated)
+                                } else {
+                                  const updated = awayRoster.map((player, idx) => ({
+                                    ...player,
+                                    isCaptain: idx === i ? e.target.checked : false
+                                  }))
+                                  setAwayRoster(updated)
+                                }
+                              }} 
+                            />
+                            <span style={{ fontSize: '11px', fontWeight: 600 }}>C</span>
+                          </label>
                 </div>
-              )}
-              {bench.length > 0 && (
-                <div>
-                  <strong>Bench</strong>
-                  <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                    {bench.map((m, i) => (
-                      <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
+                      </td>
+                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                        <button 
+                          type="button" 
+                          className="secondary" 
+                          onClick={() => setDeletePlayerModal({ team: 'teamA', index: i })}
+                          style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          title="Delete player"
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
                     ))}
-                  </ul>
-                </div>
+                </tbody>
+              </table>
               )}
+                </div>
+            
+            {/* Bench Officials Section */}
+            {showCoinTossRoster && (() => {
+              const bench = teamA === 'home' ? benchHome : benchAway
+              const sortedBench = sortBenchByHierarchy(bench)
+              return (
+                <div style={{ marginTop: 16, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Bench Officials</h4>
+                    {showCoinTossRoster && (
+                      <button 
+                        type="button" 
+                        className="secondary" 
+                        onClick={() => {
+                          const newOfficial = initBench('Coach')
+                          if (teamA === 'home') {
+                            setBenchHome([...benchHome, newOfficial])
+                          } else {
+                            setBenchAway([...benchAway, newOfficial])
+                          }
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '12px' }}
+                      >
+                        Add Official
+                      </button>
+                    )}
+                  </div>
+                  <table className="roster-table">
+                    <thead>
+                      <tr>
+                        <th>Role</th>
+                        <th>Name</th>
+                        <th style={{ width: '90px' }}>DOB</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedBench.map((official, idx) => {
+                        const originalIdx = bench.findIndex(b => b === official)
+                        return (
+                          <tr key={`${teamA}-bench-${originalIdx}`}>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                              <select
+                                value={official.role || ''}
+                                onChange={e => {
+                                  if (teamA === 'home') {
+                                    const updated = [...benchHome]
+                                    updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                    setBenchHome(updated)
+                                  } else {
+                                    const updated = [...benchAway]
+                                    updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                    setBenchAway(updated)
+                                  }
+                                }}
+                                className="coin-toss-select"
+                                style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0', width: '100%' }}
+                              >
+                                {BENCH_ROLES.map(role => (
+                                  <option key={role.value} value={role.value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+                                    {role.label} - {role.fullLabel}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                              <input 
+                                type="text" 
+                                value={`${official.lastName || ''} ${official.firstName || ''}`.trim() || ''} 
+                                onChange={e => {
+                                  const parts = e.target.value.split(' ').filter(p => p)
+                                  const lastName = parts.length > 0 ? parts[0] : ''
+                                  const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
+                                  if (teamA === 'home') {
+                                    const updated = [...benchHome]
+                                    updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
+                                    setBenchHome(updated)
+                                  } else {
+                                    const updated = [...benchAway]
+                                    updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
+                                    setBenchAway(updated)
+                                  }
+                                }}
+                                style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                              />
+                            </td>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
+                              <input 
+                                type="date" 
+                                value={official.dob ? formatDateToISO(official.dob) : ''} 
+                                onChange={e => {
+                                  const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                                  if (teamA === 'home') {
+                                    const updated = [...benchHome]
+                                    updated[originalIdx] = { ...updated[originalIdx], dob: value }
+                                    setBenchHome(updated)
+                                  } else {
+                                    const updated = [...benchAway]
+                                    updated[originalIdx] = { ...updated[originalIdx], dob: value }
+                                    setBenchAway(updated)
+                                  }
+                                }}
+                                className="coin-toss-date-input"
+                                style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                              />
+                            </td>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                              <button 
+                                type="button" 
+                                className="secondary" 
+                                onClick={() => {
+                                  if (teamA === 'home') {
+                                    setBenchHome(benchHome.filter((_, i) => i !== originalIdx))
+                                  } else {
+                                    setBenchAway(benchAway.filter((_, i) => i !== originalIdx))
+                                  }
+                                }}
+                                style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="Delete official"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
             </div>
           )
         })()}
             
-            <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 24, paddingTop: 16, borderTop: showCoinTossRoster ? '2px solid rgba(255,255,255,0.1)' : 'none' }}>
               <div style={{ flex: 1 }}>
-                <span style={{ display: 'block', marginBottom: 8 }}>Coach</span>
+                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Coach Signature</h4>
                 {teamACoachSig ? (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <img src={teamACoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                    <button className="secondary" onClick={() => {
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <img src={teamACoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
+                    <button onClick={() => {
                       if (teamA === 'home') setHomeCoachSignature(null)
                       else setAwayCoachSignature(null)
                     }}>Remove</button>
                   </div>
                 ) : (
-                  <button className="secondary" onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')}>Sign</button>
+                  <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Coach</button>
                 )}
               </div>
               <div style={{ flex: 1 }}>
-                <span style={{ display: 'block', marginBottom: 8 }}>Captain</span>
+                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Captain Signature</h4>
                 {teamACaptainSig ? (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <img src={teamACaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                    <button className="secondary" onClick={() => {
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <img src={teamACaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
+                    <button onClick={() => {
                       if (teamA === 'home') setHomeCaptainSignature(null)
                       else setAwayCaptainSignature(null)
                     }}>Remove</button>
                   </div>
                 ) : (
-                  <button className="secondary" onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')}>Sign</button>
+                  <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Captain</button>
                 )}
               </div>
             </div>
@@ -986,118 +1924,367 @@ export default function MatchSetup({ onStart }) {
             </div>
             
             <div style={{ marginBottom: 16 }}>
-              <button className="secondary" onClick={() => setShowRoster({ ...showRoster, home: teamB === 'home' ? !showRoster.home : showRoster.home, away: teamB === 'away' ? !showRoster.away : showRoster.away })}>
-                {((teamB === 'home' && showRoster.home) || (teamB === 'away' && showRoster.away)) ? 'Hide' : 'Show'} Roster
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px' }}>Roster</h4>
+                  <button type="button" className="secondary" onClick={() => setShowCoinTossRoster(!showCoinTossRoster)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                    {showCoinTossRoster ? 'Hide' : 'Show'}
           </button>
         </div>
-            
-            {((teamB === 'home' && showRoster.home) || (teamB === 'away' && showRoster.away)) && (() => {
-              const { players, liberos, bench } = formatRoster(teamBInfo.roster, teamBInfo.bench)
-          return (
-            <div className="panel" style={{ marginBottom: 16 }}>
-              {players.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <strong>Players</strong>
-                  <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                    {players.map((p, i) => (
-                      <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        {p.isCaptain ? (
-                          <span style={{ 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 24, 
-                            height: 24, 
-                            borderRadius: '50%', 
-                            border: '2px solid var(--text)',
-                            fontSize: 12,
-                            fontWeight: 600
-                          }}>#{p.number ?? ''}</span>
-                        ) : (
-                          <span>#{p.number ?? ''}</span>
-                        )}
+                {showCoinTossRoster && (
+                  <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamB')} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                    Add Player
+                  </button>
+                )}
+              </div>
+              {showCoinTossRoster && (
+              <table className="roster-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th style={{ width: '90px' }}>DOB</th>
+                    <th>Role</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(teamB === 'home' ? homeRoster : awayRoster).map((p, i) => (
+                    <tr key={`${teamB}-${i}`}>
+                      <td className="coin-toss-number" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input 
+                            type="number" 
+                            inputMode="numeric" 
+                            min="1"
+                            max="99"
+                            value={p.number ?? ''} 
+                            onChange={e => {
+                              const val = e.target.value ? Number(e.target.value) : null
+                              if (val !== null && (val < 1 || val > 99)) return
+                              if (teamB === 'home') {
+                                const updated = [...homeRoster]
+                                updated[i] = { ...updated[i], number: val }
+                                setHomeRoster(updated)
+                              } else {
+                                const updated = [...awayRoster]
+                                updated[i] = { ...updated[i], number: val }
+                                setAwayRoster(updated)
+                              }
+                            }}
+                            style={{ 
+                              width: p.isCaptain ? '24px' : '28px',
+                              height: p.isCaptain ? '24px' : 'auto',
+                              padding: '0', 
+                              margin: '0', 
+                              background: 'transparent', 
+                              border: p.isCaptain ? '2px solid var(--accent)' : 'none', 
+                              borderRadius: p.isCaptain ? '50%' : '0',
+                              color: 'var(--text)', 
+                              textAlign: 'center', 
+                              fontSize: '12px', 
+                              lineHeight: 'normal', 
+                              verticalAlign: 'baseline'
+                            }}
+                          />
                         {p.libero && (
-                          <span style={{ color: '#3b82f6', fontWeight: 600 }}>
+                            <span style={{ 
+                              color: 'var(--accent)', 
+                              fontSize: '10px', 
+                              fontWeight: 700,
+                              lineHeight: '1'
+                            }}>
                             {p.libero === 'libero1' ? 'L1' : 'L2'}
                           </span>
                         )}
-                        <span>{p.lastName} {p.firstName}</span>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
-              )}
-              {liberos.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <strong>Liberos</strong>
-                  <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                    {liberos.map((p, i) => (
-                      <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        {p.isCaptain ? (
-                          <span style={{ 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 24, 
-                            height: 24, 
-                            borderRadius: '50%', 
-                            border: '2px solid var(--text)',
-                            fontSize: 12,
-                            fontWeight: 600
-                          }}>#{p.number ?? ''}</span>
-                        ) : (
-                          <span>#{p.number ?? ''}</span>
-                        )}
-                        <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                          {p.libero === 'libero1' ? 'L1' : 'L2'}
-                        </span>
-                        <span>{p.lastName} {p.firstName}</span>
-                      </li>
-                    ))}
-                  </ul>
+                      </td>
+                      <td className="coin-toss-name" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', maxWidth: '150px' }}>
+                        <input 
+                          type="text" 
+                          value={`${p.lastName || ''} ${p.firstName || ''}`.trim() || ''} 
+                          onChange={e => {
+                            const parts = e.target.value.split(' ').filter(p => p)
+                            const lastName = parts.length > 0 ? parts[0] : ''
+                            const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
+                            if (teamB === 'home') {
+                              const updated = [...homeRoster]
+                              updated[i] = { ...updated[i], lastName, firstName }
+                              setHomeRoster(updated)
+                            } else {
+                              const updated = [...awayRoster]
+                              updated[i] = { ...updated[i], lastName, firstName }
+                              setAwayRoster(updated)
+                            }
+                          }}
+                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                        />
+                      </td>
+                      <td className="coin-toss-dob" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
+                        <input 
+                          type="date" 
+                          value={p.dob ? formatDateToISO(p.dob) : ''} 
+                          onChange={e => {
+                            const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                            if (teamB === 'home') {
+                              const updated = [...homeRoster]
+                              updated[i] = { ...updated[i], dob: value }
+                              setHomeRoster(updated)
+                            } else {
+                              const updated = [...awayRoster]
+                              updated[i] = { ...updated[i], dob: value }
+                              setAwayRoster(updated)
+                            }
+                          }}
+                          className="coin-toss-date-input"
+                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                        />
+                      </td>
+                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <select 
+                            value={p.libero || ''} 
+                            onChange={e => {
+                              if (teamB === 'home') {
+                                const updated = [...homeRoster]
+                                updated[i] = { ...updated[i], libero: e.target.value }
+                                
+                                // If L2 is selected but no L1 exists, automatically change L2 to L1
+                                if (e.target.value === 'libero2') {
+                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  if (!hasL1) {
+                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                  }
+                                }
+                                
+                                setHomeRoster(updated)
+                              } else {
+                                const updated = [...awayRoster]
+                                updated[i] = { ...updated[i], libero: e.target.value }
+                                
+                                // If L2 is selected but no L1 exists, automatically change L2 to L1
+                                if (e.target.value === 'libero2') {
+                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  if (!hasL1) {
+                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                  }
+                                }
+                                
+                                setAwayRoster(updated)
+                              }
+                            }}
+                            style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0' }}
+                            className="coin-toss-select"
+                          >
+                            <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
+                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                              <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
+                            )}
+                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                              <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
+                            )}
+                          </select>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input 
+                              type="radio" 
+                              name={`${teamB}-captain`}
+                              checked={p.isCaptain || false} 
+                              onChange={e => {
+                                if (teamB === 'home') {
+                                  const updated = homeRoster.map((player, idx) => ({
+                                    ...player,
+                                    isCaptain: idx === i ? e.target.checked : false
+                                  }))
+                                  setHomeRoster(updated)
+                                } else {
+                                  const updated = awayRoster.map((player, idx) => ({
+                                    ...player,
+                                    isCaptain: idx === i ? e.target.checked : false
+                                  }))
+                                  setAwayRoster(updated)
+                                }
+                              }} 
+                            />
+                            <span style={{ fontSize: '11px', fontWeight: 600 }}>C</span>
+                          </label>
                 </div>
-              )}
-              {bench.length > 0 && (
-                <div>
-                  <strong>Bench</strong>
-                  <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                    {bench.map((m, i) => (
-                      <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
+                      </td>
+                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                        <button 
+                          type="button" 
+                          className="secondary" 
+                          onClick={() => setDeletePlayerModal({ team: 'teamB', index: i })}
+                          style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          title="Delete player"
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
                     ))}
-                  </ul>
-                </div>
+                </tbody>
+              </table>
               )}
+                </div>
+            
+            {/* Bench Officials Section */}
+            {showCoinTossRoster && (() => {
+              const bench = teamB === 'home' ? benchHome : benchAway
+              const sortedBench = sortBenchByHierarchy(bench)
+              return (
+                <div style={{ marginTop: 16, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Bench Officials</h4>
+                    {showCoinTossRoster && (
+                      <button 
+                        type="button" 
+                        className="secondary" 
+                        onClick={() => {
+                          const newOfficial = initBench('Coach')
+                          if (teamB === 'home') {
+                            setBenchHome([...benchHome, newOfficial])
+                          } else {
+                            setBenchAway([...benchAway, newOfficial])
+                          }
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '12px' }}
+                      >
+                        Add Official
+                      </button>
+                    )}
+                  </div>
+                  <table className="roster-table">
+                    <thead>
+                      <tr>
+                        <th>Role</th>
+                        <th>Name</th>
+                        <th style={{ width: '90px' }}>DOB</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedBench.map((official, idx) => {
+                        const originalIdx = bench.findIndex(b => b === official)
+                        return (
+                          <tr key={`${teamB}-bench-${originalIdx}`}>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                              <select
+                                value={official.role || ''}
+                                onChange={e => {
+                                  if (teamB === 'home') {
+                                    const updated = [...benchHome]
+                                    updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                    setBenchHome(updated)
+                                  } else {
+                                    const updated = [...benchAway]
+                                    updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                    setBenchAway(updated)
+                                  }
+                                }}
+                                className="coin-toss-select"
+                                style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0', width: '100%' }}
+                              >
+                                {BENCH_ROLES.map(role => (
+                                  <option key={role.value} value={role.value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+                                    {role.label} - {role.fullLabel}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                              <input 
+                                type="text" 
+                                value={`${official.lastName || ''} ${official.firstName || ''}`.trim() || ''} 
+                                onChange={e => {
+                                  const parts = e.target.value.split(' ').filter(p => p)
+                                  const lastName = parts.length > 0 ? parts[0] : ''
+                                  const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
+                                  if (teamB === 'home') {
+                                    const updated = [...benchHome]
+                                    updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
+                                    setBenchHome(updated)
+                                  } else {
+                                    const updated = [...benchAway]
+                                    updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
+                                    setBenchAway(updated)
+                                  }
+                                }}
+                                style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                              />
+                            </td>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
+                              <input 
+                                type="date" 
+                                value={official.dob ? formatDateToISO(official.dob) : ''} 
+                                onChange={e => {
+                                  const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                                  if (teamB === 'home') {
+                                    const updated = [...benchHome]
+                                    updated[originalIdx] = { ...updated[originalIdx], dob: value }
+                                    setBenchHome(updated)
+                                  } else {
+                                    const updated = [...benchAway]
+                                    updated[originalIdx] = { ...updated[originalIdx], dob: value }
+                                    setBenchAway(updated)
+                                  }
+                                }}
+                                className="coin-toss-date-input"
+                                style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
+                              />
+                            </td>
+                            <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                              <button 
+                                type="button" 
+                                className="secondary" 
+                                onClick={() => {
+                                  if (teamB === 'home') {
+                                    setBenchHome(benchHome.filter((_, i) => i !== originalIdx))
+                                  } else {
+                                    setBenchAway(benchAway.filter((_, i) => i !== originalIdx))
+                                  }
+                                }}
+                                style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="Delete official"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
             </div>
           )
         })()}
             
-            <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 24, paddingTop: 16, borderTop: showCoinTossRoster ? '2px solid rgba(255,255,255,0.1)' : 'none' }}>
               <div style={{ flex: 1 }}>
-                <span style={{ display: 'block', marginBottom: 8 }}>Coach</span>
+                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Coach Signature</h4>
                 {teamBCoachSig ? (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <img src={teamBCoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                    <button className="secondary" onClick={() => {
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <img src={teamBCoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
+                    <button onClick={() => {
                       if (teamB === 'home') setHomeCoachSignature(null)
                       else setAwayCoachSignature(null)
                     }}>Remove</button>
                   </div>
                 ) : (
-                  <button className="secondary" onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')}>Sign</button>
+                  <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Coach</button>
                 )}
               </div>
               <div style={{ flex: 1 }}>
-                <span style={{ display: 'block', marginBottom: 8 }}>Captain</span>
+                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Captain Signature</h4>
                 {teamBCaptainSig ? (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <img src={teamBCaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4 }} />
-                    <button className="secondary" onClick={() => {
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <img src={teamBCaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
+                    <button onClick={() => {
                       if (teamB === 'home') setHomeCaptainSignature(null)
                       else setAwayCaptainSignature(null)
                     }}>Remove</button>
                   </div>
                 ) : (
-                  <button className="secondary" onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')}>Sign</button>
+                  <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Captain</button>
                 )}
               </div>
             </div>
@@ -1105,10 +2292,224 @@ export default function MatchSetup({ onStart }) {
         </div>
         
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
+          {isCoinTossConfirmed ? (
+            <button onClick={async () => {
+              // Save coin toss result and firstServe when returning to match
+              if (matchId) {
+                const firstServeTeam = serveA ? teamA : teamB
+                console.log('Return to match - updating coin toss:', { teamA, teamB, serveA, serveB, firstServeTeam })
+                await db.matches.update(matchId, {
+                  firstServe: firstServeTeam,
+                  coinTossTeamA: teamA,
+                  coinTossTeamB: teamB,
+                  coinTossServeA: serveA,
+                  coinTossServeB: serveB
+                })
+                
+                // Add match update to sync queue
+                const match = await db.matches.get(matchId)
+                if (match) {
+                  await db.sync_queue.add({
+                    resource: 'match',
+                    action: 'update',
+                    payload: {
+                      id: String(matchId),
+                      status: match.status || null,
+                      hall: match.hall || null,
+                      city: match.city || null,
+                      league: match.league || null,
+                      scheduled_at: match.scheduledAt || null
+                    },
+                    ts: new Date().toISOString(),
+                    status: 'queued'
+                  })
+                }
+              }
+              onReturn()
+            }} style={{ padding: '12px 24px', fontSize: '14px' }}>
+              Return to match
+            </button>
+          ) : (
           <button onClick={confirmCoinToss} style={{ padding: '12px 24px', fontSize: '14px' }}>
             Confirm Coin Toss Result
           </button>
+          )}
         </div>
+        
+        {/* Add Player Modal */}
+        {addPlayerModal && (() => {
+          const isTeamA = addPlayerModal === 'teamA'
+          const currentTeam = isTeamA ? teamA : teamB
+          const roster = currentTeam === 'home' ? homeRoster : awayRoster
+          const num = currentTeam === 'home' ? homeNum : awayNum
+          const first = currentTeam === 'home' ? homeFirst : awayFirst
+          const last = currentTeam === 'home' ? homeLast : awayLast
+          const dob = currentTeam === 'home' ? homeDob : awayDob
+          const libero = currentTeam === 'home' ? homeLibero : awayLibero
+          const captain = currentTeam === 'home' ? homeCaptain : awayCaptain
+          
+          return (
+            <Modal
+              title={`Add Player - ${isTeamA ? 'Team A' : 'Team B'}`}
+              open={true}
+              onClose={() => setAddPlayerModal(null)}
+              width={500}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4 }}>Number</label>
+                  <input 
+                    type="number" 
+                    inputMode="numeric" 
+                    value={num} 
+                    onChange={e => currentTeam === 'home' ? setHomeNum(e.target.value) : setAwayNum(e.target.value)}
+                    style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4 }}>Last Name</label>
+                  <input 
+                    type="text" 
+                    className="capitalize"
+                    value={last} 
+                    onChange={e => currentTeam === 'home' ? setHomeLast(e.target.value) : setAwayLast(e.target.value)}
+                    style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4 }}>First Name</label>
+                  <input 
+                    type="text" 
+                    className="capitalize"
+                    value={first} 
+                    onChange={e => currentTeam === 'home' ? setHomeFirst(e.target.value) : setAwayFirst(e.target.value)}
+                    style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4 }}>Date of Birth</label>
+                  <input 
+                    type="date" 
+                    value={dob ? formatDateToISO(dob) : ''} 
+                    onChange={e => {
+                      const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                      currentTeam === 'home' ? setHomeDob(value) : setAwayDob(value)
+                    }}
+                    style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4 }}>Libero</label>
+                  <select 
+                    value={libero} 
+                    onChange={e => {
+                      let newValue = e.target.value
+                      
+                      // If L2 is selected but no L1 exists, automatically change L2 to L1
+                      if (newValue === 'libero2') {
+                        const hasL1 = roster.some(p => p.libero === 'libero1')
+                        if (!hasL1) {
+                          newValue = 'libero1'
+                        }
+                      }
+                      
+                      currentTeam === 'home' ? setHomeLibero(newValue) : setAwayLibero(newValue)
+                    }}
+                    style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  >
+                    <option value="">none</option>
+                    {!roster.some(p => p.libero === 'libero1') && (
+                      <option value="libero1">Libero 1</option>
+                    )}
+                    {!roster.some(p => p.libero === 'libero2') && (
+                      <option value="libero2">Libero 2</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={captain} 
+                      onChange={e => currentTeam === 'home' ? setHomeCaptain(e.target.checked) : setAwayCaptain(e.target.checked)}
+                    />
+                    <span>Captain</span>
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button className="secondary" onClick={() => setAddPlayerModal(null)}>Cancel</button>
+                  <button onClick={() => {
+                    if (!last || !first) {
+                      alert('Please enter last name and first name')
+                      return
+                    }
+                    const newPlayer = { number: num ? Number(num) : null, lastName: last, firstName: first, dob, libero, isCaptain: captain }
+                    
+                    if (currentTeam === 'home') {
+                      setHomeRoster(list => {
+                        const cleared = captain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                        const next = [...cleared, newPlayer].sort((a,b) => {
+                          const an = a.number ?? 999
+                          const bn = b.number ?? 999
+                          return an - bn
+                        })
+                        return next
+                      })
+                      setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
+                    } else {
+                      setAwayRoster(list => {
+                        const cleared = captain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                        const next = [...cleared, newPlayer].sort((a,b) => {
+                          const an = a.number ?? 999
+                          const bn = b.number ?? 999
+                          return an - bn
+                        })
+                        return next
+                      })
+                      setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
+                    }
+                    setAddPlayerModal(null)
+                  }}>Add Player</button>
+                </div>
+              </div>
+            </Modal>
+          )
+        })()}
+        
+        {/* Delete Player Confirmation Modal */}
+        {deletePlayerModal && (() => {
+          const isTeamA = deletePlayerModal.team === 'teamA'
+          const currentTeam = isTeamA ? teamA : teamB
+          const roster = currentTeam === 'home' ? homeRoster : awayRoster
+          const player = roster[deletePlayerModal.index]
+          const playerName = player ? `${player.lastName || ''} ${player.firstName || ''}`.trim() || `Player #${player.number || '?'}` : 'Player'
+          
+          return (
+            <Modal
+              title="Delete Player"
+              open={true}
+              onClose={() => setDeletePlayerModal(null)}
+              width={400}
+            >
+              <div style={{ padding: '16px 0' }}>
+                <p style={{ marginBottom: 16 }}>
+                  Are you sure you want to delete <strong>{playerName}</strong> from {isTeamA ? 'Team A' : 'Team B'}?
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="secondary" onClick={() => setDeletePlayerModal(null)}>Cancel</button>
+                  <button onClick={() => {
+                    if (currentTeam === 'home') {
+                      setHomeRoster(list => list.filter((_, idx) => idx !== deletePlayerModal.index))
+                    } else {
+                      setAwayRoster(list => list.filter((_, idx) => idx !== deletePlayerModal.index))
+                    }
+                    setDeletePlayerModal(null)
+                  }}>Delete</button>
+                </div>
+              </div>
+            </Modal>
+          )
+        })()}
         
         <SignaturePad 
           open={openSignature !== null} 
@@ -1125,7 +2526,14 @@ export default function MatchSetup({ onStart }) {
 
   return (
     <div className="setup">
-      <h2>Create Match</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <h2 style={{ margin: 0 }}>Create Match</h2>
+        {onGoHome && (
+          <button className="secondary" onClick={onGoHome}>
+            Home
+          </button>
+        )}
+      </div>
       <div className="grid-4">
         <div className="card" style={{ order: 1 }}>
           <div>
@@ -1148,7 +2556,7 @@ export default function MatchSetup({ onStart }) {
               <p className="text-sm">{home}</p>
               <div className="shirt" style={{ background: homeColor }} />
             </div>
-            <p className="text-sm">{homeCounts.players} players • {homeCounts.liberos} liberos • {homeCounts.bench} bench</p>
+            <p className="text-sm">{homeCounts.players} players • {homeCounts.liberos} {homeCounts.liberos === 1 ? 'libero' : 'liberos'} • {homeCounts.bench} bench</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('home')}>Edit</button></div>
         </div>
@@ -1159,7 +2567,7 @@ export default function MatchSetup({ onStart }) {
               <p className="text-sm">{away}</p>
               <div className="shirt" style={{ background: awayColor }} />
             </div>
-            <p className="text-sm">{awayCounts.players} players • {awayCounts.liberos} liberos • {awayCounts.bench} bench</p>
+            <p className="text-sm">{awayCounts.players} players • {awayCounts.liberos} {awayCounts.liberos === 1 ? 'libero' : 'liberos'} • {awayCounts.bench} bench</p>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('away')}>Edit</button></div>
         </div>
@@ -1169,177 +2577,361 @@ export default function MatchSetup({ onStart }) {
         <button className="secondary" onClick={() => setShowBothRosters(!showBothRosters)}>
           {showBothRosters ? 'Hide' : 'Show'} Rosters
         </button>
-        <button onClick={createMatch}>Start Match</button>
+        {isMatchOngoing && onReturn ? (
+          <button onClick={onReturn}>Return to match</button>
+        ) : (
+          <button onClick={async () => {
+            // Check if match has no data (no sets, no signatures)
+            if (matchId && match) {
+              const sets = await db.sets.where('matchId').equals(matchId).toArray()
+              const hasNoData = sets.length === 0 && !match.homeCoachSignature && !match.homeCaptainSignature && !match.awayCoachSignature && !match.awayCaptainSignature
+              
+              if (hasNoData) {
+                // Update match with current data before going to coin toss
+                const scheduledAt = (() => {
+                  if (!date && !time) return new Date().toISOString()
+                  const iso = new Date(`${date}T${time || '00:00'}:00`).toISOString()
+                  return iso
+                })()
+                
+                await db.matches.update(matchId, {
+                  hall,
+                  city,
+                  match_type_1: type1,
+                  match_type_2: type2,
+                  match_type_3: type3,
+                  game_n: gameN ? Number(gameN) : null,
+                  league,
+                  scheduledAt,
+                  officials: [
+                    { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+                    { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+                    { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+                    { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+                  ],
+                  bench_home: benchHome,
+                  bench_away: benchAway
+                })
+                
+                // Update teams if needed
+                if (match.homeTeamId) {
+                  await db.teams.update(match.homeTeamId, { name: home, color: homeColor })
+                }
+                if (match.awayTeamId) {
+                  await db.teams.update(match.awayTeamId, { name: away, color: awayColor })
+                }
+                
+                // Update players
+                if (match.homeTeamId && homeRoster.length) {
+                  // Delete existing players and add new ones
+                  await db.players.where('teamId').equals(match.homeTeamId).delete()
+                  await db.players.bulkAdd(
+                    homeRoster.map(p => ({
+                      teamId: match.homeTeamId,
+                      number: p.number,
+                      name: `${p.lastName} ${p.firstName}`,
+                      lastName: p.lastName,
+                      firstName: p.firstName,
+                      dob: p.dob || null,
+                      libero: p.libero || '',
+                      isCaptain: !!p.isCaptain,
+                      role: null,
+                      createdAt: new Date().toISOString()
+                    }))
+                  )
+                }
+                if (match.awayTeamId && awayRoster.length) {
+                  // Delete existing players and add new ones
+                  await db.players.where('teamId').equals(match.awayTeamId).delete()
+                  await db.players.bulkAdd(
+                    awayRoster.map(p => ({
+                      teamId: match.awayTeamId,
+                      number: p.number,
+                      name: `${p.lastName} ${p.firstName}`,
+                      lastName: p.lastName,
+                      firstName: p.firstName,
+                      dob: p.dob || null,
+                      libero: p.libero || '',
+                      isCaptain: !!p.isCaptain,
+                      role: null,
+                      createdAt: new Date().toISOString()
+                    }))
+                  )
+                }
+                
+                // Go to coin toss
+                setPendingMatchId(matchId)
+                setCurrentView('coin-toss')
+              } else {
+                // Create new match or update existing
+                await createMatch()
+              }
+            } else {
+              // Create new match
+              await createMatch()
+            }
+          }}>Start Match</button>
+        )}
       </div>
 
-      {showBothRosters && (
+      {showBothRosters && (() => {
+        // Separate players and liberos
+        const homePlayers = (homeRoster || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
+        const homeLiberos = (homeRoster || []).filter(p => p.libero).sort((a, b) => {
+          if (a.libero === 'libero1') return -1
+          if (b.libero === 'libero1') return 1
+          return (a.number || 0) - (b.number || 0)
+        })
+        const awayPlayers = (awayRoster || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
+        const awayLiberos = (awayRoster || []).filter(p => p.libero).sort((a, b) => {
+          if (a.libero === 'libero1') return -1
+          if (b.libero === 'libero1') return 1
+          return (a.number || 0) - (b.number || 0)
+        })
+        
+        // Pad arrays to same length for alignment
+        const maxPlayers = Math.max(homePlayers.length, awayPlayers.length)
+        const maxLiberos = Math.max(homeLiberos.length, awayLiberos.length)
+        
+        const paddedHomePlayers = [...homePlayers, ...Array(maxPlayers - homePlayers.length).fill(null)]
+        const paddedAwayPlayers = [...awayPlayers, ...Array(maxPlayers - awayPlayers.length).fill(null)]
+        const paddedHomeLiberos = [...homeLiberos, ...Array(maxLiberos - homeLiberos.length).fill(null)]
+        const paddedAwayLiberos = [...awayLiberos, ...Array(maxLiberos - awayLiberos.length).fill(null)]
+        
+        // Bench officials
+        const homeBench = (benchHome || []).filter(b => b.firstName || b.lastName || b.dob)
+        const awayBench = (benchAway || []).filter(b => b.firstName || b.lastName || b.dob)
+        const maxBench = Math.max(homeBench.length, awayBench.length)
+        const paddedHomeBench = [...homeBench, ...Array(maxBench - homeBench.length).fill(null)]
+        const paddedAwayBench = [...awayBench, ...Array(maxBench - awayBench.length).fill(null)]
+        
+        return (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
           <div className="panel">
-            <h3>Home Team Roster</h3>
-            {(() => {
-              const { players, liberos, bench } = formatRoster(homeRoster, benchHome)
-              return (
-                <>
-                  {players.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <strong>Players</strong>
-                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                        {players.map((p, i) => (
-                          <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {p.isCaptain ? (
-                              <span style={{ 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                width: 24, 
-                                height: 24, 
-                                borderRadius: '50%', 
-                                border: '2px solid var(--text)',
-                                fontSize: 12,
-                                fontWeight: 600
-                              }}>#{p.number ?? ''}</span>
-                            ) : (
-                              <span>#{p.number ?? ''}</span>
-                            )}
-                            {p.libero && (
-                              <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+              <h3>{home || 'Home'} Team Roster</h3>
+              {/* Players Section */}
+              <div style={{ marginBottom: 16 }}>
+                <strong style={{ display: 'block', marginBottom: 8 }}>Players</strong>
+                <table className="roster-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Name</th>
+                      <th>DOB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paddedHomePlayers.map((player, idx) => (
+                      <tr key={player ? `p-${idx}` : `empty-${idx}`}>
+                        {player ? (
+                          <>
+                            <td className="roster-number">
+                              <span>{player.number ?? '—'}</span>
+                              <span className="roster-role">
+                                {player.isCaptain && <span className="roster-badge captain">C</span>}
                               </span>
+                            </td>
+                            <td className="roster-name">
+                              {player.lastName || ''} {player.firstName || ''}
+                            </td>
+                            <td className="roster-dob">{player.dob || '—'}</td>
+                          </>
+                        ) : (
+                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
                             )}
-                            <span>{p.lastName} {p.firstName}</span>
-                          </li>
+                      </tr>
                         ))}
-                      </ul>
+                  </tbody>
+                </table>
                     </div>
-                  )}
-                  {liberos.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <strong>Liberos</strong>
-                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                        {liberos.map((p, i) => (
-                          <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {p.isCaptain ? (
-                              <span style={{ 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                width: 24, 
-                                height: 24, 
-                                borderRadius: '50%', 
-                                border: '2px solid var(--text)',
-                                fontSize: 12,
-                                fontWeight: 600
-                              }}>#{p.number ?? ''}</span>
-                            ) : (
-                              <span>#{p.number ?? ''}</span>
-                            )}
-                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                              {p.libero === 'libero1' ? 'L1' : 'L2'}
+              {/* Liberos Section */}
+              {(maxLiberos > 0) && (
+                <div style={{ marginBottom: 16 }}>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>Liberos</strong>
+                  <table className="roster-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>DOB</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paddedHomeLiberos.map((player, idx) => (
+                        <tr key={player ? `l-${idx}` : `empty-libero-${idx}`}>
+                          {player ? (
+                            <>
+                              <td className="roster-number">
+                                <span>{player.number ?? '—'}</span>
+                                <span className="roster-role">
+                                  {player.isCaptain && <span className="roster-badge captain">C</span>}
+                                  <span className="roster-badge libero">
+                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
                             </span>
-                            <span>{p.lastName} {p.firstName}</span>
-                          </li>
+                                </span>
+                              </td>
+                              <td className="roster-name">
+                                {player.lastName || ''} {player.firstName || ''}
+                              </td>
+                              <td className="roster-dob">{player.dob || '—'}</td>
+                            </>
+                          ) : (
+                            <td colSpan="3" style={{ height: '2.5em', padding: '0.5em 0' }}></td>
+                          )}
+                        </tr>
                         ))}
-                      </ul>
+                    </tbody>
+                  </table>
                     </div>
                   )}
-                  {bench.length > 0 && (
+              {/* Bench Officials Section */}
                     <div>
-                      <strong>Bench</strong>
-                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                        {bench.map((m, i) => (
-                          <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
-                        ))}
-                      </ul>
-                    </div>
+                <strong style={{ display: 'block', marginBottom: 8 }}>Bench</strong>
+                <table className="roster-table">
+                  <thead>
+                    <tr>
+                      <th>Role</th>
+                      <th>Name</th>
+                      <th>DOB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paddedHomeBench.map((official, idx) => (
+                      <tr key={official ? `b-${idx}` : `empty-bench-${idx}`}>
+                        {official ? (
+                          <>
+                            <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
+                            <td>{official.lastName || ''} {official.firstName || ''}</td>
+                            <td>{official.dob || '—'}</td>
+                          </>
+                        ) : (
+                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
                   )}
-                </>
-              )
-            })()}
+                      </tr>
+                    ))}
+                    {maxBench === 0 && (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No bench officials</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
           </div>
           <div className="panel">
-            <h3>Away Team Roster</h3>
-            {(() => {
-              const { players, liberos, bench } = formatRoster(awayRoster, benchAway)
-              return (
-                <>
-                  {players.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <strong>Players</strong>
-                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                        {players.map((p, i) => (
-                          <li key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {p.isCaptain ? (
-                              <span style={{ 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                width: 24, 
-                                height: 24, 
-                                borderRadius: '50%', 
-                                border: '2px solid var(--text)',
-                                fontSize: 12,
-                                fontWeight: 600
-                              }}>#{p.number ?? ''}</span>
-                            ) : (
-                              <span>#{p.number ?? ''}</span>
-                            )}
-                            {p.libero && (
-                              <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+              <h3>{away || 'Away'} Team Roster</h3>
+              {/* Players Section */}
+              <div style={{ marginBottom: 16 }}>
+                <strong style={{ display: 'block', marginBottom: 8 }}>Players</strong>
+                <table className="roster-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Name</th>
+                      <th>DOB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paddedAwayPlayers.map((player, idx) => (
+                      <tr key={player ? `p-${idx}` : `empty-${idx}`}>
+                        {player ? (
+                          <>
+                            <td className="roster-number">
+                              <span>{player.number ?? '—'}</span>
+                              <span className="roster-role">
+                                {player.isCaptain && <span className="roster-badge captain">C</span>}
                               </span>
+                            </td>
+                            <td className="roster-name">
+                              {player.lastName || ''} {player.firstName || ''}
+                            </td>
+                            <td className="roster-dob">{player.dob || '—'}</td>
+                          </>
+                        ) : (
+                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
                             )}
-                            <span>{p.lastName} {p.firstName}</span>
-                          </li>
+                      </tr>
                         ))}
-                      </ul>
+                  </tbody>
+                </table>
                     </div>
-                  )}
-                  {liberos.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <strong>Liberos</strong>
-                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                        {liberos.map((p, i) => (
-                          <li key={`l-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {p.isCaptain ? (
-                              <span style={{ 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                width: 24, 
-                                height: 24, 
-                                borderRadius: '50%', 
-                                border: '2px solid var(--text)',
-                                fontSize: 12,
-                                fontWeight: 600
-                              }}>#{p.number ?? ''}</span>
-                            ) : (
-                              <span>#{p.number ?? ''}</span>
-                            )}
-                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                              {p.libero === 'libero1' ? 'L1' : 'L2'}
+              {/* Liberos Section */}
+              {(maxLiberos > 0) && (
+                <div style={{ marginBottom: 16 }}>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>Liberos</strong>
+                  <table className="roster-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>DOB</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paddedAwayLiberos.map((player, idx) => (
+                        <tr key={player ? `l-${idx}` : `empty-libero-${idx}`}>
+                          {player ? (
+                            <>
+                              <td className="roster-number">
+                                <span>{player.number ?? '—'}</span>
+                                <span className="roster-role">
+                                  {player.isCaptain && <span className="roster-badge captain">C</span>}
+                                  <span className="roster-badge libero">
+                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
                             </span>
-                            <span>{p.lastName} {p.firstName}</span>
-                          </li>
+                                </span>
+                              </td>
+                              <td className="roster-name">
+                                {player.lastName || ''} {player.firstName || ''}
+                              </td>
+                              <td className="roster-dob">{player.dob || '—'}</td>
+                            </>
+                          ) : (
+                            <td colSpan="3" style={{ height: '2.5em', padding: '0.5em 0' }}></td>
+                          )}
+                        </tr>
                         ))}
-                      </ul>
+                    </tbody>
+                  </table>
                     </div>
                   )}
-                  {bench.length > 0 && (
+              {/* Bench Officials Section */}
                     <div>
-                      <strong>Bench</strong>
-                      <ul className="roster-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
-                        {bench.map((m, i) => (
-                          <li key={`b-${i}`} style={{ marginBottom: 4 }}>{m.role}: {m.lastName} {m.firstName}</li>
-                        ))}
-                      </ul>
-                    </div>
+                <strong style={{ display: 'block', marginBottom: 8 }}>Bench</strong>
+                <table className="roster-table">
+                  <thead>
+                    <tr>
+                      <th>Role</th>
+                      <th>Name</th>
+                      <th>DOB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paddedAwayBench.map((official, idx) => (
+                      <tr key={official ? `b-${idx}` : `empty-bench-${idx}`}>
+                        {official ? (
+                          <>
+                            <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
+                            <td>{official.lastName || ''} {official.firstName || ''}</td>
+                            <td>{official.dob || '—'}</td>
+                          </>
+                        ) : (
+                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
                   )}
-                </>
-              )
-            })()}
+                      </tr>
+                    ))}
+                    {maxBench === 0 && (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No bench officials</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
           </div>
         </div>
-      )}
+          </div>
+        )
+      })()}
 
       <SignaturePad 
         open={openSignature !== null} 
