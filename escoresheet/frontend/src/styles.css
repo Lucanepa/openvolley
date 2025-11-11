@@ -1209,16 +1209,18 @@
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
-    padding: 24px;
+    padding: 32px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
+    min-height: 320px;
   }
 
   .home-card h2 {
     margin: 0;
-    font-size: 20px;
-    font-weight: 600;
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
   }
 
   .home-card-description {
@@ -1236,9 +1238,14 @@
 
   .home-card-actions button {
     width: 100%;
-    padding: 14px 20px;
-    font-size: 15px;
-    font-weight: 600;
+    padding: 16px 24px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 12px;
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .home-card-actions button.disabled,
@@ -1247,10 +1254,27 @@
     cursor: not-allowed;
   }
 
+  .test-button {
+    background: transparent !important;
+    border: 2px solid #22c55e !important;
+    color: #22c55e !important;
+  }
+
+  .test-button:hover:not(:disabled) {
+    background: rgba(34, 197, 94, 0.1) !important;
+  }
+
+  .test-button--danger {
+    border-color: #ef4444 !important;
+    color: #ef4444 !important;
+  }
+
+  .test-button--danger:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.1) !important;
+  }
+
   .home-card--test {
-    justify-self: end;
-    align-self: end;
-    max-width: 280px;
+    /* Remove custom sizing to match official card */
   }
 
   .home-card-header {

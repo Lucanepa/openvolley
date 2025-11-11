@@ -247,8 +247,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const currentSetEvents = data.events.filter(e => e.setIndex === data.set.index)
     if (currentSetEvents.length === 0) return 'idle'
     const lastEvent = currentSetEvents[currentSetEvents.length - 1]
-    if (lastEvent.type === 'rally_start') return 'in_play'
-    if (lastEvent.type === 'point' || lastEvent.type === 'replay') return 'idle'
+    console.log('[DEBUG] rallyStatus - last event:', lastEvent.type, 'timestamp:', lastEvent.ts)
+    if (lastEvent.type === 'rally_start') {
+      console.log('[DEBUG] rallyStatus -> in_play')
+      return 'in_play'
+    }
+    if (lastEvent.type === 'point' || lastEvent.type === 'replay') {
+      console.log('[DEBUG] rallyStatus -> idle (after point/replay)')
+      return 'idle'
+    }
+    console.log('[DEBUG] rallyStatus -> idle (default)')
     return 'idle'
   }, [data?.events, data?.set])
 
@@ -604,10 +612,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const logEvent = useCallback(
     async (type, payload = {}, options = {}) => {
+      console.log('[DEBUG] logEvent called:', { type, payload, options })
       if (!data?.set) {
+        console.log('[DEBUG] logEvent aborted - no set')
         return
       }
       const timestamp = options.timestamp ?? new Date().toISOString()
+      console.log('[DEBUG] logEvent - adding to db.events')
     await db.events.add({
         matchId,
         setIndex: data.set.index,
@@ -615,11 +626,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         payload,
         ts: timestamp
       })
+      console.log('[DEBUG] logEvent - event added to db.events')
       
     // Get match to check if it's a test match
     const match = await db.matches.get(matchId)
     const isTest = match?.test || false
     
+    console.log('[DEBUG] logEvent - adding to sync_queue')
     await db.sync_queue.add({
       resource: 'event',
       action: 'insert',
@@ -633,6 +646,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: Date.now(),
       status: 'queued'
     })
+    console.log('[DEBUG] logEvent completed:', type)
     },
     [data?.set, matchId]
   )
@@ -1240,8 +1254,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Confirm set start time
   const confirmSetStartTime = useCallback(async (time) => {
-    if (!setStartTimeModal || !data?.set) return
+    console.log('[DEBUG] confirmSetStartTime called with time:', time)
+    if (!setStartTimeModal || !data?.set) {
+      console.log('[DEBUG] confirmSetStartTime aborted - modal or set missing')
+      return
+    }
     
+    console.log('[DEBUG] Updating set with start time')
     // Update set with start time
     await db.sets.update(data.set.id, { startTime: time })
     
@@ -1249,16 +1268,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const setStartTimestamp = time
     const rallyStartTimestamp = new Date(new Date(setStartTimestamp).getTime() + 1).toISOString()
     
+    console.log('[DEBUG] Logging set_start event')
     // Log set start event
     await logEvent('set_start', {
       setIndex: setStartTimeModal.setIndex,
       startTime: time
     }, { timestamp: setStartTimestamp })
     
+    console.log('[DEBUG] Clearing modal')
     setSetStartTimeModal(null)
     
+    console.log('[DEBUG] Logging rally_start event')
     // Now actually start the rally (ensure timestamp is after set start)
     await logEvent('rally_start', {}, { timestamp: rallyStartTimestamp })
+    console.log('[DEBUG] confirmSetStartTime completed')
   }, [setStartTimeModal, data?.set, logEvent])
 
   // Confirm set end time

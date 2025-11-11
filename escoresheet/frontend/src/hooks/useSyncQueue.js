@@ -89,7 +89,18 @@ export function useSyncQueue() {
       for (const job of queued) {
         try {
           if (job.resource === 'event' && job.action === 'insert') {
-            const { error } = await supabase.from('events').insert(job.payload)
+            // Resolve match_id from external_id if it's a string
+            let eventPayload = { ...job.payload }
+            if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
+              const { data: matchData } = await supabase
+                .from('matches')
+                .select('id')
+                .eq('external_id', eventPayload.match_id)
+                .single()
+              eventPayload.match_id = matchData?.id || null
+            }
+            
+            const { error } = await supabase.from('events').insert(eventPayload)
             if (error) {
               console.error('Error syncing event:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
