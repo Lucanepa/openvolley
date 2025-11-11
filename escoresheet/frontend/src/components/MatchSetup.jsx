@@ -197,6 +197,36 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           setAwayColor(awayTeam.color || '#3b82f6')
         }
         
+        const normalizeBenchMember = member => ({
+          role: member?.role || '',
+          firstName: member?.firstName || member?.first_name || '',
+          lastName: member?.lastName || member?.last_name || '',
+          dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || ''
+        })
+
+        const resolvedHomeBench = (() => {
+          if (Array.isArray(match.bench_home) && match.bench_home.length > 0) {
+            return match.bench_home.map(normalizeBenchMember)
+          }
+          if (homeTeam?.benchStaff && Array.isArray(homeTeam.benchStaff) && homeTeam.benchStaff.length > 0) {
+            return homeTeam.benchStaff.map(normalizeBenchMember)
+          }
+          return []
+        })()
+
+        const resolvedAwayBench = (() => {
+          if (Array.isArray(match.bench_away) && match.bench_away.length > 0) {
+            return match.bench_away.map(normalizeBenchMember)
+          }
+          if (awayTeam?.benchStaff && Array.isArray(awayTeam.benchStaff) && awayTeam.benchStaff.length > 0) {
+            return awayTeam.benchStaff.map(normalizeBenchMember)
+          }
+          return []
+        })()
+
+        if (resolvedHomeBench.length) setBenchHome(resolvedHomeBench)
+        if (resolvedAwayBench.length) setBenchAway(resolvedAwayBench)
+        
         // Load match info
         if (match.scheduledAt) {
           const scheduledDate = new Date(match.scheduledAt)
@@ -238,8 +268,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         }
         
         // Load bench officials
-        if (match.bench_home) setBenchHome(match.bench_home)
-        if (match.bench_away) setBenchAway(match.bench_away)
+        if (match.bench_home || match.bench_away) {
+          if (match.bench_home) setBenchHome(match.bench_home.map(normalizeBenchMember))
+          if (match.bench_away) setBenchAway(match.bench_away.map(normalizeBenchMember))
+        }
         
         // Load match officials
         if (match.officials && match.officials.length > 0) {
@@ -1433,6 +1465,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     const teamACaptainSig = teamA === 'home' ? homeCaptainSignature : awayCaptainSignature
     const teamBCoachSig = teamB === 'home' ? homeCoachSignature : awayCoachSignature
     const teamBCaptainSig = teamB === 'home' ? homeCaptainSignature : awayCaptainSignature
+    const sortRosterEntries = roster =>
+      (roster || [])
+        .map((player, index) => ({ player, index }))
+        .sort((a, b) => {
+          const an = Number(a.player?.number) || 0
+          const bn = Number(b.player?.number) || 0
+          return an - bn
+        })
+    const teamARosterEntries = sortRosterEntries(teamAInfo.roster)
+    const teamBRosterEntries = sortRosterEntries(teamBInfo.roster)
 
     // Volleyball images - fixed size and responsive
     const imageSize = '64px'
@@ -1543,8 +1585,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   </tr>
                 </thead>
                 <tbody>
-                  {(teamA === 'home' ? homeRoster : awayRoster).map((p, i) => (
-                    <tr key={`${teamA}-${i}`}>
+                  {teamARosterEntries.map(({ player: p, index: originalIdx }) => (
+                    <tr key={`${teamA}-${originalIdx}`}>
                       <td className="coin-toss-number" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <input 
@@ -1558,11 +1600,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                               if (val !== null && (val < 1 || val > 99)) return
                               if (teamA === 'home') {
                                 const updated = [...homeRoster]
-                                updated[i] = { ...updated[i], number: val }
+                                updated[originalIdx] = { ...updated[originalIdx], number: val }
                                 setHomeRoster(updated)
                               } else {
                                 const updated = [...awayRoster]
-                                updated[i] = { ...updated[i], number: val }
+                                updated[originalIdx] = { ...updated[originalIdx], number: val }
                                 setAwayRoster(updated)
                               }
                             }}
@@ -1603,11 +1645,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
                             if (teamA === 'home') {
                               const updated = [...homeRoster]
-                              updated[i] = { ...updated[i], lastName, firstName }
+                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
                               setHomeRoster(updated)
                             } else {
                               const updated = [...awayRoster]
-                              updated[i] = { ...updated[i], lastName, firstName }
+                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
                               setAwayRoster(updated)
                             }
                           }}
@@ -1622,11 +1664,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
                             if (teamA === 'home') {
                               const updated = [...homeRoster]
-                              updated[i] = { ...updated[i], dob: value }
+                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
                               setHomeRoster(updated)
                             } else {
                               const updated = [...awayRoster]
-                              updated[i] = { ...updated[i], dob: value }
+                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
                               setAwayRoster(updated)
                             }
                           }}
@@ -1641,26 +1683,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             onChange={e => {
                               if (teamA === 'home') {
                                 const updated = [...homeRoster]
-                                updated[i] = { ...updated[i], libero: e.target.value }
+                                updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
                                 
                                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                                 if (e.target.value === 'libero2') {
-                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
                                   if (!hasL1) {
-                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                    updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
                                 
                                 setHomeRoster(updated)
                               } else {
                                 const updated = [...awayRoster]
-                                updated[i] = { ...updated[i], libero: e.target.value }
+                                updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
                                 
                                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                                 if (e.target.value === 'libero2') {
-                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
                                   if (!hasL1) {
-                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                    updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
                                 
@@ -1671,10 +1713,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             className="coin-toss-select"
                           >
                             <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
-                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
                               <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
                             )}
-                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero2') && (
                               <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
                             )}
                           </select>
@@ -1687,13 +1729,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                                 if (teamA === 'home') {
                                   const updated = homeRoster.map((player, idx) => ({
                                     ...player,
-                                    isCaptain: idx === i ? e.target.checked : false
+                                    isCaptain: idx === originalIdx ? e.target.checked : false
                                   }))
                                   setHomeRoster(updated)
                                 } else {
                                   const updated = awayRoster.map((player, idx) => ({
                                     ...player,
-                                    isCaptain: idx === i ? e.target.checked : false
+                                    isCaptain: idx === originalIdx ? e.target.checked : false
                                   }))
                                   setAwayRoster(updated)
                                 }
@@ -1707,7 +1749,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                         <button 
                           type="button" 
                           className="secondary" 
-                          onClick={() => setDeletePlayerModal({ team: 'teamA', index: i })}
+                          onClick={() => setDeletePlayerModal({ team: 'teamA', index: originalIdx })}
                           style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           title="Delete player"
                         >
@@ -1949,8 +1991,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   </tr>
                 </thead>
                 <tbody>
-                  {(teamB === 'home' ? homeRoster : awayRoster).map((p, i) => (
-                    <tr key={`${teamB}-${i}`}>
+                  {teamBRosterEntries.map(({ player: p, index: originalIdx }) => (
+                    <tr key={`${teamB}-${originalIdx}`}>
                       <td className="coin-toss-number" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <input 
@@ -1964,11 +2006,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                               if (val !== null && (val < 1 || val > 99)) return
                               if (teamB === 'home') {
                                 const updated = [...homeRoster]
-                                updated[i] = { ...updated[i], number: val }
+                                updated[originalIdx] = { ...updated[originalIdx], number: val }
                                 setHomeRoster(updated)
                               } else {
                                 const updated = [...awayRoster]
-                                updated[i] = { ...updated[i], number: val }
+                                updated[originalIdx] = { ...updated[originalIdx], number: val }
                                 setAwayRoster(updated)
                               }
                             }}
@@ -2009,11 +2051,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
                             if (teamB === 'home') {
                               const updated = [...homeRoster]
-                              updated[i] = { ...updated[i], lastName, firstName }
+                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
                               setHomeRoster(updated)
                             } else {
                               const updated = [...awayRoster]
-                              updated[i] = { ...updated[i], lastName, firstName }
+                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
                               setAwayRoster(updated)
                             }
                           }}
@@ -2028,11 +2070,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
                             if (teamB === 'home') {
                               const updated = [...homeRoster]
-                              updated[i] = { ...updated[i], dob: value }
+                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
                               setHomeRoster(updated)
                             } else {
                               const updated = [...awayRoster]
-                              updated[i] = { ...updated[i], dob: value }
+                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
                               setAwayRoster(updated)
                             }
                           }}
@@ -2047,26 +2089,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             onChange={e => {
                               if (teamB === 'home') {
                                 const updated = [...homeRoster]
-                                updated[i] = { ...updated[i], libero: e.target.value }
+                                updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
                                 
-                                // If L2 is selected but no L1 exists, automatically change L2 to L1
                                 if (e.target.value === 'libero2') {
-                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
                                   if (!hasL1) {
-                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                    updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
                                 
                                 setHomeRoster(updated)
                               } else {
                                 const updated = [...awayRoster]
-                                updated[i] = { ...updated[i], libero: e.target.value }
+                                updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
                                 
-                                // If L2 is selected but no L1 exists, automatically change L2 to L1
                                 if (e.target.value === 'libero2') {
-                                  const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                                  const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
                                   if (!hasL1) {
-                                    updated[i] = { ...updated[i], libero: 'libero1' }
+                                    updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
                                 
@@ -2077,10 +2117,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                             className="coin-toss-select"
                           >
                             <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
-                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
                               <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
                             )}
-                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero2') && (
                               <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
                             )}
                           </select>
@@ -2093,13 +2133,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                                 if (teamB === 'home') {
                                   const updated = homeRoster.map((player, idx) => ({
                                     ...player,
-                                    isCaptain: idx === i ? e.target.checked : false
+                                    isCaptain: idx === originalIdx ? e.target.checked : false
                                   }))
                                   setHomeRoster(updated)
                                 } else {
                                   const updated = awayRoster.map((player, idx) => ({
                                     ...player,
-                                    isCaptain: idx === i ? e.target.checked : false
+                                    isCaptain: idx === originalIdx ? e.target.checked : false
                                   }))
                                   setAwayRoster(updated)
                                 }
@@ -2113,7 +2153,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                         <button 
                           type="button" 
                           className="secondary" 
-                          onClick={() => setDeletePlayerModal({ team: 'teamB', index: i })}
+                          onClick={() => setDeletePlayerModal({ team: 'teamB', index: originalIdx })}
                           style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           title="Delete player"
                         >
@@ -2524,10 +2564,62 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     )
   }
 
+  const StatusBadge = ({ ready }) => (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 18,
+        height: 18,
+        borderRadius: '50%',
+        backgroundColor: ready ? '#22c55e' : '#f97316',
+        color: '#0b1120',
+        fontWeight: 700,
+        fontSize: 12,
+        marginRight: 8
+      }}
+      aria-label={ready ? 'Complete' : 'Incomplete'}
+      title={ready ? 'Complete' : 'Incomplete'}
+    >
+      {ready ? '✓' : '!'}
+    </span>
+  )
+
+  const officialsConfigured =
+    !!(ref1Last && ref1First && ref2Last && ref2First && scorerLast && scorerFirst && asstLast && asstFirst)
+  const matchInfoConfigured = !!(date || time || hall || city || league)
+  const homeConfigured = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
+  const awayConfigured = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
+
+  const formatOfficial = (lastName, firstName) => {
+    if (!lastName && !firstName) return 'Not set'
+    if (!lastName) return firstName
+    if (!firstName) return lastName
+    return `${lastName}, ${firstName.charAt(0)}.`
+  }
+
+  const formatDisplayDate = value => {
+    if (!value) return null
+    const parts = value.split('-')
+    if (parts.length !== 3) return value
+    const [year, month, day] = parts
+    if (!year || !month || !day) return value
+    return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`
+  }
+
+  const formatDisplayTime = value => {
+    if (!value) return null
+    const parts = value.split(':')
+    if (parts.length < 2) return value
+    const [hours, minutes] = parts
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  }
+
   return (
     <div className="setup">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>Create Match</h2>
+        <h2 style={{ margin: 0 }}>Match Setup</h2>
         {onGoHome && (
           <button className="secondary" onClick={onGoHome}>
             Home
@@ -2537,37 +2629,130 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       <div className="grid-4">
         <div className="card" style={{ order: 1 }}>
           <div>
-            <h3>Match info</h3>
-            <p className="text-sm">{date || time || hall || city || league ? 'Configured' : 'Not set'}</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <StatusBadge ready={matchInfoConfigured} />
+                <h3 style={{ margin: 0 }}>Match info</h3>
+              </div>
+            </div>
+            <div
+              className="text-sm"
+              style={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 4, marginTop: 8 }}
+            >
+              <span>Date:</span>
+              <span>{formatDisplayDate(date) || 'not set'}</span>
+              <span>Time:</span>
+              <span>{formatDisplayTime(time) || 'not set'}</span>
+              <span>City:</span>
+              <span>{city || 'not set'}</span>
+              <span>Hall:</span>
+              <span>{hall || 'not set'}</span>
+              <span>League:</span>
+              <span>{league || 'not set'}</span>
+            </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button></div>
         </div>
         <div className="card" style={{ order: 2 }}>
           <div>
-            <h3>Match officials</h3>
-            <p className="text-sm">Edit referees and scorers</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <StatusBadge ready={officialsConfigured} />
+                <h3 style={{ margin: 0 }}>Match officials</h3>
+              </div>
+            </div>
+            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 4, marginTop: 8 }}>
+              <span>1st referee:</span>
+              <span>{formatOfficial(ref1Last, ref1First)}</span>
+              <span>2nd referee:</span>
+              <span>{formatOfficial(ref2Last, ref2First)}</span>
+              <span>Scorer:</span>
+              <span>{formatOfficial(scorerLast, scorerFirst)}</span>
+              <span>Ass. Scorer:</span>
+              <span>{formatOfficial(asstLast, asstFirst)}</span>
+            </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button></div>
         </div>
         <div className="card" style={{ order: 3 }}>
           <div>
-            <h3>Home team</h3>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
-              <p className="text-sm">{home}</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <StatusBadge ready={homeConfigured} />
+                <h3 style={{ margin: 0 }}>Home team</h3>
+              </div>
+            </div>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8 }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'rgba(15, 23, 42, 0.35)',
+                  fontWeight: 700,
+                  fontSize: '16px',
+                  letterSpacing: '0.01em',
+                  minHeight: 32
+                }}
+              >
+                {home || 'Home'}
+              </span>
               <div className="shirt" style={{ background: homeColor }} />
             </div>
-            <p className="text-sm">{homeCounts.players} players • {homeCounts.liberos} {homeCounts.liberos === 1 ? 'libero' : 'liberos'} • {homeCounts.bench} bench</p>
+            <div
+              className="text-sm"
+              style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
+            >
+              <span>Players:</span>
+              <span>{homeCounts.players}</span>
+              <span>{homeCounts.liberos === 1 ? 'Libero:' : 'Liberos:'}</span>
+              <span>{homeCounts.liberos}</span>
+              <span>Bench staff:</span>
+              <span>{homeCounts.bench}</span>
+            </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('home')}>Edit</button></div>
         </div>
         <div className="card" style={{ order: 4 }}>
           <div>
-            <h3>Away team</h3>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center' }}>
-              <p className="text-sm">{away}</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <StatusBadge ready={awayConfigured} />
+                <h3 style={{ margin: 0 }}>Away team</h3>
+              </div>
+            </div>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8 }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'rgba(15, 23, 42, 0.35)',
+                  fontWeight: 700,
+                  fontSize: '16px',
+                  letterSpacing: '0.01em',
+                  minHeight: 32
+                }}
+              >
+                {away || 'Away'}
+              </span>
               <div className="shirt" style={{ background: awayColor }} />
             </div>
-            <p className="text-sm">{awayCounts.players} players • {awayCounts.liberos} {awayCounts.liberos === 1 ? 'libero' : 'liberos'} • {awayCounts.bench} bench</p>
+            <div
+              className="text-sm"
+              style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
+            >
+              <span>Players:</span>
+              <span>{awayCounts.players}</span>
+              <span>{awayCounts.liberos === 1 ? 'Libero:' : 'Liberos:'}</span>
+              <span>{awayCounts.liberos}</span>
+              <span>Bench staff:</span>
+              <span>{awayCounts.bench}</span>
+            </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('away')}>Edit</button></div>
         </div>

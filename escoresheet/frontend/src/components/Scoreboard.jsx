@@ -15,8 +15,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showManualPanel, setShowManualPanel] = useState(false)
   const [showRemarks, setShowRemarks] = useState(false)
   const [showRosters, setShowRosters] = useState(false)
+  const [showSanctions, setShowSanctions] = useState(false)
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
-  const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away' } | null
+  const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
   const [setEndModal, setSetEndModal] = useState(null) // { set, homePoints, awayPoints } | null
   const [substitutionDropdown, setSubstitutionDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement } | null
   const [substitutionConfirm, setSubstitutionConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number } | null
@@ -27,6 +28,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [liberoRotationModal, setLiberoRotationModal] = useState(null) // { team: 'home'|'away', position: 'IV', liberoNumber: number, playerNumber: number } | null
   const [exchangeLiberoDropdown, setExchangeLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', liberoNumber: number, element: HTMLElement } | null
   const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string } | null
+  const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
+  const [setEndTimeModal, setSetEndTimeModal] = useState(null) // { setIndex: number, winner: string, homePoints: number, awayPoints: number, defaultTime: string } | null
+  const [sanctionConfirm, setSanctionConfirm] = useState(null) // { side: 'left'|'right', type: 'improper_request'|'delay_warning'|'delay_penalty' } | null
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -78,13 +82,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       sets
     }
     
-    // Debug: log firstServe value
-    if (match?.firstServe) {
-      console.log('firstServe:', match.firstServe)
-    } else {
-      console.log('firstServe: not set')
-    }
-    
     return result
   }, [matchId])
 
@@ -122,13 +119,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const match = await db.matches.get(matchId)
     const isTest = match?.test || false
     
-    // Add set to sync queue
     await db.sync_queue.add({
       resource: 'set',
       action: 'insert',
       payload: {
         external_id: String(setId),
-        match_id: String(matchId),
+        match_id: match?.externalId || String(matchId),
         index: nextIndex,
         home_points: 0,
         away_points: 0,
@@ -176,6 +172,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return teamAKey !== 'home'
     }
   }, [data?.set, teamAKey])
+
+  // Calculate set score (number of sets won by each team)
+  const setScore = useMemo(() => {
+    if (!data) return { home: 0, away: 0, left: 0, right: 0 }
+    
+    const allSets = data.allSets || []
+    const finishedSets = allSets.filter(s => s.finished)
+    
+    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+    
+    const leftSetsWon = leftIsHome ? homeSetsWon : awaySetsWon
+    const rightSetsWon = leftIsHome ? awaySetsWon : homeSetsWon
+    
+    return { home: homeSetsWon, away: awaySetsWon, left: leftSetsWon, right: rightSetsWon }
+  }, [data, leftIsHome])
 
   const mapSideToTeamKey = useCallback(
     side => {
@@ -242,27 +254,108 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const isFirstRally = useMemo(() => {
     if (!data?.events || !data?.set) return true
-    // Check if there's a rally_start in the current set
-    return !data.events.some(e => e.type === 'rally_start' && e.setIndex === data.set.index)
+    // Check if there are any points in the current set
+    // This determines if we show "Start set" vs "Start rally"
+    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
+    return !hasPoints
   }, [data?.events, data?.set])
 
+  const getTeamLineupState = useCallback((teamKey) => {
+    if (!data?.events || !data?.set) {
+      return {
+        lineupEvents: [],
+        currentLineup: null,
+        playersOnCourt: [],
+        positionLiberoMap: {},
+        playerLiberoMap: {}
+      }
+    }
+
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
+
+    const lineupEvents = data.events
+      .filter(e =>
+        e.type === 'lineup' &&
+        e.payload?.team === teamKey &&
+        e.setIndex === data.set.index
+      )
+      .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+
+    if (lineupEvents.length === 0) {
+      return {
+        lineupEvents,
+        currentLineup: null,
+        playersOnCourt: [],
+        positionLiberoMap: {},
+        playerLiberoMap: {}
+      }
+    }
+
+    const currentLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
+    const playersOnCourt = Object.values(currentLineup)
+      .map(num => Number(num))
+      .filter(num => !Number.isNaN(num))
+
+    const positionLiberoMap = {}
+    const playerLiberoMap = {}
+
+    const findLatestLiberoSubstitution = (position, liberoNumber) => {
+      for (let i = lineupEvents.length - 1; i >= 0; i--) {
+        const maybeSub = lineupEvents[i]?.payload?.liberoSubstitution
+        if (
+          maybeSub &&
+          String(maybeSub.position) === String(position) &&
+          String(maybeSub.liberoNumber) === String(liberoNumber)
+        ) {
+          return maybeSub
+        }
+      }
+      return null
+    }
+
+    for (const [position, playerNumber] of Object.entries(currentLineup)) {
+      const player = teamPlayers.find(p => String(p.number) === String(playerNumber))
+      if (player?.libero && player.libero !== '') {
+        const subInfo = findLatestLiberoSubstitution(position, playerNumber)
+        const originalPlayerNumber = subInfo?.playerNumber ?? null
+
+        positionLiberoMap[position] = {
+          liberoNumber: Number(playerNumber),
+          liberoType: player.libero,
+          playerNumber: originalPlayerNumber
+        }
+
+        if (originalPlayerNumber !== null && originalPlayerNumber !== undefined) {
+          playerLiberoMap[String(originalPlayerNumber)] = {
+            liberoNumber: Number(playerNumber),
+            liberoType: player.libero
+          }
+        }
+      }
+    }
+
+    return {
+      lineupEvents,
+      currentLineup,
+      playersOnCourt,
+      positionLiberoMap,
+      playerLiberoMap
+    }
+  }, [data?.events, data?.set, data?.homePlayers, data?.awayPlayers])
+
   const buildOnCourt = useCallback((players, isLeft, teamKey) => {
+    const { currentLineup, positionLiberoMap } = getTeamLineupState(teamKey)
+
     // Check if there's a saved lineup for this team in the current set
-    const lineupEvents = data?.events?.filter(e => 
-      e.type === 'lineup' && 
-      e.payload?.team === teamKey && 
-      e.setIndex === data?.set?.index
-    ) || []
-    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-    const savedLineup = lineupEvent?.payload?.lineup
-    
+    const savedLineup = currentLineup
+
     // Fixed positions:
     // Left team: Front row (0,1,2): IV, III, II | Back row (3,4,5): V, VI, I
     // Right team: Front row (0,1,2): II, III, IV | Back row (3,4,5): I, VI, V (I is top right)
     const leftPositions = ['IV', 'III', 'II', 'V', 'VI', 'I']
     const rightPositions = ['II', 'III', 'IV', 'I', 'VI', 'V']
     const fixedPositions = isLeft ? leftPositions : rightPositions
-    
+
     // If it's the first rally and lineup hasn't been set, show empty players
     if (rallyStatus === 'idle' && isFirstRally && !savedLineup) {
       return Array(6).fill(null).map((_, idx) => {
@@ -275,38 +368,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       })
     }
-    
+
     // If lineup is saved, use it to map players to fixed positions
     if (savedLineup) {
-      // Get the most recent lineup event to check for libero substitution
-      const lineupEvents = data?.events?.filter(e => 
-        e.type === 'lineup' && 
-        e.payload?.team === teamKey && 
-        e.setIndex === data?.set?.index
-      ) || []
-      
-      // Only use the most recent lineup event's libero substitution
-      const liberoSubstitutions = {}
-      if (lineupEvents.length > 0) {
-        const mostRecentLineup = lineupEvents[lineupEvents.length - 1]
-        if (mostRecentLineup.payload?.liberoSubstitution) {
-          const sub = mostRecentLineup.payload.liberoSubstitution
-          liberoSubstitutions[sub.position] = {
-            liberoNumber: sub.liberoNumber,
-            playerNumber: sub.playerNumber,
-            liberoType: sub.liberoType
-          }
-        }
-      }
-      
       // Ensure we only return exactly 6 players, using only the fixed positions
       const result = fixedPositions.slice(0, 6).map((pos, idx) => {
         const playerNumber = savedLineup[pos]
         // Convert both to strings for comparison to handle number/string mismatches
         const player = players?.find(p => String(p.number) === String(playerNumber))
         const isLibero = player?.libero && player.libero !== ''
-        const liberoSub = liberoSubstitutions[pos]
-        
+        const liberoSub = positionLiberoMap[pos]
+
         return {
           id: player?.id ?? `placeholder-${idx}`,
           number: playerNumber || '',
@@ -318,7 +390,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           liberoType: liberoSub?.liberoType || (isLibero ? player.libero : null)
         }
       })
-      
+
       // Safety check: ensure we return exactly 6 players
       if (result.length !== 6) {
         console.warn(`buildOnCourt returned ${result.length} players instead of 6 for team ${teamKey}`)
@@ -329,19 +401,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             id: `placeholder-${idx}`,
             number: '',
             isPlaceholder: true,
-            position: fixedPositions[idx] || 'I',
-            isCaptain: false,
-            isLibero: false,
-            substitutedPlayerNumber: null,
-            liberoType: null
+            position: fixedPositions[idx] || '',
+            isCaptain: false
           })
         }
         return result.slice(0, 6)
       }
-      
+
       return result
     }
-    
+
     // Fallback: use default player list
     const trimmed = (players || []).slice(0, 6)
     const placeholders = Array.from({ length: 6 - trimmed.length }, (_, idx) => ({
@@ -349,7 +418,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       number: `–`
     }))
     const allPlayers = [...trimmed, ...placeholders]
-    
+
     return allPlayers.map((player, idx) => {
       const assignedPos = fixedPositions[idx]
       return {
@@ -365,7 +434,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         isCaptain: player.isCaptain || false
       }
     })
-  }, [rallyStatus, isFirstRally, data?.events])
+  }, [rallyStatus, isFirstRally, getTeamLineupState])
+
+  const getCurrentLineup = useCallback(
+    teamKey => {
+      if (!data?.events || !data?.set) return null
+      const lineupEvents = data.events
+        .filter(
+          e =>
+            e.type === 'lineup' &&
+            e.payload?.team === teamKey &&
+            e.setIndex === data.set.index
+        )
+        .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+
+      if (lineupEvents.length === 0) return null
+      return lineupEvents[lineupEvents.length - 1].payload?.lineup || null
+    },
+    [data?.events, data?.set]
+  )
 
   const leftTeam = useMemo(() => {
     if (!data) return { name: 'Team A', color: '#ef4444', players: [] }
@@ -424,146 +511,74 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const teamKey = leftIsHome ? 'home' : 'away'
     const players = leftIsHome ? data.homePlayers : data.awayPlayers
     const benchOfficials = leftIsHome ? (data.match?.bench_home || []) : (data.match?.bench_away || [])
-    
-    // Get lineup for this team in the current set
-    const lineupEvents = data.events?.filter(e => 
-      e.type === 'lineup' && 
-      e.payload?.team === teamKey && 
-      e.setIndex === data?.set?.index
-    ) || []
-    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-    const lineup = lineupEvent?.payload?.lineup
-    const playersOnCourt = lineup ? Object.values(lineup).map(n => Number(n)) : []
-    
-    // Get libero substitutions for this team in current set
-    const liberoSubstitutions = {}
-    data.events?.forEach(e => {
-      if (e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data?.set?.index && e.payload?.liberoSubstitution) {
-        const sub = e.payload.liberoSubstitution
-        liberoSubstitutions[sub.playerNumber] = {
-          liberoNumber: sub.liberoNumber,
-          liberoType: sub.liberoType,
-          position: sub.position
+
+    const { playersOnCourt, playerLiberoMap } = getTeamLineupState(teamKey)
+    const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
+
+    const benchPlayers = players
+      .filter(p => {
+        const playerNumber = Number(p.number)
+        return !Number.isNaN(playerNumber) && !playersOnCourtSet.has(playerNumber) && (!p.libero || p.libero === '')
+      })
+      .map(p => {
+        const playerNumber = Number(p.number)
+        const substitutedInfo = playerLiberoMap[String(playerNumber)] || null
+        return {
+          ...p,
+          substitutedByLibero: substitutedInfo
         }
-      }
-    })
-    
-    // Separate players into bench, liberos, and on court
-    const benchPlayers = players.filter(p => !playersOnCourt.includes(p.number) && (!p.libero || p.libero === ''))
-    const liberos = players.filter(p => p.libero && p.libero !== '')
-    
-    // Add libero substitution info to bench players
-    const benchPlayersWithLiberoInfo = benchPlayers.map(p => ({
-      ...p,
-      substitutedByLibero: liberoSubstitutions[p.number] || null
-    }))
-    
-    // Sort bench officials by hierarchy
-    const BENCH_ROLES = [
-      { value: 'Coach', label: 'C', fullLabel: 'Coach' },
-      { value: 'Assistant Coach 1', label: 'AC1', fullLabel: 'Assistant Coach 1' },
-      { value: 'Assistant Coach 2', label: 'AC2', fullLabel: 'Assistant Coach 2' },
-      { value: 'Physiotherapist', label: 'P', fullLabel: 'Physiotherapist' },
-      { value: 'Medic', label: 'M', fullLabel: 'Medic' }
-    ]
-    const getRoleOrder = (role) => {
-      const roleMap = {
-        'Coach': 0,
-        'Assistant Coach 1': 1,
-        'Assistant Coach 2': 2,
-        'Physiotherapist': 3,
-        'Medic': 4
-      }
-      return roleMap[role] ?? 999
-    }
-    const sortBenchByHierarchy = (bench) => {
-      return [...bench].sort((a, b) => getRoleOrder(a.role) - getRoleOrder(b.role))
-    }
-    const sortedBenchOfficials = sortBenchByHierarchy(benchOfficials.filter(b => b.firstName || b.lastName || b.dob))
-    
+      })
+
+    const liberos = players
+      .filter(p => {
+        const playerNumber = Number(p.number)
+        return p.libero && p.libero !== '' && !playersOnCourtSet.has(playerNumber)
+      })
+      .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+
     return {
-      benchPlayers: benchPlayersWithLiberoInfo.sort((a, b) => (a.number || 0) - (b.number || 0)),
-      liberos: liberos.sort((a, b) => {
-        if (a.libero === 'libero1') return -1
-        if (b.libero === 'libero1') return 1
-        return (a.number || 0) - (b.number || 0)
-      }),
-      benchOfficials: sortedBenchOfficials
+      benchPlayers,
+      liberos,
+      benchOfficials
     }
-  }, [data, leftIsHome])
+  }, [data, leftIsHome, getTeamLineupState])
 
   const rightTeamBench = useMemo(() => {
     if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [] }
     const teamKey = leftIsHome ? 'away' : 'home'
     const players = leftIsHome ? data.awayPlayers : data.homePlayers
     const benchOfficials = leftIsHome ? (data.match?.bench_away || []) : (data.match?.bench_home || [])
-    
-    // Get lineup for this team in the current set
-    const lineupEvents = data.events?.filter(e => 
-      e.type === 'lineup' && 
-      e.payload?.team === teamKey && 
-      e.setIndex === data?.set?.index
-    ) || []
-    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-    const lineup = lineupEvent?.payload?.lineup
-    const playersOnCourt = lineup ? Object.values(lineup).map(n => Number(n)) : []
-    
-    // Get libero substitutions for this team in current set
-    const liberoSubstitutions = {}
-    data.events?.forEach(e => {
-      if (e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data?.set?.index && e.payload?.liberoSubstitution) {
-        const sub = e.payload.liberoSubstitution
-        liberoSubstitutions[sub.playerNumber] = {
-          liberoNumber: sub.liberoNumber,
-          liberoType: sub.liberoType,
-          position: sub.position
+
+    const { playersOnCourt, playerLiberoMap } = getTeamLineupState(teamKey)
+    const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
+
+    const benchPlayers = players
+      .filter(p => {
+        const playerNumber = Number(p.number)
+        return !Number.isNaN(playerNumber) && !playersOnCourtSet.has(playerNumber) && (!p.libero || p.libero === '')
+      })
+      .map(p => {
+        const playerNumber = Number(p.number)
+        const substitutedInfo = playerLiberoMap[String(playerNumber)] || null
+        return {
+          ...p,
+          substitutedByLibero: substitutedInfo
         }
-      }
-    })
-    
-    // Separate players into bench, liberos, and on court
-    const benchPlayers = players.filter(p => !playersOnCourt.includes(p.number) && (!p.libero || p.libero === ''))
-    const liberos = players.filter(p => p.libero && p.libero !== '')
-    
-    // Add libero substitution info to bench players
-    const benchPlayersWithLiberoInfo = benchPlayers.map(p => ({
-      ...p,
-      substitutedByLibero: liberoSubstitutions[p.number] || null
-    }))
-    
-    // Sort bench officials by hierarchy
-    const BENCH_ROLES = [
-      { value: 'Coach', label: 'C', fullLabel: 'Coach' },
-      { value: 'Assistant Coach 1', label: 'AC1', fullLabel: 'Assistant Coach 1' },
-      { value: 'Assistant Coach 2', label: 'AC2', fullLabel: 'Assistant Coach 2' },
-      { value: 'Physiotherapist', label: 'P', fullLabel: 'Physiotherapist' },
-      { value: 'Medic', label: 'M', fullLabel: 'Medic' }
-    ]
-    const getRoleOrder = (role) => {
-      const roleMap = {
-        'Coach': 0,
-        'Assistant Coach 1': 1,
-        'Assistant Coach 2': 2,
-        'Physiotherapist': 3,
-        'Medic': 4
-      }
-      return roleMap[role] ?? 999
-    }
-    const sortBenchByHierarchy = (bench) => {
-      return [...bench].sort((a, b) => getRoleOrder(a.role) - getRoleOrder(b.role))
-    }
-    const sortedBenchOfficials = sortBenchByHierarchy(benchOfficials.filter(b => b.firstName || b.lastName || b.dob))
-    
+      })
+
+    const liberos = players
+      .filter(p => {
+        const playerNumber = Number(p.number)
+        return p.libero && p.libero !== '' && !playersOnCourtSet.has(playerNumber)
+      })
+      .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+
     return {
-      benchPlayers: benchPlayersWithLiberoInfo.sort((a, b) => (a.number || 0) - (b.number || 0)),
-      liberos: liberos.sort((a, b) => {
-        if (a.libero === 'libero1') return -1
-        if (b.libero === 'libero1') return 1
-        return (a.number || 0) - (b.number || 0)
-      }),
-      benchOfficials: sortedBenchOfficials
+      benchPlayers,
+      liberos,
+      benchOfficials
     }
-  }, [data, leftIsHome])
+  }, [data, leftIsHome, getTeamLineupState])
 
   const formatTimestamp = useCallback(date => {
     return date.toLocaleString(undefined, {
@@ -588,10 +603,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [])
 
   const logEvent = useCallback(
-    async (type, payload = {}) => {
-      if (!data?.set) return
-      const timestamp = new Date().toISOString()
-      await db.events.add({
+    async (type, payload = {}, options = {}) => {
+      if (!data?.set) {
+        return
+      }
+      const timestamp = options.timestamp ?? new Date().toISOString()
+    await db.events.add({
         matchId,
         setIndex: data.set.index,
         type,
@@ -599,23 +616,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         ts: timestamp
       })
       
-      // Get match to check if it's a test match
-      const match = await db.matches.get(matchId)
-      const isTest = match?.test || false
-      
-      await db.sync_queue.add({
-        resource: 'event',
-        action: 'insert',
-        payload: {
-          match_id: null,
-          set_index: data.set.index,
-          type,
-          payload,
-          test: isTest
-        },
-        ts: Date.now(),
-        status: 'queued'
-      })
+    // Get match to check if it's a test match
+    const match = await db.matches.get(matchId)
+    const isTest = match?.test || false
+    
+    await db.sync_queue.add({
+      resource: 'event',
+      action: 'insert',
+      payload: {
+        match_id: match?.externalId || null,
+        set_index: data.set.index,
+        type,
+        payload,
+        test: isTest
+      },
+      ts: Date.now(),
+      status: 'queued'
+    })
     },
     [data?.set, matchId]
   )
@@ -623,13 +640,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const checkSetEnd = useCallback((set, homePoints, awayPoints) => {
     // Check if this point would end the set
     if (homePoints >= 25 && homePoints - awayPoints >= 2) {
-      // Show confirmation modal
-      setSetEndModal({ set, homePoints, awayPoints, winner: 'home' })
+      // Show set end time confirmation modal
+      const defaultTime = new Date().toISOString()
+      setSetEndTimeModal({ setIndex: set.index, winner: 'home', homePoints, awayPoints, defaultTime })
       return true
     }
     if (awayPoints >= 25 && awayPoints - homePoints >= 2) {
-      // Show confirmation modal
-      setSetEndModal({ set, homePoints, awayPoints, winner: 'away' })
+      // Show set end time confirmation modal
+      const defaultTime = new Date().toISOString()
+      setSetEndTimeModal({ setIndex: set.index, winner: 'away', homePoints, awayPoints, defaultTime })
       return true
     }
     return false
@@ -662,7 +681,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (finished >= 5) {
       await db.matches.update(set.matchId, { status: 'final' })
       
-      // Add match update to sync queue
       await db.sync_queue.add({
         resource: 'match',
         action: 'update',
@@ -682,13 +700,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const match = await db.matches.get(set.matchId)
       const isTest = match?.test || false
       
-      // Add set to sync queue
       await db.sync_queue.add({
         resource: 'set',
         action: 'insert',
         payload: {
           external_id: String(newSetId),
-          match_id: String(set.matchId),
+          match_id: match?.externalId || String(set.matchId),
           index: set.index + 1,
           home_points: 0,
           away_points: 0,
@@ -767,6 +784,94 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return lastPoint.payload?.team || 'home'
   }, [data?.events, data?.match])
 
+  const leftServeTeamKey = leftIsHome ? 'home' : 'away'
+  const rightServeTeamKey = leftIsHome ? 'away' : 'home'
+  const currentServeTeam = data?.set ? getCurrentServe() : null
+  const leftServing = data?.set ? currentServeTeam === leftServeTeamKey : false
+  const rightServing = data?.set ? currentServeTeam === rightServeTeamKey : false
+
+  const serveBallBaseStyle = useMemo(
+    () => ({
+      width: '28px',
+      height: '28px',
+      filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+    }),
+    []
+  )
+
+  const renderScoreDisplay = useCallback(
+    (style = {}) => (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', ...style }}>
+        <div
+          className="set-score-display"
+          style={{
+            position: 'relative',
+            display: 'inline-block',
+            padding: '0 44px',
+            borderRadius: '14px'
+          }}
+        >
+          {leftServing && (
+            <img
+              src={mikasaVolleyball}
+              alt="Serving team"
+              style={{
+                ...serveBallBaseStyle,
+                position: 'absolute',
+                left: 10,
+                top: '50%',
+                transform: 'translateY(-50%)'
+              }}
+            />
+          )}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span style={{ minWidth: 28, textAlign: 'right' }}>{pointsBySide.left}</span>
+            <span>:</span>
+            <span style={{ minWidth: 28, textAlign: 'left' }}>{pointsBySide.right}</span>
+          </div>
+          {rightServing && (
+            <img
+              src={mikasaVolleyball}
+              alt="Serving team"
+              style={{
+                ...serveBallBaseStyle,
+                position: 'absolute',
+                right: 4,
+                top: '50%',
+                transform: 'translateY(-50%)'
+              }}
+            />
+          )}
+        </div>
+        {/* Set score display */}
+        <div style={{
+          fontSize: '14px',
+          fontWeight: 600,
+          color: 'var(--muted)',
+          textAlign: 'center'
+        }}>
+          {setScore.left}-{setScore.right}
+        </div>
+      </div>
+    ),
+    [leftServing, rightServing, pointsBySide.left, pointsBySide.right, serveBallBaseStyle, setScore.left, setScore.right]
+  )
+
+  const openManualLineup = useCallback(
+    teamKey => {
+      if (!data?.set) return
+      const existingLineup = getCurrentLineup(teamKey)
+      setLineupModal({ team: teamKey, mode: 'manual', lineup: existingLineup })
+    },
+    [data?.set, getCurrentLineup]
+  )
+
   // Rotate lineup: II→I, III→II, IV→III, V→IV, VI→V, I→VI
   const rotateLineup = useCallback((lineup) => {
     if (!lineup) return null
@@ -795,55 +900,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Check who has serve
       const currentServe = getCurrentServe()
       const scoringTeamHasServe = currentServe === teamKey
-
-      // Check for libero re-entry opportunity for the OTHER team (they will be receiving)
-      // This happens when the other team's libero was removed earlier and they're now receiving
-      if (scoringTeamHasServe) {
-        // Scoring team has serve, so the other team is receiving
-        // Check if the other team had a libero removed and should be asked about re-entry
-        const otherTeamKey = teamKey === 'home' ? 'away' : 'home'
-        
-        // Find the most recent libero exit event for the other team in this set
-        const otherTeamLiberoExits = data.events.filter(e => 
-          e.type === 'libero_exit' && 
-          e.payload?.team === otherTeamKey && 
-          e.setIndex === data.set.index &&
-          e.payload?.reason === 'rotation_to_front_row'
-        ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
-        
-        if (otherTeamLiberoExits.length > 0) {
-          const lastLiberoExit = otherTeamLiberoExits[0]
-          const liberoNumber = lastLiberoExit.payload?.liberoOut
-          const liberoType = lastLiberoExit.payload?.liberoType
-          
-          // Check if libero is not currently on court
-          const liberoOnCourt = getLiberoOnCourt(otherTeamKey)
-          if (!liberoOnCourt && liberoNumber && liberoType) {
-            // Get the other team's current lineup
-            const otherTeamLineupEvents = data.events.filter(e => 
-              e.type === 'lineup' && 
-              e.payload?.team === otherTeamKey && 
-              e.setIndex === data.set.index
-            ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
-            
-            if (otherTeamLineupEvents.length > 0) {
-              const otherTeamLineup = otherTeamLineupEvents[0].payload?.lineup
-              const playerInI = otherTeamLineup?.['I']
-              
-              if (playerInI && playerInI !== '') {
-                // Ask if they want to put the libero back in at position I
-                setLiberoReentryModal({
-                  team: otherTeamKey,
-                  position: 'I',
-                  playerNumber: Number(playerInI),
-                  liberoNumber: Number(liberoNumber),
-                  liberoType: liberoType
-                })
-              }
-            }
-          }
-        }
-      }
 
       // If scoring team doesn't have serve, rotate their lineup
       if (!scoringTeamHasServe) {
@@ -889,37 +945,61 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }
             }
             
-            // Check if any libero rotated to position IV (front row)
+            // Check if any libero is in front-row positions (II, III, IV) - remove them immediately
             const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-            const liberoInIV = Object.entries(rotatedLineup).find(([pos, num]) => {
-              if (pos === 'IV') {
-                const player = teamPlayers?.find(p => String(p.number) === String(num))
-                return player?.libero && player.libero !== ''
-              }
-              return false
-            })
+            const frontRowPositions = ['II', 'III', 'IV']
+            let liberoInFrontRow = null
             
-            // If libero rotated to IV, automatically remove them
-            let liberoExitedInfo = null // Store info about the libero that was removed
-            if (liberoInIV) {
-              const [position, liberoNumber] = liberoInIV
-              // Find the original player that was substituted by this libero
-              // Look through lineup events to find the libero substitution
+            for (const [pos, num] of Object.entries(rotatedLineup)) {
+              if (frontRowPositions.includes(pos)) {
+                const player = teamPlayers?.find(p => String(p.number) === String(num))
+                if (player?.libero && player.libero !== '') {
+                  liberoInFrontRow = [pos, num]
+                  break
+                }
+              }
+            }
+            
+            // If libero is in front row, automatically remove them
+            let liberoExitedInfo = null
+            if (liberoInFrontRow) {
+              const [position, liberoNumber] = liberoInFrontRow
+              
+              // Find the original player that should be in this position
+              // Look through lineup events to find who was in this position before the libero
               const allLineupEvents = data.events.filter(e => 
                 e.type === 'lineup' && 
                 e.payload?.team === teamKey && 
                 e.setIndex === data.set.index
-              ).sort((a, b) => new Date(a.ts) - new Date(b.ts))
+              ).sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
               
-              // Find the libero substitution event
               let originalPlayerNumber = null
-              let liberoSubEvent = null
-              for (let i = allLineupEvents.length - 1; i >= 0; i--) {
-                const event = allLineupEvents[i]
-                if (event.payload?.liberoSubstitution && String(event.payload.liberoSubstitution.liberoNumber) === String(liberoNumber)) {
-                  liberoSubEvent = event
-                  originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
-                  break
+              
+              // First, try to use the rotated libero substitution if it matches
+              if (rotatedLiberoSubstitution && 
+                  rotatedLiberoSubstitution.position === position &&
+                  String(rotatedLiberoSubstitution.liberoNumber) === String(liberoNumber)) {
+                originalPlayerNumber = rotatedLiberoSubstitution.playerNumber
+              } else {
+                // Find the most recent lineup event where this position had a non-libero player
+                for (const event of allLineupEvents) {
+                  const lineup = event.payload?.lineup
+                  if (lineup && lineup[position]) {
+                    const playerNum = lineup[position]
+                    const player = teamPlayers?.find(p => String(p.number) === String(playerNum))
+                    // If this position has a non-libero player, use it
+                    if (player && (!player.libero || player.libero === '')) {
+                      originalPlayerNumber = Number(playerNum)
+                      break
+                    }
+                    // If this is the libero substitution event for this libero, get the original player
+                    if (event.payload?.liberoSubstitution && 
+                        String(event.payload.liberoSubstitution.liberoNumber) === String(liberoNumber) &&
+                        event.payload.liberoSubstitution.position === position) {
+                      originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
+                      break
+                    }
+                  }
                 }
               }
               
@@ -939,7 +1019,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 // Show modal that libero must go out
                 setLiberoRotationModal({
                   team: teamKey,
-                  position: 'IV',
+                  position: position,
                   liberoNumber: Number(liberoNumber),
                   playerNumber: originalPlayerNumber,
                   liberoType: liberoPlayer?.libero
@@ -948,27 +1028,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 // Log libero exit
                 await logEvent('libero_exit', {
                   team: teamKey,
-                  position: 'IV',
+                  position: position,
                   liberoOut: liberoNumber,
                   playerIn: originalPlayerNumber,
                   liberoType: liberoPlayer?.libero,
                   reason: 'rotation_to_front_row'
                 })
+              } else {
+                // Fallback: if we can't find the original player, log a warning but still remove the libero
+                console.warn(`Could not find original player for libero ${liberoNumber} in position ${position}`)
+                // Remove the libero anyway - they can't be in front row
+                rotatedLineup[position] = ''
+                rotatedLiberoSubstitution = null
               }
-            }
-            
-            // After libero is removed from position IV, check if team is receiving (other team has serve)
-            // Only ask if the service is to the OTHER team (team doesn't have serve)
-            // IMPORTANT: This rotation block only executes when scoringTeamHasServe is false
-            // At that point, the scoring team just won serve, so AFTER this point they will have serve
-            // We want to ask when the team is receiving (other team has serve)
-            // Since the scoring team will have serve after this point, we should NOT ask here
-            // Instead, we need to check this when the OTHER team scores (they will be receiving)
-            // For now, we'll skip asking in this context since the team will have serve after scoring
-            // TODO: Check for libero re-entry when the OTHER team scores (they will be receiving)
-            if (liberoExitedInfo) {
-              // Don't ask here - the scoring team will have serve after this point
-              // We'll need to check this when the other team scores instead
             }
             
             // Save the rotated lineup as a new lineup event (but don't log it - it's automatic rotation)
@@ -993,6 +1065,54 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         [field]: newPoints
       })
       await logEvent('point', { team: teamKey })
+      
+      // After point is logged, the scoring team (teamKey) now has serve
+      // So the OTHER team is receiving - check if they had a libero exit
+      // Note: We use teamKey directly instead of getCurrentServe() because the event
+      // might not be in data.events yet (async update), but we know teamKey has serve
+      const otherTeamKey = teamKey === 'home' ? 'away' : 'home'
+      
+      // Check if the other team had a libero exit recently
+      const otherTeamLiberoExits = data.events.filter(e => 
+        e.type === 'libero_exit' && 
+        e.payload?.team === otherTeamKey && 
+        e.setIndex === data.set.index &&
+        e.payload?.reason === 'rotation_to_front_row'
+      ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      
+      if (otherTeamLiberoExits.length > 0) {
+        const lastLiberoExit = otherTeamLiberoExits[0]
+        const liberoNumber = lastLiberoExit.payload?.liberoOut
+        const liberoType = lastLiberoExit.payload?.liberoType
+        
+        // Check if libero is not currently on court
+        const liberoOnCourt = getLiberoOnCourt(otherTeamKey)
+        if (!liberoOnCourt && liberoNumber && liberoType) {
+          // Get the other team's current lineup
+          const otherTeamLineupEvents = data.events.filter(e => 
+            e.type === 'lineup' && 
+            e.payload?.team === otherTeamKey && 
+            e.setIndex === data.set.index
+          ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+          
+          if (otherTeamLineupEvents.length > 0) {
+            const otherTeamLineup = otherTeamLineupEvents[0].payload?.lineup
+            const playerInI = otherTeamLineup?.['I']
+            
+            if (playerInI && playerInI !== '') {
+              // Ask if they want to put the libero back in at position I
+              setLiberoReentryModal({
+                team: otherTeamKey,
+                position: 'I',
+                playerNumber: Number(playerInI),
+                liberoNumber: Number(liberoNumber),
+                liberoType: liberoType
+              })
+            }
+          }
+        }
+      }
+      
       const setEnded = checkSetEnd(data.set, homePoints, awayPoints)
       // If set didn't end, we're done. If it did, checkSetEnd will show the confirmation modal
     },
@@ -1000,8 +1120,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   )
 
   const handleStartRally = useCallback(async () => {
-    // Check if liberos exist and haven't been entered
+    // If this is the first rally, show set start time confirmation
     if (isFirstRally) {
+      // Check if liberos exist and haven't been entered
       const homeLiberos = data?.homePlayers?.filter(p => p.libero && p.libero !== '') || []
       const awayLiberos = data?.awayPlayers?.filter(p => p.libero && p.libero !== '') || []
       
@@ -1030,15 +1151,196 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         setLiberoReminder({ teams: teamsNeedingReminder })
         return
       }
+      
+      // Show set start time confirmation
+      // For set 1, use scheduled time, for set 2+, use 3 minutes after previous set end
+      let defaultTime = new Date().toISOString()
+      
+      if (data?.set?.index === 1) {
+        // Use scheduled time from match
+        if (data?.match?.scheduledAt) {
+          defaultTime = data.match.scheduledAt
+        }
+      } else {
+        // Get previous set's end time
+        const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+        const previousSet = allSets.find(s => s.index === (data.set.index - 1))
+        if (previousSet?.endTime) {
+          // Add 3 minutes to previous set end time
+          const prevEndTime = new Date(previousSet.endTime)
+          prevEndTime.setMinutes(prevEndTime.getMinutes() + 3)
+          defaultTime = prevEndTime.toISOString()
+        }
+      }
+      
+      setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
+      return
     }
     
     setLiberoReminder(null)
     await logEvent('rally_start')
-  }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set])
+  }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId])
 
   const handleReplay = useCallback(async () => {
     await logEvent('replay')
   }, [logEvent])
+
+  // Handle Improper Request sanction
+  const handleImproperRequest = useCallback((side) => {
+    if (!data?.match || rallyStatus !== 'idle') return
+    setSanctionConfirm({ side, type: 'improper_request' })
+  }, [data?.match, rallyStatus])
+
+  // Handle Delay Warning sanction
+  const handleDelayWarning = useCallback((side) => {
+    if (!data?.match || rallyStatus !== 'idle') return
+    setSanctionConfirm({ side, type: 'delay_warning' })
+  }, [data?.match, rallyStatus])
+
+  // Handle Delay Penalty sanction
+  const handleDelayPenalty = useCallback((side) => {
+    if (!data?.match || !data?.set || rallyStatus !== 'idle') return
+    setSanctionConfirm({ side, type: 'delay_penalty' })
+  }, [data?.match, data?.set, rallyStatus])
+
+  // Confirm sanction
+  const confirmSanction = useCallback(async () => {
+    if (!sanctionConfirm || !data?.match) return
+    
+    const { side, type } = sanctionConfirm
+    const teamKey = mapSideToTeamKey(side)
+    const sideKey = side === 'left' ? 'Left' : 'Right'
+    
+    // Update match sanctions for improper request and delay warning
+    if (type === 'improper_request' || type === 'delay_warning') {
+      const currentSanctions = data.match.sanctions || {}
+      await db.matches.update(matchId, {
+        sanctions: {
+          ...currentSanctions,
+          [`${type === 'improper_request' ? 'improperRequest' : 'delayWarning'}${sideKey}`]: true
+        }
+      })
+    }
+    
+    // Log the sanction event
+    await logEvent('sanction', {
+      team: teamKey,
+      type: type
+    })
+    
+    // If delay penalty, award point to the other team
+    if (type === 'delay_penalty') {
+      const otherSide = side === 'left' ? 'right' : 'left'
+      setSanctionConfirm(null)
+      await handlePoint(otherSide)
+    } else {
+      setSanctionConfirm(null)
+    }
+  }, [sanctionConfirm, data?.match, mapSideToTeamKey, matchId, logEvent, handlePoint])
+
+  // Confirm set start time
+  const confirmSetStartTime = useCallback(async (time) => {
+    if (!setStartTimeModal || !data?.set) return
+    
+    // Update set with start time
+    await db.sets.update(data.set.id, { startTime: time })
+    
+    // Use the provided time as the event timestamp so ordering stays consistent
+    const setStartTimestamp = time
+    const rallyStartTimestamp = new Date(new Date(setStartTimestamp).getTime() + 1).toISOString()
+    
+    // Log set start event
+    await logEvent('set_start', {
+      setIndex: setStartTimeModal.setIndex,
+      startTime: time
+    }, { timestamp: setStartTimestamp })
+    
+    setSetStartTimeModal(null)
+    
+    // Now actually start the rally (ensure timestamp is after set start)
+    await logEvent('rally_start', {}, { timestamp: rallyStartTimestamp })
+  }, [setStartTimeModal, data?.set, logEvent])
+
+  // Confirm set end time
+  const confirmSetEndTime = useCallback(async (time) => {
+    if (!setEndTimeModal || !data?.match || !data?.set) return
+    
+    const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
+    
+    // Determine team labels (A or B) based on coin toss
+    const teamAKey = data.match.coinTossTeamA || 'home'
+    const winnerLabel = winner === 'home' 
+      ? (teamAKey === 'home' ? 'A' : 'B')
+      : (teamAKey === 'away' ? 'A' : 'B')
+    
+    // Log set win
+    await logEvent('set_end', { 
+      team: winner, 
+      teamLabel: winnerLabel,
+      setIndex: setIndex,
+      homePoints,
+      awayPoints,
+      endTime: time
+    })
+    
+    // Update set with end time and finished status
+    await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
+    
+    const sets = await db.sets.where({ matchId }).toArray()
+    const finished = sets.filter(s => s.finished).length
+    
+    if (finished >= 5) {
+      await db.matches.update(matchId, { status: 'final' })
+      
+      // Add match update to sync queue
+      const matchRecord = await db.matches.get(matchId)
+      if (matchRecord?.test !== true) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: String(matchId),
+            status: 'final'
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+      
+      if (onFinishSet) onFinishSet(data.set)
+    } else {
+      const newSetId = await db.sets.add({ 
+        matchId, 
+        index: setIndex + 1, 
+        homePoints: 0, 
+        awayPoints: 0, 
+        finished: false 
+      })
+      
+      // Get match to check if it's a test match
+      const match = await db.matches.get(matchId)
+      const isTest = match?.test || false
+      
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: String(newSetId),
+          match_id: match?.externalId || String(matchId),
+          index: setIndex + 1,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          test: isTest,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
+    
+    setSetEndTimeModal(null)
+  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet])
 
   // Get action description for an event
   const getActionDescription = useCallback((event) => {
@@ -1109,6 +1411,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const winnerLabel = event.payload?.teamLabel || '?'
       const setIndex = event.payload?.setIndex || event.setIndex || '?'
       eventDescription = `Team ${winnerLabel} won Set ${setIndex}`
+    } else if (event.type === 'sanction') {
+      const sanctionType = event.payload?.type || 'unknown'
+      const sanctionLabel = sanctionType === 'improper_request' ? 'Improper Request' :
+                            sanctionType === 'delay_warning' ? 'Delay Warning' :
+                            sanctionType === 'delay_penalty' ? 'Delay Penalty' :
+                            sanctionType
+      eventDescription = `Sanction — ${teamName} (${sanctionLabel})`
     } else {
       eventDescription = event.type
       if (teamName) {
@@ -1222,7 +1531,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
-    // If it's a point, decrease the score
+    // If it's a point, decrease the score and handle rotation if needed
     if (lastEvent.type === 'point' && lastEvent.payload?.team) {
       const teamKey = lastEvent.payload.team
       const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
@@ -1232,6 +1541,62 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           [field]: currentPoints - 1
         })
       }
+      
+      // Check if the scoring team rotated (they didn't have serve before scoring)
+      // We need to find the point event BEFORE this one to determine who had serve
+      const allPointEvents = data.events
+        .filter(e => e.type === 'point' && e.setIndex === data.set.index)
+        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+      
+      const currentPointIndex = allPointEvents.findIndex(e => e.id === lastEvent.id)
+      const previousPointEvent = currentPointIndex >= 0 && currentPointIndex < allPointEvents.length - 1
+        ? allPointEvents[currentPointIndex + 1]
+        : null
+      
+      // Determine who had serve before this point
+      // If there's a previous point, the team that scored it has serve
+      // Otherwise, use firstServe from match
+      const serveBeforePoint = previousPointEvent 
+        ? previousPointEvent.payload?.team 
+        : (data?.match?.firstServe || 'home')
+      
+      const scoringTeamHadServe = serveBeforePoint === teamKey
+      
+      // If the scoring team didn't have serve, they rotated, so we need to undo the rotation
+      if (!scoringTeamHadServe) {
+        // Find the rotation lineup event that was created after this point
+        // Rotation lineups are created right after the point is logged
+        const pointTimestamp = new Date(lastEvent.ts)
+        const rotationLineupEvents = data.events
+          .filter(e => 
+            e.type === 'lineup' && 
+            e.payload?.team === teamKey && 
+            e.setIndex === data.set.index &&
+            new Date(e.ts) > pointTimestamp // Created after the point
+          )
+          .sort((a, b) => new Date(a.ts) - new Date(b.ts)) // Oldest first (first rotation lineup after point)
+        
+        // Find the first rotation lineup (should be the one created by the rotation)
+        // Rotation lineups don't have isInitial, fromSubstitution, or liberoSubstitution
+        const rotationLineup = rotationLineupEvents.find(e => {
+          const hasInitial = e.payload?.isInitial === true
+          const hasSubstitution = e.payload?.fromSubstitution === true
+          const hasLiberoSub = e.payload?.liberoSubstitution !== null && e.payload?.liberoSubstitution !== undefined
+          return !hasInitial && !hasSubstitution && !hasLiberoSub
+        })
+        
+        if (rotationLineup) {
+          // Delete the rotation lineup to undo the rotation
+          await db.events.delete(rotationLineup.id)
+        }
+      }
+    }
+    
+    // If it's an initial lineup, delete it (players go back to bench)
+    if (lastEvent.type === 'lineup' && lastEvent.payload?.isInitial === true) {
+      // Simply delete the initial lineup event
+      // This will cause players to go back to the bench
+      await db.events.delete(lastEvent.id)
     }
     
     // If it's a substitution, revert the lineup change
@@ -1554,6 +1919,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
+    // If it's a sanction, clear the sanction flag from the match
+    if (lastEvent.type === 'sanction' && lastEvent.payload?.team && lastEvent.payload?.type) {
+      const teamKey = lastEvent.payload.team
+      const sanctionType = lastEvent.payload.type
+      const side = (teamKey === 'home' && leftIsHome) || (teamKey === 'away' && !leftIsHome) ? 'left' : 'right'
+      const sideKey = side === 'left' ? 'Left' : 'Right'
+      
+      // Clear the sanction flag for improper_request and delay_warning
+      if (sanctionType === 'improper_request' || sanctionType === 'delay_warning') {
+        const currentSanctions = data.match?.sanctions || {}
+        const updatedSanctions = { ...currentSanctions }
+        const flagKey = `${sanctionType === 'improper_request' ? 'improperRequest' : 'delayWarning'}${sideKey}`
+        delete updatedSanctions[flagKey]
+        
+        await db.matches.update(matchId, {
+          sanctions: updatedSanctions
+        })
+      }
+    }
+    
     // Delete the event
     await db.events.delete(lastEvent.id)
     
@@ -1575,7 +1960,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     setUndoConfirm(null)
-  }, [undoConfirm, data?.events, data?.set, matchId, getActionDescription])
+  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription])
 
   const cancelUndo = useCallback(() => {
     setUndoConfirm(null)
@@ -1806,12 +2191,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const lastSubstitutionIndex = lastSubstitution.eventIndex
       
       // Check if player has already come back (got in and out again)
-      const hasComeBack = substitutions.some(s => 
-        String(s.payload?.playerIn) === String(player.number) &&
+      const substitutionsAfterOut = substitutions.filter(s => 
         new Date(s.ts) > new Date(lastSubstitution.ts)
       )
       
-      if (hasComeBack) return false // Already came back, not available
+      const hasComeBackIn = substitutionsAfterOut.some(s => 
+        String(s.payload?.playerIn) === String(player.number)
+      )
+      
+      if (hasComeBackIn) {
+        // Player came back in - check if they went out again
+        const lastComeBack = substitutionsAfterOut
+          .filter(s => String(s.payload?.playerIn) === String(player.number))
+          .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+        
+        const wentOutAgain = substitutionsAfterOut.some(s => 
+          String(s.payload?.playerOut) === String(player.number) &&
+          new Date(s.ts) > new Date(lastComeBack.ts)
+        )
+        
+        if (wentOutAgain) return false // Player came in and out again, cannot come back a second time
+      }
+      
+      // If never came back, check if they have a point change to allow coming back
+      if (hasComeBackIn) return false // Already came back (and still on court), not available
       
       const eventsAfterSub = data.events
         .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
@@ -1889,43 +2292,48 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Get libero currently on court for a team
   const getLiberoOnCourt = useCallback((teamKey) => {
-    if (!data?.events || !data?.set) return null
-    
-    // Get current lineup
-    const lineupEvents = data.events.filter(e => 
-      e.type === 'lineup' && 
-      e.payload?.team === teamKey && 
-      e.setIndex === data.set.index
-    )
-    if (lineupEvents.length === 0) return null
-    
-    const currentLineup = lineupEvents[lineupEvents.length - 1].payload?.lineup
-    if (!currentLineup) return null
-    
-    // Find which position has a libero
-    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-    for (const [position, playerNumber] of Object.entries(currentLineup)) {
-      const player = teamPlayers?.find(p => String(p.number) === String(playerNumber))
-      if (player?.libero && player.libero !== '') {
-        // Find the original player that was substituted
-        const liberoSubEvents = lineupEvents.filter(e => 
-          e.payload?.liberoSubstitution && 
-          String(e.payload.liberoSubstitution.liberoNumber) === String(playerNumber) &&
-          e.payload.liberoSubstitution.position === position
-        )
-        if (liberoSubEvents.length > 0) {
-          const sub = liberoSubEvents[liberoSubEvents.length - 1].payload.liberoSubstitution
-          return {
-            position,
-            liberoNumber: playerNumber,
-            liberoType: player.libero,
-            playerNumber: sub.playerNumber
-          }
+    const { currentLineup, positionLiberoMap } = getTeamLineupState(teamKey)
+    if (!currentLineup || !positionLiberoMap) return null
+
+    for (const [position, info] of Object.entries(positionLiberoMap)) {
+      if (!info) continue
+      const numberOnCourt = currentLineup[position]
+      if (String(numberOnCourt) === String(info.liberoNumber)) {
+        return {
+          position,
+          liberoNumber: info.liberoNumber,
+          liberoType: info.liberoType,
+          playerNumber: info.playerNumber
         }
       }
     }
+
     return null
-  }, [data?.events, data?.set, data?.homePlayers, data?.awayPlayers])
+  }, [getTeamLineupState])
+
+  // Check if there has been a point since last libero exchange
+  const hasPointSinceLastLiberoExchange = useCallback((teamKey) => {
+    if (!data?.events || !data?.set) return false
+    
+    // Find last libero entry, exit, or exchange event
+    const liberoEvents = data.events.filter(e => 
+      (e.type === 'libero_entry' || e.type === 'libero_exit' || e.type === 'libero_exchange') && 
+      e.payload?.team === teamKey && 
+      e.setIndex === data.set.index
+    ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    
+    if (liberoEvents.length === 0) return true // No libero exchange yet, allow
+    
+    const lastLiberoEvent = liberoEvents[0]
+    const lastLiberoEventIndex = data.events.findIndex(e => e.id === lastLiberoEvent.id)
+    
+    // Check if there's been a point since then
+    const eventsAfter = data.events.slice(lastLiberoEventIndex + 1).filter(e => 
+      e.setIndex === data.set.index && e.type === 'point'
+    )
+    
+    return eventsAfter.length > 0
+  }, [data?.events, data?.set])
 
   // Handle player click for substitution/libero (only when rally is not in play and lineup is set)
   const handlePlayerClick = useCallback((teamKey, position, playerNumber, event) => {
@@ -1934,6 +2342,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!leftTeamLineupSet && teamKey === (leftIsHome ? 'home' : 'away')) return
     if (!rightTeamLineupSet && teamKey === (leftIsHome ? 'away' : 'home')) return
     if (!playerNumber || playerNumber === '') return // Can't substitute placeholder
+    
+    // Check if this player is a libero - liberos cannot be substituted
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const clickedPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
+    if (clickedPlayer?.libero && clickedPlayer.libero !== '') {
+      // Clicking on a libero - no substitution allowed
+      return
+    }
     
     // Check if position is back row (I, V, VI) for libero
     const isBackRow = position === 'I' || position === 'V' || position === 'VI'
@@ -1944,15 +2360,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const isServing = teamServes && position === 'I'
     
     // Get team players to check for liberos
-    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
     const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
     
     // Check if a libero is already on court
     const liberoOnCourt = getLiberoOnCourt(teamKey)
     const canEnterLibero = liberos.length > 0 && (liberoOnCourt === null || liberoOnCourt === undefined)
     
+    // Check if there has been a point since last libero exchange
+    const hasPointSinceLibero = hasPointSinceLastLiberoExchange(teamKey)
+    
     // If back row and not serving, show both substitution and libero options
-    if (isBackRow && !isServing && canEnterLibero) {
+    // But only allow libero if there's been a point since last libero action
+    if (isBackRow && !isServing && canEnterLibero && hasPointSinceLibero) {
       // Close any existing dropdowns
       if (substitutionDropdown || liberoDropdown) {
         setSubstitutionDropdown(null)
@@ -2017,7 +2436,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       x: rect.left + rect.width / 2,
       y: rect.bottom + 8
     })
-  }, [rallyStatus, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, substitutionDropdown, liberoDropdown, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, data?.homePlayers, data?.awayPlayers])
+  }, [rallyStatus, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, substitutionDropdown, liberoDropdown, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers])
 
   // Show substitution confirmation
   const showSubstitutionConfirm = useCallback((substituteNumber) => {
@@ -2102,6 +2521,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     const { team, position, playerOut, liberoIn } = liberoConfirm
     
+    // Validate that liberos can only enter back-row positions (I, V, VI)
+    const isBackRow = position === 'I' || position === 'V' || position === 'VI'
+    if (!isBackRow) {
+      alert('Liberos can only enter back-row positions (I, V, VI)')
+      setLiberoConfirm(null)
+      setLiberoDropdown(null)
+      return
+    }
+    
     // Get current lineup for this team in the current set
     const lineupEvents = data.events?.filter(e => 
       e.type === 'lineup' && 
@@ -2171,7 +2599,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const confirmLiberoReentry = useCallback(async () => {
     if (!liberoReentryModal || !data?.set) return
     
-    const { team, position, playerOut, liberoNumber, liberoType } = liberoReentryModal
+    const { team, position, playerNumber, liberoNumber, liberoType } = liberoReentryModal
+    const playerOut = playerNumber // For consistency with other libero entry logic
     
     // Get current lineup for this team in the current set
     const lineupEvents = data.events?.filter(e => 
@@ -2221,30 +2650,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setLiberoReentryModal(null)
   }, [])
 
-  // Check if there has been a point since last libero exchange
-  const hasPointSinceLastLiberoExchange = useCallback((teamKey) => {
-    if (!data?.events || !data?.set) return false
-    
-    // Find last libero entry, exit, or exchange event
-    const liberoEvents = data.events.filter(e => 
-      (e.type === 'libero_entry' || e.type === 'libero_exit' || e.type === 'libero_exchange') && 
-      e.payload?.team === teamKey && 
-      e.setIndex === data.set.index
-    ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
-    
-    if (liberoEvents.length === 0) return true // No libero exchange yet, allow
-    
-    const lastLiberoEvent = liberoEvents[0]
-    const lastLiberoEventIndex = data.events.findIndex(e => e.id === lastLiberoEvent.id)
-    
-    // Check if there's been a point since then
-    const eventsAfter = data.events.slice(lastLiberoEventIndex + 1).filter(e => 
-      e.setIndex === data.set.index && e.type === 'point'
-    )
-    
-    return eventsAfter.length > 0
-  }, [data?.events, data?.set])
-
   // Handle libero out
   const handleLiberoOut = useCallback(async (side) => {
     if (rallyStatus !== 'idle') return
@@ -2269,11 +2674,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       e.payload?.team === teamKey && 
       e.setIndex === data.set.index
     )
-    const currentLineup = lineupEvents[lineupEvents.length - 1].payload?.lineup
+    const currentLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
+    
+    // Determine the original player that should replace the libero
+    let originalPlayerNumber = liberoOnCourt.playerNumber
+    if (!originalPlayerNumber && lineupEvents.length > 0) {
+      // Look through previous lineup events to find the most recent non-libero player at this position
+      const sortedLineupEvents = [...lineupEvents].sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+      const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+      for (const event of sortedLineupEvents) {
+        const lineup = event.payload?.lineup
+        if (!lineup) continue
+        const playerNumberAtPosition = lineup[liberoOnCourt.position]
+        if (!playerNumberAtPosition) continue
+        if (String(playerNumberAtPosition) !== String(liberoOnCourt.liberoNumber)) {
+          originalPlayerNumber = Number(playerNumberAtPosition)
+          break
+        }
+        // If this event has libero substitution info, use the stored original player
+        if (event.payload?.liberoSubstitution &&
+            String(event.payload.liberoSubstitution.liberoNumber) === String(liberoOnCourt.liberoNumber) &&
+            event.payload.liberoSubstitution.position === liberoOnCourt.position) {
+          originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
+          break
+        }
+      }
+    }
+    
+    if (!originalPlayerNumber) {
+      console.warn('Could not determine original player for libero out action', { teamKey, liberoOnCourt })
+      alert('Original player not found for this libero. Please update lineup manually.')
+      return
+    }
     
     // Restore the original player
     const newLineup = { ...currentLineup }
-    newLineup[liberoOnCourt.position] = String(liberoOnCourt.playerNumber)
+    newLineup[liberoOnCourt.position] = String(originalPlayerNumber)
     
     // Save the updated lineup (explicitly without libero substitution)
     const timestamp = new Date().toISOString()
@@ -2294,10 +2730,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       team: teamKey,
       position: liberoOnCourt.position,
       liberoOut: liberoOnCourt.liberoNumber,
-      playerIn: liberoOnCourt.playerNumber,
+      playerIn: originalPlayerNumber,
       liberoType: liberoOnCourt.liberoType
     })
-  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, matchId, logEvent])
+  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
   // Handle exchange libero (L1 <-> L2)
   const handleExchangeLibero = useCallback(async (side) => {
@@ -2374,6 +2810,39 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent])
 
+  const sanctionButtonStyles = useMemo(() => ({
+    improper: {
+      flex: 1,
+      fontSize: '10px',
+      padding: '8px 4px',
+      background: 'rgba(156, 163, 175, 0.25)',
+      border: '1px solid rgba(156, 163, 175, 0.5)',
+      color: '#d1d5db',
+      fontWeight: 600,
+      boxShadow: '0 0 0 1px rgba(255,255,255,0.05)'
+    },
+    delayWarning: {
+      flex: 1,
+      fontSize: '10px',
+      padding: '8px 4px',
+      background: 'rgba(234, 179, 8, 0.2)',
+      border: '1px solid rgba(234, 179, 8, 0.4)',
+      color: '#facc15',
+      fontWeight: 600,
+      boxShadow: '0 0 0 1px rgba(250, 204, 21, 0.15)'
+    },
+    delayPenalty: {
+      flex: 1,
+      fontSize: '10px',
+      padding: '8px 4px',
+      background: 'rgba(239, 68, 68, 0.2)',
+      border: '1px solid rgba(239, 68, 68, 0.4)',
+      color: '#f87171',
+      fontWeight: 600,
+      boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.2)'
+    }
+  }), [])
+
   if (!data?.set) {
     return <p>Loading…</p>
   }
@@ -2426,17 +2895,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {showRosters && (() => {
         // Separate players and liberos
         const homePlayers = (data.homePlayers || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
-        const homeLiberos = (data.homePlayers || []).filter(p => p.libero).sort((a, b) => {
-          if (a.libero === 'libero1') return -1
-          if (b.libero === 'libero1') return 1
-          return (a.number || 0) - (b.number || 0)
-        })
+        const homeLiberos = (data.homePlayers || [])
+          .filter(p => p.libero)
+          .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
         const awayPlayers = (data.awayPlayers || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
-        const awayLiberos = (data.awayPlayers || []).filter(p => p.libero).sort((a, b) => {
-          if (a.libero === 'libero1') return -1
-          if (b.libero === 'libero1') return 1
-          return (a.number || 0) - (b.number || 0)
-        })
+        const awayLiberos = (data.awayPlayers || [])
+          .filter(p => p.libero)
+          .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
         
         // Pad arrays to same length for alignment
         const maxPlayers = Math.max(homePlayers.length, awayPlayers.length)
@@ -2789,9 +3254,37 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           >
             Exchange libero
           </button>
-          <button className="secondary" disabled>
-            Sanctions
-          </button>
+          
+          {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
+          <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+            {!data?.match?.sanctions?.improperRequestLeft && (
+              <button
+                onClick={() => handleImproperRequest('left')}
+                disabled={rallyStatus === 'in_play'}
+                style={sanctionButtonStyles.improper}
+              >
+                Improper Request
+              </button>
+            )}
+            {!data?.match?.sanctions?.delayWarningLeft ? (
+              <button
+                onClick={() => handleDelayWarning('left')}
+                disabled={rallyStatus === 'in_play'}
+                style={sanctionButtonStyles.delayWarning}
+              >
+                Delay Warning
+              </button>
+            ) : (
+              <button
+                onClick={() => handleDelayPenalty('left')}
+                disabled={rallyStatus === 'in_play'}
+                style={sanctionButtonStyles.delayPenalty}
+              >
+                Delay Penalty
+              </button>
+            )}
+          </div>
+          
           <button className="secondary" disabled>
             Injury
           </button>
@@ -2808,6 +3301,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const canComeBack = canPlayerComeBack(teamKey, player.number)
                     const hasComeBack = hasPlayerComeBack(teamKey, player.number)
                     const isSubstitutedByLibero = player.substitutedByLibero !== null
+                    
+                    // Check if player was substituted out but waiting for point to allow comeback
+                    const substitutions = getSubstitutionHistory(teamKey)
+                    const wasSubstitutedOut = substitutions.some(s => String(s.payload?.playerOut) === String(player.number))
+                    const waitingForPoint = wasSubstitutedOut && !canComeBack && !hasComeBack
                     
                     return (
                       <div 
@@ -2862,7 +3360,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             ✕
                           </span>
                         )}
-                        {canComeBack && !hasComeBack && (
+                        {(waitingForPoint || canComeBack) && !hasComeBack && (
                           <span 
                             style={{ 
                               fontSize: '7px',
@@ -2877,7 +3375,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               minWidth: '14px',
                               minHeight: '12px',
                               justifyContent: 'center',
-                              border: '1px solid rgba(255, 255, 255, 0.2)'
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              opacity: waitingForPoint ? 0.5 : 1
                             }}
                           >
                             <span style={{ color: '#22c55e', fontWeight: 900 }}>↑</span>
@@ -2979,9 +3478,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </div>
                       
                       {/* Current score - centered */}
-                      <div className="set-score-display" style={{ flex: '0 0 auto' }}>
-                        {pointsBySide.left}:{pointsBySide.right}
-                      </div>
+                      {renderScoreDisplay({ flex: '0 0 auto' })}
                       
                       {/* Right side previous sets */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start', flex: '0 0 auto' }}>
@@ -3005,11 +3502,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 })()}
                 
                 {/* If set 1, just show current score centered */}
-                {data.set.index === 1 && (
-                  <div className="set-score-display" style={{ margin: '0 auto' }}>
-                    {pointsBySide.left}:{pointsBySide.right}
-                  </div>
-                )}
+                {data.set.index === 1 && renderScoreDisplay({ margin: '0 auto' })}
               </div>
             </div>
             <div>
@@ -3018,6 +3511,34 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
               </span>
             </div>
+            {/* Last action */}
+            {data?.events && data.events.length > 0 && (() => {
+              // Find the last undoable event
+              const allEvents = data.events.sort((a, b) => new Date(b.ts) - new Date(a.ts))
+              const lastEvent = allEvents.find(e => {
+                if (e.type === 'lineup') {
+                  const hasInitial = e.payload?.isInitial === true
+                  const hasSubstitution = e.payload?.fromSubstitution === true
+                  return hasInitial || hasSubstitution
+                }
+                if (e.type === 'rally_start' || e.type === 'replay') return false
+                return true
+              })
+              
+              if (!lastEvent) return null
+              
+              const description = getActionDescription(lastEvent)
+              if (!description || description === 'Unknown action') return null
+              
+              return (
+                <div>
+                  <span className="summary-label">Last action:</span>
+                  <span className="summary-value" style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    {description}
+                  </span>
+                </div>
+              )
+            })()}
           </div>
 
           <div className="court">
@@ -3028,7 +3549,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 {!leftTeamLineupSet && (
                   <button
                     className="lineup-button lineup-button-left"
-                    onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away' })}
+                    onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
                     style={{
                       position: 'absolute',
                       left: '25%',
@@ -3055,7 +3576,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 {!rightTeamLineupSet && (
                   <button
                     className="lineup-button lineup-button-right"
-                    onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home' })}
+                    onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
                     style={{
                       position: 'absolute',
                       left: '75%',
@@ -3120,15 +3641,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             right: '-8px',
                             width: '18px',
                             height: '18px',
-                            background: 'rgba(15, 23, 42, 0.95)',
-                            border: '2px solid rgba(255, 255, 255, 0.4)',
+                            background: '#FFF8E7',
+                            border: '2px solid rgba(0, 0, 0, 0.2)',
                             borderRadius: '4px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontSize: '10px',
                             fontWeight: 700,
-                            color: 'var(--text)',
+                            color: '#000',
                             zIndex: 6
                           }}>
                             {player.substitutedPlayerNumber}
@@ -3148,11 +3669,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const leftTeamKey = leftIsHome ? 'home' : 'away'
                     const currentServe = getCurrentServe()
                     const leftTeamServes = currentServe === leftTeamKey
-                    const shouldShowBall = player.position === 'I' && 
-                                          leftTeamServes &&
-                                          player.number && 
-                                          player.number !== '' &&
-                                          !player.isPlaceholder
+                    const shouldShowBall = player.position === 'I' && leftTeamServes
                     const teamSubstitutions = substitutionsUsed?.[leftTeamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                     return (
@@ -3202,15 +3719,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             right: '-8px',
                             width: '18px',
                             height: '18px',
-                            background: 'rgba(15, 23, 42, 0.95)',
-                            border: '2px solid rgba(255, 255, 255, 0.4)',
+                            background: '#FFF8E7',
+                            border: '2px solid rgba(0, 0, 0, 0.2)',
                             borderRadius: '4px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontSize: '10px',
                             fontWeight: 700,
-                            color: 'var(--text)',
+                            color: '#000',
                             zIndex: 6
                           }}>
                             {player.substitutedPlayerNumber}
@@ -3267,15 +3784,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             right: '-8px',
                             width: '18px',
                             height: '18px',
-                            background: 'rgba(15, 23, 42, 0.95)',
-                            border: '2px solid rgba(255, 255, 255, 0.4)',
+                            background: '#FFF8E7',
+                            border: '2px solid rgba(0, 0, 0, 0.2)',
                             borderRadius: '4px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontSize: '10px',
                             fontWeight: 700,
-                            color: 'var(--text)',
+                            color: '#000',
                             zIndex: 6
                           }}>
                             {player.substitutedPlayerNumber}
@@ -3295,11 +3812,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const rightTeamKey = leftIsHome ? 'away' : 'home'
                     const currentServe = getCurrentServe()
                     const rightTeamServes = currentServe === rightTeamKey
-                    const shouldShowBall = player.position === 'I' && 
-                                          rightTeamServes &&
-                                          player.number && 
-                                          player.number !== '' &&
-                                          !player.isPlaceholder
+                    const shouldShowBall = player.position === 'I' && rightTeamServes
                     const teamSubstitutions = substitutionsUsed?.[rightTeamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                     return (
@@ -3349,15 +3862,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             right: '-8px',
                             width: '18px',
                             height: '18px',
-                            background: 'rgba(15, 23, 42, 0.95)',
-                            border: '2px solid rgba(255, 255, 255, 0.4)',
+                            background: '#FFF8E7',
+                            border: '2px solid rgba(0, 0, 0, 0.2)',
                             borderRadius: '4px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontSize: '10px',
                             fontWeight: 700,
-                            color: 'var(--text)',
+                            color: '#000',
                             zIndex: 6
                           }}>
                             {player.substitutedPlayerNumber}
@@ -3378,7 +3891,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
           <div className="rally-controls">
             {rallyStatus === 'idle' ? (
-              <button className="secondary" onClick={handleStartRally}>
+              <button 
+                className="secondary" 
+                onClick={handleStartRally}
+                disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+              >
                 {isFirstRally ? 'Start set' : 'Start rally'}
               </button>
             ) : (
@@ -3480,9 +3997,37 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           >
             Exchange libero
           </button>
-          <button className="secondary" disabled>
-            Sanctions
-          </button>
+          
+          {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
+          <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+            {!data?.match?.sanctions?.improperRequestRight && (
+              <button
+                onClick={() => handleImproperRequest('right')}
+                disabled={rallyStatus === 'in_play'}
+                style={sanctionButtonStyles.improper}
+              >
+                Improper Request
+              </button>
+            )}
+            {!data?.match?.sanctions?.delayWarningRight ? (
+              <button
+                onClick={() => handleDelayWarning('right')}
+                disabled={rallyStatus === 'in_play'}
+                style={sanctionButtonStyles.delayWarning}
+              >
+                Delay Warning
+              </button>
+            ) : (
+              <button
+                onClick={() => handleDelayPenalty('right')}
+                disabled={rallyStatus === 'in_play'}
+                style={sanctionButtonStyles.delayPenalty}
+              >
+                Delay Penalty
+              </button>
+            )}
+          </div>
+          
           <button className="secondary" disabled>
             Injury
           </button>
@@ -3499,6 +4044,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const canComeBack = canPlayerComeBack(teamKey, player.number)
                     const hasComeBack = hasPlayerComeBack(teamKey, player.number)
                     const isSubstitutedByLibero = player.substitutedByLibero !== null
+                    
+                    // Check if player was substituted out but waiting for point to allow comeback
+                    const substitutions = getSubstitutionHistory(teamKey)
+                    const wasSubstitutedOut = substitutions.some(s => String(s.payload?.playerOut) === String(player.number))
+                    const waitingForPoint = wasSubstitutedOut && !canComeBack && !hasComeBack
                     
                     return (
                       <div 
@@ -3553,7 +4103,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             ✕
                           </span>
                         )}
-                        {canComeBack && !hasComeBack && (
+                        {(waitingForPoint || canComeBack) && !hasComeBack && (
                           <span 
                             style={{ 
                               fontSize: '7px',
@@ -3568,7 +4118,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               minWidth: '14px',
                               minHeight: '12px',
                               justifyContent: 'center',
-                              border: '1px solid rgba(255, 255, 255, 0.2)'
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              opacity: waitingForPoint ? 0.5 : 1
                             }}
                           >
                             <span style={{ color: '#22c55e', fontWeight: 900 }}>↑</span>
@@ -3652,9 +4203,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <button className="secondary" onClick={() => setShowRemarks(v => !v)}>
           {showRemarks ? 'Close remarks' : 'Open remarks recording'}
         </button>
+        <button className="secondary" onClick={() => setShowSanctions(v => !v)}>
+          {showSanctions ? 'Close sanctions' : 'Show sanctions'}
+        </button>
       </div>
 
-      {(showLogs || showManualPanel || showRemarks) && (
+      {(showLogs || showManualPanel || showRemarks || showSanctions) && (
         <div className="match-panels">
           {showLogs && (
             <section className="panel">
@@ -3731,14 +4285,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         } else if (event.type === 'replay') {
                           eventDescription = 'Replay'
                         } else if (event.type === 'lineup') {
-                          // Only show initial lineups or substitution-related lineups, not rotation lineups
+                          // Only show initial lineups, manual overrides, or substitution-related lineups (skip rotation lineups)
                           const isInitial = event.payload?.isInitial === true
                           const hasSubstitution = event.payload?.fromSubstitution === true
-                          if (!isInitial && !hasSubstitution) {
+                          const manualOverride = event.payload?.manualOverride === true
+                          if (!isInitial && !hasSubstitution && !manualOverride) {
                             // This is a rotation lineup, skip it
                             return null
                           }
-                          eventDescription = `Lineup — ${teamName}`
+                          eventDescription = manualOverride
+                            ? `Manual lineup override — ${teamName}`
+                            : `Lineup — ${teamName}`
                         } else if (event.type === 'libero_entry') {
                           const liberoNumber = event.payload?.liberoIn || '?'
                           const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
@@ -3783,7 +4340,54 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           {showManualPanel && (
             <section className="panel">
               <h3>Manual changes</h3>
-              <p>Adjustments and overrides will live here soon.</p>
+              <div className="manual-list">
+                <div
+                  className="manual-item"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    paddingBottom: '16px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Change current lineup</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                        Override the on-court lineup if a mistake was recorded.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        className="secondary"
+                        disabled={!data?.set}
+                        onClick={() => openManualLineup(leftIsHome ? 'home' : 'away')}
+                        style={{
+                          background: leftTeam.color || '#ef4444',
+                          color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff'
+                        }}
+                      >
+                        Edit Team {leftTeam.isTeamA ? 'A' : 'B'} (Left)
+                      </button>
+                      <button
+                        className="secondary"
+                        disabled={!data?.set}
+                        onClick={() => openManualLineup(leftIsHome ? 'away' : 'home')}
+                        style={{
+                          background: rightTeam.color || '#3b82f6',
+                          color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff'
+                        }}
+                      >
+                        Edit Team {rightTeam.isTeamA ? 'A' : 'B'} (Right)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--muted)' }}>
+                  More manual adjustments will appear here soon.
+                </div>
+              </div>
             </section>
           )}
           {showRemarks && (
@@ -3792,7 +4396,133 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <textarea
                 className="remarks-area"
                 placeholder="Record match remarks…"
+                value={data?.match?.remarks || ''}
+                onChange={e => {
+                  db.matches.update(matchId, { remarks: e.target.value })
+                }}
               />
+            </section>
+          )}
+          
+          {showSanctions && (
+            <section className="panel">
+              <h3>Sanctions</h3>
+              <div style={{ overflowX: 'auto' }}>
+                {/* Improper Request Row */}
+                <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '14px', minWidth: '120px' }}>Improper Request:</div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    {['A', 'B'].map(team => {
+                      const teamKey = team === 'A' ? teamAKey : teamBKey
+                      const sideKey = (team === 'A' && teamAKey === 'home' && leftIsHome) || (team === 'A' && teamAKey === 'away' && !leftIsHome) || (team === 'B' && teamBKey === 'home' && leftIsHome) || (team === 'B' && teamBKey === 'away' && !leftIsHome) ? 'Left' : 'Right'
+                      const hasImproperRequest = data?.match?.sanctions?.[`improperRequest${sideKey}`]
+                      
+                      return (
+                        <div key={team} style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          border: '2px solid rgba(255,255,255,0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          position: 'relative'
+                        }}>
+                          {team}
+                          {hasImproperRequest && (
+                            <div style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '24px',
+                              color: '#ef4444',
+                              fontWeight: 900
+                            }}>
+                              ✕
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                
+                {/* Sanctions Table */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Warning</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Penalty</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Expulsion</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Disqualification</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Team</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Set</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      // Get all sanction events
+                      const sanctionEvents = (data?.events || []).filter(e => e.type === 'sanction')
+                      
+                      if (sanctionEvents.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="7" style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)' }}>
+                              No sanctions recorded
+                            </td>
+                          </tr>
+                        )
+                      }
+                      
+                      return sanctionEvents.map((event, idx) => {
+                        const sanctionType = event.payload?.type
+                        const team = event.payload?.team
+                        const teamLabel = team === teamAKey ? 'A' : 'B'
+                        const setIndex = event.setIndex || 1
+                        
+                        // Calculate score at time of sanction
+                        const setEvents = (data?.events || []).filter(e => e.setIndex === setIndex)
+                        const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                        let homeScore = 0
+                        let awayScore = 0
+                        for (let i = 0; i <= eventIndex; i++) {
+                          const e = setEvents[i]
+                          if (e.type === 'point') {
+                            if (e.payload?.team === 'home') homeScore++
+                            else if (e.payload?.team === 'away') awayScore++
+                          }
+                        }
+                        
+                        // Put sanctioned team's score on the left
+                        const sanctionedTeamScore = team === 'home' ? homeScore : awayScore
+                        const otherTeamScore = team === 'home' ? awayScore : homeScore
+                        const scoreDisplay = `${sanctionedTeamScore}:${otherTeamScore}`
+                        
+                        return (
+                          <tr key={event.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                              {sanctionType === 'delay_warning' && 'D'}
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                              {sanctionType === 'delay_penalty' && 'D'}
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}></td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}></td>
+                            <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>{teamLabel}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{setIndex}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{scoreDisplay}</td>
+                          </tr>
+                        )
+                      })
+                    })()}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
         </div>
@@ -3841,10 +4571,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       {lineupModal && <LineupModal 
         team={lineupModal.team}
-        teamData={lineupModal.team === 'home' ? data?.homeTeam : data?.awayTeam}
-        players={lineupModal.team === 'home' ? data?.homePlayers : data?.awayPlayers}
+        teamData={
+          lineupModal.team === 'home'
+            ? data?.homeTeam
+            : data?.awayTeam
+        }
+        players={
+          lineupModal.team === 'home'
+            ? data?.homePlayers
+            : data?.awayPlayers
+        }
         matchId={matchId}
         setIndex={data?.set?.index}
+        mode={lineupModal.mode || 'initial'}
+        lineup={lineupModal.lineup}
+        teamAKey={teamAKey}
+        teamBKey={teamBKey}
         onClose={() => setLineupModal(null)}
         onSave={() => {
           setLineupModal(null)
@@ -4307,21 +5049,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
-                onClick={cancelLiberoReentry}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                No
-              </button>
-              <button
                 onClick={confirmLiberoReentry}
                 style={{
                   padding: '12px 24px',
@@ -4335,6 +5062,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 }}
               >
                 Yes
+              </button>
+              <button
+                onClick={cancelLiberoReentry}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                No
               </button>
             </div>
           </div>
@@ -4389,9 +5131,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 Back
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   setLiberoReminder(null)
-                  logEvent('rally_start')
+                  
+                  // Show set start time confirmation
+                  let defaultTime = new Date().toISOString()
+                  
+                  if (data?.set?.index === 1) {
+                    // Use scheduled time from match
+                    if (data?.match?.scheduledAt) {
+                      defaultTime = data.match.scheduledAt
+                    }
+                  } else {
+                    // Get previous set's end time
+                    const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+                    const previousSet = allSets.find(s => s.index === (data.set.index - 1))
+                    if (previousSet?.endTime) {
+                      // Add 3 minutes to previous set end time
+                      const prevEndTime = new Date(previousSet.endTime)
+                      prevEndTime.setMinutes(prevEndTime.getMinutes() + 3)
+                      defaultTime = prevEndTime.toISOString()
+                    }
+                  }
+                  
+                  setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
                 }}
                 style={{
                   padding: '12px 24px',
@@ -4404,7 +5167,87 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Start Set
+                Continue
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      
+      {setStartTimeModal && (
+        <SetStartTimeModal
+          setIndex={setStartTimeModal.setIndex}
+          defaultTime={setStartTimeModal.defaultTime}
+          onConfirm={confirmSetStartTime}
+          onCancel={() => setSetStartTimeModal(null)}
+        />
+      )}
+      
+      {setEndTimeModal && (
+        <SetEndTimeModal
+          setIndex={setEndTimeModal.setIndex}
+          winner={setEndTimeModal.winner}
+          homePoints={setEndTimeModal.homePoints}
+          awayPoints={setEndTimeModal.awayPoints}
+          defaultTime={setEndTimeModal.defaultTime}
+          teamAKey={teamAKey}
+          onConfirm={confirmSetEndTime}
+          onCancel={() => setSetEndTimeModal(null)}
+        />
+      )}
+      
+      {sanctionConfirm && (
+        <Modal
+          title="Confirm Sanction"
+          open={true}
+          onClose={() => setSanctionConfirm(null)}
+          width={400}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              Apply {sanctionConfirm.type === 'improper_request' ? 'Improper Request' : 
+                     sanctionConfirm.type === 'delay_warning' ? 'Delay Warning' : 
+                     'Delay Penalty'} to Team {(() => {
+                       const sideTeamKey = sanctionConfirm.side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
+                       return sideTeamKey === teamAKey ? 'A' : 'B'
+                     })()}?
+            </p>
+            {sanctionConfirm.type === 'delay_penalty' && (
+              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
+                This will award a point and service to the opponent team
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={confirmSanction}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setSanctionConfirm(null)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                No
               </button>
             </div>
           </div>
@@ -4499,8 +5342,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   )
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSave }) {
-  const [lineup, setLineup] = useState(['', '', '', '', '', '']) // [IV, III, II, V, VI, I]
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, onClose, onSave }) {
+  const [lineup, setLineup] = useState(() => {
+    if (presetLineup) {
+      const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
+      return positionMapping.map(pos => (presetLineup[pos] !== undefined ? String(presetLineup[pos] ?? '') : ''))
+    }
+    return ['', '', '', '', '', '']
+  }) // [IV, III, II, V, VI, I]
   const [errors, setErrors] = useState([]) // Array of indices with errors
   const [confirmMessage, setConfirmMessage] = useState(null)
 
@@ -4565,7 +5414,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
       lineupData[pos] = numbers[idx]
     })
     
-    // Save lineup as an event (mark as initial lineup)
+    // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
       db.events.add({
         matchId,
@@ -4575,7 +5424,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
         payload: {
           team,
           lineup: lineupData,
-          isInitial: true
+          isInitial: mode === 'initial',
+          manualOverride: mode === 'manual'
         }
       }).then(() => {
         setConfirmMessage(captainInCourt ? 'Captain on court' : 'Captain not on court')
@@ -4594,9 +5444,41 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
     }
   }
 
+  // Determine if this team is A or B
+  const isTeamA = team === teamAKey
+  const teamLabel = isTeamA ? 'A' : 'B'
+  const teamColor = teamData?.color || (isTeamA ? '#ef4444' : '#3b82f6')
+  
+  // Helper function to determine if a color is bright
+  const isBrightColor = (color) => {
+    if (!color) return false
+    const hex = color.replace('#', '')
+    const r = parseInt(hex.substr(0, 2), 16)
+    const g = parseInt(hex.substr(2, 2), 16)
+    const b = parseInt(hex.substr(4, 2), 16)
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000
+    return brightness > 155
+  }
+
   return (
     <Modal
-      title={`Line-up — ${teamData?.name || (team === 'home' ? 'Home' : 'Away')}`}
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span>{teamData?.name || (team === 'home' ? 'Home' : 'Away')}</span>
+          <span
+            style={{
+              padding: '4px 12px',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: 700,
+              background: teamColor,
+              color: isBrightColor(teamColor) ? '#000' : '#fff'
+            }}
+          >
+            {teamLabel}
+          </span>
+        </div>
+      }
       open={true}
       onClose={onClose}
       width={500}
@@ -4664,14 +5546,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
                 }}
                 style={{
                   width: '60px',
+                  height: '60px',
                   maxWidth: '100%',
-                  padding: '8px',
-                  fontSize: '16px',
-                  fontWeight: 600,
+                  padding: '0',
+                  fontSize: '18px',
+                  fontWeight: 700,
                   textAlign: 'center',
                   background: 'var(--bg-secondary)',
-                  border: errors.includes(idx) ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
+                  border: errors.includes(idx) ? '3px solid #ef4444' : '3px solid rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
                   color: 'var(--text)',
                   margin: '0 auto',
                   display: 'block'
@@ -4686,7 +5569,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
             { idx: 4, pos: 'VI' },
             { idx: 5, pos: 'I' }
           ].map(({ idx, pos }) => (
-            <div key={`bottom-${idx}`} style={{ position: 'relative', marginTop: '24px' }}>
+            <div 
+              key={`bottom-${idx}`} 
+              style={{ position: 'relative', marginTop: '24px' }}
+            >
               <label style={{ 
                 display: 'block', 
                 marginBottom: '8px', 
@@ -4710,14 +5596,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
                 }}
                 style={{
                   width: '60px',
+                  height: '60px',
                   maxWidth: '100%',
-                  padding: '8px',
-                  fontSize: '16px',
-                  fontWeight: 600,
+                  padding: '0',
+                  fontSize: '18px',
+                  fontWeight: 700,
                   textAlign: 'center',
                   background: 'var(--bg-secondary)',
-                  border: errors.includes(idx) ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
+                  border: errors.includes(idx) ? '3px solid #ef4444' : '3px solid rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
                   color: 'var(--text)',
                   margin: '0 auto',
                   display: 'block'
@@ -4725,6 +5612,71 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
               />
             </div>
           ))}
+        </div>
+
+        {/* Available players (excluding liberos) */}
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px'
+        }}>
+          <div style={{
+            fontSize: '13px',
+            fontWeight: 600,
+            color: 'var(--muted)',
+            marginBottom: '8px'
+          }}>
+            Available Players:
+          </div>
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px'
+          }}>
+            {players?.filter(p => !p.libero || p.libero === '').sort((a, b) => a.number - b.number).map(p => (
+              <div
+                key={p.number}
+                style={{
+                  position: 'relative',
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'rgba(74, 222, 128, 0.2)',
+                  border: '2px solid #4ade80',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  color: '#4ade80',
+                  cursor: 'default'
+                }}
+              >
+                {p.isCaptain && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    background: '#4ade80',
+                    color: '#000',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none'
+                  }}>
+                    C
+                  </span>
+                )}
+                {p.number}
+              </div>
+            ))}
+          </div>
         </div>
 
         {errors.length > 0 && (
@@ -4758,10 +5710,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
         )}
 
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <button onClick={handleConfirm}>
-            Confirm
-          </button>
-          <button className="secondary" onClick={onClose}>
+          {confirmMessage === null && (
+            <button onClick={handleConfirm}>
+              Confirm
+            </button>
+          )}
+          <button
+            className={confirmMessage === null ? 'secondary' : ''}
+            onClick={onClose}
+          >
             Close
           </button>
         </div>
@@ -4769,4 +5726,179 @@ function LineupModal({ team, teamData, players, matchId, setIndex, onClose, onSa
     </Modal>
   )
 }
+
+function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
+  const [time, setTime] = useState(() => {
+    const date = new Date(defaultTime)
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${hours}:${minutes}`
+  })
+
+  const handleConfirm = () => {
+    // Convert time string to ISO string
+    const now = new Date()
+    const [hours, minutes] = time.split(':')
+    now.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+    onConfirm(now.toISOString())
+  }
+
+  return (
+    <Modal
+      title={`Set ${setIndex} Start Time`}
+      open={true}
+      onClose={onCancel}
+      width={400}
+      hideCloseButton={true}
+    >
+      <div style={{ padding: '24px', textAlign: 'center' }}>
+        <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+          Confirm the start time for Set {setIndex}:
+        </p>
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          style={{
+            padding: '12px 16px',
+            fontSize: '18px',
+            fontWeight: 600,
+            textAlign: 'center',
+            background: 'var(--bg-secondary)',
+            border: '2px solid rgba(255,255,255,0.2)',
+            borderRadius: '8px',
+            color: 'var(--text)',
+            marginBottom: '24px',
+            width: '150px'
+          }}
+        />
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button
+            onClick={handleConfirm}
+            style={{
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'var(--accent)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Confirm
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: 'var(--text)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, onConfirm, onCancel }) {
+  const [time, setTime] = useState(() => {
+    const date = new Date(defaultTime)
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${hours}:${minutes}`
+  })
+
+  const winnerLabel = winner === 'home' 
+    ? (teamAKey === 'home' ? 'A' : 'B')
+    : (teamAKey === 'away' ? 'A' : 'B')
+
+  const handleConfirm = () => {
+    // Convert time string to ISO string
+    const now = new Date()
+    const [hours, minutes] = time.split(':')
+    now.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+    onConfirm(now.toISOString())
+  }
+
+  return (
+    <Modal
+      title={`Set ${setIndex} End`}
+      open={true}
+      onClose={onCancel}
+      width={400}
+      hideCloseButton={true}
+    >
+      <div style={{ padding: '24px', textAlign: 'center' }}>
+        <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700 }}>
+          Team {winnerLabel} won Set {setIndex}!
+        </p>
+        <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--muted)' }}>
+          {homePoints} - {awayPoints}
+        </p>
+        <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+          Confirm the end time:
+        </p>
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          style={{
+            padding: '12px 16px',
+            fontSize: '18px',
+            fontWeight: 600,
+            textAlign: 'center',
+            background: 'var(--bg-secondary)',
+            border: '2px solid rgba(255,255,255,0.2)',
+            borderRadius: '8px',
+            color: 'var(--text)',
+            marginBottom: '24px',
+            width: '150px'
+          }}
+        />
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button
+            onClick={handleConfirm}
+            style={{
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'var(--accent)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Confirm
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: 'var(--text)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 
