@@ -6,17 +6,44 @@ import Scoreboard from './components/Scoreboard'
 import Modal from './components/Modal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import mikasaVolleyball from './mikasa_v200w.png'
+import {
+  TEST_REFEREE_SEED_DATA,
+  TEST_SCORER_SEED_DATA,
+  TEST_TEAM_SEED_DATA
+} from './constants/testSeeds'
+import { supabase } from './lib/supabaseClient'
 
-const SAMPLE_GAMES = [
-  { gamen: '382364', league: '3L B', date: '26.09.2025 20:00', home: 'KSC Wiedikon H3', away: 'VBC Wetzikon H2', hall: 'Kantonsschule Wiedikon C', city: 'Zürich' },
-  { gamen: '382395', league: '3L B', date: '12.11.2025 20:00', home: 'KSC Wiedikon H3', away: 'VC Tornado Adliswil H1', hall: 'Kantonsschule Wiedikon (Halle A)', city: 'Zürich' },
-  { gamen: '382376', league: '3L B', date: '10.12.2025 20:00', home: 'KSC Wiedikon H3', away: 'Volley Oerlikon H2', hall: 'Kantonsschule Wiedikon (Halle A)', city: 'Zürich' },
-  { gamen: '382416', league: '3L B', date: '09.01.2026 20:00', home: 'KSC Wiedikon H3', away: 'VBC Rämi H2', hall: 'Kantonsschule Wiedikon (Halle A)', city: 'Zürich' },
-  { gamen: '382372', league: '3L B', date: '23.01.2026 20:00', home: 'KSC Wiedikon H3', away: 'VBC Stäfa H1', hall: 'Kantonsschule Wiedikon (Halle B)', city: 'Zürich' },
-  { gamen: '382403', league: '3L B', date: '30.01.2026 20:00', home: 'KSC Wiedikon H3', away: 'VBC Volewa Wald H1', hall: 'Kantonsschule Wiedikon (Halle A)', city: 'Zürich' },
-  { gamen: '382427', league: '3L B', date: '06.02.2026 20:00', home: 'KSC Wiedikon H3', away: 'Volley Uster H2', hall: 'Kantonsschule Wiedikon (Halle A)', city: 'Zürich' },
-  { gamen: '382384', league: '3L B', date: '27.02.2026 20:00', home: 'KSC Wiedikon H3', away: 'VBC Voléro Zürich 4', hall: 'Kantonsschule Wiedikon (Halle B)', city: 'Zürich' }
+const TEST_MATCH_SEED_KEY = 'test-match-default'
+const TEST_MATCH_EXTERNAL_ID = 'test-match-default'
+const TEST_HOME_TEAM_EXTERNAL_ID = 'test-team-alpha'
+const TEST_AWAY_TEAM_EXTERNAL_ID = 'test-team-bravo'
+const TEST_MATCH_DEFAULTS = {
+  hall: 'Kantonsschule Wiedikon (Halle A)',
+  city: 'Zürich',
+  league: '3L B'
+}
+
+const TEST_HOME_BENCH = [
+  { role: 'Coach', firstName: 'Marco', lastName: 'Frei', dob: '15/05/1975' },
+  { role: 'Assistant Coach 1', firstName: 'Jan', lastName: 'Widmer', dob: '21/09/1980' },
+  { role: 'Physiotherapist', firstName: 'Eva', lastName: 'Gerber', dob: '03/12/1985' }
 ]
+
+const TEST_AWAY_BENCH = [
+  { role: 'Coach', firstName: 'Stefan', lastName: 'Keller', dob: '08/02/1976' },
+  { role: 'Assistant Coach 1', firstName: 'Lars', lastName: 'Brunner', dob: '27/07/1981' },
+  { role: 'Physiotherapist', firstName: 'Mia', lastName: 'Schmid', dob: '14/04/1987' }
+]
+
+function getNextTestMatchStartTime() {
+  const now = new Date()
+  const kickoff = new Date(now)
+  kickoff.setHours(20, 0, 0, 0)
+  if (kickoff <= now) {
+    kickoff.setDate(kickoff.getDate() + 1)
+  }
+  return kickoff.toISOString()
+}
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -32,7 +59,9 @@ export default function App() {
   const [showCoinToss, setShowCoinToss] = useState(false)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [newMatchModal, setNewMatchModal] = useState(null)
+  const [testMatchLoading, setTestMatchLoading] = useState(false)
   const { syncStatus, isOnline } = useSyncQueue()
+  const canUseSupabase = Boolean(supabase)
 
   const activeMatch = useLiveQuery(async () => {
     try {
@@ -63,27 +92,78 @@ export default function App() {
     }
   }, [])
 
+  const currentOfficialMatch = useLiveQuery(async () => {
+    try {
+      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+      return matches.find(m => m.test !== true && m.status !== 'final') || null
+    } catch (error) {
+      console.error('Unable to load official match', error)
+      return null
+    }
+  }, [])
+
   // Get match status and details
   const matchStatus = useLiveQuery(async () => {
     if (!currentMatch) return null
 
-    const [homeTeam, awayTeam] = await Promise.all([
-      currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : null,
-      currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : null
+    const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
+    const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
+
+    const setsPromise = db.sets.where('matchId').equals(currentMatch.id).toArray()
+    const eventsPromise = db.events.where('matchId').equals(currentMatch.id).toArray()
+    const homePlayersPromise = currentMatch.homeTeamId
+      ? db.players.where('teamId').equals(currentMatch.homeTeamId).count()
+      : Promise.resolve(0)
+    const awayPlayersPromise = currentMatch.awayTeamId
+      ? db.players.where('teamId').equals(currentMatch.awayTeamId).count()
+      : Promise.resolve(0)
+
+    const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
+      homeTeamPromise,
+      awayTeamPromise,
+      setsPromise,
+      eventsPromise,
+      homePlayersPromise,
+      awayPlayersPromise
     ])
 
-    const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
-    const homePlayers = currentMatch.homeTeamId ? await db.players.where('teamId').equals(currentMatch.homeTeamId).count() : 0
-    const awayPlayers = currentMatch.awayTeamId ? await db.players.where('teamId').equals(currentMatch.awayTeamId).count() : 0
-    
+    const signaturesComplete = Boolean(
+      currentMatch.homeCoachSignature &&
+      currentMatch.homeCaptainSignature &&
+      currentMatch.awayCoachSignature &&
+      currentMatch.awayCaptainSignature
+    )
+
+    const infoConfigured = Boolean(
+      (currentMatch.scheduledAt && String(currentMatch.scheduledAt).trim() !== '') ||
+      (currentMatch.city && String(currentMatch.city).trim() !== '') ||
+      (currentMatch.hall && String(currentMatch.hall).trim() !== '') ||
+      (currentMatch.league && String(currentMatch.league).trim() !== '')
+    )
+
+    const rostersReady = homePlayers >= 6 && awayPlayers >= 6
+    const matchReadyForPlay = infoConfigured && signaturesComplete && rostersReady
+
+    const hasActiveSet = sets.some(set => {
+      return Boolean(
+        set.finished ||
+        set.startTime ||
+        set.homePoints > 0 ||
+        set.awayPoints > 0
+      )
+    })
+
+    const hasEventActivity = events.some(event =>
+      ['set_start', 'rally_start', 'point'].includes(event.type)
+    )
+
     let status = 'No data'
     if (currentMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished))) {
       status = 'Match ended'
-    } else if (currentMatch.status === 'live' || (sets.length > 0 && sets.some(s => !s.finished))) {
+    } else if ((currentMatch.status === 'live' || hasActiveSet || hasEventActivity) && matchReadyForPlay) {
       status = 'Match recording'
     } else if (homePlayers > 0 || awayPlayers > 0 || currentMatch.homeCoachSignature || currentMatch.awayCoachSignature) {
-      // Has players or signatures but no sets started
-      if (currentMatch.homeCoachSignature && currentMatch.awayCoachSignature && currentMatch.homeCaptainSignature && currentMatch.awayCaptainSignature) {
+      if (signaturesComplete) {
         status = 'Coin toss'
       } else {
         status = 'Setup'
@@ -202,10 +282,12 @@ export default function App() {
     await db.sets.update(cur.id, { finished: true })
     const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
     const finished = sets.filter(s => s.finished).length
+    const matchRecord = await db.matches.get(cur.matchId)
+    const isTestMatch = matchRecord?.test === true
+    
     if (finished >= 5) {
       await db.matches.update(cur.matchId, { status: 'final' })
       
-      // Add match update to sync queue
       await db.sync_queue.add({
         resource: 'match',
         action: 'update',
@@ -222,13 +304,12 @@ export default function App() {
     }
     const setId = await db.sets.add({ matchId: cur.matchId, index: cur.index + 1, homePoints: 0, awayPoints: 0, finished: false })
     
-    // Add set to sync queue
     await db.sync_queue.add({
       resource: 'set',
       action: 'insert',
       payload: {
         external_id: String(setId),
-        match_id: String(cur.matchId),
+        match_id: matchRecord?.externalId || String(cur.matchId),
         index: cur.index + 1,
         home_points: 0,
         away_points: 0,
@@ -256,52 +337,442 @@ export default function App() {
     setShowMatchSetup(false)
   }
 
+  async function clearLocalTestData() {
+    await db.transaction('rw', db.events, db.sets, db.matches, db.players, db.teams, async () => {
+      const testMatches = await db.matches
+        .filter(m => m.test === true || m.externalId === TEST_MATCH_EXTERNAL_ID)
+        .toArray()
+      for (const match of testMatches) {
+        await db.events.where('matchId').equals(match.id).delete()
+        await db.sets.where('matchId').equals(match.id).delete()
+        await db.matches.delete(match.id)
+      }
+
+      const testTeams = await db.teams
+        .filter(
+          t =>
+            t.externalId === TEST_HOME_TEAM_EXTERNAL_ID ||
+            t.externalId === TEST_AWAY_TEAM_EXTERNAL_ID ||
+            (t.seedKey && t.seedKey.startsWith('test-'))
+        )
+        .toArray()
+
+      for (const team of testTeams) {
+        await db.players.where('teamId').equals(team.id).delete()
+        await db.teams.delete(team.id)
+      }
+    })
+
+    console.log('[TestMatch] Cleared local test data')
+  }
+
+  async function resetSupabaseTestMatch() {
+    if (!supabase) {
+      throw new Error('Supabase client is not configured.')
+    }
+
+    const { data: matchRecord, error: matchLookupError } = await supabase
+      .from('matches')
+      .select('id')
+      .eq('external_id', TEST_MATCH_EXTERNAL_ID)
+      .single()
+
+    if (matchLookupError) {
+      throw new Error(matchLookupError.message)
+    }
+    if (!matchRecord) {
+      throw new Error('Test match not found on Supabase.')
+    }
+
+    const matchUuid = matchRecord.id
+
+    const { error: deleteEventsError } = await supabase
+      .from('events')
+      .delete()
+      .eq('match_id', matchUuid)
+    if (deleteEventsError) {
+      throw new Error(deleteEventsError.message)
+    }
+
+    const { error: deleteSetsError } = await supabase
+      .from('sets')
+      .delete()
+      .eq('match_id', matchUuid)
+    if (deleteSetsError) {
+      throw new Error(deleteSetsError.message)
+    }
+
+    const newScheduled = getNextTestMatchStartTime()
+    const { error: updateMatchError } = await supabase
+      .from('matches')
+      .update({
+        status: 'scheduled',
+        scheduled_at: newScheduled,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', matchUuid)
+
+    if (updateMatchError) {
+      throw new Error(updateMatchError.message)
+    }
+  }
+
+  async function loadTestMatchFromSupabase({ resetRemote = false, targetView = 'setup' } = {}) {
+    if (!supabase) {
+      throw new Error('Supabase client is not configured.')
+    }
+
+    if (resetRemote) {
+      await resetSupabaseTestMatch()
+    }
+
+    const { data: matchData, error: matchError } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('external_id', TEST_MATCH_EXTERNAL_ID)
+      .single()
+
+    if (matchError) {
+      throw new Error(matchError.message)
+    }
+    if (!matchData) {
+      throw new Error('Test match not found on Supabase.')
+    }
+
+    console.log('[TestMatch] Supabase match row:', matchData)
+
+    const [homeTeamRes, awayTeamRes] = await Promise.all([
+      supabase.from('teams').select('*').eq('id', matchData.home_team_id).single(),
+      supabase.from('teams').select('*').eq('id', matchData.away_team_id).single()
+    ])
+
+    if (homeTeamRes.error) {
+      throw new Error(homeTeamRes.error.message)
+    }
+    if (awayTeamRes.error) {
+      throw new Error(awayTeamRes.error.message)
+    }
+
+    const homeTeamData = homeTeamRes.data
+    const awayTeamData = awayTeamRes.data
+
+    console.log('[TestMatch] Supabase home team:', homeTeamData)
+    console.log('[TestMatch] Supabase away team:', awayTeamData)
+
+    const { data: playersData, error: playersError } = await supabase
+      .from('players')
+      .select('*')
+      .in('team_id', [matchData.home_team_id, matchData.away_team_id])
+
+    if (playersError) {
+      throw new Error(playersError.message)
+    }
+
+    const { data: setsData, error: setsError } = await supabase
+      .from('sets')
+      .select('*')
+      .eq('match_id', matchData.id)
+      .order('index')
+
+    if (setsError) {
+      throw new Error(setsError.message)
+    }
+
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('events')
+      .select('*')
+      .eq('match_id', matchData.id)
+      .order('ts')
+
+    if (eventsError) {
+      throw new Error(eventsError.message)
+    }
+
+    await clearLocalTestData()
+
+    const normalizeBenchMember = member => ({
+      role: member?.role || '',
+      firstName: member?.firstName || member?.first_name || '',
+      lastName: member?.lastName || member?.last_name || '',
+      dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || ''
+    })
+
+    const homeBenchRaw = Array.isArray(homeTeamData?.bench_staff)
+      ? homeTeamData.bench_staff
+      : Array.isArray(matchData.bench_home)
+        ? matchData.bench_home
+        : TEST_HOME_BENCH
+
+    const awayBenchRaw = Array.isArray(awayTeamData?.bench_staff)
+      ? awayTeamData.bench_staff
+      : Array.isArray(matchData.bench_away)
+        ? matchData.bench_away
+        : TEST_AWAY_BENCH
+
+    const homeBench = (() => {
+      const normalized = homeBenchRaw.map(normalizeBenchMember)
+      const hasNamedMember = normalized.some(member => member.firstName || member.lastName)
+      return hasNamedMember ? normalized : TEST_HOME_BENCH.map(normalizeBenchMember)
+    })()
+
+    const awayBench = (() => {
+      const normalized = awayBenchRaw.map(normalizeBenchMember)
+      const hasNamedMember = normalized.some(member => member.firstName || member.lastName)
+      return hasNamedMember ? normalized : TEST_AWAY_BENCH.map(normalizeBenchMember)
+    })()
+    console.log('[TestMatch] Resolved benches:', { homeBench, awayBench })
+
+    const homeTeamId = await db.teams.add({
+      name: homeTeamData?.name || 'Home',
+      color: homeTeamData?.color || '#3b82f6',
+      seedKey: homeTeamData?.seed_key || TEST_HOME_TEAM_EXTERNAL_ID,
+      externalId: homeTeamData?.external_id || TEST_HOME_TEAM_EXTERNAL_ID,
+      benchStaff: homeBench,
+      test: true,
+      createdAt: homeTeamData?.created_at || new Date().toISOString()
+    })
+
+    const awayTeamId = await db.teams.add({
+      name: awayTeamData?.name || 'Away',
+      color: awayTeamData?.color || '#ef4444',
+      seedKey: awayTeamData?.seed_key || TEST_AWAY_TEAM_EXTERNAL_ID,
+      externalId: awayTeamData?.external_id || TEST_AWAY_TEAM_EXTERNAL_ID,
+      benchStaff: awayBench,
+      test: true,
+      createdAt: awayTeamData?.created_at || new Date().toISOString()
+    })
+
+    const normalizePlayer = (player, teamId) => ({
+      teamId,
+      number: player.number,
+      name: `${player.last_name || ''} ${player.first_name || ''}`.trim(),
+      lastName: player.last_name || '',
+      firstName: player.first_name || '',
+      dob: player.dob || '',
+      libero: player.libero || '',
+      isCaptain: player.is_captain || false,
+      functions: Array.isArray(player.functions) && player.functions.length > 0 ? player.functions : ['player'],
+      test: player.test ?? true,
+      createdAt: player.created_at || new Date().toISOString(),
+      externalId: player.external_id
+    })
+
+    const buildFallbackPlayers = (seedKey) => {
+      const teamSeed = TEST_TEAM_SEED_DATA.find(t => t.seedKey === seedKey)
+      if (!teamSeed) return []
+      return teamSeed.players.map(player => ({
+        team_id: null,
+        number: player.number,
+        first_name: player.firstName,
+        last_name: player.lastName,
+        dob: player.dob,
+        libero: player.libero || '',
+        is_captain: player.isCaptain || false,
+        functions: player.functions || (player.libero ? ['player'] : ['player'])
+      }))
+    }
+
+    let homePlayersData = (playersData || []).filter(p => p.team_id === matchData.home_team_id)
+    if (!homePlayersData.length) {
+      homePlayersData = buildFallbackPlayers('test-team-alpha')
+      console.warn('[TestMatch] Supabase returned no home players, using fallback seed roster')
+    }
+
+    let awayPlayersData = (playersData || []).filter(p => p.team_id === matchData.away_team_id)
+    if (!awayPlayersData.length) {
+      awayPlayersData = buildFallbackPlayers('test-team-bravo')
+      console.warn('[TestMatch] Supabase returned no away players, using fallback seed roster')
+    }
+
+    const fetchOfficialByExternalId = async (table, externalId) => {
+      if (!externalId) return null
+      const { data, error } = await supabase.from(table).select('first_name,last_name,country,dob').eq('external_id', externalId).maybeSingle()
+      if (error) {
+        console.warn(`Unable to load ${table} ${externalId}:`, error.message)
+        return null
+      }
+      return data
+    }
+
+    const resolvedOfficials = async () => {
+      const officialTemplates = [
+        {
+          role: '1st referee',
+          table: 'referees',
+          defaultExternalId: 'test-referee-alpha',
+          fallback: TEST_REFEREE_SEED_DATA[0] || {}
+        },
+        {
+          role: '2nd referee',
+          table: 'referees',
+          defaultExternalId: 'test-referee-bravo',
+          fallback: TEST_REFEREE_SEED_DATA[1] || TEST_REFEREE_SEED_DATA[0] || {}
+        },
+        {
+          role: 'scorer',
+          table: 'scorers',
+          defaultExternalId: 'test-scorer-alpha',
+          fallback: TEST_SCORER_SEED_DATA[0] || {}
+        },
+        {
+          role: 'assistant scorer',
+          table: 'scorers',
+          defaultExternalId: 'test-scorer-bravo',
+          fallback: TEST_SCORER_SEED_DATA[1] || TEST_SCORER_SEED_DATA[0] || {}
+        }
+      ]
+
+      const sourceOfficials = Array.isArray(matchData.officials) ? matchData.officials : []
+
+      const normalizeOfficialEntry = async (template) => {
+        const record = sourceOfficials.find(o => o.role === template.role) || {}
+        const externalId = record.external_id || record.externalId || template.defaultExternalId
+
+        let fetched = null
+        if (externalId && (!record.firstName && !record.lastName) && (!record.first_name && !record.last_name)) {
+          fetched = await fetchOfficialByExternalId(template.table, externalId)
+        }
+
+        const firstName = record.firstName || record.first_name || fetched?.first_name || template.fallback.firstName || ''
+        const lastName = record.lastName || record.last_name || fetched?.last_name || template.fallback.lastName || ''
+        const country = record.country || fetched?.country || template.fallback.country || 'CH'
+        const dob = record.dob || fetched?.dob || template.fallback.dob || ''
+
+        return {
+          role: template.role,
+          firstName,
+          lastName,
+          country,
+          dob,
+          externalId
+        }
+      }
+
+      const results = await Promise.all(officialTemplates.map(normalizeOfficialEntry))
+      const missingNames = results.filter(o => !o.firstName || !o.lastName)
+
+      if (missingNames.length === 0) {
+        return results
+      }
+
+      // As a safety fallback, merge with seed data for any remaining blanks
+      return results.map(entry => {
+        if (entry.firstName && entry.lastName) return entry
+        const fallback = officialTemplates.find(t => t.role === entry.role)?.fallback || {}
+        return {
+          ...entry,
+          firstName: entry.firstName || fallback.firstName || '',
+          lastName: entry.lastName || fallback.lastName || '',
+          country: entry.country || fallback.country || 'CH',
+          dob: entry.dob || fallback.dob || ''
+        }
+      })
+    }
+
+    const officials = await resolvedOfficials()
+    console.log('[TestMatch] Resolved officials:', officials)
+
+    if (homePlayersData.length) {
+      await db.players.bulkAdd(homePlayersData.map(p => normalizePlayer(p, homeTeamId)))
+    }
+    if (awayPlayersData.length) {
+      await db.players.bulkAdd(awayPlayersData.map(p => normalizePlayer(p, awayTeamId)))
+    }
+    console.log('[TestMatch] Inserted players', {
+      homeCount: homePlayersData.length,
+      awayCount: awayPlayersData.length
+    })
+
+    const matchDexieId = await db.matches.add({
+      status: matchData.status || 'scheduled',
+      scheduledAt: matchData.scheduled_at,
+      hall: matchData.hall || TEST_MATCH_DEFAULTS.hall,
+      city: matchData.city || TEST_MATCH_DEFAULTS.city,
+      league: matchData.league || TEST_MATCH_DEFAULTS.league,
+      homeTeamId,
+      awayTeamId,
+      bench_home: homeBench,
+      bench_away: awayBench,
+      officials,
+      test: matchData.test ?? true,
+      createdAt: matchData.created_at || new Date().toISOString(),
+      updatedAt: matchData.updated_at || new Date().toISOString(),
+      externalId: matchData.external_id,
+      seedKey: TEST_MATCH_SEED_KEY,
+      supabaseId: matchData.id,
+      homeCoachSignature: matchData.home_coach_signature || null,
+      homeCaptainSignature: matchData.home_captain_signature || null,
+      awayCoachSignature: matchData.away_coach_signature || null,
+      awayCaptainSignature: matchData.away_captain_signature || null,
+      coinTossTeamA: matchData.coin_toss_team_a || null,
+      coinTossTeamB: matchData.coin_toss_team_b || null,
+      coinTossServeA: matchData.coin_toss_serve_a ?? null,
+      coinTossServeB: matchData.coin_toss_serve_b ?? null
+    })
+    console.log('[TestMatch] Created Dexie match', matchDexieId)
+
+    if (Array.isArray(setsData) && setsData.length > 0) {
+      await db.sets.bulkAdd(setsData.map(set => ({
+        matchId: matchDexieId,
+        index: set.index ?? set.set_index ?? 1,
+        homePoints: set.home_points ?? 0,
+        awayPoints: set.away_points ?? 0,
+        finished: set.finished ?? false,
+        startTime: set.start_time || null,
+        endTime: set.end_time || null,
+        externalId: set.external_id,
+        createdAt: set.created_at,
+        updatedAt: set.updated_at
+      })))
+      console.log('[TestMatch] Imported Supabase sets:', setsData.length)
+    } else {
+      await db.sets.add({
+        matchId: matchDexieId,
+        index: 1,
+        homePoints: 0,
+        awayPoints: 0,
+        finished: false
+      })
+      console.log('[TestMatch] Supabase had no sets, created initial set locally')
+    }
+
+    if (Array.isArray(eventsData) && eventsData.length > 0) {
+      await db.events.bulkAdd(eventsData.map(event => ({
+        matchId: matchDexieId,
+        setIndex: event.set_index ?? 1,
+        type: event.type,
+        payload: event.payload || {},
+        ts: event.ts || new Date().toISOString()
+      })))
+      console.log('[TestMatch] Imported Supabase events:', eventsData.length)
+    }
+
+    setMatchId(matchDexieId)
+    setShowCoinToss(false)
+    setShowMatchSetup(targetView === 'setup')
+  }
+
 
   const firstNames = ['Max', 'Luca', 'Tom', 'Jonas', 'Felix', 'Noah', 'David', 'Simon', 'Daniel', 'Michael', 'Anna', 'Sarah', 'Lisa', 'Emma', 'Sophie', 'Laura', 'Julia', 'Maria', 'Nina', 'Sara']
   const lastNames = ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Bauer', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun']
   
-  function generateRandomBenchOfficials() {
-    // Coach is mandatory, others are optional
-    const mandatoryRoles = ['Coach']
-    const optionalRoles = ['Assistant Coach 1', 'Assistant Coach 2', 'Medic', 'Physiotherapist']
-    
-    const officials = mandatoryRoles.map(role => {
-      const firstName = firstNames[Math.floor(Math.random() * firstNames.length)]
-      const lastName = lastNames[Math.floor(Math.random() * lastNames.length)]
-      const dob = randomDate('1970-01-01', '1995-12-31')
-      return {
-        role,
-        firstName,
-        lastName,
-        dob
-      }
-    })
-    
-    // Add 0-3 optional roles randomly
-    const optionalCount = Math.floor(Math.random() * 4)
-    const selectedOptional = optionalRoles
-      .sort(() => Math.random() - 0.5)
-      .slice(0, optionalCount)
-      .map(role => {
-        const firstName = firstNames[Math.floor(Math.random() * firstNames.length)]
-        const lastName = lastNames[Math.floor(Math.random() * lastNames.length)]
-        const dob = randomDate('1970-01-01', '1995-12-31')
-        return {
-          role,
-          firstName,
-          lastName,
-          dob
-        }
-      })
-    
-    return [...officials, ...selectedOptional]
-  }
-
   function randomDate(start, end) {
     const startDate = new Date(start).getTime()
     const endDate = new Date(end).getTime()
     const randomTime = startDate + Math.random() * (endDate - startDate)
     const date = new Date(randomTime)
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+
+  function formatISODateToDisplay(dateString) {
+    if (!dateString) return null
+    const date = new Date(dateString)
+    if (Number.isNaN(date.getTime())) {
+      return dateString
+    }
     const day = String(date.getDate()).padStart(2, '0')
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const year = date.getFullYear()
@@ -358,17 +829,18 @@ export default function App() {
   }
 
   async function showDeleteMatchModal() {
-    if (!currentMatch) return
+    const matchToDelete = currentOfficialMatch || currentMatch
+    if (!matchToDelete) return
 
     const [homeTeam, awayTeam] = await Promise.all([
-      currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : null,
-      currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : null
+      matchToDelete.homeTeamId ? db.teams.get(matchToDelete.homeTeamId) : null,
+      matchToDelete.awayTeamId ? db.teams.get(matchToDelete.awayTeamId) : null
     ])
     const matchName = `${homeTeam?.name || 'Home'} vs ${awayTeam?.name || 'Away'}`
     
     setDeleteMatchModal({
       matchName,
-      matchId: currentMatch.id
+      matchId: matchToDelete.id
     })
   }
 
@@ -519,214 +991,535 @@ export default function App() {
     setNewMatchModal(null)
   }
 
-  async function createTestMatchData() {
-    // Random team names
-    const teamNamePrefixes = ['VBC', 'VC', 'KSC', 'Volley', 'SV', 'TSV', 'USC', 'SC']
-    const teamNameSuffixes = ['Wiedikon', 'Wetzikon', 'Oerlikon', 'Adliswil', 'Rämi', 'Stäfa', 'Wald', 'Uster', 'Zürich', 'Basel', 'Bern', 'Luzern', 'Genf', 'Lausanne']
-    const teamLevels = ['H1', 'H2', 'H3', 'H4', '1', '2', '3', '4']
-    
-    const homeTeamName = `${teamNamePrefixes[Math.floor(Math.random() * teamNamePrefixes.length)]} ${teamNameSuffixes[Math.floor(Math.random() * teamNameSuffixes.length)]} ${teamLevels[Math.floor(Math.random() * teamLevels.length)]}`
-    const awayTeamName = `${teamNamePrefixes[Math.floor(Math.random() * teamNamePrefixes.length)]} ${teamNameSuffixes[Math.floor(Math.random() * teamNameSuffixes.length)]} ${teamLevels[Math.floor(Math.random() * teamLevels.length)]}`
+  const halls = ['Kantonsschule Wiedikon (Halle A)', 'Kantonsschule Wiedikon (Halle B)', 'Kantonsschule Wiedikon C', 'Sporthalle Zürich', 'Hallenstadion', 'Sporthalle Basel', 'Sporthalle Bern']
+  const cities = ['Zürich', 'Basel', 'Bern', 'Luzern', 'Genf', 'Lausanne', 'St. Gallen', 'Winterthur']
+  const leagues = ['3L A', '3L B', '2L A', '2L B', '1L', 'NLA', 'NLB']
 
-    // Random team colors
-    const colors = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16', '#f97316']
-    const homeColor = colors[Math.floor(Math.random() * colors.length)]
-    let awayColor = colors[Math.floor(Math.random() * colors.length)]
-    // Ensure away color is different from home color
-    while (awayColor === homeColor) {
-      awayColor = colors[Math.floor(Math.random() * colors.length)]
-    }
-
-    // Random match info
-    const halls = ['Kantonsschule Wiedikon (Halle A)', 'Kantonsschule Wiedikon (Halle B)', 'Kantonsschule Wiedikon C', 'Sporthalle Zürich', 'Hallenstadion', 'Sporthalle Basel', 'Sporthalle Bern']
-    const cities = ['Zürich', 'Basel', 'Bern', 'Luzern', 'Genf', 'Lausanne', 'St. Gallen', 'Winterthur']
-    const leagues = ['3L A', '3L B', '2L A', '2L B', '1L', 'NLA', 'NLB']
-    
-    const hall = halls[Math.floor(Math.random() * halls.length)]
-    const city = cities[Math.floor(Math.random() * cities.length)]
-    const league = leagues[Math.floor(Math.random() * leagues.length)]
-    
-    // Random scheduled date (within next 3 months)
-    const now = new Date()
-    const futureDate = new Date(now.getTime() + Math.random() * 90 * 24 * 60 * 60 * 1000)
-    const scheduledAt = futureDate.toISOString()
-
-    // Create new match with test data
-    await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
-      // Create teams
-      const homeTeamId = await db.teams.add({
-        name: homeTeamName,
-        color: homeColor,
-        createdAt: new Date().toISOString()
-      })
-      const awayTeamId = await db.teams.add({
-        name: awayTeamName,
-        color: awayColor,
-        createdAt: new Date().toISOString()
-      })
-
-      // Add teams to sync queue (test match, so test: true)
-      await db.sync_queue.add({
-        resource: 'team',
-        action: 'insert',
-        payload: {
-          external_id: String(homeTeamId),
-          name: homeTeamName,
-          color: homeColor,
-          test: true,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-      await db.sync_queue.add({
-        resource: 'team',
-        action: 'insert',
-        payload: {
-          external_id: String(awayTeamId),
-          name: awayTeamName,
-          color: awayColor,
-          test: true,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-
-      // Generate random players with valid configurations
-      // Options: 11+1 libero, 12+0 liberos, 11+2 liberos, 12+2 liberos
-      const configs = [
-        { totalPlayers: 11, liberoCount: 1 },
-        { totalPlayers: 12, liberoCount: 0 },
-        { totalPlayers: 11, liberoCount: 2 },
-        { totalPlayers: 12, liberoCount: 2 }
-      ]
-      const homeConfig = configs[Math.floor(Math.random() * configs.length)]
-      const awayConfig = configs[Math.floor(Math.random() * configs.length)]
-      
-      const homePlayersData = generateRandomPlayers(homeTeamId, homeConfig)
-      const awayPlayersData = generateRandomPlayers(awayTeamId, awayConfig)
-      const allPlayers = await db.players.bulkAdd([...homePlayersData, ...awayPlayersData])
-      
-      // Add players to sync queue (test match, so test: true)
-      for (let i = 0; i < allPlayers.length; i++) {
-        const player = i < homePlayersData.length ? homePlayersData[i] : awayPlayersData[i - homePlayersData.length]
-        const teamId = i < homePlayersData.length ? homeTeamId : awayTeamId
-        await db.sync_queue.add({
-          resource: 'player',
-          action: 'insert',
-          payload: {
-            external_id: String(allPlayers[i]),
-            team_id: String(teamId), // Use external_id of team
-            number: player.number,
-            name: player.name,
-            first_name: player.firstName,
-            last_name: player.lastName,
-            dob: player.dob || null,
-            libero: player.libero || null,
-            is_captain: player.isCaptain || false,
-            role: player.role || null,
-            test: true,
-            created_at: player.createdAt
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
-      }
-
-      // Generate random bench officials
-      const benchHome = generateRandomBenchOfficials()
-      const benchAway = generateRandomBenchOfficials()
-      
-      // Generate random match officials
-      const officials = [
-        {
-          role: '1st referee',
-          firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
-          lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
-          country: 'CH',
-          dob: randomDate('1970-01-01', '1990-12-31')
-        },
-        {
-          role: '2nd referee',
-          firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
-          lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
-          country: 'CH',
-          dob: randomDate('1970-01-01', '1990-12-31')
-        },
-        {
-          role: 'scorer',
-          firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
-          lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
-          country: 'CH',
-          dob: randomDate('1970-01-01', '1990-12-31')
-        },
-        {
-          role: 'assistant scorer',
-          firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
-          lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
-          country: 'CH',
-          dob: randomDate('1970-01-01', '1990-12-31')
-        }
-      ]
-
-      const newMatchId = await db.matches.add({
-        status: 'scheduled',
-        homeTeamId,
-        awayTeamId,
-        hall,
-        city,
-        league,
-        scheduledAt,
-        bench_home: benchHome,
-        bench_away: benchAway,
-        officials,
-        createdAt: new Date().toISOString()
-      })
-
-      // Add match to sync queue (test match, so test: true)
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'insert',
-        payload: {
-          external_id: String(newMatchId),
-          home_team_id: String(homeTeamId), // Use external_id of team
-          away_team_id: String(awayTeamId), // Use external_id of team
-          status: 'scheduled',
-          hall: hall || null,
-          city: city || null,
-          league: league || null,
-          scheduled_at: scheduledAt || null,
-          test: true,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-
-      setMatchId(newMatchId)
-      setShowMatchSetup(true)
-      setShowCoinToss(false) // Ensure we go to match setup, not coin toss
+  useEffect(() => {
+    ensureSeedTestTeams().catch(error => {
+      console.error('Failed to ensure seeded test teams:', error)
     })
+    ensureSeedTestOfficials().catch(error => {
+      console.error('Failed to ensure seeded officials:', error)
+    })
+  }, [])
+
+  async function ensureSeedTestTeams() {
+    const seededTeams = []
+
+    await db.transaction('rw', db.teams, db.players, db.sync_queue, async () => {
+      for (const definition of TEST_TEAM_SEED_DATA) {
+        let team = await db.teams.filter(t => t.seedKey === definition.seedKey).first()
+        const isTestSeed = definition.seedKey?.startsWith('test-')
+
+        if (!team) {
+          const timestamp = new Date().toISOString()
+          const teamId = await db.teams.add({
+            name: definition.name,
+            color: definition.color,
+            seedKey: definition.seedKey,
+            test: true,
+            createdAt: timestamp
+          })
+
+          if (!isTestSeed) {
+            await db.sync_queue.add({
+              resource: 'team',
+              action: 'insert',
+              payload: {
+                external_id: String(teamId),
+                name: definition.name,
+                color: definition.color,
+                test: true,
+                created_at: timestamp
+              },
+              ts: timestamp,
+              status: 'queued'
+            })
+          }
+
+          const playersToCreate = definition.players.map(player => ({
+            teamId,
+            number: player.number,
+            name: `${player.lastName} ${player.firstName}`,
+            lastName: player.lastName,
+            firstName: player.firstName,
+            dob: player.dob,
+            libero: player.libero || '',
+            isCaptain: player.isCaptain,
+            role: null,
+            test: true,
+            createdAt: timestamp
+          }))
+
+          const playerIds = await db.players.bulkAdd(playersToCreate, undefined, { allKeys: true })
+          const queueTimestamp = new Date().toISOString()
+
+          if (!isTestSeed) {
+            for (let i = 0; i < playerIds.length; i++) {
+              const player = playersToCreate[i]
+              await db.sync_queue.add({
+                resource: 'player',
+                action: 'insert',
+                payload: {
+                  external_id: String(playerIds[i]),
+                  team_id: String(teamId),
+                  number: player.number,
+                  name: player.name,
+                  first_name: player.firstName,
+                  last_name: player.lastName,
+                  dob: player.dob || null,
+                  libero: player.libero || null,
+                  is_captain: player.isCaptain || false,
+                  role: player.role || null,
+                  test: true,
+                  created_at: player.createdAt
+                },
+                ts: queueTimestamp,
+                status: 'queued'
+              })
+            }
+          }
+
+          team = {
+            id: teamId,
+            name: definition.name,
+            color: definition.color,
+            seedKey: definition.seedKey,
+            test: true,
+            createdAt: timestamp
+          }
+        } else {
+          const playerCount = await db.players.where('teamId').equals(team.id).count()
+          if (playerCount === 0) {
+            const timestamp = new Date().toISOString()
+            const playersToCreate = definition.players.map(player => ({
+              teamId: team.id,
+              number: player.number,
+              name: `${player.lastName} ${player.firstName}`,
+              lastName: player.lastName,
+              firstName: player.firstName,
+              dob: player.dob,
+              libero: player.libero || '',
+              isCaptain: player.isCaptain,
+              role: null,
+              test: true,
+              createdAt: timestamp
+            }))
+
+            await db.players.bulkAdd(playersToCreate)
+          }
+        }
+
+        seededTeams.push(team)
+      }
+    })
+
+    return seededTeams
   }
 
-  async function createNewTestMatch() {
-    // Check if match is ongoing
-    if (matchStatus?.status === 'Match recording') {
-      return // Don't allow creating new match when one is ongoing
-    }
+  async function ensureSeedTestOfficials() {
+    const seededReferees = []
+    const seededScorers = []
 
-    // Delete current match if exists
-    if (currentMatch) {
-      setNewMatchModal({
-        type: 'test',
-        message: 'There is an existing match. Do you want to delete it and create a new test match?'
-      })
+    await db.transaction('rw', db.referees, db.scorers, db.sync_queue, async () => {
+      const queueRefereeRecord = async (record, timestamp = new Date().toISOString()) => {
+        if (!record) return
+        if (record.seedKey?.startsWith('test-')) return
+        const createdAt = record.createdAt || timestamp
+        await db.sync_queue.add({
+          resource: 'referee',
+          action: 'insert',
+          payload: {
+            external_id: String(record.id),
+            seed_key: record.seedKey,
+            first_name: record.firstName,
+            last_name: record.lastName,
+            country: record.country || null,
+            dob: record.dob || null,
+            test: true,
+            created_at: createdAt
+          },
+          ts: timestamp,
+          status: 'queued'
+        })
+        await db.referees.update(record.id, { synced: false })
+      }
+
+      const queueScorerRecord = async (record, timestamp = new Date().toISOString()) => {
+        if (!record) return
+        if (record.seedKey?.startsWith('test-')) return
+        const createdAt = record.createdAt || timestamp
+        await db.sync_queue.add({
+          resource: 'scorer',
+          action: 'insert',
+          payload: {
+            external_id: String(record.id),
+            seed_key: record.seedKey,
+            first_name: record.firstName,
+            last_name: record.lastName,
+            country: record.country || null,
+            dob: record.dob || null,
+            test: true,
+            created_at: createdAt
+          },
+          ts: timestamp,
+          status: 'queued'
+        })
+        await db.scorers.update(record.id, { synced: false })
+      }
+
+      for (const definition of TEST_REFEREE_SEED_DATA) {
+        let referee = await db.referees.filter(r => r.seedKey === definition.seedKey).first()
+        let queued = false
+
+        if (!referee) {
+          const timestamp = new Date().toISOString()
+          const baseRecord = {
+            seedKey: definition.seedKey,
+            firstName: definition.firstName,
+            lastName: definition.lastName,
+            country: definition.country,
+            dob: definition.dob,
+            test: true,
+            createdAt: timestamp,
+            synced: false
+          }
+          const refereeId = await db.referees.add(baseRecord)
+          referee = { id: refereeId, ...baseRecord }
+          await queueRefereeRecord(referee, timestamp)
+          queued = true
+        } else {
+          const definitionChanged =
+            referee.firstName !== definition.firstName ||
+            referee.lastName !== definition.lastName ||
+            referee.country !== definition.country ||
+            referee.dob !== definition.dob
+
+          if (definitionChanged) {
+            const timestamp = new Date().toISOString()
+            await db.referees.update(referee.id, {
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country,
+              dob: definition.dob,
+              synced: false
+            })
+            referee = {
+              ...referee,
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country,
+              dob: definition.dob,
+              synced: false
+            }
+            await queueRefereeRecord(referee, timestamp)
+            queued = true
+          }
+        }
+
+        if (referee && !queued) {
+          if (referee.synced === true) {
+            await db.referees.update(referee.id, { synced: false })
+            referee = { ...referee, synced: false }
+          }
+          await queueRefereeRecord(referee)
+          queued = true
+        }
+
+        seededReferees.push(referee)
+      }
+
+      for (const definition of TEST_SCORER_SEED_DATA) {
+        let scorer = await db.scorers.filter(s => s.seedKey === definition.seedKey).first()
+        let queued = false
+
+        if (!scorer) {
+          const timestamp = new Date().toISOString()
+          const baseRecord = {
+            seedKey: definition.seedKey,
+            firstName: definition.firstName,
+            lastName: definition.lastName,
+            country: definition.country,
+            dob: definition.dob,
+            test: true,
+            createdAt: timestamp,
+            synced: false
+          }
+          const scorerId = await db.scorers.add(baseRecord)
+          scorer = { id: scorerId, ...baseRecord }
+          await queueScorerRecord(scorer, timestamp)
+          queued = true
+        } else {
+          const definitionChanged =
+            scorer.firstName !== definition.firstName ||
+            scorer.lastName !== definition.lastName ||
+            scorer.country !== definition.country ||
+            scorer.dob !== definition.dob
+
+          if (definitionChanged) {
+            const timestamp = new Date().toISOString()
+            await db.scorers.update(scorer.id, {
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country,
+              dob: definition.dob,
+              synced: false
+            })
+            scorer = {
+              ...scorer,
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country,
+              dob: definition.dob,
+              synced: false
+            }
+            await queueScorerRecord(scorer, timestamp)
+            queued = true
+          }
+        }
+
+        if (scorer && !queued) {
+          if (scorer.synced === true) {
+            await db.scorers.update(scorer.id, { synced: false })
+            scorer = { ...scorer, synced: false }
+          }
+          await queueScorerRecord(scorer)
+          queued = true
+        }
+
+        seededScorers.push(scorer)
+      }
+    })
+
+    return { referees: seededReferees, scorers: seededScorers }
+  }
+
+  async function createTestMatchData() {
+    const seededTeams = await ensureSeedTestTeams()
+    const { referees, scorers } = await ensureSeedTestOfficials()
+    if (seededTeams.length < 2) {
+      console.error('Not enough seeded test teams available.')
       return
     }
 
-    // Create test match
-    await createTestMatchData()
+    const [homeTeam, awayTeam] = seededTeams
+    const scheduledAt = getNextTestMatchStartTime()
+    const timestamp = new Date().toISOString()
+
+    const findSeededRecord = (collection, seed) => {
+      if (!seed) return null
+      if (!collection?.length) return seed
+      const seeded = collection.find(item => item.seedKey === seed.seedKey)
+      return seeded || collection[0] || seed
+    }
+
+    const firstRef = findSeededRecord(referees, TEST_REFEREE_SEED_DATA[0])
+    const secondRef = findSeededRecord(referees, TEST_REFEREE_SEED_DATA[1] || TEST_REFEREE_SEED_DATA[0])
+    const primaryScorer = findSeededRecord(scorers, TEST_SCORER_SEED_DATA[0])
+    const assistantScorer = findSeededRecord(scorers, TEST_SCORER_SEED_DATA[1] || TEST_SCORER_SEED_DATA[0])
+
+    const officials = [
+      {
+        role: '1st referee',
+        firstName: firstRef?.firstName || 'Claudia',
+        lastName: firstRef?.lastName || 'Moser',
+        country: firstRef?.country || 'CH',
+        dob: firstRef?.dob ? formatISODateToDisplay(firstRef.dob) : formatISODateToDisplay('1982-04-19')
+      },
+      {
+        role: '2nd referee',
+        firstName: secondRef?.firstName || 'Martin',
+        lastName: secondRef?.lastName || 'Kunz',
+        country: secondRef?.country || 'CH',
+        dob: secondRef?.dob ? formatISODateToDisplay(secondRef.dob) : formatISODateToDisplay('1979-09-02')
+      },
+      {
+        role: 'scorer',
+        firstName: primaryScorer?.firstName || 'Petra',
+        lastName: primaryScorer?.lastName || 'Schneider',
+        country: primaryScorer?.country || 'CH',
+        dob: primaryScorer?.dob ? formatISODateToDisplay(primaryScorer.dob) : formatISODateToDisplay('1990-01-15')
+      },
+      {
+        role: 'assistant scorer',
+        firstName: assistantScorer?.firstName || 'Lukas',
+        lastName: assistantScorer?.lastName || 'Baumann',
+        country: assistantScorer?.country || 'CH',
+        dob: assistantScorer?.dob ? formatISODateToDisplay(assistantScorer.dob) : formatISODateToDisplay('1988-06-27')
+      }
+    ]
+
+    let createdMatchId = null
+
+    await db.transaction('rw', db.matches, db.sets, db.events, db.sync_queue, async () => {
+      let existingMatch =
+        (await db.matches.filter(m => m.seedKey === TEST_MATCH_SEED_KEY).first()) ||
+        (await db.matches.filter(m => m.test === true && !m.seedKey).first())
+
+      if (existingMatch && existingMatch.seedKey !== TEST_MATCH_SEED_KEY) {
+        await db.matches.update(existingMatch.id, { seedKey: TEST_MATCH_SEED_KEY })
+        existingMatch = await db.matches.get(existingMatch.id)
+      }
+
+      const baseMatchData = {
+        status: 'scheduled',
+        homeTeamId: homeTeam.id,
+        awayTeamId: awayTeam.id,
+        hall: TEST_MATCH_DEFAULTS.hall,
+        city: TEST_MATCH_DEFAULTS.city,
+        league: TEST_MATCH_DEFAULTS.league,
+        scheduledAt,
+        bench_home: TEST_HOME_BENCH,
+        bench_away: TEST_AWAY_BENCH,
+        officials,
+        homeCoachSignature: null,
+        homeCaptainSignature: null,
+        awayCoachSignature: null,
+        awayCaptainSignature: null,
+        test: true,
+        seedKey: TEST_MATCH_SEED_KEY,
+        externalId: TEST_MATCH_EXTERNAL_ID
+      }
+
+      if (existingMatch) {
+        await db.events.where('matchId').equals(existingMatch.id).delete()
+        await db.sets.where('matchId').equals(existingMatch.id).delete()
+
+        await db.matches.update(existingMatch.id, {
+          ...baseMatchData,
+          createdAt: existingMatch.createdAt || timestamp,
+          updatedAt: timestamp
+        })
+
+        createdMatchId = existingMatch.id
+
+        if (baseMatchData.test !== true) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: existingMatch.externalId || TEST_MATCH_EXTERNAL_ID || String(existingMatch.id),
+              status: 'scheduled',
+              hall: baseMatchData.hall,
+              city: baseMatchData.city,
+              league: baseMatchData.league,
+              scheduled_at: scheduledAt,
+              test: true
+            },
+            ts: timestamp,
+            status: 'queued'
+          })
+        }
+      } else {
+        const newMatchId = await db.matches.add({
+          ...baseMatchData,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        })
+
+        createdMatchId = newMatchId
+
+        if (baseMatchData.test !== true) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'insert',
+            payload: {
+              external_id: TEST_MATCH_EXTERNAL_ID || String(newMatchId),
+              home_team_id: String(homeTeam.id),
+              away_team_id: String(awayTeam.id),
+              status: 'scheduled',
+              hall: baseMatchData.hall,
+              city: baseMatchData.city,
+              league: baseMatchData.league,
+              scheduled_at: scheduledAt,
+              test: true,
+              created_at: timestamp
+            },
+            ts: timestamp,
+            status: 'queued'
+          })
+        }
+      }
+    })
+
+    if (createdMatchId) {
+      setMatchId(createdMatchId)
+      setShowMatchSetup(true)
+      setShowCoinToss(false)
+    }
+  }
+
+  async function createNewTestMatch() {
+    if (testMatchLoading) return
+
+    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
+    if (officialMatchRecording) {
+      const proceed = window.confirm('An official match is still recording. Starting a new test match will wipe the previous test session. Continue?')
+      if (!proceed) return
+    }
+
+    setTestMatchLoading(true)
+    let remoteResetPerformed = false
+
+    try {
+      // Clear previous test match locally
+      await clearLocalTestData()
+
+      // Reset Supabase test match if online and Supabase is available
+      if (canUseSupabase && isOnline) {
+        try {
+          await resetSupabaseTestMatch()
+          remoteResetPerformed = true
+        } catch (error) {
+          console.error('Failed to reset Supabase test match:', error)
+          window.alert(`Unable to reset the test match on Supabase: ${error.message || error}`)
+          return
+        }
+      }
+
+      if (!canUseSupabase || !isOnline) {
+        console.warn('Supabase unavailable, falling back to local test match generation.')
+        await createTestMatchData()
+        return
+      }
+
+      await loadTestMatchFromSupabase({
+        resetRemote: !remoteResetPerformed,
+        targetView: 'setup'
+      })
+    } catch (error) {
+      console.error('Failed to prepare test match:', error)
+      window.alert(`Unable to prepare the test match: ${error.message || error}`)
+    } finally {
+      setTestMatchLoading(false)
+    }
+  }
+
+  async function continueTestMatch() {
+    if (testMatchLoading) return
+
+    if (!canUseSupabase || !isOnline) {
+      const existing = await db.matches.where('externalId').equals(TEST_MATCH_EXTERNAL_ID).first()
+      if (existing) {
+        setMatchId(existing.id)
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+      } else {
+        window.alert('Supabase connection is required to load the test match.')
+      }
+      return
+    }
+
+    try {
+      setTestMatchLoading(true)
+      await loadTestMatchFromSupabase({ resetRemote: false, targetView: 'scoreboard' })
+    } catch (error) {
+      console.error('Failed to load test match from Supabase:', error)
+      window.alert(`Unable to continue the test match: ${error.message || error}`)
+    } finally {
+      setTestMatchLoading(false)
+    }
   }
 
   function continueMatch(matchIdParam) {
@@ -736,6 +1529,28 @@ export default function App() {
     // Get the match to check its status
     db.matches.get(targetMatchId).then(match => {
       if (!match) return
+      
+      // Check if match setup is complete (all signatures present)
+      const isMatchSetupComplete = match.homeCoachSignature && 
+                                    match.homeCaptainSignature && 
+                                    match.awayCoachSignature && 
+                                    match.awayCaptainSignature
+      
+      // Check if coin toss is confirmed
+      const isCoinTossConfirmed = match.coinTossTeamA !== null && 
+                                   match.coinTossTeamA !== undefined &&
+                                   match.coinTossTeamB !== null && 
+                                   match.coinTossTeamB !== undefined &&
+                                   match.coinTossServeA !== null && 
+                                   match.coinTossServeA !== undefined &&
+                                   match.coinTossServeB !== null && 
+                                   match.coinTossServeB !== undefined
+      
+      // Only allow continuation if match setup and coin toss are confirmed
+      if (!isMatchSetupComplete || !isCoinTossConfirmed) {
+        window.alert('Cannot continue match: Match setup and coin toss must be confirmed first.')
+        return
+      }
       
       // Determine where to continue based on status
       if (match.status === 'live' || match.status === 'final') {
@@ -786,35 +1601,61 @@ export default function App() {
           <MatchSetup matchId={matchId} onStart={continueMatch} onReturn={returnToMatch} onGoHome={goHome} showCoinToss={showCoinToss} onCoinTossClose={() => setShowCoinToss(false)} />
         ) : !matchId ? (
           <div className="home-view">
-            <div className="home-actions">
-              <button 
-                onClick={createNewOfficialMatch}
-                disabled={matchStatus?.status === 'Match recording'}
-                className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
-              >
-                New official match
-              </button>
-              <button 
-                onClick={createNewTestMatch}
-                disabled={matchStatus?.status === 'Match recording'}
-                className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
-              >
-                New test match
-              </button>
-              <button 
-                onClick={showDeleteMatchModal}
-                disabled={!currentMatch}
-                className={!currentMatch ? 'disabled' : ''}
-              >
-                Delete match
-              </button>
-              <button 
-                onClick={continueMatch}
-                disabled={!currentMatch}
-                className={!currentMatch ? 'disabled' : ''}
-              >
-                Continue match
-              </button>
+            <div className="home-grid">
+              <div className="home-card">
+                <h2>Official Match</h2>
+                <p className="home-card-description">Create or resume an official fixture from this device.</p>
+                <div className="home-card-actions">
+                  <button 
+                    onClick={createNewOfficialMatch}
+                    disabled={matchStatus?.status === 'Match recording'}
+                    className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
+                  >
+                    New official match
+                  </button>
+                  <button 
+                    onClick={() => currentOfficialMatch && continueMatch(currentOfficialMatch.id)}
+                    disabled={!currentOfficialMatch}
+                    className={!currentOfficialMatch ? 'disabled' : ''}
+                  >
+                    Continue official match
+                  </button>
+                  <button 
+                    onClick={showDeleteMatchModal}
+                    disabled={!currentOfficialMatch}
+                    className={!currentOfficialMatch ? 'disabled' : ''}
+                  >
+                    Delete match
+                  </button>
+                </div>
+              </div>
+              <div className="home-card home-card--test">
+                <div className="home-card-header">
+                  <h2>Test Match</h2>
+                  {(!canUseSupabase || !isOnline) && (
+                    <span className="home-card-hint">Supabase offline</span>
+                  )}
+                </div>
+                <p className="home-card-description">
+                  Use the seeded Supabase fixture for practice runs.
+                </p>
+                <div className="home-card-actions">
+                  <button 
+                    onClick={createNewTestMatch}
+                    disabled={!canUseSupabase || !isOnline || testMatchLoading}
+                    className={!canUseSupabase || !isOnline || testMatchLoading ? 'disabled' : ''}
+                  >
+                    {testMatchLoading ? 'Preparing…' : 'New test match'}
+                  </button>
+                  <button 
+                    onClick={continueTestMatch}
+                    disabled={!canUseSupabase || !isOnline || testMatchLoading}
+                    className={!canUseSupabase || !isOnline || testMatchLoading ? 'disabled' : ''}
+                  >
+                    {testMatchLoading ? 'Loading…' : 'Continue test match'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         ) : (

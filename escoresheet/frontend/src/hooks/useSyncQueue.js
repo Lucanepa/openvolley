@@ -117,7 +117,10 @@ export function useSyncQueue() {
               matchPayload.away_team_id = awayTeamData?.id || null
             }
             
-            const { error } = await supabase.from('matches').insert(matchPayload)
+            // Use upsert to handle existing matches (e.g., test match recreations)
+            const { error } = await supabase
+              .from('matches')
+              .upsert(matchPayload, { onConflict: 'external_id' })
             if (error) {
               console.error('Error syncing match:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
@@ -126,7 +129,10 @@ export function useSyncQueue() {
               await db.sync_queue.update(job.id, { status: 'sent' })
             }
           } else if (job.resource === 'team' && job.action === 'insert') {
-            const { error } = await supabase.from('teams').insert(job.payload)
+            // Use upsert to handle existing teams (e.g., test match recreations)
+            const { error } = await supabase
+              .from('teams')
+              .upsert(job.payload, { onConflict: 'external_id' })
             if (error) {
               console.error('Error syncing team:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
@@ -154,7 +160,10 @@ export function useSyncQueue() {
               }
             }
             
-            const { error } = await supabase.from('players').insert(playerPayload)
+            // Use upsert to handle existing players (e.g., test match recreations)
+            const { error } = await supabase
+              .from('players')
+              .upsert(playerPayload, { onConflict: 'external_id' })
             if (error) {
               console.error('Error syncing player:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
@@ -174,7 +183,10 @@ export function useSyncQueue() {
               setPayload.match_id = matchData?.id || null
             }
             
-            const { error } = await supabase.from('sets').insert(setPayload)
+            // Use upsert to handle existing sets (e.g., test match recreations)
+            const { error } = await supabase
+              .from('sets')
+              .upsert(setPayload, { onConflict: 'external_id' })
             if (error) {
               console.error('Error syncing set:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
@@ -191,6 +203,66 @@ export function useSyncQueue() {
               hasError = true
             } else {
               await db.sync_queue.update(job.id, { status: 'sent' })
+            }
+          } else if (job.resource === 'referee' && job.action === 'insert') {
+            const { data, error } = await supabase
+              .from('referees')
+              .insert(job.payload)
+              .select('id')
+
+            if (error) {
+              if (
+                error.code === '23505' ||
+                error.code === '409' ||
+                error.message?.includes('duplicate key')
+              ) {
+                await db.sync_queue.update(job.id, { status: 'sent' })
+                const externalId = Number(job.payload.external_id)
+                if (!Number.isNaN(externalId)) {
+                  await db.referees.update(externalId, { synced: true })
+                }
+              } else {
+                console.error('Error syncing referee:', error)
+                await db.sync_queue.update(job.id, { status: 'error' })
+                hasError = true
+              }
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+              const externalId = Number(job.payload.external_id)
+              if (!Number.isNaN(externalId)) {
+                const inserted = Array.isArray(data) ? data[0] : data
+                await db.referees.update(externalId, { synced: true, supabaseId: inserted?.id || null })
+              }
+            }
+          } else if (job.resource === 'scorer' && job.action === 'insert') {
+            const { data, error } = await supabase
+              .from('scorers')
+              .insert(job.payload)
+              .select('id')
+
+            if (error) {
+              if (
+                error.code === '23505' ||
+                error.code === '409' ||
+                error.message?.includes('duplicate key')
+              ) {
+                await db.sync_queue.update(job.id, { status: 'sent' })
+                const externalId = Number(job.payload.external_id)
+                if (!Number.isNaN(externalId)) {
+                  await db.scorers.update(externalId, { synced: true })
+                }
+              } else {
+                console.error('Error syncing scorer:', error)
+                await db.sync_queue.update(job.id, { status: 'error' })
+                hasError = true
+              }
+            } else {
+              await db.sync_queue.update(job.id, { status: 'sent' })
+              const externalId = Number(job.payload.external_id)
+              if (!Number.isNaN(externalId)) {
+                const inserted = Array.isArray(data) ? data[0] : data
+                await db.scorers.update(externalId, { synced: true, supabaseId: inserted?.id || null })
+              }
             }
           }
         } catch (err) {
