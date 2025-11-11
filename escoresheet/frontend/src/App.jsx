@@ -102,6 +102,16 @@ export default function App() {
     }
   }, [])
 
+  const currentTestMatch = useLiveQuery(async () => {
+    try {
+      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+      return matches.find(m => m.test === true && m.status !== 'final') || null
+    } catch (error) {
+      console.error('Unable to load test match', error)
+      return null
+    }
+  }, [])
+
   // Get match status and details
   const matchStatus = useLiveQuery(async () => {
     if (!currentMatch) return null
@@ -1022,21 +1032,7 @@ export default function App() {
             createdAt: timestamp
           })
 
-          if (!isTestSeed) {
-            await db.sync_queue.add({
-              resource: 'team',
-              action: 'insert',
-              payload: {
-                external_id: String(teamId),
-                name: definition.name,
-                color: definition.color,
-                test: true,
-                created_at: timestamp
-              },
-              ts: timestamp,
-              status: 'queued'
-            })
-          }
+          // Don't sync test seed data to Supabase - it comes from the seed script
 
           const playersToCreate = definition.players.map(player => ({
             teamId,
@@ -1052,34 +1048,8 @@ export default function App() {
             createdAt: timestamp
           }))
 
-          const playerIds = await db.players.bulkAdd(playersToCreate, undefined, { allKeys: true })
-          const queueTimestamp = new Date().toISOString()
-
-          if (!isTestSeed) {
-            for (let i = 0; i < playerIds.length; i++) {
-              const player = playersToCreate[i]
-              await db.sync_queue.add({
-                resource: 'player',
-                action: 'insert',
-                payload: {
-                  external_id: String(playerIds[i]),
-                  team_id: String(teamId),
-                  number: player.number,
-                  name: player.name,
-                  first_name: player.firstName,
-                  last_name: player.lastName,
-                  dob: player.dob || null,
-                  libero: player.libero || null,
-                  is_captain: player.isCaptain || false,
-                  role: player.role || null,
-                  test: true,
-                  created_at: player.createdAt
-                },
-                ts: queueTimestamp,
-                status: 'queued'
-              })
-            }
-          }
+          await db.players.bulkAdd(playersToCreate, undefined, { allKeys: true })
+          // Don't sync test seed players to Supabase - they come from the seed script
 
           team = {
             id: teamId,
@@ -1393,24 +1363,7 @@ export default function App() {
         })
 
         createdMatchId = existingMatch.id
-
-        if (baseMatchData.test !== true) {
-          await db.sync_queue.add({
-            resource: 'match',
-            action: 'update',
-            payload: {
-              id: existingMatch.externalId || TEST_MATCH_EXTERNAL_ID || String(existingMatch.id),
-              status: 'scheduled',
-              hall: baseMatchData.hall,
-              city: baseMatchData.city,
-              league: baseMatchData.league,
-              scheduled_at: scheduledAt,
-              test: true
-            },
-            ts: timestamp,
-            status: 'queued'
-          })
-        }
+        // Don't sync test match metadata to Supabase - it comes from the seed script
       } else {
         const newMatchId = await db.matches.add({
           ...baseMatchData,
@@ -1419,27 +1372,7 @@ export default function App() {
         })
 
         createdMatchId = newMatchId
-
-        if (baseMatchData.test !== true) {
-          await db.sync_queue.add({
-            resource: 'match',
-            action: 'insert',
-            payload: {
-              external_id: TEST_MATCH_EXTERNAL_ID || String(newMatchId),
-              home_team_id: String(homeTeam.id),
-              away_team_id: String(awayTeam.id),
-              status: 'scheduled',
-              hall: baseMatchData.hall,
-              city: baseMatchData.city,
-              league: baseMatchData.league,
-              scheduled_at: scheduledAt,
-              test: true,
-              created_at: timestamp
-            },
-            ts: timestamp,
-            status: 'queued'
-          })
-        }
+        // Don't sync test match metadata to Supabase - it comes from the seed script
       }
     })
 
@@ -1522,13 +1455,56 @@ export default function App() {
     }
   }
 
+  async function deleteTestMatchData() {
+    if (testMatchLoading) return
+
+    const proceed = window.confirm(
+      'This will delete and reset the test match in Supabase and locally. Continue?'
+    )
+    if (!proceed) return
+
+    if (!canUseSupabase || !isOnline) {
+      window.alert('Supabase connection is required to reset the test match.')
+      return
+    }
+
+    try {
+      setTestMatchLoading(true)
+
+      // Run the SQL script to delete and recreate test data
+      const { error } = await supabase.rpc('reset_test_match')
+      
+      if (error) {
+        console.error('Failed to reset test match via RPC:', error)
+        window.alert(`Unable to reset test match: ${error.message || error}`)
+        return
+      }
+
+      // Clear local test data
+      await clearLocalTestData()
+
+      window.alert('Test match has been reset successfully.')
+    } catch (error) {
+      console.error('Failed to delete test match:', error)
+      window.alert(`Unable to delete test match: ${error.message || error}`)
+    } finally {
+      setTestMatchLoading(false)
+    }
+  }
+
   function continueMatch(matchIdParam) {
-    const targetMatchId = matchIdParam || currentMatch?.id
+    const targetMatchId = matchIdParam || currentOfficialMatch?.id
     if (!targetMatchId) return
     
     // Get the match to check its status
     db.matches.get(targetMatchId).then(match => {
       if (!match) return
+      
+      // Reject test matches
+      if (match.test === true) {
+        window.alert('This is a test match. Use "Continue test match" instead.')
+        return
+      }
       
       // Check if match setup is complete (all signatures present)
       const isMatchSetupComplete = match.homeCoachSignature && 
@@ -1603,8 +1579,9 @@ export default function App() {
           <div className="home-view">
             <div className="home-grid">
               <div className="home-card">
-                <h2>Official Match</h2>
-                <p className="home-card-description">Create or resume an official fixture from this device.</p>
+                <div className="home-card-header">
+                  <h2>Official Match</h2>
+                </div>
                 <div className="home-card-actions">
                   <button 
                     onClick={createNewOfficialMatch}
@@ -1623,9 +1600,10 @@ export default function App() {
                   <button 
                     onClick={showDeleteMatchModal}
                     disabled={!currentOfficialMatch}
-                    className={!currentOfficialMatch ? 'disabled' : ''}
+                    className={'danger ' + (!currentOfficialMatch ? 'disabled' : '')}
+                    style={{ marginTop: '8px' }}
                   >
-                    Delete match
+                    Delete official match
                   </button>
                 </div>
               </div>
@@ -1636,23 +1614,28 @@ export default function App() {
                     <span className="home-card-hint">Supabase offline</span>
                   )}
                 </div>
-                <p className="home-card-description">
-                  Use the seeded Supabase fixture for practice runs.
-                </p>
                 <div className="home-card-actions">
                   <button 
                     onClick={createNewTestMatch}
                     disabled={!canUseSupabase || !isOnline || testMatchLoading}
-                    className={!canUseSupabase || !isOnline || testMatchLoading ? 'disabled' : ''}
+                    className={'test-button ' + (!canUseSupabase || !isOnline || testMatchLoading ? 'disabled' : '')}
                   >
                     {testMatchLoading ? 'Preparing…' : 'New test match'}
                   </button>
                   <button 
                     onClick={continueTestMatch}
-                    disabled={!canUseSupabase || !isOnline || testMatchLoading}
-                    className={!canUseSupabase || !isOnline || testMatchLoading ? 'disabled' : ''}
+                    disabled={!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch}
+                    className={'test-button ' + (!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch ? 'disabled' : '')}
                   >
                     {testMatchLoading ? 'Loading…' : 'Continue test match'}
+                  </button>
+                  <button 
+                    onClick={deleteTestMatchData}
+                    disabled={!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch}
+                    className={'test-button test-button--danger ' + (!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch ? 'disabled' : '')}
+                    style={{ marginTop: '8px' }}
+                  >
+                    {testMatchLoading ? 'Deleting…' : 'Delete test match'}
                   </button>
                 </div>
               </div>
@@ -1662,7 +1645,6 @@ export default function App() {
           <Scoreboard matchId={matchId} onFinishSet={finishSet} onOpenSetup={openMatchSetup} onOpenMatchSetup={openMatchSetupView} onOpenCoinToss={openCoinTossView} />
         )}
       </div>
-      <p>Offline-first PWA. Data is saved locally and syncs when online.</p>
 
       {/* Delete Match Modal */}
       {deleteMatchModal && (
