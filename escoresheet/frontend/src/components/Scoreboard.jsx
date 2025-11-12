@@ -5505,6 +5505,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       open={true}
       onClose={onClose}
       width={500}
+      hideCloseButton={true}
     >
       <div style={{ padding: '24px' }}>
         <div style={{ 
