@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clear Database - eScoresheet</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 500px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      color: #facc15;
+    }
+    p {
+      margin: 0 0 24px;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    .danger {
+      background: #ef4444;
+      color: #fff;
+    }
+    .danger:hover {
+      background: #dc2626;
+    }
+    .secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .success {
+      background: #22c55e;
+      color: #000;
+    }
+    #status {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      display: none;
+    }
+    #status.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #f87171;
+    }
+    #status.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      color: #4ade80;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Clear Database</h1>
+    <p>This will permanently delete all data from the local database, including:</p>
+    <ul style="margin: 0 0 24px; color: #94a3b8;">
+      <li>All matches (test and official)</li>
+      <li>All teams and players</li>
+      <li>All sets and events</li>
+      <li>All referees and scorers</li>
+      <li>All sync queue items</li>
+    </ul>
+    <p style="color: #ef4444; font-weight: 600;">⚠️ This action cannot be undone!</p>
+    
+    <button class="danger" onclick="clearDatabase()">Clear All Database</button>
+    <button class="secondary" onclick="window.close()">Cancel</button>
+    
+    <div id="status"></div>
+  </div>
+
+  <script type="module">
+    import { db } from './src/db/db.js'
+    
+    window.clearDatabase = async function() {
+      const status = document.getElementById('status')
+      
+      if (!confirm('Are you absolutely sure you want to delete ALL data? This cannot be undone!')) {
+        return
+      }
+      
+      try {
+        // Delete all data from all tables
+        await db.transaction('rw', 
+          db.teams, 
+          db.players, 
+          db.matches, 
+          db.sets, 
+          db.events, 
+          db.sync_queue, 
+          db.match_setup,
+          db.referees,
+          db.scorers,
+          async () => {
+            await db.teams.clear()
+            await db.players.clear()
+            await db.matches.clear()
+            await db.sets.clear()
+            await db.events.clear()
+            await db.sync_queue.clear()
+            await db.match_setup.clear()
+            await db.referees.clear()
+            await db.scorers.clear()
+          }
+        )
+        
+        status.className = 'success'
+        status.textContent = 'Database cleared successfully! You can close this tab and refresh the app.'
+        
+        // Disable the clear button
+        document.querySelector('.danger').disabled = true
+        document.querySelector('.danger').style.opacity = '0.5'
+        document.querySelector('.danger').style.cursor = 'not-allowed'
+      } catch (error) {
+        console.error('Failed to clear database:', error)
+        status.className = 'error'
+        status.textContent = 'Error clearing database: ' + error.message
+      }
+    }
+  </script>
+</body>
+</html>
+

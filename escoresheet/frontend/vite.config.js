@@ -25,7 +25,18 @@ export default defineConfig({
       }
     })
   ],
-  server: { port: 5173 }
+  server: { port: 5173 },
+  build: {
+    // Use safer build options to avoid eval in production
+    minify: 'esbuild',
+    target: 'es2015',
+    rollupOptions: {
+      output: {
+        // Avoid eval in production builds
+        format: 'es'
+      }
+    }
+  }
 })
 
 

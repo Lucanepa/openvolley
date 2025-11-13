@@ -96,6 +96,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'officials', 'home', 'away', 'coin-toss'
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
+  const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
+  const [unlockModal, setUnlockModal] = useState(null) // { side: 'home'|'away' } | null
+  const [unlockPassword, setUnlockPassword] = useState('')
+  const [unlockError, setUnlockError] = useState('')
   
   // Coin toss state
   const [teamA, setTeamA] = useState('home') // 'home' or 'away'
@@ -122,7 +126,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     'Oberrieden', 'Uitikon', 'Egg', 'Fällanden', 'Maur', 'Rümlang', 'Zollikon'
   ].sort()
 
-  const teamColors = ['#FFFFFF','#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6','#eab308','#6366f1','#84cc16','#10b981','#f97316','#06b6d4','#dc2626','#64748b']
+  // Grouped by color families: whites/grays, reds, oranges, yellows, greens, blues, purples, pinks, teals
+  const teamColors = [
+    '#FFFFFF', // White
+    '#000000', // Black
+    '#808080', // Gray
+    '#dc2626', // Red
+    '#f97316', // Orange
+    '#eab308', // Yellow
+    '#22c55e', // Light Green
+    '#065f46', // Dark Green
+    '#3b82f6', // Light Blue
+    '#1e3a8a', // Dark Blue
+    '#a855f7', // Purple
+    '#ec4899'  // Pink
+  ]
 
   const homeCounts = {
     players: homeRoster.length,
@@ -154,12 +172,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
 
   function unlockTeam(side) {
-    const pass = typeof window !== 'undefined' ? window.prompt('Enter 1st Referee password to unlock:') : ''
-    if (pass === '1234') {
-      if (side === 'home') { setHomeCoachSignature(null); setHomeCaptainSignature(null) }
-      if (side === 'away') { setAwayCoachSignature(null); setAwayCaptainSignature(null) }
-    } else if (pass !== null) {
-      alert('Wrong password')
+    setUnlockModal({ side })
+    setUnlockPassword('')
+  }
+
+  function handleUnlockConfirm() {
+    if (unlockPassword === '1234') {
+      if (unlockModal.side === 'home') { 
+        setHomeCoachSignature(null)
+        setHomeCaptainSignature(null) 
+      }
+      if (unlockModal.side === 'away') { 
+        setAwayCoachSignature(null)
+        setAwayCaptainSignature(null) 
+      }
+      setUnlockModal(null)
+      setUnlockPassword('')
+      setUnlockError('')
+    } else {
+      setUnlockError('Wrong password')
     }
   }
 
@@ -242,6 +273,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.game_n) setGameN(String(match.game_n))
+        else if (match.gameNumber) setGameN(String(match.gameNumber))
         
         // Load players
         if (match.homeTeamId) {
@@ -494,6 +526,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     // Calculate luminance
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
     return luminance > 0.5
+  }
+
+  // Helper function to get contrasting color (white or black)
+  function getContrastColor(color) {
+    return isBrightColor(color) ? '#000000' : '#ffffff'
   }
 
   // Date formatting helpers
@@ -881,9 +918,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     await db.matches.update(pendingMatchId, { status: 'live' })
     
     // Start the match - directly navigate to scoreboard
-    // Don't use onStart which goes through continueMatch logic
-    // Instead, we'll handle navigation in the parent component
-    // For now, just call onStart which should handle it
+    // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
     onStart(pendingMatchId)
   }
 
@@ -1027,11 +1062,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         </div>
         <div className="row" style={{ alignItems:'center' }}>
           <label className="inline"><span>Name</span><input className="w-180 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
-          <div className="inline" style={{ gap:6 }}>
-            {teamColors.map(c => (
-              <button key={c} type="button" className="secondary" onClick={()=>setHomeColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: homeColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
-            ))}
-          </div>
         </div>
         <div className="row" style={{ marginTop: 12 }}>
           <label className="inline" style={{ 
@@ -1060,42 +1090,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         )}
         <h4>Roster</h4>
-        <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-          <input disabled={isHomeLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
-          <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
-          <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-          <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-          <select disabled={isHomeLocked} className="w-90" value={homeLibero} onChange={e => {
-            let newValue = e.target.value
-            // If L2 is selected but no L1 exists, automatically change L2 to L1
-            if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
-              newValue = 'libero1'
-            }
-            setHomeLibero(newValue)
-          }}>
-            <option value="">none</option>
-            {!homeRoster.some(p => p.libero === 'libero1') && (
-            <option value="libero1">Libero 1</option>
-            )}
-            {!homeRoster.some(p => p.libero === 'libero2') && (
-            <option value="libero2">Libero 2</option>
-            )}
-          </select>
-          <label className="inline"><input disabled={isHomeLocked} type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
-          <button disabled={isHomeLocked} type="button" className="secondary" onClick={() => {
-            if (!homeLast || !homeFirst) return
-            const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
-            setHomeRoster(list => {
-              const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-              const next = [...cleared, newPlayer].sort((a,b) => {
-                const an = a.number ?? 999
-                const bn = b.number ?? 999
-                return an - bn
+        <div style={{ 
+          border: '1px solid rgba(255, 255, 255, 0.2)', 
+          borderRadius: '8px', 
+          padding: '12px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '8px'
+        }}>
+          <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+            <input disabled={isHomeLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
+            <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
+            <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
+            <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+            <select disabled={isHomeLocked} className="w-90" value={homeLibero} onChange={e => {
+              let newValue = e.target.value
+              // If L2 is selected but no L1 exists, automatically change L2 to L1
+              if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
+                newValue = 'libero1'
+              }
+              setHomeLibero(newValue)
+            }}>
+              <option value=""></option>
+              {!homeRoster.some(p => p.libero === 'libero1') && (
+              <option value="libero1">Libero 1</option>
+              )}
+              {!homeRoster.some(p => p.libero === 'libero2') && (
+              <option value="libero2">Libero 2</option>
+              )}
+            </select>
+            <label className="inline"><input disabled={isHomeLocked} type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
+            <button disabled={isHomeLocked} type="button" className="secondary" onClick={() => {
+              if (!homeLast || !homeFirst) return
+              const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
+              setHomeRoster(list => {
+                const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                const next = [...cleared, newPlayer].sort((a,b) => {
+                  const an = a.number ?? 999
+                  const bn = b.number ?? 999
+                  return an - bn
+                })
+                return next
               })
-              return next
-            })
-            setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
-          }}>Add</button>
+              setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
+            }}>Add</button>
+          </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {homeRoster.map((p, i) => (
@@ -1166,7 +1204,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   setHomeRoster(updated)
                 }}
               >
-                <option value="">none</option>
+                <option value=""></option>
                 {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
                   <option value="libero1">Libero 1</option>
                 )}
@@ -1206,15 +1244,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           return (
             <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
               <select disabled={isHomeLocked} className="w-220" value={m.role} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], role:e.target.value}; return a })}>
-                {BENCH_ROLES.map(role => (
-                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
-                ))}
+                <option value="">None</option>
+                <option value="" disabled>──────────</option>
+                                <option value="">None</option>
+                                <option value="" disabled>──────────</option>
+                                {BENCH_ROLES.map(role => (
+                                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
+                                ))}
               </select>
               <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
               <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
               <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
               {!isHomeLocked && (
-                <button type="button" className="secondary" onClick={() => setBenchHome(benchHome.filter((_, idx) => idx !== originalIdx))} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                <button type="button" className="secondary" onClick={() => {
+                  const updated = benchHome.filter((_, idx) => idx !== originalIdx)
+                  setBenchHome(updated)
+                  // Trigger save immediately
+                  setTimeout(() => saveDraft(true), 100)
+                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
                   Remove
                 </button>
               )}
@@ -1249,11 +1296,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         </div>
         <div className="row" style={{ alignItems:'center' }}>
           <label className="inline"><span>Name</span><input className="w-300 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
-          <div className="inline" style={{ gap:6 }}>
-            {teamColors.map(c => (
-              <button key={c} type="button" className="secondary" onClick={()=>setAwayColor(c)} style={{ width:18, height:18, borderRadius:6, background:c, border: awayColor===c?'2px solid #fff':'1px solid rgba(255,255,255,.2)' }} />
-            ))}
-          </div>
         </div>
         <div className="row" style={{ marginTop: 12 }}>
           <label className="inline" style={{ 
@@ -1282,42 +1324,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         )}
         <h4>Roster</h4>
-        <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-          <input disabled={isAwayLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
-          <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
-          <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-          <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-          <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e => {
-            let newValue = e.target.value
-            // If L2 is selected but no L1 exists, automatically change L2 to L1
-            if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
-              newValue = 'libero1'
-            }
-            setAwayLibero(newValue)
-          }}>
-            <option value="">none</option>
-            {!awayRoster.some(p => p.libero === 'libero1') && (
-            <option value="libero1">libero 1</option>
-            )}
-            {!awayRoster.some(p => p.libero === 'libero2') && (
-            <option value="libero2">libero 2</option>
-            )}
-          </select>
-          <label className="inline"><input disabled={isAwayLocked} type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
-          <button disabled={isAwayLocked} type="button" className="secondary" onClick={() => {
-            if (!awayLast || !awayFirst) return
-            const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
-            setAwayRoster(list => {
-              const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-              const next = [...cleared, newPlayer].sort((a,b) => {
-                const an = a.number ?? 999
-                const bn = b.number ?? 999
-                return an - bn
+        <div style={{ 
+          border: '1px solid rgba(255, 255, 255, 0.2)', 
+          borderRadius: '8px', 
+          padding: '12px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '8px'
+        }}>
+          <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+            <input disabled={isAwayLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
+            <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
+            <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
+            <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+            <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e => {
+              let newValue = e.target.value
+              // If L2 is selected but no L1 exists, automatically change L2 to L1
+              if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
+                newValue = 'libero1'
+              }
+              setAwayLibero(newValue)
+            }}>
+              <option value="">none</option>
+              {!awayRoster.some(p => p.libero === 'libero1') && (
+              <option value="libero1">libero 1</option>
+              )}
+              {!awayRoster.some(p => p.libero === 'libero2') && (
+              <option value="libero2">libero 2</option>
+              )}
+            </select>
+            <label className="inline"><input disabled={isAwayLocked} type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
+            <button disabled={isAwayLocked} type="button" className="secondary" onClick={() => {
+              if (!awayLast || !awayFirst) return
+              const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
+              setAwayRoster(list => {
+                const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                const next = [...cleared, newPlayer].sort((a,b) => {
+                  const an = a.number ?? 999
+                  const bn = b.number ?? 999
+                  return an - bn
+                })
+                return next
               })
-              return next
-            })
-            setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
-          }}>Add</button>
+              setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
+            }}>Add</button>
+          </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {awayRoster.map((p, i) => (
@@ -1428,15 +1478,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           return (
             <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
               <select disabled={isAwayLocked} className="w-220" value={m.role} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], role:e.target.value}; return a })}>
-                {BENCH_ROLES.map(role => (
-                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
-                ))}
+                <option value="">None</option>
+                <option value="" disabled>──────────</option>
+                                <option value="">None</option>
+                                <option value="" disabled>──────────</option>
+                                {BENCH_ROLES.map(role => (
+                                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
+                                ))}
               </select>
               <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
               <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
               <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
               {!isAwayLocked && (
-                <button type="button" className="secondary" onClick={() => setBenchAway(benchAway.filter((_, idx) => idx !== originalIdx))} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                <button type="button" className="secondary" onClick={() => {
+                  const updated = benchAway.filter((_, idx) => idx !== originalIdx)
+                  setBenchAway(updated)
+                  // Trigger save immediately
+                  setTimeout(() => saveDraft(true), 100)
+                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
                   Remove
                 </button>
               )}
@@ -2647,6 +2706,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               <span>{city || 'not set'}</span>
               <span>Hall:</span>
               <span>{hall || 'not set'}</span>
+              <span>Game #:</span>
+              <span>{gameN || 'not set'}</span>
               <span>League:</span>
               <span>{league || 'not set'}</span>
             </div>
@@ -2682,24 +2743,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <h3 style={{ margin: 0 }}>Home team</h3>
               </div>
             </div>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8 }}>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8 }}>
               <span
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  padding: '4px 10px',
+                  gap: 16,
+                  padding: '8px 12px 8px 20px',
                   borderRadius: 8,
                   border: '1px solid rgba(255, 255, 255, 0.2)',
                   background: 'rgba(15, 23, 42, 0.35)',
                   fontWeight: 700,
                   fontSize: '16px',
                   letterSpacing: '0.01em',
-                  minHeight: 32
+                  minHeight: 48,
+                  minWidth: 'fit-content'
                 }}
               >
+                <div 
+                  className="shirt" 
+                  style={{ background: homeColor, cursor: 'pointer' }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const centerX = rect.left + rect.width / 2
+                    setColorPickerModal({ 
+                      team: 'home', 
+                      position: { x: centerX, y: rect.bottom + 8 } 
+                    })
+                  }}
+                >
+                  <div className="collar" style={{ background: homeColor }} />
+                  <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
+                </div>
                 {home || 'Home'}
               </span>
-              <div className="shirt" style={{ background: homeColor }} />
             </div>
             <div
               className="text-sm"
@@ -2707,7 +2784,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             >
               <span>Players:</span>
               <span>{homeCounts.players}</span>
-              <span>{homeCounts.liberos === 1 ? 'Libero:' : 'Liberos:'}</span>
+              <span>o/w Libero(s):</span>
               <span>{homeCounts.liberos}</span>
               <span>Bench staff:</span>
               <span>{homeCounts.bench}</span>
@@ -2723,24 +2800,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <h3 style={{ margin: 0 }}>Away team</h3>
               </div>
             </div>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8 }}>
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8 }}>
               <span
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  padding: '4px 10px',
+                  gap: 16,
+                  padding: '8px 12px 8px 20px',
                   borderRadius: 8,
                   border: '1px solid rgba(255, 255, 255, 0.2)',
                   background: 'rgba(15, 23, 42, 0.35)',
                   fontWeight: 700,
                   fontSize: '16px',
                   letterSpacing: '0.01em',
-                  minHeight: 32
+                  minHeight: 48,
+                  minWidth: 'fit-content'
                 }}
               >
+                <div 
+                  className="shirt" 
+                  style={{ background: awayColor, cursor: 'pointer' }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const centerX = rect.left + rect.width / 2
+                    setColorPickerModal({ 
+                      team: 'away', 
+                      position: { x: centerX, y: rect.bottom + 8 } 
+                    })
+                  }}
+                >
+                  <div className="collar" style={{ background: awayColor }} />
+                  <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
+                </div>
                 {away || 'Away'}
               </span>
-              <div className="shirt" style={{ background: awayColor }} />
             </div>
             <div
               className="text-sm"
@@ -2748,7 +2841,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             >
               <span>Players:</span>
               <span>{awayCounts.players}</span>
-              <span>{awayCounts.liberos === 1 ? 'Libero:' : 'Liberos:'}</span>
+              <span>o/w Libero(s):</span>
               <span>{awayCounts.liberos}</span>
               <span>Bench staff:</span>
               <span>{awayCounts.bench}</span>
@@ -2786,6 +2879,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   match_type_2: type2,
                   match_type_3: type3,
                   game_n: gameN ? Number(gameN) : null,
+                  gameNumber: gameN ? gameN : null,
                   league,
                   scheduledAt,
                   officials: [
@@ -2855,7 +2949,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               // Create new match
               await createMatch()
             }
-          }}>Start Match</button>
+          }}>Coin toss</button>
         )}
       </div>
 
@@ -2863,15 +2957,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         // Separate players and liberos
         const homePlayers = (homeRoster || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
         const homeLiberos = (homeRoster || []).filter(p => p.libero).sort((a, b) => {
+          // Sort by number first (primary), then by libero1/libero2 (secondary)
+          const numDiff = (a.number || 0) - (b.number || 0)
+          if (numDiff !== 0) return numDiff
           if (a.libero === 'libero1') return -1
           if (b.libero === 'libero1') return 1
-          return (a.number || 0) - (b.number || 0)
+          return 0
         })
         const awayPlayers = (awayRoster || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
         const awayLiberos = (awayRoster || []).filter(p => p.libero).sort((a, b) => {
+          // Sort by number first (primary), then by libero1/libero2 (secondary)
+          const numDiff = (a.number || 0) - (b.number || 0)
+          if (numDiff !== 0) return numDiff
           if (a.libero === 'libero1') return -1
           if (b.libero === 'libero1') return 1
-          return (a.number || 0) - (b.number || 0)
+          return 0
         })
         
         // Pad arrays to same length for alignment
@@ -3117,6 +3217,170 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         )
       })()}
+
+      {/* Color Picker Bubble Modal */}
+      {colorPickerModal && (
+        <>
+          {/* Backdrop to close on click outside */}
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 999,
+              background: 'rgba(0, 0, 0, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            onClick={() => setColorPickerModal(null)}
+          />
+          {/* Bubble modal */}
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 1000,
+              background: '#1f2937',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '12px',
+              padding: '16px',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+              minWidth: '280px'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+              Choose {colorPickerModal.team === 'home' ? 'Home' : 'Away'} Team Color
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '12px'
+              }}
+            >
+              {teamColors.map((color) => {
+                const isSelected = (colorPickerModal.team === 'home' ? homeColor : awayColor) === color
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => {
+                      if (colorPickerModal.team === 'home') {
+                        setHomeColor(color)
+                      } else {
+                        setAwayColor(color)
+                      }
+                      setColorPickerModal(null)
+                    }}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px 8px',
+                      background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                      border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      minWidth: '60px'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'transparent'
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                      }
+                    }}
+                  >
+                    <div className="shirt" style={{ background: color, transform: 'scale(0.8)' }}>
+                      <div className="collar" style={{ background: color }} />
+                      <div className="number" style={{ color: getContrastColor(color) }}>1</div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Unlock Modal */}
+      {unlockModal && (
+        <Modal
+          title={`Unlock ${unlockModal.side === 'home' ? 'Home' : 'Away'} Team`}
+          open={true}
+          onClose={() => {
+            setUnlockModal(null)
+            setUnlockPassword('')
+            setUnlockError('')
+          }}
+          width={400}
+        >
+          <div style={{ padding: '24px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+                Enter 1st Referee password to unlock:
+              </label>
+              <input
+                type="password"
+                value={unlockPassword}
+                onChange={(e) => {
+                  setUnlockPassword(e.target.value)
+                  setUnlockError('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleUnlockConfirm()
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: unlockError ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: 'var(--text)',
+                  fontSize: '14px'
+                }}
+                autoFocus
+              />
+              {unlockError && (
+                <div style={{ marginTop: '8px', color: '#ef4444', fontSize: '12px' }}>
+                  {unlockError}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setUnlockModal(null)
+                  setUnlockPassword('')
+                  setUnlockError('')
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUnlockConfirm}
+                disabled={!unlockPassword}
+                style={{ opacity: !unlockPassword ? 0.5 : 1 }}
+              >
+                Unlock
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       <SignaturePad 
         open={openSignature !== null} 
