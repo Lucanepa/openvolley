@@ -20,7 +20,8 @@ const TEST_AWAY_TEAM_EXTERNAL_ID = 'test-team-bravo'
 const TEST_MATCH_DEFAULTS = {
   hall: 'Kantonsschule Wiedikon (Halle A)',
   city: 'Zürich',
-  league: '3L B'
+  league: '3L B',
+  gameNumber: '123456'
 }
 
 const TEST_HOME_BENCH = [
@@ -60,6 +61,8 @@ export default function App() {
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [newMatchModal, setNewMatchModal] = useState(null)
   const [testMatchLoading, setTestMatchLoading] = useState(false)
+  const [alertModal, setAlertModal] = useState(null) // { message: string }
+  const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
 
@@ -105,7 +108,9 @@ export default function App() {
   const currentTestMatch = useLiveQuery(async () => {
     try {
       const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      return matches.find(m => m.test === true && m.status !== 'final') || null
+      const testMatch = matches.find(m => m.test === true && m.status !== 'final')
+      // Return test match if it exists, regardless of setup status
+      return testMatch || null
     } catch (error) {
       console.error('Unable to load test match', error)
       return null
@@ -115,6 +120,23 @@ export default function App() {
   // Get match status and details
   const matchStatus = useLiveQuery(async () => {
     if (!currentMatch) return null
+
+    // For test matches that have been restarted (no signatures, only initial set, no events), don't show status
+    if (currentMatch.test === true) {
+      const hasSignatures = currentMatch.homeCoachSignature || 
+                           currentMatch.homeCaptainSignature || 
+                           currentMatch.awayCoachSignature || 
+                           currentMatch.awayCaptainSignature
+      
+      if (!hasSignatures) {
+        const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
+        const events = await db.events.where('matchId').equals(currentMatch.id).toArray()
+        // If only initial set exists and no events, it's been restarted - don't show status
+        if (sets.length === 1 && events.length === 0) {
+          return null
+        }
+      }
+    }
 
     const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
     const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
@@ -288,6 +310,25 @@ export default function App() {
     }
   }, [activeMatch, matchId])
 
+  // Update document title based on match type
+  useEffect(() => {
+    if (!currentMatch) {
+      document.title = 'Openvolley eScoresheet'
+      return
+    }
+
+    const isTestMatch = currentMatch.test === true
+
+    if (isTestMatch) {
+      // Test matches don't have a game number - just show base title
+      document.title = 'Openvolley eScoresheet'
+    } else {
+      // Official match - show game number only
+      const gameNumber = currentMatch.externalId || 'Official Match'
+      document.title = `Openvolley eScoresheet - ${gameNumber}`
+    }
+  }, [currentMatch])
+
   async function finishSet(cur) {
     await db.sets.update(cur.id, { finished: true })
     const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
@@ -298,37 +339,43 @@ export default function App() {
     if (finished >= 5) {
       await db.matches.update(cur.matchId, { status: 'final' })
       
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'update',
-        payload: {
-          id: String(cur.matchId),
-          status: 'final'
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+      // Only sync official matches
+      if (!isTestMatch) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: String(cur.matchId),
+            status: 'final'
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
       
       setMatchId(null)
       return
     }
     const setId = await db.sets.add({ matchId: cur.matchId, index: cur.index + 1, homePoints: 0, awayPoints: 0, finished: false })
     
-    await db.sync_queue.add({
-      resource: 'set',
-      action: 'insert',
-      payload: {
-        external_id: String(setId),
-        match_id: matchRecord?.externalId || String(cur.matchId),
-        index: cur.index + 1,
-        home_points: 0,
-        away_points: 0,
-        finished: false,
-        created_at: new Date().toISOString()
-      },
-      ts: new Date().toISOString(),
-      status: 'queued'
-    })
+    // Only sync official matches
+    if (!isTestMatch) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: String(setId),
+          match_id: matchRecord?.externalId || String(cur.matchId),
+          index: cur.index + 1,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
   }
 
   const openMatchSetup = () => setMatchId(null)
@@ -699,6 +746,7 @@ export default function App() {
       hall: matchData.hall || TEST_MATCH_DEFAULTS.hall,
       city: matchData.city || TEST_MATCH_DEFAULTS.city,
       league: matchData.league || TEST_MATCH_DEFAULTS.league,
+      gameNumber: matchData.game_number || TEST_MATCH_DEFAULTS.gameNumber,
       homeTeamId,
       awayTeamId,
       bench_home: homeBench,
@@ -1339,6 +1387,7 @@ export default function App() {
         hall: TEST_MATCH_DEFAULTS.hall,
         city: TEST_MATCH_DEFAULTS.city,
         league: TEST_MATCH_DEFAULTS.league,
+        gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
         scheduledAt,
         bench_home: TEST_HOME_BENCH,
         bench_away: TEST_AWAY_BENCH,
@@ -1388,42 +1437,39 @@ export default function App() {
 
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
     if (officialMatchRecording) {
-      const proceed = window.confirm('An official match is still recording. Starting a new test match will wipe the previous test session. Continue?')
-      if (!proceed) return
+      setConfirmModal({
+        message: 'An official match is still recording. Starting a new test match will wipe the previous test session. Continue?',
+        onConfirm: async () => {
+          setConfirmModal(null)
+          setTestMatchLoading(true)
+          try {
+            await clearLocalTestData()
+            await createTestMatchData()
+          } catch (error) {
+            console.error('Failed to prepare test match:', error)
+            setAlertModal(`Unable to prepare the test match: ${error.message || error}`)
+          } finally {
+            setTestMatchLoading(false)
+          }
+        },
+        onCancel: () => {
+          setConfirmModal(null)
+        }
+      })
+      return
     }
 
     setTestMatchLoading(true)
-    let remoteResetPerformed = false
 
     try {
       // Clear previous test match locally
       await clearLocalTestData()
 
-      // Reset Supabase test match if online and Supabase is available
-      if (canUseSupabase && isOnline) {
-        try {
-          await resetSupabaseTestMatch()
-          remoteResetPerformed = true
-        } catch (error) {
-          console.error('Failed to reset Supabase test match:', error)
-          window.alert(`Unable to reset the test match on Supabase: ${error.message || error}`)
-          return
-        }
-      }
-
-      if (!canUseSupabase || !isOnline) {
-        console.warn('Supabase unavailable, falling back to local test match generation.')
-        await createTestMatchData()
-        return
-      }
-
-      await loadTestMatchFromSupabase({
-        resetRemote: !remoteResetPerformed,
-        targetView: 'setup'
-      })
+      // Create test match locally only - no Supabase interaction
+      await createTestMatchData()
     } catch (error) {
       console.error('Failed to prepare test match:', error)
-      window.alert(`Unable to prepare the test match: ${error.message || error}`)
+      setAlertModal(`Unable to prepare the test match: ${error.message || error}`)
     } finally {
       setTestMatchLoading(false)
     }
@@ -1432,64 +1478,93 @@ export default function App() {
   async function continueTestMatch() {
     if (testMatchLoading) return
 
-    if (!canUseSupabase || !isOnline) {
-      const existing = await db.matches.where('externalId').equals(TEST_MATCH_EXTERNAL_ID).first()
-      if (existing) {
-        setMatchId(existing.id)
+    // Test matches are local only - just load from Dexie
+    // Use toArray and filter to avoid index requirement
+    const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+    const existing = matches.find(m => m.test === true && m.status !== 'final')
+    if (existing) {
+      // Check match state to determine where to continue
+      const isMatchSetupComplete = existing.homeCoachSignature && 
+                                    existing.homeCaptainSignature && 
+                                    existing.awayCoachSignature && 
+                                    existing.awayCaptainSignature
+      
+      // Check if coin toss is confirmed
+      const isCoinTossConfirmed = existing.coinTossTeamA !== null && 
+                                   existing.coinTossTeamA !== undefined &&
+                                   existing.coinTossTeamB !== null && 
+                                   existing.coinTossTeamB !== undefined &&
+                                   existing.coinTossServeA !== null && 
+                                   existing.coinTossServeA !== undefined &&
+                                   existing.coinTossServeB !== null && 
+                                   existing.coinTossServeB !== undefined
+      
+      setMatchId(existing.id)
+      
+      // Determine where to continue based on status
+      if (existing.status === 'live' || existing.status === 'final') {
+        // Go directly to scoreboard
         setShowMatchSetup(false)
         setShowCoinToss(false)
+      } else if (isMatchSetupComplete && isCoinTossConfirmed) {
+        // Match setup and coin toss complete - go to scoreboard
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+      } else if (isMatchSetupComplete) {
+        // Match setup complete but coin toss not done - go to coin toss
+        setShowMatchSetup(false)
+        setShowCoinToss(true)
       } else {
-        window.alert('Supabase connection is required to load the test match.')
+        // Match setup not complete - go to match setup
+        setShowMatchSetup(true)
+        setShowCoinToss(false)
       }
-      return
-    }
-
-    try {
-      setTestMatchLoading(true)
-      await loadTestMatchFromSupabase({ resetRemote: false, targetView: 'scoreboard' })
-    } catch (error) {
-      console.error('Failed to load test match from Supabase:', error)
-      window.alert(`Unable to continue the test match: ${error.message || error}`)
-    } finally {
-      setTestMatchLoading(false)
+    } else {
+      setAlertModal('No test match found. Please create a new test match first.')
     }
   }
 
-  async function deleteTestMatchData() {
+  async function restartTestMatch() {
     if (testMatchLoading) return
 
-    const proceed = window.confirm(
-      'This will delete and reset the test match in Supabase and locally. Continue?'
-    )
-    if (!proceed) return
+    // Set loading state immediately to disable buttons
+    setTestMatchLoading(true)
+    
+    setConfirmModal({
+      message: 'This will delete the test match and all its data. Continue?',
+      onConfirm: async () => {
+        setConfirmModal(null)
+        try {
+          // Find the test match - use toArray and filter to avoid index requirement
+          const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+          const testMatch = matches.find(m => m.test === true && m.status !== 'final')
+          if (!testMatch) {
+            setAlertModal('No test match found.')
+            setTestMatchLoading(false)
+            return
+          }
 
-    if (!canUseSupabase || !isOnline) {
-      window.alert('Supabase connection is required to reset the test match.')
-      return
-    }
+          // Delete all test match data
+          await clearLocalTestData()
 
-    try {
-      setTestMatchLoading(true)
+          // Clear matchId to return to home view
+          setMatchId(null)
+          setShowMatchSetup(false)
+          setShowCoinToss(false)
 
-      // Run the SQL script to delete and recreate test data
-      const { error } = await supabase.rpc('reset_test_match')
-      
-      if (error) {
-        console.error('Failed to reset test match via RPC:', error)
-        window.alert(`Unable to reset test match: ${error.message || error}`)
-        return
+          setAlertModal('Test match deleted successfully.')
+        } catch (error) {
+          console.error('Failed to delete test match:', error)
+          setAlertModal(`Unable to delete test match: ${error.message || error}`)
+        } finally {
+          setTestMatchLoading(false)
+        }
+      },
+      onCancel: () => {
+        setConfirmModal(null)
+        setTestMatchLoading(false)
       }
-
-      // Clear local test data
-      await clearLocalTestData()
-
-      window.alert('Test match has been reset successfully.')
-    } catch (error) {
-      console.error('Failed to delete test match:', error)
-      window.alert(`Unable to delete test match: ${error.message || error}`)
-    } finally {
-      setTestMatchLoading(false)
-    }
+    })
   }
 
   function continueMatch(matchIdParam) {
@@ -1499,18 +1574,6 @@ export default function App() {
     // Get the match to check its status
     db.matches.get(targetMatchId).then(match => {
       if (!match) return
-      
-      // Reject test matches
-      if (match.test === true) {
-        window.alert('This is a test match. Use "Continue test match" instead.')
-        return
-      }
-      
-      // Check if match setup is complete (all signatures present)
-      const isMatchSetupComplete = match.homeCoachSignature && 
-                                    match.homeCaptainSignature && 
-                                    match.awayCoachSignature && 
-                                    match.awayCaptainSignature
       
       // Check if coin toss is confirmed
       const isCoinTossConfirmed = match.coinTossTeamA !== null && 
@@ -1522,9 +1585,31 @@ export default function App() {
                                    match.coinTossServeB !== null && 
                                    match.coinTossServeB !== undefined
       
+      // If coin toss is confirmed and match is live, allow test matches to go to scoreboard
+      // (This handles the case when coin toss is just confirmed)
+      if (match.test === true && match.status === 'live' && isCoinTossConfirmed) {
+        // Go directly to scoreboard for test matches after coin toss confirmation
+        setMatchId(targetMatchId)
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+        return
+      }
+      
+      // Reject test matches for other cases
+      if (match.test === true) {
+        setAlertModal('This is a test match. Use "Continue test match" instead.')
+        return
+      }
+      
+      // Check if match setup is complete (all signatures present)
+      const isMatchSetupComplete = match.homeCoachSignature && 
+                                    match.homeCaptainSignature && 
+                                    match.awayCoachSignature && 
+                                    match.awayCaptainSignature
+      
       // Only allow continuation if match setup and coin toss are confirmed
       if (!isMatchSetupComplete || !isCoinTossConfirmed) {
-        window.alert('Cannot continue match: Match setup and coin toss must be confirmed first.')
+        setAlertModal('Cannot continue match: Match setup and coin toss must be confirmed first.')
         return
       }
       
@@ -1547,19 +1632,17 @@ export default function App() {
     <div className="container">
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h1 style={{ margin: 0 }}>Openvolley eScoresheet</h1>
-        <div className={`status-indicator status-${syncStatus}`} style={{ fontSize: '11px' }}>
-          <span className="status-dot" />
-          <span>
-            {syncStatus === 'offline' && 'Offline'}
-            {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
-            {syncStatus === 'connecting' && 'Connecting...'}
-            {syncStatus === 'syncing' && 'Syncing...'}
-            {syncStatus === 'synced' && 'Synced'}
-            {syncStatus === 'error' && 'Sync Error'}
-          </span>
-        </div>
       </div>
       
+      {/* Test Match Banner - show when test match is active */}
+      {matchId && currentMatch && currentMatch.test === true && (
+        <div className="test-match-banner">
+          <div className="test-match-content">
+            <span className="test-match-label">Test Match</span>
+          </div>
+        </div>
+      )}
+
       {!matchId && matchStatus && (
         <div className="match-status-banner">
           <div className="match-status-content">
@@ -1581,6 +1664,20 @@ export default function App() {
               <div className="home-card">
                 <div className="home-card-header">
                   <h2>Official Match</h2>
+                  <div className="connection-status-inline">
+                    <span className="connection-status-label">Connection:</span>
+                    <div className={`status-indicator status-${syncStatus}`}>
+                      <span className="status-dot" />
+                      <span>
+                        {syncStatus === 'offline' && 'Offline'}
+                        {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
+                        {syncStatus === 'connecting' && 'Connecting...'}
+                        {syncStatus === 'syncing' && 'Syncing...'}
+                        {syncStatus === 'synced' && 'Synced'}
+                        {syncStatus === 'error' && 'Sync Error'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
                 <div className="home-card-actions">
                   <button 
@@ -1610,32 +1707,30 @@ export default function App() {
               <div className="home-card home-card--test">
                 <div className="home-card-header">
                   <h2>Test Match</h2>
-                  {(!canUseSupabase || !isOnline) && (
-                    <span className="home-card-hint">Supabase offline</span>
-                  )}
+                  <span className="home-card-hint">Local only</span>
                 </div>
                 <div className="home-card-actions">
                   <button 
                     onClick={createNewTestMatch}
-                    disabled={!canUseSupabase || !isOnline || testMatchLoading}
-                    className={'test-button ' + (!canUseSupabase || !isOnline || testMatchLoading ? 'disabled' : '')}
+                    disabled={testMatchLoading}
+                    className={testMatchLoading ? 'test-button disabled' : 'test-button'}
                   >
                     {testMatchLoading ? 'Preparing…' : 'New test match'}
                   </button>
                   <button 
                     onClick={continueTestMatch}
-                    disabled={!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch}
-                    className={'test-button ' + (!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch ? 'disabled' : '')}
+                    disabled={testMatchLoading || !currentTestMatch}
+                    className={(testMatchLoading || !currentTestMatch) ? 'test-button disabled' : 'test-button'}
                   >
                     {testMatchLoading ? 'Loading…' : 'Continue test match'}
                   </button>
                   <button 
-                    onClick={deleteTestMatchData}
-                    disabled={!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch}
-                    className={'test-button test-button--danger ' + (!canUseSupabase || !isOnline || testMatchLoading || !currentTestMatch ? 'disabled' : '')}
+                    onClick={restartTestMatch}
+                    disabled={testMatchLoading || !currentTestMatch}
+                    className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
                     style={{ marginTop: '8px' }}
                   >
-                    {testMatchLoading ? 'Deleting…' : 'Delete test match'}
+                    {testMatchLoading ? 'Clearing…' : 'Clear test match'}
                   </button>
                 </div>
               </div>
@@ -1727,6 +1822,89 @@ export default function App() {
               </button>
               <button
                 onClick={cancelNewMatch}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Alert Modal */}
+      {alertModal && (
+        <Modal
+          title="Alert"
+          open={true}
+          onClose={() => setAlertModal(null)}
+          width={400}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              {alertModal}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => setAlertModal(null)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <Modal
+          title="Confirm"
+          open={true}
+          onClose={confirmModal.onCancel}
+          width={400}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              {confirmModal.message}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={confirmModal.onConfirm}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes
+              </button>
+              <button
+                onClick={confirmModal.onCancel}
                 style={{
                   padding: '12px 24px',
                   fontSize: '14px',
