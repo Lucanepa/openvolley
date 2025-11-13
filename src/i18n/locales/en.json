@@ -1,0 +1,65 @@
+{
+  "app": {
+    "title": "OpenVolley",
+    "subtitle": "Volleyball Scoreboard"
+  },
+  "scoreboard": {
+    "teamA": "Team A",
+    "teamB": "Team B",
+    "set": "Set",
+    "points": "Points",
+    "sets": "Sets",
+    "newMatch": "New Match",
+    "resetSet": "Reset Set",
+    "exportPDF": "Export PDF",
+    "lineup": "Lineup",
+    "substitution": "Substitution"
+  },
+  "match": {
+    "inProgress": "Match in Progress",
+    "complete": "Match Complete",
+    "winner": "{{team}} Wins!",
+    "setWinner": "Set won by {{team}}",
+    "tiebreak": "Tiebreak Set (15 pts)",
+    "regular": "Regular Set (25 pts)"
+  },
+  "lineup": {
+    "title": "Team Lineup",
+    "position": "Position",
+    "player": "Player",
+    "number": "Number",
+    "positions": {
+      "setter": "Setter",
+      "oppositeHitter": "Opposite Hitter",
+      "outsideHitter": "Outside Hitter",
+      "middleBlocker": "Middle Blocker",
+      "libero": "Libero"
+    },
+    "addPlayer": "Add Player",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "substitution": {
+    "title": "Substitution",
+    "playerOut": "Player Out",
+    "playerIn": "Player In",
+    "execute": "Execute Substitution",
+    "remaining": "Substitutions remaining: {{count}}",
+    "maxReached": "Maximum substitutions reached"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "syncing": "Syncing...",
+    "synced": "Synced"
+  },
+  "common": {
+    "close": "Close",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back"
+  }
+}
