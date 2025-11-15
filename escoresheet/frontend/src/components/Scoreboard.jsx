@@ -19,6 +19,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [editPinModal, setEditPinModal] = useState(false)
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
+  const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
   const [setEndModal, setSetEndModal] = useState(null) // { set, homePoints, awayPoints } | null
@@ -210,16 +211,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const leftIsHome = useMemo(() => {
     if (!data?.set) return true
-    // In set 1, Team A is always on the left
-    // In subsequent sets, teams switch sides
+    
+    // Set 1: Team A on left
     if (data.set.index === 1) {
-      // Set 1: Team A on left
       return teamAKey === 'home'
-    } else {
-      // Set 2+: Teams switch sides (Team A goes right, Team B goes left)
-      return teamAKey !== 'home'
+    } 
+    
+    // Set 5: Special case with court switch at 8 points
+    if (data.set.index === 5) {
+      // Set 5 starts with teams switched (like set 2+)
+      let isHome = teamAKey !== 'home'
+      
+      // If court switch has happened at 8 points, switch again
+      if (data.match?.set5CourtSwitched) {
+        isHome = !isHome
+      }
+      
+      return isHome
     }
-  }, [data?.set, teamAKey])
+    
+    // Set 2, 3, 4: Teams switch sides (Team A goes right, Team B goes left)
+    return teamAKey !== 'home'
+  }, [data?.set, data?.match?.set5CourtSwitched, teamAKey])
 
   // Calculate set score (number of sets won by each team)
   const setScore = useMemo(() => {
@@ -779,8 +792,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   )
 
   const checkSetEnd = useCallback(async (set, homePoints, awayPoints) => {
+    // Determine if this is the 5th set (tie-break set)
+    const is5thSet = set.index === 5
+    const pointsToWin = is5thSet ? 15 : 25
+    
     // Check if this point would end the set
-    if (homePoints >= 25 && homePoints - awayPoints >= 2) {
+    if (homePoints >= pointsToWin && homePoints - awayPoints >= 2) {
       // Close all libero modals
       setLiberoRotationModal(null)
       setLiberoReentryModal(null)
@@ -802,7 +819,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setSetEndTimeModal({ setIndex: set.index, winner: 'home', homePoints, awayPoints, defaultTime, isMatchEnd })
       return true
     }
-    if (awayPoints >= 25 && awayPoints - homePoints >= 2) {
+    if (awayPoints >= pointsToWin && awayPoints - homePoints >= 2) {
       // Close all libero modals
       setLiberoRotationModal(null)
       setLiberoReentryModal(null)
@@ -874,6 +891,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (onFinishSet) onFinishSet(set)
     } else {
       const newSetId = await db.sets.add({ matchId: set.matchId, index: set.index + 1, homePoints: 0, awayPoints: 0, finished: false })
+      
+      // Reset set5CourtSwitched flag when starting a new set
+      await db.matches.update(set.matchId, { set5CourtSwitched: false })
       
       // Get match to check if it's a test match
       const match = await db.matches.get(set.matchId)
@@ -1345,10 +1365,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       }
       
+      // Check for 5th set court switch at 8 points
+      const is5thSet = data.set.index === 5
+      if (is5thSet && (homePoints === 8 || awayPoints === 8)) {
+        // Check if we've already switched courts in this set
+        const hasSwitchedCourts = await db.matches.get(matchId).then(m => m?.set5CourtSwitched || false)
+        
+        if (!hasSwitchedCourts) {
+          // Show court switch modal
+          setCourtSwitchModal({
+            set: data.set,
+            homePoints,
+            awayPoints,
+            teamThatScored: teamKey
+          })
+          return // Don't check for set end yet, wait for court switch confirmation
+        }
+      }
+      
       const setEnded = checkSetEnd(data.set, homePoints, awayPoints)
       // If set didn't end, we're done. If it did, checkSetEnd will show the confirmation modal
     },
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId]
   )
 
   const handleStartRally = useCallback(async () => {
@@ -1572,6 +1610,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         awayPoints: 0, 
         finished: false 
       })
+      
+      // Reset set5CourtSwitched flag when starting a new set
+      await db.matches.update(matchId, { set5CourtSwitched: false })
       
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
@@ -4042,6 +4083,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setPinError('Failed to save PIN')
     }
   }, [matchId, newPin])
+
+  const confirmCourtSwitch = useCallback(async () => {
+    if (!courtSwitchModal) return
+    
+    // Mark that courts have been switched for set 5
+    await db.matches.update(matchId, { set5CourtSwitched: true })
+    
+    // Close the modal
+    setCourtSwitchModal(null)
+    
+    // Note: Teams will automatically switch on next point based on leftIsHome logic
+  }, [courtSwitchModal, matchId])
+
+  const cancelCourtSwitch = useCallback(async () => {
+    if (!courtSwitchModal || !data?.events) return
+    
+    // Undo the last point that caused the 8-point threshold
+    // Find the last event by sequence number
+    const sortedEvents = [...data.events].sort((a, b) => {
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return bSeq - aSeq // Descending
+      }
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return bTime - aTime
+    })
+    
+    const lastEvent = sortedEvents[0]
+    if (lastEvent) {
+      // Delete the last event (point or sanction)
+      await db.events.delete(lastEvent.id)
+      
+      // Update set points
+      const newHomePoints = courtSwitchModal.teamThatScored === 'home' 
+        ? courtSwitchModal.homePoints - 1 
+        : courtSwitchModal.homePoints
+      const newAwayPoints = courtSwitchModal.teamThatScored === 'away' 
+        ? courtSwitchModal.awayPoints - 1 
+        : courtSwitchModal.awayPoints
+      
+      await db.sets.update(courtSwitchModal.set.id, {
+        homePoints: newHomePoints,
+        awayPoints: newAwayPoints
+      })
+    }
+    
+    setCourtSwitchModal(null)
+  }, [courtSwitchModal, data?.events])
 
   if (!data?.set) {
     return <p>Loading…</p>
@@ -8991,6 +9082,61 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 }}
               >
                 Save PIN
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      
+      {/* Court Switch Modal (5th Set at 8 points) */}
+      {courtSwitchModal && (
+        <Modal
+          title="Court Switch Required"
+          open={true}
+          onClose={() => {}}
+          width={450}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
+              Set 5 — Teams must switch courts
+            </p>
+            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+              Score: {courtSwitchModal.homePoints} - {courtSwitchModal.awayPoints}
+            </p>
+            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
+              A team has reached 8 points. Teams must change courts before continuing play.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={confirmCourtSwitch}
+                style={{
+                  padding: '12px 32px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                OK - Switch Courts
+              </button>
+              <button
+                onClick={cancelCourtSwitch}
+                style={{
+                  padding: '12px 32px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: '#ef4444',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel - Undo Last Point
               </button>
             </div>
           </div>

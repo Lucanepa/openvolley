@@ -80,7 +80,11 @@ export default function RefereeApp() {
           Enter the 6-digit match PIN to access the referee view
         </p>
 
-        <form onSubmit={handlePinSubmit}>
+        <form onSubmit={handlePinSubmit} style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}>
           <input
             type="text"
             inputMode="numeric"
@@ -90,7 +94,8 @@ export default function RefereeApp() {
             placeholder="000000"
             maxLength={6}
             style={{
-              width: '100%',
+              width: '80%',
+              maxWidth: '280px',
               padding: '16px',
               fontSize: '24px',
               fontWeight: 700,
@@ -106,13 +111,15 @@ export default function RefereeApp() {
           
           {error && (
             <div style={{
+              width: '100%',
               padding: '12px',
               background: 'rgba(239, 68, 68, 0.1)',
               border: '1px solid #ef4444',
               borderRadius: '6px',
               color: '#ef4444',
               fontSize: '14px',
-              marginBottom: '16px'
+              marginBottom: '16px',
+              textAlign: 'center'
             }}>
               {error}
             </div>
@@ -121,7 +128,8 @@ export default function RefereeApp() {
           <button
             type="submit"
             style={{
-              width: '100%',
+              width: '50%',
+              maxWidth: '200px',
               padding: '16px',
               fontSize: '16px',
               fontWeight: 600,

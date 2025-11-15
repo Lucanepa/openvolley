@@ -250,14 +250,28 @@ export default function Referee({ matchId, onExit }) {
   // In subsequent sets, teams switch sides
   const leftIsHomeFor2ndRef = useMemo(() => {
     if (!data?.currentSet) return true
+    
+    // Set 1: Team A on left
     if (data.currentSet.index === 1) {
-      // Set 1: Team A on left
       return teamAKey === 'home'
-    } else {
-      // Set 2+: Teams switch sides (Team A goes right, Team B goes left)
-      return teamAKey !== 'home'
     }
-  }, [data?.currentSet, teamAKey])
+    
+    // Set 5: Special case with court switch at 8 points
+    if (data.currentSet.index === 5) {
+      // Set 5 starts with teams switched (like set 2+)
+      let isHome = teamAKey !== 'home'
+      
+      // If court switch has happened at 8 points, switch again
+      if (data.match?.set5CourtSwitched) {
+        isHome = !isHome
+      }
+      
+      return isHome
+    }
+    
+    // Set 2, 3, 4: Teams switch sides (Team A goes right, Team B goes left)
+    return teamAKey !== 'home'
+  }, [data?.currentSet, data?.match?.set5CourtSwitched, teamAKey])
 
   // For 1st referee, reverse the sides (they see from opposite end)
   const leftIsHome = refereeView === '1st' ? !leftIsHomeFor2ndRef : leftIsHomeFor2ndRef
@@ -539,9 +553,9 @@ export default function Referee({ matchId, onExit }) {
           position: 'relative',
           background: isLibero ? '#FFF8E7' : undefined,
           color: isLibero ? '#000' : undefined,
-          width: 'clamp(50px, 7.8vw, 62px)', // 30% bigger than original clamp(28px, 6vw, 48px)
-          height: 'clamp(50px, 7.8vw, 62px)',
-          fontSize: 'clamp(25px, 3.25vw, 23px)' // 30% bigger than original clamp(12px, 2.5vw, 18px)
+          width: 'clamp(28px, 7.8vw, 62px)', // 30% bigger than original clamp(28px, 6vw, 48px)
+          height: 'clamp(18px, 7.8vw, 62px)',
+          fontSize: 'clamp(12px, 3.25vw, 23px)' // 30% bigger than original clamp(12px, 2.5vw, 18px)
         }}
       >
         {shouldShowBall && (
@@ -564,9 +578,9 @@ export default function Referee({ matchId, onExit }) {
         <span 
           className="court-player-position"
           style={{
-            width: '14.4px', // 20% smaller than 18px
-            height: '14.4px',
-            fontSize: '9px', // 20% smaller than 11px
+            width: '12.4px', // 20% smaller than 18px
+            height: '12.4px',
+            fontSize: '6px', // 20% smaller than 11px
             top: '-6.4px', // 20% smaller offset
             left: '-6.4px'
           }}
@@ -579,9 +593,9 @@ export default function Referee({ matchId, onExit }) {
               <span 
                 className="court-player-captain"
                 style={{
-                  width: '16px', // 20% smaller (adjusted for content)
-                  height: '14.4px',
-                  fontSize: '7px', // 20% smaller
+                  width: '12px', // 20% smaller (adjusted for content)
+                  height: '12px',
+                  fontSize: '6px', // 20% smaller
                   bottom: '-6.4px',
                   left: '-6.4px'
                 }}
@@ -594,9 +608,9 @@ export default function Referee({ matchId, onExit }) {
             <span 
               className="court-player-captain"
               style={{
-                width: '14.4px', // 20% smaller than 18px
-                height: '14.4px',
-                fontSize: '9px', // 20% smaller than 11px
+                width: '12px', // 20% smaller than 18px
+                height: '12px',
+                fontSize: '6px', // 20% smaller than 11px
                 bottom: '-6.4px', // 20% smaller offset
                 left: '-6.4px'
               }}
@@ -611,15 +625,15 @@ export default function Referee({ matchId, onExit }) {
             position: 'absolute',
             top: '-6.4px',
             right: '-6.4px',
-            width: '14.4px', // 20% smaller than 18px
-            height: '14.4px',
+            width: '12px', // 20% smaller than 18px
+            height: '12px',
             background: '#FFF8E7',
             border: '1.6px solid rgba(0, 0, 0, 0.2)',
             borderRadius: '3.2px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '8px', // 20% smaller than 10px
+            fontSize: '6px', // 20% smaller than 10px
             fontWeight: 700,
             color: '#000',
             zIndex: 6
@@ -635,15 +649,15 @@ export default function Referee({ matchId, onExit }) {
               position: 'absolute',
               bottom: '-6.4px',
               left: '-6.4px',
-              width: '16px', // 20% smaller
-              height: '14.4px', // 20% smaller
+              width: '12px', // 20% smaller
+              height: '12px', // 20% smaller
               background: isCaptain ? 'rgba(15, 23, 42, 0.95)' : '#3b82f6',
               border: isCaptain ? '1.6px solid var(--accent)' : '1.6px solid rgba(255, 255, 255, 0.4)',
               borderRadius: '3.2px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '7px', // 20% smaller
+              fontSize: '6px', // 20% smaller
               fontWeight: 700,
               color: '#fff',
               zIndex: 5
@@ -739,30 +753,35 @@ export default function Referee({ matchId, onExit }) {
   return (
     <div style={{
       minHeight: '100vh',
+      maxHeight: '100vh',
+      overflow: 'hidden',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: '12px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      padding: '6px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      display: 'flex',
+      flexDirection: 'column'
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '12px',
-        gap: '12px'
+        marginBottom: '4px',
+        gap: '6px',
+        flexShrink: 0
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             onClick={onExit}
             style={{
-              padding: '8px 16px',
-              fontSize: '12px',
+              padding: '4px 8px',
+              fontSize: '10px',
               fontWeight: 600,
               background: 'rgba(255,255,255,0.1)',
               color: '#fff',
               border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '6px',
+              borderRadius: '4px',
               cursor: 'pointer'
             }}
           >
@@ -773,57 +792,57 @@ export default function Referee({ matchId, onExit }) {
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '6px 12px',
+            gap: '4px',
+            padding: '3px 6px',
             background: 'rgba(255,255,255,0.05)',
-            borderRadius: '6px',
-            fontSize: '11px'
+            borderRadius: '4px',
+            fontSize: '9px'
           }}>
             <div style={{
-              width: '8px',
-              height: '8px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
               background: isScoresheetConnected ? '#22c55e' : '#ef4444',
               boxShadow: isScoresheetConnected 
-                ? '0 0 8px rgba(34, 197, 94, 0.6)' 
+                ? '0 0 6px rgba(34, 197, 94, 0.6)' 
                 : 'none'
             }} />
             <span style={{ color: 'var(--muted)' }}>
-              Scoresheet {isScoresheetConnected ? 'Connected' : 'Disconnected'}
+              Score
             </span>
           </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '4px' }}>
           <button
             onClick={() => setRefereeView('1st')}
             style={{
-              padding: '8px 16px',
-              fontSize: '12px',
+              padding: '4px 10px',
+              fontSize: '10px',
               fontWeight: 600,
               background: refereeView === '1st' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
               color: refereeView === '1st' ? '#000' : '#fff',
               border: refereeView === '1st' ? 'none' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '6px',
+              borderRadius: '4px',
               cursor: 'pointer'
             }}
           >
-            1st Referee
+            1R
           </button>
           <button
             onClick={() => setRefereeView('2nd')}
             style={{
-              padding: '8px 16px',
-              fontSize: '12px',
+              padding: '4px 10px',
+              fontSize: '10px',
               fontWeight: 600,
               background: refereeView === '2nd' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
               color: refereeView === '2nd' ? '#000' : '#fff',
               border: refereeView === '2nd' ? 'none' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '6px',
+              borderRadius: '4px',
               cursor: 'pointer'
             }}
           >
-            2nd Referee
+            2R
           </button>
         </div>
       </div>
@@ -831,21 +850,23 @@ export default function Referee({ matchId, onExit }) {
       {/* Score Display */}
       <div style={{
         background: 'var(--bg-secondary)',
-        borderRadius: '8px',
-        padding: '20px',
-        marginBottom: '12px',
+        borderRadius: '6px',
+        padding: '8px',
+        marginBottom: '4px',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         flexDirection: 'column',
-        gap: '20px'
+        gap: '4px',
+        flexShrink: 0
       }}>
         {/* Team Names */}
         <div style={{
           display: 'flex',
           width: '100%',
-          justifyContent: 'space-around',
-          alignItems: 'center'
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '12px'
         }}>
           <div style={{ textAlign: 'center', flex: 1 }}>
             <span
@@ -853,24 +874,24 @@ export default function Referee({ matchId, onExit }) {
               style={{
                 background: leftColor,
                 color: isBrightColor(leftColor) ? '#000' : '#fff',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontSize: '24px',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                fontSize: '16px',
                 fontWeight: 700,
                 display: 'inline-block',
-                marginBottom: '8px',
-                minWidth: '50px',
+                marginBottom: '2px',
+                minWidth: '32px',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
               }}
             >
               {leftLabel}
             </span>
-            <div style={{ fontSize: '16px', color: 'var(--muted)' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: 1 }}>
               {leftTeamData?.name || (leftTeam === 'home' ? 'Home' : 'Away')}
             </div>
           </div>
           
-          <div style={{ fontSize: '32px', color: 'var(--muted)', padding: '0 20px' }}>-</div>
+          <div style={{ fontSize: '18px', color: 'var(--muted)', flexShrink: 0, padding: '0 8px' }}>-</div>
           
           <div style={{ textAlign: 'center', flex: 1 }}>
             <span
@@ -878,83 +899,70 @@ export default function Referee({ matchId, onExit }) {
               style={{
                 background: rightColor,
                 color: isBrightColor(rightColor) ? '#000' : '#fff',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontSize: '24px',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                fontSize: '16px',
                 fontWeight: 700,
                 display: 'inline-block',
-                marginBottom: '8px',
-                minWidth: '50px',
+                marginBottom: '2px',
+                minWidth: '32px',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
               }}
             >
               {rightLabel}
             </span>
-            <div style={{ fontSize: '16px', color: 'var(--muted)' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: 1 }}>
               {rightTeamData?.name || (rightTeam === 'home' ? 'Home' : 'Away')}
             </div>
           </div>
         </div>
 
         {/* Score with Ball */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-          <div
-            className="set-score-display"
-            style={{
-              position: 'relative',
-              display: 'inline-block',
-              padding: '0 50px'
-            }}
-          >
-            {leftServing && (
-              <img
-                src={mikasaVolleyball}
-                alt="Serving team"
-                style={{
-                  position: 'absolute',
-                  left: 10,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: '32px',
-                  height: '32px',
-                  filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-                }}
-              />
-            )}
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '12px'
-            }}>
-              <span style={{ minWidth: 40, textAlign: 'right' }}>{leftScore}</span>
-              <span>:</span>
-              <span style={{ minWidth: 40, textAlign: 'left' }}>{rightScore}</span>
-            </div>
-            {rightServing && (
-              <img
-                src={mikasaVolleyball}
-                alt="Serving team"
-                style={{
-                  position: 'absolute',
-                  right: 10,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: '32px',
-                  height: '32px',
-                  filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-                }}
-              />
-            )}
-          </div>
-          {/* Set Score */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+          {leftServing && (
+            <img
+              src={mikasaVolleyball}
+              alt="Serving team"
+              style={{
+                width: '20px',
+                height: '20px',
+                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+              }}
+            />
+          )}
           <div style={{
-            fontSize: '16px',
-            fontWeight: 600,
-            color: 'var(--muted)',
-            textAlign: 'center'
+            fontSize: '36px',
+            fontWeight: 800,
+            color: 'var(--accent)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            lineHeight: 1
           }}>
-            {leftSetScore}-{rightSetScore}
+            <span>{leftScore}</span>
+            <span style={{ fontSize: '24px', color: 'var(--muted)' }}>:</span>
+            <span>{rightScore}</span>
           </div>
+          {rightServing && (
+            <img
+              src={mikasaVolleyball}
+              alt="Serving team"
+              style={{
+                width: '20px',
+                height: '20px',
+                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+              }}
+            />
+          )}
+        </div>
+        {/* Set Score */}
+        <div style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          color: 'var(--muted)',
+          textAlign: 'center'
+        }}>
+          Sets: {leftSetScore}-{rightSetScore}
         </div>
       </div>
 
@@ -972,20 +980,21 @@ export default function Referee({ matchId, onExit }) {
           Waiting for lineups to be set...
         </div>
       ) : (
-        <div style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '4px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {/* Set Title */}
           {data?.currentSet && (
             <div style={{
               textAlign: 'center',
-              fontSize: '18px',
+              fontSize: '12px',
               fontWeight: 700,
-              marginBottom: '12px',
-              color: 'var(--text)'
+              marginBottom: '2px',
+              color: 'var(--text)',
+              flexShrink: 0
             }}>
               Set {data.currentSet.index}
             </div>
           )}
-          <div className="court">
+          <div className="court" style={{ minHeight: '180px', maxHeight: '220px', flex: '0 0 auto' }}>
           <div className="court-attack-line court-attack-left" />
           <div className="court-attack-line court-attack-right" />
           
@@ -1028,16 +1037,17 @@ export default function Referee({ matchId, onExit }) {
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
-        gap: '12px'
+        gap: '6px',
+        flexShrink: 0
       }}>
         {/* Left Team Stats */}
         <div style={{
           background: 'var(--bg-secondary)',
-          borderRadius: '8px',
-          padding: '16px'
+          borderRadius: '6px',
+          padding: '8px'
         }}>
           {/* TO and SUB Cards */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
             <div 
               onClick={() => activeTimeout && activeTimeout.team === leftTeam && setActiveTimeout(null)}
               style={{ 
@@ -1045,8 +1055,8 @@ export default function Referee({ matchId, onExit }) {
                 background: activeTimeout && activeTimeout.team === leftTeam 
                   ? 'rgba(251, 191, 36, 0.15)' 
                   : 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px', 
-                padding: '12px',
+                borderRadius: '4px', 
+                padding: '6px',
                 textAlign: 'center',
                 border: activeTimeout && activeTimeout.team === leftTeam
                   ? '2px solid var(--accent)'
@@ -1054,10 +1064,10 @@ export default function Referee({ matchId, onExit }) {
                 cursor: activeTimeout && activeTimeout.team === leftTeam ? 'pointer' : 'default'
               }}
             >
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>TO</div>
+              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>TO</div>
               {activeTimeout && activeTimeout.team === leftTeam ? (
                 <div style={{ 
-                  fontSize: '32px', 
+                  fontSize: '18px', 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
@@ -1066,7 +1076,7 @@ export default function Referee({ matchId, onExit }) {
                 </div>
               ) : (
                 <div style={{ 
-                  fontSize: '24px', 
+                  fontSize: '16px', 
                   fontWeight: 700,
                   color: leftStats.timeouts >= 2 ? '#ef4444' : 'inherit'
                 }}>
@@ -1077,14 +1087,14 @@ export default function Referee({ matchId, onExit }) {
             <div style={{ 
               flex: 1, 
               background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px', 
-              padding: '12px',
+              borderRadius: '4px', 
+              padding: '6px',
               textAlign: 'center',
               border: '1px solid rgba(255, 255, 255, 0.1)'
             }}>
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>SUB</div>
+              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
               <div style={{ 
-                fontSize: '24px', 
+                fontSize: '16px', 
                 fontWeight: 700,
                 color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'inherit'
               }}>{leftStats.substitutions}</div>
@@ -1093,42 +1103,42 @@ export default function Referee({ matchId, onExit }) {
           
           {leftStats.sanctions.length > 0 && (
             <div>
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600 }}>
+              <div style={{ fontSize: '9px', color: 'var(--muted)', marginBottom: '3px', fontWeight: 600 }}>
                 Sanctions:
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px' }}>
                 {leftStats.sanctions.map((s, i) => (
                   <div key={i} style={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '2px',
-                    padding: '4px',
+                    gap: '1px',
+                    padding: '3px',
                     background: 'rgba(255, 255, 255, 0.03)',
-                    borderRadius: '4px',
+                    borderRadius: '3px',
                     border: '1px solid rgba(255, 255, 255, 0.08)'
                   }}>
                     {s.type === 'improper_request' ? (
                       <div style={{
-                        fontSize: '18px',
+                        fontSize: '14px',
                         fontWeight: 700,
                         color: '#9ca3af',
-                        width: '14px',
-                        height: '20px',
+                        width: '12px',
+                        height: '14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}>✕</div>
                     ) : s.type === 'delay_warning' ? (
                       <div style={{
-                        width: '14px',
-                        height: '20px',
+                        width: '12px',
+                        height: '14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         position: 'relative'
                       }}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
+                        <svg width="11" height="11" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
                           <circle cx="7" cy="7" r="6" fill="#fbbf24" stroke="#d97706" strokeWidth="1"/>
                           <line x1="7" y1="7" x2="7" y2="4" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/>
                           <line x1="7" y1="7" x2="9.5" y2="7" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/>
@@ -1137,14 +1147,14 @@ export default function Referee({ matchId, onExit }) {
                       </div>
                     ) : s.type === 'delay_penalty' ? (
                       <div style={{
-                        width: '14px',
-                        height: '20px',
+                        width: '12px',
+                        height: '14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         position: 'relative'
                       }}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
+                        <svg width="11" height="11" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
                           <circle cx="7" cy="7" r="6" fill="#ef4444" stroke="#b91c1c" strokeWidth="1"/>
                           <line x1="7" y1="7" x2="7" y2="4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
                           <line x1="7" y1="7" x2="9.5" y2="7" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
@@ -1152,55 +1162,59 @@ export default function Referee({ matchId, onExit }) {
                         </svg>
                       </div>
                     ) : s.type === 'disqualification' ? (
-                      <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-                        <div className="sanction-card yellow" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                      <div style={{ display: 'flex', gap: '1.5px', alignItems: 'center' }}>
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           flexShrink: 0,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #fde047, #facc15)'
                         }}></div>
-                        <div className="sanction-card red" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           flexShrink: 0,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
                         }}></div>
                       </div>
                     ) : s.type === 'expulsion' ? (
-                      <div style={{ position: 'relative', width: '16px', height: '20px' }}>
-                        <div className="sanction-card yellow" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                      <div style={{ position: 'relative', width: '13px', height: '14px' }}>
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           position: 'absolute',
                           left: '0',
-                          top: '2px',
+                          top: '1px',
                           transform: 'rotate(-8deg)',
                           zIndex: 1,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #fde047, #facc15)'
                         }}></div>
-                        <div className="sanction-card red" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           position: 'absolute',
                           right: '0',
-                          top: '2px',
+                          top: '1px',
                           transform: 'rotate(8deg)',
                           zIndex: 2,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
                         }}></div>
                       </div>
                     ) : (
-                      <div className={`sanction-card ${
-                        s.type === 'warning' ? 'yellow' :
-                        s.type === 'penalty' ? 'red' : 'yellow'
-                      }`} style={{ 
-                        width: '14px', 
-                        height: '20px',
+                      <div style={{ 
+                        width: '12px', 
+                        height: '14px',
                         flexShrink: 0,
-                        borderRadius: '2px'
+                        borderRadius: '1.5px',
+                        background: s.type === 'warning' 
+                          ? 'linear-gradient(160deg, #fde047, #facc15)'
+                          : 'linear-gradient(160deg, #ef4444, #b91c1c)'
                       }}></div>
                     )}
-                    <div style={{ fontSize: '8px', fontWeight: 600, textAlign: 'center', marginTop: '2px' }}>
+                    <div style={{ fontSize: '7px', fontWeight: 600, textAlign: 'center', marginTop: '1px' }}>
                       {s.type === 'improper_request' ? 'IR' :
                        s.type === 'delay_warning' ? 'DW' :
                        s.type === 'delay_penalty' ? 'DP' :
@@ -1209,7 +1223,7 @@ export default function Referee({ matchId, onExit }) {
                        s.type === 'expulsion' ? 'E' :
                        s.type === 'disqualification' ? 'D' : s.type}
                     </div>
-                    <div style={{ fontSize: '9px', fontWeight: 600, color: 'var(--text)' }}>
+                    <div style={{ fontSize: '8px', fontWeight: 600, color: 'var(--text)' }}>
                       {s.target || 'Team'}
                     </div>
                   </div>
@@ -1222,11 +1236,11 @@ export default function Referee({ matchId, onExit }) {
         {/* Right Team Stats */}
         <div style={{
           background: 'var(--bg-secondary)',
-          borderRadius: '8px',
-          padding: '16px'
+          borderRadius: '6px',
+          padding: '8px'
         }}>
           {/* TO and SUB Cards */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
             <div 
               onClick={() => activeTimeout && activeTimeout.team === rightTeam && setActiveTimeout(null)}
               style={{ 
@@ -1234,8 +1248,8 @@ export default function Referee({ matchId, onExit }) {
                 background: activeTimeout && activeTimeout.team === rightTeam 
                   ? 'rgba(251, 191, 36, 0.15)' 
                   : 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px', 
-                padding: '12px',
+                borderRadius: '4px', 
+                padding: '6px',
                 textAlign: 'center',
                 border: activeTimeout && activeTimeout.team === rightTeam
                   ? '2px solid var(--accent)'
@@ -1243,10 +1257,10 @@ export default function Referee({ matchId, onExit }) {
                 cursor: activeTimeout && activeTimeout.team === rightTeam ? 'pointer' : 'default'
               }}
             >
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>TO</div>
+              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>TO</div>
               {activeTimeout && activeTimeout.team === rightTeam ? (
                 <div style={{ 
-                  fontSize: '32px', 
+                  fontSize: '18px', 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
@@ -1255,7 +1269,7 @@ export default function Referee({ matchId, onExit }) {
                 </div>
               ) : (
                 <div style={{ 
-                  fontSize: '24px', 
+                  fontSize: '16px', 
                   fontWeight: 700,
                   color: rightStats.timeouts >= 2 ? '#ef4444' : 'inherit'
                 }}>
@@ -1266,14 +1280,14 @@ export default function Referee({ matchId, onExit }) {
             <div style={{ 
               flex: 1, 
               background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px', 
-              padding: '12px',
+              borderRadius: '4px', 
+              padding: '6px',
               textAlign: 'center',
               border: '1px solid rgba(255, 255, 255, 0.1)'
             }}>
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>SUB</div>
+              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
               <div style={{ 
-                fontSize: '24px', 
+                fontSize: '16px', 
                 fontWeight: 700,
                 color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'inherit'
               }}>{rightStats.substitutions}</div>
@@ -1282,42 +1296,42 @@ export default function Referee({ matchId, onExit }) {
           
           {rightStats.sanctions.length > 0 && (
             <div>
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600 }}>
+              <div style={{ fontSize: '9px', color: 'var(--muted)', marginBottom: '3px', fontWeight: 600 }}>
                 Sanctions:
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px' }}>
                 {rightStats.sanctions.map((s, i) => (
                   <div key={i} style={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '2px',
-                    padding: '4px',
+                    gap: '1px',
+                    padding: '3px',
                     background: 'rgba(255, 255, 255, 0.03)',
-                    borderRadius: '4px',
+                    borderRadius: '3px',
                     border: '1px solid rgba(255, 255, 255, 0.08)'
                   }}>
                     {s.type === 'improper_request' ? (
                       <div style={{
-                        fontSize: '18px',
+                        fontSize: '14px',
                         fontWeight: 700,
                         color: '#9ca3af',
-                        width: '14px',
-                        height: '20px',
+                        width: '12px',
+                        height: '14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}>✕</div>
                     ) : s.type === 'delay_warning' ? (
                       <div style={{
-                        width: '14px',
-                        height: '20px',
+                        width: '12px',
+                        height: '14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         position: 'relative'
                       }}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
+                        <svg width="11" height="11" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
                           <circle cx="7" cy="7" r="6" fill="#fbbf24" stroke="#d97706" strokeWidth="1"/>
                           <line x1="7" y1="7" x2="7" y2="4" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/>
                           <line x1="7" y1="7" x2="9.5" y2="7" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/>
@@ -1326,14 +1340,14 @@ export default function Referee({ matchId, onExit }) {
                       </div>
                     ) : s.type === 'delay_penalty' ? (
                       <div style={{
-                        width: '14px',
-                        height: '20px',
+                        width: '12px',
+                        height: '14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         position: 'relative'
                       }}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
+                        <svg width="11" height="11" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
                           <circle cx="7" cy="7" r="6" fill="#ef4444" stroke="#b91c1c" strokeWidth="1"/>
                           <line x1="7" y1="7" x2="7" y2="4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
                           <line x1="7" y1="7" x2="9.5" y2="7" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
@@ -1341,55 +1355,59 @@ export default function Referee({ matchId, onExit }) {
                         </svg>
                       </div>
                     ) : s.type === 'disqualification' ? (
-                      <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-                        <div className="sanction-card yellow" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                      <div style={{ display: 'flex', gap: '1.5px', alignItems: 'center' }}>
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           flexShrink: 0,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #fde047, #facc15)'
                         }}></div>
-                        <div className="sanction-card red" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           flexShrink: 0,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
                         }}></div>
                       </div>
                     ) : s.type === 'expulsion' ? (
-                      <div style={{ position: 'relative', width: '16px', height: '20px' }}>
-                        <div className="sanction-card yellow" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                      <div style={{ position: 'relative', width: '13px', height: '14px' }}>
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           position: 'absolute',
                           left: '0',
-                          top: '2px',
+                          top: '1px',
                           transform: 'rotate(-8deg)',
                           zIndex: 1,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #fde047, #facc15)'
                         }}></div>
-                        <div className="sanction-card red" style={{ 
-                          width: '10px', 
-                          height: '16px',
+                        <div style={{ 
+                          width: '8px', 
+                          height: '12px',
                           position: 'absolute',
                           right: '0',
-                          top: '2px',
+                          top: '1px',
                           transform: 'rotate(8deg)',
                           zIndex: 2,
-                          borderRadius: '2px'
+                          borderRadius: '1.5px',
+                          background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
                         }}></div>
                       </div>
                     ) : (
-                      <div className={`sanction-card ${
-                        s.type === 'warning' ? 'yellow' :
-                        s.type === 'penalty' ? 'red' : 'yellow'
-                      }`} style={{ 
-                        width: '14px', 
-                        height: '20px',
+                      <div style={{ 
+                        width: '12px', 
+                        height: '14px',
                         flexShrink: 0,
-                        borderRadius: '2px'
+                        borderRadius: '1.5px',
+                        background: s.type === 'warning' 
+                          ? 'linear-gradient(160deg, #fde047, #facc15)'
+                          : 'linear-gradient(160deg, #ef4444, #b91c1c)'
                       }}></div>
                     )}
-                    <div style={{ fontSize: '8px', fontWeight: 600, textAlign: 'center', marginTop: '2px' }}>
+                    <div style={{ fontSize: '7px', fontWeight: 600, textAlign: 'center', marginTop: '1px' }}>
                       {s.type === 'improper_request' ? 'IR' :
                        s.type === 'delay_warning' ? 'DW' :
                        s.type === 'delay_penalty' ? 'DP' :
@@ -1398,7 +1416,7 @@ export default function Referee({ matchId, onExit }) {
                        s.type === 'expulsion' ? 'E' :
                        s.type === 'disqualification' ? 'D' : s.type}
                     </div>
-                    <div style={{ fontSize: '9px', fontWeight: 600, color: 'var(--text)' }}>
+                    <div style={{ fontSize: '8px', fontWeight: 600, color: 'var(--text)' }}>
                       {s.target || 'Team'}
                     </div>
                   </div>
@@ -1408,6 +1426,63 @@ export default function Referee({ matchId, onExit }) {
           )}
         </div>
       </div>
+
+      {/* Court Switch Waiting Modal */}
+      {data?.match && data.currentSet?.index === 5 && 
+       (data.currentSet.homePoints === 8 || data.currentSet.awayPoints === 8) && 
+       !data.match.set5CourtSwitched && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0, 0, 0, 0.9)',
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: 'var(--bg-secondary)',
+            borderRadius: '12px',
+            padding: '32px',
+            maxWidth: '400px',
+            width: '90%',
+            textAlign: 'center',
+            border: '4px solid var(--accent)',
+            boxShadow: '0 0 40px rgba(251, 191, 36, 0.6)'
+          }}>
+            <div style={{
+              fontSize: '48px',
+              marginBottom: '16px'
+            }}>
+              🔄
+            </div>
+            <h2 style={{
+              fontSize: '20px',
+              fontWeight: 700,
+              marginBottom: '16px',
+              color: 'var(--accent)'
+            }}>
+              Court Switch Required
+            </h2>
+            <p style={{
+              fontSize: '16px',
+              marginBottom: '16px',
+              color: 'var(--text)'
+            }}>
+              Set 5 — A team has reached 8 points
+            </p>
+            <p style={{
+              fontSize: '14px',
+              color: 'var(--muted)'
+            }}>
+              Waiting for scorer to confirm court switch...
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Referee Call Alert Modal */}
       {data?.match?.refereeCallActive && (
