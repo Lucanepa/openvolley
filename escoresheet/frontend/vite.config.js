@@ -31,6 +31,10 @@ export default defineConfig({
     minify: 'esbuild',
     target: 'es2015',
     rollupOptions: {
+      input: {
+        main: './index.html',
+        referee: './referee.html'
+      },
       output: {
         // Avoid eval in production builds
         format: 'es'

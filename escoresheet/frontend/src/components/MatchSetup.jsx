@@ -100,6 +100,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [unlockModal, setUnlockModal] = useState(null) // { side: 'home'|'away' } | null
   const [unlockPassword, setUnlockPassword] = useState('')
   const [unlockError, setUnlockError] = useState('')
+  const [noticeModal, setNoticeModal] = useState(null) // { message: string } | null
   
   // Coin toss state
   const [teamA, setTeamA] = useState('home') // 'home' or 'away'
@@ -115,6 +116,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [addPlayerModal, setAddPlayerModal] = useState(null) // 'teamA' | 'teamB' | null
   const [deletePlayerModal, setDeletePlayerModal] = useState(null) // { team: 'teamA'|'teamB', index: number } | null
   const [showCoinTossRoster, setShowCoinTossRoster] = useState(false) // Show/hide roster in coin toss
+  
+  // Referee connection
+  const [refereeConnectionEnabled, setRefereeConnectionEnabled] = useState(true)
+  const [editPinModal, setEditPinModal] = useState(false)
+  const [newPin, setNewPin] = useState('')
+  const [pinError, setPinError] = useState('')
 
   // Cities in Kanton Zürich
   const citiesZurich = [
@@ -275,10 +282,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
         
+        // Generate PIN if it doesn't exist (for matches created before PIN feature)
+        if (!match.refereePin) {
+          const generatePinCode = () => {
+            const chars = '0123456789'
+            let pin = ''
+            for (let i = 0; i < 6; i++) {
+              pin += chars.charAt(Math.floor(Math.random() * chars.length))
+            }
+            return pin
+          }
+          await db.matches.update(matchId, { refereePin: generatePinCode() })
+        }
+        
+        // Load referee connection setting (default to enabled if not set)
+        setRefereeConnectionEnabled(match.refereeConnectionEnabled !== false)
+        
         // Load players
         if (match.homeTeamId) {
           const homePlayers = await db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
           setHomeRoster(homePlayers.map(p => ({
+            id: p.id, // Store player ID for updates
             number: p.number,
             firstName: p.firstName || '',
             lastName: p.lastName || p.name || '',
@@ -290,6 +314,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.awayTeamId) {
           const awayPlayers = await db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
           setAwayRoster(awayPlayers.map(p => ({
+            id: p.id, // Store player ID for updates
             number: p.number,
             firstName: p.firstName || '',
             lastName: p.lastName || p.name || '',
@@ -645,6 +670,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       return iso
     })()
 
+    // Generate 6-digit PIN code for referee authentication
+    const generatePinCode = () => {
+      const chars = '0123456789'
+      let pin = ''
+      for (let i = 0; i < 6; i++) {
+        pin += chars.charAt(Math.floor(Math.random() * chars.length))
+      }
+      return pin
+    }
+
     const matchId = await db.matches.add({
       homeTeamId: homeId,
       awayTeamId: awayId,
@@ -657,6 +692,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       match_type_3: type3,
       game_n: gameN ? Number(gameN) : null,
       league,
+      refereePin: generatePinCode(),
       officials: [
         { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
         { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
@@ -792,13 +828,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }
 
   async function confirmCoinToss() {
+    console.log('[COIN TOSS] confirmCoinToss called')
+    console.log('[COIN TOSS] Signatures:', { homeCoach: !!homeCoachSignature, homeCaptain: !!homeCaptainSignature, awayCoach: !!awayCoachSignature, awayCaptain: !!awayCaptainSignature })
+    
     if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-      alert('Please complete all signatures')
+      console.log('[COIN TOSS] Missing signatures, showing modal')
+      setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
+      console.log('[COIN TOSS] noticeModal set, checking state update')
+      setTimeout(() => console.log('[COIN TOSS] After timeout - modal should be visible'), 100)
       return
     }
     
+    console.log('[COIN TOSS] Getting match data, pendingMatchId:', pendingMatchId)
     const matchData = await db.matches.get(pendingMatchId)
-    if (!matchData) return
+    if (!matchData) {
+      console.log('[COIN TOSS] No match data found')
+      return
+    }
+    console.log('[COIN TOSS] Match data:', matchData)
     
     // Determine which team serves first
     const firstServeTeam = serveA ? teamA : teamB
@@ -849,43 +896,89 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       
       // Update players for both teams
       if (matchData.homeTeamId && homeRoster.length) {
-        // Delete existing players
-        await db.players.where('teamId').equals(matchData.homeTeamId).delete()
-        // Add updated players
-        await db.players.bulkAdd(
-          homeRoster.map(p => ({
-            teamId: matchData.homeTeamId,
-            number: p.number,
-            name: `${p.lastName} ${p.firstName}`,
-            lastName: p.lastName,
-            firstName: p.firstName,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
+        // Get existing players
+        const existingPlayers = await db.players.where('teamId').equals(matchData.homeTeamId).toArray()
+        
+        // Update or add players
+        for (const p of homeRoster) {
+          const existingPlayer = existingPlayers.find(ep => ep.number === p.number)
+          if (existingPlayer) {
+            // Update existing player
+            await db.players.update(existingPlayer.id, {
+              name: `${p.lastName} ${p.firstName}`,
+              lastName: p.lastName,
+              firstName: p.firstName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              isCaptain: !!p.isCaptain
+            })
+          } else {
+            // Add new player
+            await db.players.add({
+              teamId: matchData.homeTeamId,
+              number: p.number,
+              name: `${p.lastName} ${p.firstName}`,
+              lastName: p.lastName,
+              firstName: p.firstName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              isCaptain: !!p.isCaptain,
+              role: null,
+              createdAt: new Date().toISOString()
+            })
+          }
+        }
+        
+        // Delete players that are no longer in the roster
+        const rosterNumbers = new Set(homeRoster.map(p => p.number))
+        for (const ep of existingPlayers) {
+          if (!rosterNumbers.has(ep.number)) {
+            await db.players.delete(ep.id)
+          }
+        }
       }
       
       if (matchData.awayTeamId && awayRoster.length) {
-        // Delete existing players
-        await db.players.where('teamId').equals(matchData.awayTeamId).delete()
-        // Add updated players
-        await db.players.bulkAdd(
-          awayRoster.map(p => ({
-            teamId: matchData.awayTeamId,
-            number: p.number,
-            name: `${p.lastName} ${p.firstName}`,
-            lastName: p.lastName,
-            firstName: p.firstName,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
+        // Get existing players
+        const existingPlayers = await db.players.where('teamId').equals(matchData.awayTeamId).toArray()
+        
+        // Update or add players
+        for (const p of awayRoster) {
+          const existingPlayer = existingPlayers.find(ep => ep.number === p.number)
+          if (existingPlayer) {
+            // Update existing player
+            await db.players.update(existingPlayer.id, {
+              name: `${p.lastName} ${p.firstName}`,
+              lastName: p.lastName,
+              firstName: p.firstName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              isCaptain: !!p.isCaptain
+            })
+          } else {
+            // Add new player
+            await db.players.add({
+              teamId: matchData.awayTeamId,
+              number: p.number,
+              name: `${p.lastName} ${p.firstName}`,
+              lastName: p.lastName,
+              firstName: p.firstName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              isCaptain: !!p.isCaptain,
+              role: null,
+              createdAt: new Date().toISOString()
+            })
+          }
+        }
+        
+        // Delete players that are no longer in the roster
+        const rosterNumbers = new Set(awayRoster.map(p => p.number))
+        for (const ep of existingPlayers) {
+          if (!rosterNumbers.has(ep.number)) {
+            await db.players.delete(ep.id)
+          }
+        }
       }
     })
     
@@ -1189,7 +1282,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 disabled={isHomeLocked} 
                 className="w-90" 
                 value={p.libero || ''} 
-                onChange={e => {
+                onChange={async e => {
                   const updated = [...homeRoster]
                   updated[i] = { ...updated[i], libero: e.target.value }
                   
@@ -1202,6 +1295,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   }
                   
                   setHomeRoster(updated)
+                  
+                  // Update database immediately if player has an ID
+                  if (p.id) {
+                    await db.players.update(p.id, { libero: updated[i].libero })
+                  }
                 }}
               >
                 <option value=""></option>
@@ -1344,7 +1442,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               }
               setAwayLibero(newValue)
             }}>
-              <option value="">none</option>
+              <option value=""></option>
               {!awayRoster.some(p => p.libero === 'libero1') && (
               <option value="libero1">libero 1</option>
               )}
@@ -1423,7 +1521,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 disabled={isAwayLocked} 
                 className="w-90" 
                 value={p.libero || ''} 
-                onChange={e => {
+                onChange={async e => {
                   const updated = [...awayRoster]
                   updated[i] = { ...updated[i], libero: e.target.value }
                   
@@ -1436,9 +1534,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   }
                   
                   setAwayRoster(updated)
+                  
+                  // Update database immediately if player has an ID
+                  if (p.id) {
+                    await db.players.update(p.id, { libero: updated[i].libero })
+                  }
                 }}
               >
-                <option value="">none</option>
+                <option value=""></option>
                 {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
                   <option value="libero1">Libero 1</option>
                 )}
@@ -2610,6 +2713,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           )
         })()}
         
+        {/* Notice Modal */}
+        {noticeModal && (
+          <Modal
+            title="Notice"
+            open={true}
+            onClose={() => setNoticeModal(null)}
+            width={400}
+            hideCloseButton={true}
+          >
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+                {noticeModal.message}
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => setNoticeModal(null)}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+        
         <SignaturePad 
           open={openSignature !== null} 
           onClose={() => setOpenSignature(null)} 
@@ -2675,10 +2812,120 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
   }
 
+  const handleRefereeConnectionToggle = async (enabled) => {
+    if (!matchId) return
+    setRefereeConnectionEnabled(enabled)
+    try {
+      await db.matches.update(matchId, { refereeConnectionEnabled: enabled })
+    } catch (error) {
+      console.error('Failed to update referee connection setting:', error)
+    }
+  }
+
+  const handleEditPin = () => {
+    setNewPin(match?.refereePin || '')
+    setPinError('')
+    setEditPinModal(true)
+  }
+
+  const handleSavePin = async () => {
+    if (!matchId) return
+    
+    // Validate PIN
+    if (!newPin || newPin.length !== 6) {
+      setPinError('PIN must be exactly 6 digits')
+      return
+    }
+    if (!/^\d{6}$/.test(newPin)) {
+      setPinError('PIN must contain only numbers')
+      return
+    }
+    
+    try {
+      await db.matches.update(matchId, { refereePin: newPin })
+      setEditPinModal(false)
+      setPinError('')
+    } catch (error) {
+      console.error('Failed to update PIN:', error)
+      setPinError('Failed to save PIN')
+    }
+  }
+
   return (
     <div className="setup">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <h2 style={{ margin: 0 }}>Match Setup</h2>
+        
+        {/* Referee Connection Section */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '8px 16px',
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: '8px',
+          flex: 1,
+          maxWidth: '500px'
+        }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: 500,
+            whiteSpace: 'nowrap'
+          }}>
+            <input
+              type="checkbox"
+              checked={refereeConnectionEnabled}
+              onChange={(e) => handleRefereeConnectionToggle(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Enable Referee Connection
+          </label>
+          
+          {refereeConnectionEnabled && match?.refereePin && (
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 12px',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: '6px'
+              }}>
+                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>PIN:</span>
+                <span style={{
+                  fontWeight: 700,
+                  fontSize: '16px',
+                  color: 'var(--accent)',
+                  letterSpacing: '2px',
+                  fontFamily: 'monospace'
+                }}>
+                  {match.refereePin}
+                </span>
+              </div>
+              <button
+                onClick={handleEditPin}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Edit
+              </button>
+            </>
+          )}
+        </div>
+        
         {onGoHome && (
           <button className="secondary" onClick={onGoHome}>
             Home
@@ -2699,17 +2946,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               style={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 4, marginTop: 8 }}
             >
               <span>Date:</span>
-              <span>{formatDisplayDate(date) || 'not set'}</span>
+              <span>{formatDisplayDate(date) || 'Not set'}</span>
               <span>Time:</span>
-              <span>{formatDisplayTime(time) || 'not set'}</span>
+              <span>{formatDisplayTime(time) || 'Not set'}</span>
               <span>City:</span>
-              <span>{city || 'not set'}</span>
+              <span>{city || 'Not set'}</span>
               <span>Hall:</span>
-              <span>{hall || 'not set'}</span>
+              <span>{hall || 'Not set'}</span>
               <span>Game #:</span>
-              <span>{gameN || 'not set'}</span>
+              <span>{gameN || 'Not set'}</span>
               <span>League:</span>
-              <span>{league || 'not set'}</span>
+              <span>{league || 'Not set'}</span>
             </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button></div>
@@ -3376,6 +3623,128 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 style={{ opacity: !unlockPassword ? 0.5 : 1 }}
               >
                 Unlock
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {noticeModal && (
+        <Modal
+          title="Notice"
+          open={true}
+          onClose={() => setNoticeModal(null)}
+          width={400}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+              {noticeModal.message}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => setNoticeModal(null)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit PIN Modal */}
+      {editPinModal && (
+        <Modal
+          title="Edit Referee PIN"
+          open={true}
+          onClose={() => {
+            setEditPinModal(false)
+            setPinError('')
+          }}
+          width={400}
+        >
+          <div style={{ padding: '24px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+                Enter new 6-digit PIN:
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={newPin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '')
+                  if (value.length <= 6) {
+                    setNewPin(value)
+                    setPinError('')
+                  }
+                }}
+                placeholder="000000"
+                maxLength={6}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '20px',
+                  fontWeight: 700,
+                  textAlign: 'center',
+                  letterSpacing: '4px',
+                  fontFamily: 'monospace',
+                  background: 'var(--bg)',
+                  border: pinError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px',
+                  color: 'var(--text)'
+                }}
+              />
+              {pinError && (
+                <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '8px' }}>
+                  {pinError}
+                </p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setEditPinModal(false)
+                  setPinError('')
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePin}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Save PIN
               </button>
             </div>
           </div>
