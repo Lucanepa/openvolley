@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import MatchSetup from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
+import MatchEnd from './components/MatchEnd'
 import Modal from './components/Modal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -54,10 +55,20 @@ function parseDateTime(dateTime) {
   return date.toISOString()
 }
 
+function generateRefereePin() {
+  const chars = '0123456789'
+  let pin = ''
+  for (let i = 0; i < 6; i++) {
+    pin += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return pin
+}
+
 export default function App() {
   const [matchId, setMatchId] = useState(null)
   const [showMatchSetup, setShowMatchSetup] = useState(false)
   const [showCoinToss, setShowCoinToss] = useState(false)
+  const [showMatchEnd, setShowMatchEnd] = useState(false)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [newMatchModal, setNewMatchModal] = useState(null)
   const [testMatchLoading, setTestMatchLoading] = useState(false)
@@ -330,13 +341,19 @@ export default function App() {
   }, [currentMatch])
 
   async function finishSet(cur) {
-    await db.sets.update(cur.id, { finished: true })
-    const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
-    const finished = sets.filter(s => s.finished).length
     const matchRecord = await db.matches.get(cur.matchId)
     const isTestMatch = matchRecord?.test === true
     
-    if (finished >= 5) {
+    // Calculate current set scores
+    const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
+    const finishedSets = sets.filter(s => s.finished)
+    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+    
+    // Check if either team has won 3 sets (match win)
+    const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
+    
+    if (isMatchEnd) {
       await db.matches.update(cur.matchId, { status: 'final' })
       
       // Only sync official matches
@@ -353,9 +370,12 @@ export default function App() {
         })
       }
       
-      setMatchId(null)
+      // Show match end screen
+      setShowMatchEnd(true)
       return
     }
+    
+    // Continue to next set (legacy logic - shouldn't reach here with new logic)
     const setId = await db.sets.add({ matchId: cur.matchId, index: cur.index + 1, homePoints: 0, awayPoints: 0, finished: false })
     
     // Only sync official matches
@@ -747,6 +767,7 @@ export default function App() {
       city: matchData.city || TEST_MATCH_DEFAULTS.city,
       league: matchData.league || TEST_MATCH_DEFAULTS.league,
       gameNumber: matchData.game_number || TEST_MATCH_DEFAULTS.gameNumber,
+      refereePin: matchData.referee_pin || generateRefereePin(),
       homeTeamId,
       awayTeamId,
       bench_home: homeBench,
@@ -974,6 +995,7 @@ export default function App() {
     // Create new blank match
     const newMatchId = await db.matches.add({
       status: 'scheduled',
+      refereePin: generateRefereePin(),
       createdAt: new Date().toISOString()
     })
 
@@ -1033,6 +1055,7 @@ export default function App() {
       // Create new blank match
       const newMatchId = await db.matches.add({
         status: 'scheduled',
+        refereePin: generateRefereePin(),
         createdAt: new Date().toISOString()
       })
       setMatchId(newMatchId)
@@ -1389,6 +1412,7 @@ export default function App() {
         league: TEST_MATCH_DEFAULTS.league,
         gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
         scheduledAt,
+        refereePin: generateRefereePin(),
         bench_home: TEST_HOME_BENCH,
         bench_away: TEST_AWAY_BENCH,
         officials,
@@ -1407,6 +1431,8 @@ export default function App() {
 
         await db.matches.update(existingMatch.id, {
           ...baseMatchData,
+          // Preserve existing refereePin if it exists
+          refereePin: existingMatch.refereePin || baseMatchData.refereePin,
           createdAt: existingMatch.createdAt || timestamp,
           updatedAt: timestamp
         })
@@ -1658,6 +1684,18 @@ export default function App() {
       <div className="panel">
         {showMatchSetup && matchId ? (
           <MatchSetup matchId={matchId} onStart={continueMatch} onReturn={returnToMatch} onGoHome={goHome} showCoinToss={showCoinToss} onCoinTossClose={() => setShowCoinToss(false)} />
+        ) : showMatchEnd && matchId ? (
+          <MatchEnd 
+            matchId={matchId} 
+            onShowScoresheet={() => {
+              // TODO: Implement scoresheet view
+              console.log('Show scoresheet clicked')
+            }}
+            onGoHome={() => {
+              setMatchId(null)
+              setShowMatchEnd(false)
+            }}
+          />
         ) : !matchId ? (
           <div className="home-view">
             <div className="home-grid">
