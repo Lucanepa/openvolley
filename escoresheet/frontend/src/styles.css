@@ -1503,3 +1503,30 @@
     animation: rollUp 0.3s ease-out;
     transform-origin: center top;
   }
+
+  /* Responsive text visibility for referee view */
+  .show-on-small {
+    display: none;
+  }
+
+  .show-on-large {
+    display: inline;
+  }
+
+  .hide-on-small {
+    display: inline;
+  }
+
+  @media (max-width: 480px) {
+    .show-on-small {
+      display: inline;
+    }
+    
+    .show-on-large {
+      display: none;
+    }
+    
+    .hide-on-small {
+      display: none;
+    }
+  }
