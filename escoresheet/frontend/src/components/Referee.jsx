@@ -91,6 +91,137 @@ export default function Referee({ matchId, onExit }) {
     }
   }, [matchId])
 
+  // Calculate rally status
+  const rallyStatus = useMemo(() => {
+    if (!data?.events || !data?.currentSet || data.events.length === 0) return 'idle'
+    
+    // Get events for current set only and sort by sequence number (most recent first)
+    const currentSetEvents = data.events
+      .filter(e => e.setIndex === data.currentSet.index)
+      .sort((a, b) => {
+        // Sort by sequence number if available, otherwise by timestamp
+        const aSeq = a.seq || 0
+        const bSeq = b.seq || 0
+        if (aSeq !== 0 || bSeq !== 0) {
+          return bSeq - aSeq // Descending by sequence (most recent first)
+        }
+        // Fallback to timestamp for legacy events
+        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+        return bTime - aTime
+      })
+    
+    if (currentSetEvents.length === 0) return 'idle'
+    
+    const lastEvent = currentSetEvents[0] // Most recent event is now first
+    
+    // Check if last event is point or replay first (these end the rally)
+    if (lastEvent.type === 'point' || lastEvent.type === 'replay') {
+      return 'idle'
+    }
+    
+    if (lastEvent.type === 'rally_start') {
+      return 'in_play'
+    }
+    
+    // set_start means set is ready but rally hasn't started yet
+    if (lastEvent.type === 'set_start') {
+      return 'idle'
+    }
+    
+    // For lineup events after points, the rally is idle (waiting for next rally_start)
+    return 'idle'
+  }, [data?.events, data?.currentSet])
+
+  // Get last action description
+  const lastAction = useMemo(() => {
+    if (!data?.events || !data?.currentSet || data.events.length === 0) return null
+    
+    // Get events for current set only and sort by sequence number (most recent first)
+    const currentSetEvents = data.events
+      .filter(e => e.setIndex === data.currentSet.index)
+      .sort((a, b) => {
+        const aSeq = a.seq || 0
+        const bSeq = b.seq || 0
+        if (aSeq !== 0 || bSeq !== 0) {
+          return bSeq - aSeq
+        }
+        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+        return bTime - aTime
+      })
+    
+    if (currentSetEvents.length === 0) return null
+    
+    const event = currentSetEvents[0]
+    if (!event) return null
+    
+    const teamName = event.payload?.team === 'home' 
+      ? (data.homeTeam?.name || 'Home')
+      : event.payload?.team === 'away'
+      ? (data.awayTeam?.name || 'Away')
+      : null
+    
+    // Determine team labels (A or B)
+    const teamAKey = data?.match?.coinTossTeamA || 'home'
+    const homeLabel = teamAKey === 'home' ? 'A' : 'B'
+    const awayLabel = teamAKey === 'away' ? 'A' : 'B'
+    
+    // Calculate score at time of event
+    const setIdx = event.setIndex || 1
+    const setEvents = data.events?.filter(e => (e.setIndex || 1) === setIdx) || []
+    const eventIndex = setEvents.findIndex(e => e.id === event.id)
+    
+    let homeScore = 0
+    let awayScore = 0
+    for (let i = 0; i <= eventIndex; i++) {
+      const e = setEvents[i]
+      if (e.type === 'point') {
+        if (e.payload?.team === 'home') {
+          homeScore++
+        } else if (e.payload?.team === 'away') {
+          awayScore++
+        }
+      }
+    }
+    
+    let eventDescription = ''
+    if (event.type === 'point') {
+      eventDescription = `${teamName} point (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
+    } else if (event.type === 'timeout') {
+      eventDescription = `Timeout — ${teamName}`
+    } else if (event.type === 'substitution') {
+      const playerOut = event.payload?.playerOut || '?'
+      const playerIn = event.payload?.playerIn || '?'
+      eventDescription = `Sub — ${teamName} (${playerOut}→${playerIn})`
+    } else if (event.type === 'rally_start') {
+      eventDescription = 'Rally started'
+    } else if (event.type === 'replay') {
+      eventDescription = 'Replay'
+    } else if (event.type === 'sanction') {
+      const sanctionType = event.payload?.type || 'warning'
+      const playerNumber = event.payload?.playerNumber
+      const typeLabel = sanctionType === 'warning' ? 'W' : sanctionType === 'penalty' ? 'P' : sanctionType === 'expulsion' ? 'E' : 'D'
+      if (playerNumber) {
+        eventDescription = `Sanction — ${teamName} #${playerNumber} (${typeLabel})`
+      } else {
+        eventDescription = `Sanction — ${teamName} (${typeLabel})`
+      }
+    } else if (event.type === 'libero_entry') {
+      const liberoNumber = event.payload?.liberoIn || '?'
+      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
+      eventDescription = `Libero in — ${teamName} (${liberoType}#${liberoNumber})`
+    } else if (event.type === 'libero_exit') {
+      const liberoNumber = event.payload?.liberoOut || '?'
+      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
+      eventDescription = `Libero out — ${teamName} (${liberoType}#${liberoNumber})`
+    } else {
+      return null // Skip other event types
+    }
+    
+    return eventDescription
+  }, [data?.events, data?.currentSet, data?.homeTeam, data?.awayTeam, data?.match])
+
   // Calculate statistics
   const stats = useMemo(() => {
     if (!data || !data.events || !data.currentSet) {
@@ -769,9 +900,11 @@ export default function Referee({ matchId, onExit }) {
         alignItems: 'center',
         marginBottom: '4px',
         gap: '6px',
-        flexShrink: 0
+        flexShrink: 0,
+        flexWrap: 'wrap',
+        minHeight: '28px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
           <button
             onClick={onExit}
             style={{
@@ -811,9 +944,52 @@ export default function Referee({ matchId, onExit }) {
               Score
             </span>
           </div>
+
+          {/* Rally Status */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '3px 6px',
+            background: rallyStatus === 'in_play' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255,255,255,0.05)',
+            borderRadius: '4px',
+            fontSize: '9px',
+            border: rallyStatus === 'in_play' ? '1px solid rgba(34, 197, 94, 0.4)' : 'none'
+          }}>
+            <div style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: rallyStatus === 'in_play' ? '#22c55e' : '#6b7280',
+              boxShadow: rallyStatus === 'in_play' 
+                ? '0 0 6px rgba(34, 197, 94, 0.6)' 
+                : 'none'
+            }} />
+            <span style={{ color: rallyStatus === 'in_play' ? '#22c55e' : 'var(--muted)', fontWeight: rallyStatus === 'in_play' ? 600 : 400 }}>
+              {rallyStatus === 'in_play' ? 'Rally' : 'Idle'}
+            </span>
+          </div>
+
+          {/* Last Action */}
+          {lastAction && (
+            <div style={{
+              padding: '3px 6px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: '4px',
+              fontSize: '8px',
+              color: 'var(--muted)',
+              maxWidth: '100px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flexShrink: 1
+            }}>
+              {lastAction}
+            </div>
+          )}
         </div>
         
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
           <button
             onClick={() => setRefereeView('1st')}
             style={{
