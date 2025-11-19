@@ -354,6 +354,12 @@ export default function App() {
     const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
     
     if (isMatchEnd) {
+      // IMPORTANT: When match ends, preserve ALL data in database:
+      // - All sets remain in db.sets
+      // - All events remain in db.events
+      // - All players remain in db.players
+      // - All teams remain in db.teams
+      // - Only update match status to 'final' - DO NOT DELETE ANYTHING
       await db.matches.update(cur.matchId, { status: 'final' })
       
       // Only sync official matches
