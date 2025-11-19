@@ -1,0 +1,929 @@
+{
+  "metadata": {
+    "extractedAt": "2025-11-17T17:36:01.332Z",
+    "totalFields": 230,
+    "pdfFile": "matchblatt_fillable.pdf"
+  },
+  "fields": [
+    {
+      "name": "1_referee_country",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "1_referee_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "1_referee_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "1_referee_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "2_referee_country",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "2_referee_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "2_referee_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "2_referee_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "A_I_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_I_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_I_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_I_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_II_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_II_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_II_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_II_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_III_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_III_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_III_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_III_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_IV_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_IV_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_IV_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_IV_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_V_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_V_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_V_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_V_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_VI_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_VI_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_VI_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "A_VI_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "ass_scorer_country",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "ass_scorer_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "ass_scorer_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "ass_scorer_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "away_AB_1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_AB_2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_captain_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "away_coach_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "away_roster_ac1_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_ac1_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_ac2_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_ac2_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_coach_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_coach_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_libero1_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_libero1_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_libero1_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_libero2_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_libero2_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_libero2_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_m_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_m_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_p_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_p_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players1_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players1_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players1_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players10_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players10_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players10_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players11_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players11_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players11_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players12_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players12_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players12_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players13_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players13_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players13_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players14_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players14_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players14_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players2_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players2_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players2_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players3_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players3_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players3_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players4_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players4_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players4_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players5_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players5_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players5_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players6_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players6_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players6_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players7_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players7_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players7_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players8_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players8_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players8_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players9_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players9_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_roster_players9_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_team",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "away_team_short",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_I_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_I_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_I_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_I_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_II_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_II_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_II_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_II_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_III_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_III_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_III_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_III_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_IV_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_IV_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_IV_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_IV_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_V_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_V_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_V_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_V_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_VI_s_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_VI_s_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_VI_set1",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "B_VI_set2",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "championship_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "city",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "cup_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "date",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "female_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "friendly_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "hall",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_AB",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_captain_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "home_coach_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "home_roster_ac1_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_ac1_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_ac2_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_ac2_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_coach_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_coach_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_libero1_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_libero1_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_libero1_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_libero2_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_libero2_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_libero2_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_m_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_m_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_p_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_p_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players1_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players1_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players1_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players10_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players10_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players10_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players11_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players11_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players11_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players12_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players12_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players12_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players13_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players13_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players13_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players14_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players14_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players14_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players2_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players2_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players2_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players3_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players3_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players3_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players4_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players4_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players4_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players5_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players5_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players5_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players6_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players6_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players6_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players7_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players7_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players7_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players8_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players8_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players8_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players9_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players9_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_roster_players9_number",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_team",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "home_team_short",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "international_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "liga_text",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "match_n",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "men_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "national_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "other_category_text",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "other_category_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "other_championship_text",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "other_championship_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "regional_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "remarks",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "scorer_country",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "scorer_dob",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "scorer_name",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "scorer_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "set_1_end",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set_1_start",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set_2_end",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set_2_start",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set1_A_R",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set1_A_S",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set1_B_R",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "set1_B_S",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "sets_loser",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "teamA_captain_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "teamA_short",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "teamA_short_set4",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "teamB_captain_sign",
+      "type": "PDFButton2"
+    },
+    {
+      "name": "teamB_short",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "teamB_short_set4",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "time",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "tournament_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "U17_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "U19_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "U23_x",
+      "type": "PDFTextField2"
+    },
+    {
+      "name": "winner_team_full",
+      "type": "PDFTextField2"
+    }
+  ]
+}

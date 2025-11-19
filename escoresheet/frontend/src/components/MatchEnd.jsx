@@ -343,7 +343,38 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
 
       {/* Action Button */}
       <button
-        onClick={onShowScoresheet}
+        onClick={async () => {
+          try {
+            // Gather all match data needed for the scoresheet
+            const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index');
+            const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq');
+            
+            // Create a data package to pass to the scoresheet
+            const scoresheetData = {
+              match,
+              homeTeam,
+              awayTeam,
+              homePlayers,
+              awayPlayers,
+              sets: allSets,
+              events: allEvents,
+              sanctions: [] // TODO: Extract sanctions from events
+            };
+            
+            // Store data in sessionStorage to pass to new window
+            sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData));
+            
+            // Open scoresheet in new window
+            const scoresheetWindow = window.open('/scoresheet_pdf/index_scoresheet.html', '_blank', 'width=1200,height=900');
+            
+            if (!scoresheetWindow) {
+              alert('Please allow popups to view the scoresheet');
+            }
+          } catch (error) {
+            console.error('Error opening scoresheet:', error);
+            alert('Error opening scoresheet: ' + error.message);
+          }
+        }}
         style={{
           width: '100%',
           padding: '16px',

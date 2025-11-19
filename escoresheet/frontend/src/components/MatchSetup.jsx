@@ -14,13 +14,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [time, setTime] = useState('')
   const [hall, setHall] = useState('')
   const [city, setCity] = useState('')
-  const [type1, setType1] = useState('championship') // championship | cup
+  const [type1, setType1] = useState('championship') // championship | cup | friendly | tournament
+  const [type1Other, setType1Other] = useState('') // For "other" championship type
+  const [championshipType, setChampionshipType] = useState('regional') // regional | national | international | other
+  const [championshipTypeOther, setChampionshipTypeOther] = useState('') // For "other" championship type
   const [type2, setType2] = useState('men') // men | women
-  const [type3, setType3] = useState('senior') // senior | U23 | U19
+  const [type3, setType3] = useState('senior') // senior | U23 | U19 | other
+  const [type3Other, setType3Other] = useState('') // For "other" level
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState('#ef4444')
   const [awayColor, setAwayColor] = useState('#3b82f6')
+  const [homeShortName, setHomeShortName] = useState('')
+  const [awayShortName, setAwayShortName] = useState('')
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -97,9 +103,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
-  const [unlockModal, setUnlockModal] = useState(null) // { side: 'home'|'away' } | null
-  const [unlockPassword, setUnlockPassword] = useState('')
-  const [unlockError, setUnlockError] = useState('')
   const [noticeModal, setNoticeModal] = useState(null) // { message: string } | null
   
   // Coin toss state
@@ -166,8 +169,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [awayCoachSignature, setAwayCoachSignature] = useState(null)
   const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
   const [savedSignatures, setSavedSignatures] = useState({ homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null })
-  const isHomeLocked = homeCoachSignature && homeCaptainSignature
-  const isAwayLocked = awayCoachSignature && awayCaptainSignature
+  const isHomeLocked = !!(homeCoachSignature && homeCaptainSignature)
+  const isAwayLocked = !!(awayCoachSignature && awayCaptainSignature)
   
   // Check if coin toss was previously confirmed (all signatures match saved ones)
   const isCoinTossConfirmed = useMemo(() => {
@@ -178,26 +181,51 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
            awayCaptainSignature === savedSignatures.awayCaptain
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
 
-  function unlockTeam(side) {
-    setUnlockModal({ side })
-    setUnlockPassword('')
-  }
-
-  function handleUnlockConfirm() {
-    if (unlockPassword === '1234') {
-      if (unlockModal.side === 'home') { 
+  async function unlockTeam(side) {
+    console.log('🔓 unlockTeam called with side:', side)
+    
+    const password = prompt('Enter 1st Referee password to unlock:')
+    
+    if (password === null) {
+      console.log('Unlock cancelled')
+      return
+    }
+    
+    console.log('🔓 Password entered, checking...')
+    
+    if (password === '1234') {
+      console.log('✓ Password correct, unlocking...')
+      
+      if (side === 'home') {
+        console.log('Unlocking home team')
         setHomeCoachSignature(null)
-        setHomeCaptainSignature(null) 
-      }
-      if (unlockModal.side === 'away') { 
+        setHomeCaptainSignature(null)
+        // Update database if matchId exists
+        if (matchId) {
+          await db.matches.update(matchId, {
+            homeCoachSignature: null,
+            homeCaptainSignature: null
+          })
+          console.log('✓ Database updated for home team')
+        }
+      } else if (side === 'away') { 
+        console.log('Unlocking away team')
         setAwayCoachSignature(null)
-        setAwayCaptainSignature(null) 
+        setAwayCaptainSignature(null)
+        // Update database if matchId exists
+        if (matchId) {
+          await db.matches.update(matchId, {
+            awayCoachSignature: null,
+            awayCaptainSignature: null
+          })
+          console.log('✓ Database updated for away team')
+        }
       }
-      setUnlockModal(null)
-      setUnlockPassword('')
-      setUnlockError('')
+      console.log('✓ Unlock complete')
+      alert('Team unlocked successfully!')
     } else {
-      setUnlockError('Wrong password')
+      console.log('❌ Wrong password')
+      alert('Wrong password')
     }
   }
 
@@ -277,8 +305,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.city) setCity(match.city)
         if (match.league) setLeague(match.league)
         if (match.match_type_1) setType1(match.match_type_1)
+        if (match.match_type_1_other) setType1Other(match.match_type_1_other)
+        if (match.championshipType) setChampionshipType(match.championshipType)
+        if (match.championshipTypeOther) setChampionshipTypeOther(match.championshipTypeOther)
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
+        if (match.match_type_3_other) setType3Other(match.match_type_3_other)
+        if (match.homeShortName) setHomeShortName(match.homeShortName)
+        if (match.awayShortName) setAwayShortName(match.awayShortName)
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
         
@@ -431,8 +465,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           if (draft.hall !== undefined) setHall(draft.hall)
           if (draft.city !== undefined) setCity(draft.city)
           if (draft.type1 !== undefined) setType1(draft.type1)
+          if (draft.type1Other !== undefined) setType1Other(draft.type1Other)
+          if (draft.championshipType !== undefined) setChampionshipType(draft.championshipType)
+          if (draft.championshipTypeOther !== undefined) setChampionshipTypeOther(draft.championshipTypeOther)
           if (draft.type2 !== undefined) setType2(draft.type2)
           if (draft.type3 !== undefined) setType3(draft.type3)
+          if (draft.type3Other !== undefined) setType3Other(draft.type3Other)
+          if (draft.homeShortName !== undefined) setHomeShortName(draft.homeShortName)
+          if (draft.awayShortName !== undefined) setAwayShortName(draft.awayShortName)
           if (draft.gameN !== undefined) setGameN(draft.gameN)
           if (draft.league !== undefined) setLeague(draft.league)
           if (draft.homeColor !== undefined) setHomeColor(draft.homeColor)
@@ -480,12 +520,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         hall,
         city,
         type1,
+        type1Other,
+        championshipType,
+        championshipTypeOther,
         type2,
         type3,
+        type3Other,
         gameN,
         league,
         homeColor,
         awayColor,
+        homeShortName,
+        awayShortName,
         homeRoster,
         awayRoster,
         benchHome,
@@ -538,7 +584,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       
       return () => clearTimeout(timeoutId)
     }
-  }, [date, time, hall, city, type1, type2, type3, gameN, league, home, away, homeColor, awayColor, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
 
   // Helper function to determine if a color is bright/light
   function isBrightColor(color) {
@@ -688,8 +734,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       hall,
       city,
       match_type_1: type1,
+      match_type_1_other: type1 === 'other' ? type1Other : null,
+      championshipType,
+      championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
       match_type_2: type2,
       match_type_3: type3,
+      match_type_3_other: type3 === 'other' ? type3Other : null,
+      homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
+      awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
       game_n: gameN ? Number(gameN) : null,
       league,
       refereePin: generatePinCode(),
@@ -839,8 +891,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       return
     }
     
-    console.log('[COIN TOSS] Getting match data, pendingMatchId:', pendingMatchId)
-    const matchData = await db.matches.get(pendingMatchId)
+    // Use matchId if pendingMatchId is not set
+    const targetMatchId = pendingMatchId || matchId
+    console.log('[COIN TOSS] Getting match data, targetMatchId:', targetMatchId)
+    
+    if (!targetMatchId) {
+      console.error('[COIN TOSS] No match ID available')
+      alert('Error: No match ID found')
+      return
+    }
+    
+    const matchData = await db.matches.get(targetMatchId)
     if (!matchData) {
       console.log('[COIN TOSS] No match data found')
       return
@@ -854,7 +915,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     // Update match with signatures and rosters
     await db.transaction('rw', db.matches, db.players, db.sync_queue, async () => {
     // Update match with signatures, first serve, and coin toss result
-    const updateResult = await db.matches.update(pendingMatchId, {
+    const updateResult = await db.matches.update(targetMatchId, {
       homeCoachSignature,
       homeCaptainSignature,
       awayCoachSignature,
@@ -868,13 +929,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     console.log('confirmCoinToss - update result:', updateResult, 'coinTossTeamA:', teamA, 'coinTossTeamB:', teamB, 'coinTossServeA:', serveA)
     
     // Add match update to sync queue (only sync fields that exist in Supabase)
-    const updatedMatch = await db.matches.get(pendingMatchId)
+    const updatedMatch = await db.matches.get(targetMatchId)
     if (updatedMatch) {
       await db.sync_queue.add({
         resource: 'match',
         action: 'update',
         payload: {
-          id: String(pendingMatchId),
+          id: String(targetMatchId),
           status: updatedMatch.status || null,
           hall: updatedMatch.hall || null,
           city: updatedMatch.city || null,
@@ -983,10 +1044,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     })
     
     // Create first set
-    const firstSetId = await db.sets.add({ matchId: pendingMatchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
+    const firstSetId = await db.sets.add({ matchId: targetMatchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
     
     // Get match to check if it's a test match
-    const matchForSet = await db.matches.get(pendingMatchId)
+    const matchForSet = await db.matches.get(targetMatchId)
     const isTest = matchForSet?.test || false
     
     // Add first set to sync queue
@@ -995,7 +1056,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       action: 'insert',
       payload: {
         external_id: String(firstSetId),
-        match_id: String(pendingMatchId),
+        match_id: String(targetMatchId),
         index: 1,
         home_points: 0,
         away_points: 0,
@@ -1008,11 +1069,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     })
     
     // Update match status to 'live' to indicate match has started
-    await db.matches.update(pendingMatchId, { status: 'live' })
+    await db.matches.update(targetMatchId, { status: 'live' })
     
     // Start the match - directly navigate to scoreboard
     // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
-    onStart(pendingMatchId)
+    onStart(targetMatchId)
   }
 
   if (currentView === 'info') {
@@ -1051,8 +1112,34 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             <select className="w-120" value={type1} onChange={e=>setType1(e.target.value)}>
               <option value="championship">Championship</option>
               <option value="cup">Cup</option>
+              <option value="friendly">Friendly</option>
+              <option value="tournament">Tournament</option>
+              <option value="other">Other</option>
             </select>
           </div>
+          {type1 === 'other' && (
+            <div className="field">
+              <label>Specify</label>
+              <input className="w-120" value={type1Other} onChange={e=>setType1Other(e.target.value)} placeholder="Other type" />
+            </div>
+          )}
+          <div className="field">
+            <label>Championship Type</label>
+            <select className="w-140" value={championshipType} onChange={e=>setChampionshipType(e.target.value)}>
+              <option value="regional">Regional</option>
+              <option value="national">National</option>
+              <option value="international">International</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          {championshipType === 'other' && (
+            <div className="field">
+              <label>Specify</label>
+              <input className="w-120" value={championshipTypeOther} onChange={e=>setChampionshipTypeOther(e.target.value)} placeholder="Other type" />
+            </div>
+          )}
+        </div>
+        <div className="row" style={{ marginTop:12 }}>
           <div className="field">
             <label>Match Category</label>
             <select className="w-120" value={type2} onChange={e=>setType2(e.target.value)}>
@@ -1067,8 +1154,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               <option value="U23">U23</option>
               <option value="U21">U21</option>
               <option value="U19">U19</option>
+              <option value="U17">U17</option>
+              <option value="other">Other</option>
             </select>
           </div>
+          {type3 === 'other' && (
+            <div className="field">
+              <label>Specify</label>
+              <input className="w-120" value={type3Other} onChange={e=>setType3Other(e.target.value)} placeholder="Other level" />
+            </div>
+          )}
         </div>
         <div className="row" style={{ marginTop:12 }}>
           <div className="field"><label>Game #</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
@@ -1135,7 +1230,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button onClick={() => setCurrentView('main')}>Confirm</button>
+          <button onClick={async () => {
+            // Save officials to database if matchId exists
+            if (matchId) {
+              await db.matches.update(matchId, {
+                officials: [
+                  { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+                  { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+                  { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+                  { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+                ]
+              })
+            }
+            setCurrentView('main')
+          }}>Confirm</button>
         </div>
       </div>
     )
@@ -1153,8 +1261,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        <div className="row" style={{ alignItems:'center' }}>
+        <div className="row" style={{ alignItems:'center', gap: '12px' }}>
           <label className="inline"><span>Name</span><input className="w-180 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
+          <label className="inline"><span>Short Name</span><input className="w-80" value={homeShortName} onChange={e=>setHomeShortName(e.target.value.toUpperCase())} placeholder="Home short" maxLength={10} /></label>
         </div>
         <div className="row" style={{ marginTop: 12 }}>
           <label className="inline" style={{ 
@@ -1179,7 +1288,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         </div>
         {isHomeLocked && (
           <div className="panel" style={{ marginTop:8 }}>
-            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>unlockTeam('home')}>Unlock</button></p>
+            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
+              console.log('🔓 Unlock button clicked for home team')
+              console.log('isHomeLocked:', isHomeLocked)
+              console.log('homeCoachSignature:', !!homeCoachSignature)
+              console.log('homeCaptainSignature:', !!homeCaptainSignature)
+              unlockTeam('home')
+            }}>Unlock</button></p>
           </div>
         )}
         <h4>Roster</h4>
@@ -1374,7 +1489,34 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button onClick={() => setCurrentView('main')}>Confirm</button>
+          <button onClick={async () => {
+            // Save home team data to database if matchId exists
+            if (matchId && match?.homeTeamId) {
+              await db.teams.update(match.homeTeamId, {
+                name: home,
+                color: homeColor
+              })
+              
+              // Update match with short name and restore signatures (re-lock)
+              const updateData = {
+                homeShortName: homeShortName || home.substring(0, 3).toUpperCase()
+              }
+              
+              // Restore signatures if they were previously saved (re-lock the team)
+              if (!homeCoachSignature && savedSignatures.homeCoach) {
+                updateData.homeCoachSignature = savedSignatures.homeCoach
+                setHomeCoachSignature(savedSignatures.homeCoach)
+              }
+              if (!homeCaptainSignature && savedSignatures.homeCaptain) {
+                updateData.homeCaptainSignature = savedSignatures.homeCaptain
+                setHomeCaptainSignature(savedSignatures.homeCaptain)
+              }
+              
+              await db.matches.update(matchId, updateData)
+              console.log('✓ Home team saved and re-locked')
+            }
+            setCurrentView('main')
+          }}>Confirm</button>
         </div>
       </div>
     )
@@ -1392,8 +1534,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        <div className="row" style={{ alignItems:'center' }}>
-          <label className="inline"><span>Name</span><input className="w-300 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
+        <div className="row" style={{ alignItems:'center', gap: '12px' }}>
+          <label className="inline"><span>Name</span><input className="w-180 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
+          <label className="inline"><span>Short Name</span><input className="w-80" value={awayShortName} onChange={e=>setAwayShortName(e.target.value.toUpperCase())} placeholder="Away short" maxLength={10} /></label>
         </div>
         <div className="row" style={{ marginTop: 12 }}>
           <label className="inline" style={{ 
@@ -1418,7 +1561,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         </div>
         {isAwayLocked && (
           <div className="panel" style={{ marginTop:8 }}>
-            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>unlockTeam('away')}>Unlock</button></p>
+            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
+              console.log('🔓 Unlock button clicked for away team')
+              console.log('isAwayLocked:', isAwayLocked)
+              console.log('awayCoachSignature:', !!awayCoachSignature)
+              console.log('awayCaptainSignature:', !!awayCaptainSignature)
+              unlockTeam('away')
+            }}>Unlock</button></p>
           </div>
         )}
         <h4>Roster</h4>
@@ -1613,7 +1762,34 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button onClick={() => setCurrentView('main')}>Confirm</button>
+          <button onClick={async () => {
+            // Save away team data to database if matchId exists
+            if (matchId && match?.awayTeamId) {
+              await db.teams.update(match.awayTeamId, {
+                name: away,
+                color: awayColor
+              })
+              
+              // Update match with short name and restore signatures (re-lock)
+              const updateData = {
+                awayShortName: awayShortName || away.substring(0, 3).toUpperCase()
+              }
+              
+              // Restore signatures if they were previously saved (re-lock the team)
+              if (!awayCoachSignature && savedSignatures.awayCoach) {
+                updateData.awayCoachSignature = savedSignatures.awayCoach
+                setAwayCoachSignature(savedSignatures.awayCoach)
+              }
+              if (!awayCaptainSignature && savedSignatures.awayCaptain) {
+                updateData.awayCaptainSignature = savedSignatures.awayCaptain
+                setAwayCaptainSignature(savedSignatures.awayCaptain)
+              }
+              
+              await db.matches.update(matchId, updateData)
+              console.log('✓ Away team saved and re-locked')
+            }
+            setCurrentView('main')
+          }}>Confirm</button>
         </div>
       </div>
     )
@@ -3123,8 +3299,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   hall,
                   city,
                   match_type_1: type1,
+                  match_type_1_other: type1 === 'other' ? type1Other : null,
+                  championshipType,
+                  championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
                   match_type_2: type2,
                   match_type_3: type3,
+                  match_type_3_other: type3 === 'other' ? type3Other : null,
+                  homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
+                  awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
                   game_n: gameN ? Number(gameN) : null,
                   gameNumber: gameN ? gameN : null,
                   league,
@@ -3558,75 +3740,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
           </div>
         </>
-      )}
-
-      {/* Unlock Modal */}
-      {unlockModal && (
-        <Modal
-          title={`Unlock ${unlockModal.side === 'home' ? 'Home' : 'Away'} Team`}
-          open={true}
-          onClose={() => {
-            setUnlockModal(null)
-            setUnlockPassword('')
-            setUnlockError('')
-          }}
-          width={400}
-        >
-          <div style={{ padding: '24px' }}>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
-                Enter 1st Referee password to unlock:
-              </label>
-              <input
-                type="password"
-                value={unlockPassword}
-                onChange={(e) => {
-                  setUnlockPassword(e.target.value)
-                  setUnlockError('')
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleUnlockConfirm()
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: unlockError ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  color: 'var(--text)',
-                  fontSize: '14px'
-                }}
-                autoFocus
-              />
-              {unlockError && (
-                <div style={{ marginTop: '8px', color: '#ef4444', fontSize: '12px' }}>
-                  {unlockError}
-                </div>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setUnlockModal(null)
-                  setUnlockPassword('')
-                  setUnlockError('')
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUnlockConfirm}
-                disabled={!unlockPassword}
-                style={{ opacity: !unlockPassword ? 0.5 : 1 }}
-              >
-                Unlock
-              </button>
-            </div>
-          </div>
-        </Modal>
       )}
 
       {noticeModal && (

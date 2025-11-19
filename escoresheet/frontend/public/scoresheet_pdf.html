@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scoresheet PDF Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      overflow: hidden;
+    }
+    .header {
+      background: #2a2a2a;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #3a3a3a;
+    }
+    .filename {
+      font-size: 14px;
+      color: #aaa;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .download-btn {
+      background: #3b82f6;
+      color: white;
+    }
+    .download-btn:hover {
+      background: #2563eb;
+    }
+    .close-btn {
+      background: #6b7280;
+      color: white;
+    }
+    .close-btn:hover {
+      background: #4b5563;
+    }
+    .pdf-container {
+      width: 100%;
+      height: calc(100vh - 60px);
+      background: #000;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: calc(100vh - 60px);
+      gap: 20px;
+    }
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #3a3a3a;
+      border-top: 4px solid #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error {
+      color: #ef4444;
+      padding: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="filename" id="filename">Loading...</div>
+    <div class="actions">
+      <button class="download-btn" id="downloadBtn" style="display: none;">
+        ⬇️ Download
+      </button>
+      <button class="close-btn" onclick="window.close()">
+        ✕ Close
+      </button>
+    </div>
+  </div>
+  <div class="pdf-container" id="pdfContainer">
+    <div class="loading">
+      <div class="spinner"></div>
+      <div>Loading PDF...</div>
+    </div>
+  </div>
+
+  <script>
+    // Load PDF from sessionStorage
+    const pdfBase64 = sessionStorage.getItem('scoresheet_pdf');
+    const filename = sessionStorage.getItem('scoresheet_filename') || 'scoresheet.pdf';
+    
+    document.getElementById('filename').textContent = filename;
+
+    if (!pdfBase64) {
+      document.getElementById('pdfContainer').innerHTML = '<div class="error">No PDF data found. Please generate the scoresheet again.</div>';
+    } else {
+      try {
+        // Convert base64 to binary
+        const binaryString = atob(pdfBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Create blob and object URL
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+
+        // Create iframe to display PDF
+        const iframe = document.createElement('iframe');
+        iframe.src = url;
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+
+        document.getElementById('pdfContainer').innerHTML = '';
+        document.getElementById('pdfContainer').appendChild(iframe);
+
+        // Show and setup download button
+        const downloadBtn = document.getElementById('downloadBtn');
+        downloadBtn.style.display = 'flex';
+        downloadBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        };
+
+        // Clean up sessionStorage after a delay
+        setTimeout(() => {
+          sessionStorage.removeItem('scoresheet_pdf');
+          sessionStorage.removeItem('scoresheet_filename');
+        }, 1000);
+
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        document.getElementById('pdfContainer').innerHTML = '<div class="error">Error loading PDF: ' + error.message + '</div>';
+      }
+    }
+  </script>
+</body>
+</html>
+
