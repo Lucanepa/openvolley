@@ -27,12 +27,12 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
       ctx.scale(dpr, dpr)
       
       // Set drawing style
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = '#000000' // Black strokes
+      ctx.lineWidth = 4 // Thicker lines for better visibility in PDF
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
       
-      // Clear canvas
+      // Clear canvas (transparent background)
       ctx.clearRect(0, 0, rect.width, rect.height)
       setHasSignature(false)
     }, 100)
@@ -86,6 +86,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     const rect = canvas.getBoundingClientRect()
+    // Clear canvas (transparent)
     ctx.clearRect(0, 0, rect.width, rect.height)
     setHasSignature(false)
   }
@@ -102,9 +103,9 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
     <Modal title={title} open={open} onClose={onClose} width={600}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ 
-          border: '2px solid rgba(255,255,255,.2)', 
+          border: '2px solid rgba(0,0,0,.3)', 
           borderRadius: 8, 
-          background: '#0b1220',
+          background: '#ffffff',
           position: 'relative',
           touchAction: 'none'
         }}>
@@ -114,7 +115,8 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
               width: '100%', 
               height: '200px', 
               display: 'block',
-              cursor: 'crosshair'
+              cursor: 'crosshair',
+              background: '#ffffff'
             }}
             onMouseDown={startDrawing}
             onMouseMove={draw}

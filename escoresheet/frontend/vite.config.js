@@ -33,7 +33,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: './index.html',
-        referee: './referee.html'
+        referee: './referee.html',
+        scoresheet: './scoresheet_pdf/index_scoresheet.html'
       },
       output: {
         // Avoid eval in production builds
