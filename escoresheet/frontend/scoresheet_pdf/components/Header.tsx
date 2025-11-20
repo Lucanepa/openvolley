@@ -20,18 +20,17 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
   return (
     <header className="border-2 border-black p-2 mb-2 bg-white">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-        <div className="flex items-center gap-4 min-w-[200px]">
+        <div className="flex items-center justify-center gap-4 min-w-[200px]">
             {/* Logo Section with Fallback */}
             {!imageError ? (
                 <img 
                     src={swissvolleyLogo} 
                     alt="Swiss Volley Region Zürich" 
-                    className="h-16 object-contain" 
+                    className="h-16 object-contain mx-auto" 
                     onError={() => setImageError(true)}
                 />
             ) : (
-                /* CSS Fallback Logo if image is missing */
-                <div className="flex flex-col items-start select-none text-sm font-bold text-gray-600">
+                <div className="flex flex-col items-center select-none text-sm font-bold text-gray-600">
                   Swiss Volley
                 </div>
             )}
