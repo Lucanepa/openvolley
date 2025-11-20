@@ -277,15 +277,22 @@ export const Approvals: React.FC = () => {
     );
 };
 
-export const Roster: React.FC<{ team: string, side: string, players?: Player[] }> = ({ team, side, players = [] }) => {
+interface RosterProps {
+  team: string;
+  side: string;
+  players?: Player[];
+  benchStaff?: any[];
+}
+
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [] }) => {
     // Expanded DOB column (50px), Number (25px), Name (Remaining)
     const gridClass = "grid grid-cols-[50px_25px_1fr]";
     // Unified height for Libero and Bench Official cells
     const rowHeight = "h-5";
 
-    // Separate liberos from regular players if needed, or just list all
-    // For simple display, we assume 'players' contains standard roster players
-    // and we manually pick liberos if marked in DB. Here we just list first 14 players.
+    // Separate players and liberos
+    const regularPlayers = players.filter(p => !p.libero).slice(0, 14);
+    const liberos = players.filter(p => p.libero).slice(0, 2);
     
     return (
         <div className="border-2 border-black bg-white h-full flex flex-col min-w-0">
@@ -310,21 +317,28 @@ export const Roster: React.FC<{ team: string, side: string, players?: Player[] }
                 <div className="pl-1 h-full flex items-center">Name</div>
             </div>
             
-            {/* Players List - Fills remaining space */}
+            {/* Players List - 14 players */}
             <div className="flex-1 flex flex-col min-h-0">
-                {/* Flex-1 ensures rows stretch if container is tall */}
-                {Array.from({ length: 16 }).map((_, i) => {
-                    const player = players[i];
+                {Array.from({ length: 14 }).map((_, i) => {
+                    const player = regularPlayers[i];
+                    const isCaptain = player?.isCaptain;
                     return (
                     <div key={i} className={`${gridClass} border-b border-gray-200 last:border-none flex-1 text-[8px] min-h-[16px]`}>
                         <input 
                             className="border-r border-black input-dense text-center" 
                             defaultValue={player?.dob || ''}
                         />
-                        <input 
-                            className="border-r border-black input-dense font-bold bg-white text-center" 
-                            defaultValue={player?.number || ''}
-                        />
+                        <div className="border-r border-black flex items-center justify-center relative">
+                            <input 
+                                className="input-dense font-bold bg-white text-center w-full" 
+                                defaultValue={player?.number || ''}
+                            />
+                            {isCaptain && (
+                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                                    <circle cx="50" cy="50" r="40" fill="none" stroke="black" strokeWidth="6" />
+                                </svg>
+                            )}
+                        </div>
                         <input 
                             className="input-dense text-left px-1 font-medium uppercase text-[7px]" 
                             defaultValue={player?.name || ''}
@@ -333,31 +347,45 @@ export const Roster: React.FC<{ team: string, side: string, players?: Player[] }
                 )})}
             </div>
             
-            {/* Liberos */}
+            {/* Liberos - 2 players */}
             <div className="border-t-2 border-black shrink-0">
                 <div className="bg-gray-200 text-[8px] font-bold border-b border-black h-4 flex items-center justify-center">LIBERO</div>
-                <div className={`${gridClass} border-b border-gray-200 ${rowHeight} text-[8px]`}>
-                     <input className="border-r border-black input-dense text-center" />
-                     <input className="border-r border-black input-dense font-bold bg-white text-center" />
-                     <input className="input-dense text-left px-1 text-[7px]" />
-                </div>
-                <div className={`${gridClass} ${rowHeight} text-[8px]`}>
-                     <input className="border-r border-black input-dense text-center" />
-                     <input className="border-r border-black input-dense font-bold bg-white text-center" />
-                     <input className="input-dense text-left px-1 text-[7px]" />
-                </div>
+                {Array.from({ length: 2 }).map((_, i) => {
+                    const libero = liberos[i];
+                    // Capitalize only (not UPPERCASE) for liberos
+                    const liberoName = libero?.name ? libero.name.charAt(0).toUpperCase() + libero.name.slice(1).toLowerCase() : '';
+                    return (
+                        <div key={i} className={`${gridClass} ${i === 0 ? 'border-b border-gray-200' : ''} ${rowHeight} text-[8px]`}>
+                            <input className="border-r border-black input-dense text-center" defaultValue={libero?.dob || ''} />
+                            <input className="border-r border-black input-dense font-bold bg-white text-center" defaultValue={libero?.number || ''} />
+                            <input className="input-dense text-left px-1 font-medium uppercase text-[7px]" defaultValue={liberoName} />
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Officials */}
              <div className="border-t-2 border-black bg-white shrink-0">
                  <div className="bg-gray-200 text-[8px] font-bold h-4 border-b border-black text-center flex items-center justify-center">BENCH OFFICIALS</div>
-                 {['C', 'AC1', 'AC2', 'P', 'M'].map((role) => (
-                     <div key={role} className={`${gridClass} text-[8px] items-center ${rowHeight} border-b border-gray-100 last:border-none`}>
-                         <input className="border-r border-black input-dense text-left border-b border-gray-200" />
-                         <div className="font-bold text-center border-r border-black  border-l border-black h-full flex items-center justify-center bg-white text-[7px]">{role}</div>
-                         <input className="input-dense uppercase bg-white px-1" />
-                     </div>
-                 ))}
+                 {['C', 'AC1', 'AC2', 'P', 'M'].map((roleLabel, idx) => {
+                     const roleMap: { [key: string]: string } = {
+                         'C': 'Coach',
+                         'AC1': 'Assistant Coach 1',
+                         'AC2': 'Assistant Coach 2',
+                         'P': 'Physiotherapist',
+                         'M': 'Medic'
+                     };
+                     const official = benchStaff.find(s => s.role === roleMap[roleLabel]);
+                     const fullName = official ? `${official.lastName || ''} ${official.firstName || ''}`.trim() : '';
+                     
+                     return (
+                         <div key={roleLabel} className={`${gridClass} text-[8px] items-center ${rowHeight} border-b border-gray-100 last:border-none`}>
+                             <input className="border-r border-black input-dense text-center border-b border-gray-200" defaultValue={official?.dob || ''} />
+                             <div className="font-bold text-center border-r border-black border-l border-black h-full flex items-center justify-center bg-white text-[7px]">{roleLabel}</div>
+                             <input className="input-dense uppercase bg-white px-1 text-left" defaultValue={fullName} />
+                         </div>
+                     );
+                 })}
              </div>
 
              {/* Signatures */}

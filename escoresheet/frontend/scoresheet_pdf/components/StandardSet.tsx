@@ -4,6 +4,7 @@ import { SubRecord } from '../types_scoresheet';
 interface StandardSetProps {
   setNumber: number;
   isSwapped?: boolean;
+  firstServeTeamA?: boolean; // true if Team A serves first, false if Team B serves first
   // Data Props
   teamNameLeft?: string;
   teamNameRight?: string;
@@ -77,8 +78,13 @@ export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2 }> = ({ n
 };
 
 // Service/Reception Selector (S above R)
-export const SRSelector: React.FC = () => {
-    const [selection, setSelection] = useState<'S' | 'R' | null>(null);
+export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ initialSelection = null }) => {
+    const [selection, setSelection] = useState<'S' | 'R' | null>(initialSelection);
+    
+    useEffect(() => {
+        setSelection(initialSelection);
+    }, [initialSelection]);
+    
     return (
         <div className="flex flex-col gap-0.5 mx-1 justify-center">
             {['S', 'R'].map((item) => (
@@ -101,7 +107,7 @@ export const SRSelector: React.FC = () => {
 };
 
 // The 1-48 Point Column for a single team
-export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, timeouts?: [string, string] }> = ({ isLast, currentScore = 0, timeouts = ["", ""] }) => {
+export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, timeouts?: [string, string], startsReceiving?: boolean }> = ({ isLast, currentScore = 0, timeouts = ["", ""], startsReceiving = false }) => {
     return (
         <div className={`flex flex-col h-full w-24 ${isLast ? '' : 'border-r-2 border-black'}`}>
             <div className="flex-1 grid grid-cols-4 bg-white border-b border-black">
@@ -110,7 +116,13 @@ export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, t
                         {Array.from({ length: 12 }).map((_, i) => {
                             const num = offset + i + 1;
                             // Determine state: 1 (slash) if num <= currentScore
-                            const state = num <= currentScore ? 1 : 0;
+                            // OR put X in box 1 if team starts receiving and has 0 points
+                            let state: 0 | 1 | 2 = 0;
+                            if (num <= currentScore) {
+                                state = 1;
+                            } else if (num === 1 && startsReceiving && currentScore === 0) {
+                                state = 1; // Put slash in box 1 for receiving team
+                            }
                             return <PointBox key={i} num={num} filledState={state} />;
                         })}
                     </div>
@@ -239,6 +251,7 @@ export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][]
 export const StandardSet: React.FC<StandardSetProps> = ({ 
     setNumber, 
     isSwapped = false,
+    firstServeTeamA,
     teamNameLeft,
     teamNameRight,
     startTime,
@@ -254,6 +267,25 @@ export const StandardSet: React.FC<StandardSetProps> = ({
 }) => {
   const leftTeamLabel = isSwapped ? 'B' : 'A';
   const rightTeamLabel = isSwapped ? 'A' : 'B';
+  
+  // Determine who serves/receives based on coin toss (only for Set 1)
+  let leftServes: 'S' | 'R' | null = null;
+  let rightServes: 'S' | 'R' | null = null;
+  
+  if (setNumber === 1 && firstServeTeamA !== undefined) {
+    // Team A is left when not swapped, right when swapped
+    const teamAIsLeft = !isSwapped;
+    
+    if (teamAIsLeft) {
+      // Left = Team A, Right = Team B
+      leftServes = firstServeTeamA ? 'S' : 'R';
+      rightServes = firstServeTeamA ? 'R' : 'S';
+    } else {
+      // Left = Team B, Right = Team A
+      leftServes = firstServeTeamA ? 'R' : 'S';
+      rightServes = firstServeTeamA ? 'S' : 'R';
+    }
+  }
 
   return (
     <div className="border-2 border-black bg-white flex flex-col h-[250px] w-full overflow-hidden shadow-sm">
@@ -274,7 +306,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                          <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
                             {leftTeamLabel}
                          </div>
-                         <SRSelector />
+                         <SRSelector initialSelection={leftServes} />
                      </div>
                      <input 
                         className="w-full border-b border-gray-300 text-xs uppercase font-bold outline-none bg-white ml-1" 
@@ -290,7 +322,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                         defaultValue={teamNameRight}
                      />
                      <div className="flex items-center gap-1">
-                        <SRSelector />
+                        <SRSelector initialSelection={rightServes} />
                         <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
                             {rightTeamLabel}
                         </div>
@@ -312,14 +344,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
             {/* Team Left Block */}
             <div className="flex-1 flex">
                 <TeamServiceGrid lineup={leftLineup} subs={leftSubs} />
-                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} />
+                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} startsReceiving={leftServes === 'R'} />
             </div>
 
             {/* Team Right Block */}
              <div className="flex-1 flex">
                 <TeamServiceGrid lineup={rightLineup} subs={rightSubs} />
                 <div className="h-full"> 
-                    <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} />
+                    <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} startsReceiving={rightServes === 'R'} />
                 </div>
             </div>
         </div>
