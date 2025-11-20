@@ -6,6 +6,8 @@ import { PointBox, SRSelector, TeamServiceGrid } from './StandardSet';
 interface SetFiveProps {
     teamNameA?: string;
     teamNameB?: string;
+    startTime?: string;
+    endTime?: string;
     
     // Panel 1 (Left A)
     lineupA?: string[];
@@ -26,47 +28,23 @@ interface SetFiveProps {
 }
 
 
+// Static Point Box for Set 5 - Display only
 const PointBoxS: React.FC<{ num: number; filledState?: 0 | 1 | 2 }> = ({ num, filledState = 0 }) => {
-    const [type, setType] = useState<0 | 1 | 2>(filledState);
-    const [circled, setCircled] = useState(false);
-
-    useEffect(() => {
-        setType(filledState);
-    }, [filledState]);
-
-    const handleLeftClick = () => {
-        setType(prev => {
-            if (prev === 0) return 1;
-            if (prev === 1) return 2;
-            return 0;
-        });
-    };
-
-    const handleRightClick = (e: React.MouseEvent) => {
-        e.preventDefault();
-        setCircled(prev => !prev);
-    };
-
     return (
         <div 
-            className="flex-1 w-full relative cursor-pointer select-none flex items-center justify-center"
+            className="flex-1 w-full relative flex items-center justify-center"
             style={{ borderColor: '#000' }}
-            onClick={handleLeftClick}
-            onContextMenu={handleRightClick}
         >
-            <span className={`text-[10px] font-bold leading-none text-gray-400 ${type !== 0 ? 'opacity-50' : ''}`}>{num}</span>
-            {type === 1 && (
+            <span className={`text-[10px] font-bold leading-none text-gray-400 ${filledState !== 0 ? 'opacity-50' : ''}`}>{num}</span>
+            {filledState === 1 && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="4" />
                  </svg>
             )}
-            {type === 2 && (
+            {filledState === 2 && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="50" y1="0" x2="50" y2="100" stroke="black" strokeWidth="4" />
                  </svg>
-            )}
-            {circled && (
-                <div className="absolute inset-0.5 rounded-full border-2 border-black pointer-events-none"></div>
             )}
         </div>
     );
@@ -90,8 +68,8 @@ const PointsColumn5: React.FC<{ currentScore?: number, timeouts?: [string, strin
             <div className="h-16 bg-white flex flex-col items-center justify-start gap-1 border-t border-black py-1">
                 <span className="text-[10px] font-bold leading-none">"T"</span>
                 <div className="flex flex-col gap-1 w-full px-2 items-center">
-                    <input className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none outline-none" defaultValue={timeouts[0]} />
-                    <input className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none outline-none" defaultValue={timeouts[1]} />
+                    <div className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center">{timeouts[0]}</div>
+                    <div className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center">{timeouts[1]}</div>
                 </div>
             </div>
         </div>
@@ -115,8 +93,8 @@ const PointsColumn30: React.FC<{ isLast?: boolean, currentScore?: number, timeou
             <div className="h-16 bg-white flex flex-col items-center justify-start gap-1 border-t border-black py-1">
                 <span className="text-[10px] font-bold leading-none">"T"</span>
                 <div className="flex flex-col gap-1 w-full px-2 items-center">
-                    <input className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none outline-none" defaultValue={timeouts[0]} />
-                    <input className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none outline-none" defaultValue={timeouts[1]} />
+                    <div className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center">{timeouts[0]}</div>
+                    <div className="w-full h-4 border border-black text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center">{timeouts[1]}</div>
                 </div>
             </div>
         </div>
@@ -126,6 +104,8 @@ const PointsColumn30: React.FC<{ isLast?: boolean, currentScore?: number, timeou
 export const SetFive: React.FC<SetFiveProps> = ({
     teamNameA,
     teamNameB,
+    startTime,
+    endTime,
     lineupA,
     subsA,
     timeoutsA,
@@ -141,39 +121,36 @@ export const SetFive: React.FC<SetFiveProps> = ({
     <div className="border-2 border-black bg-white flex flex-col h-[250px] w-full overflow-hidden shadow-sm">
        {/* Header Strip */}
        <div className="h-8 flex border-b-2 border-black bg-gray-100 text-xs">
-           {/* Panel 1 Header: Team A */}
+           {/* Panel 1 Header: Team A + Start Time */}
            <div className="flex-1 flex border-r-2 border-black items-center px-2 gap-2 bg-white">
-                <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
-                    A
+                <div className="flex items-center gap-1 shrink-0">
+                    <span className="font-bold text-[9px]">Start:</span>
+                    <div className="w-12 bg-transparent text-center font-mono text-xs">{startTime}</div>
                 </div>
+                <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center"></div>
                 <SRSelector />
-                <input className="w-full border-b border-gray-300 uppercase font-bold outline-none bg-white" defaultValue={teamNameA} />
+                <div className="flex-1 uppercase font-bold bg-white text-center"></div>
            </div>
 
-           {/* Panel 2 Header: Team B */}
+           {/* Panel 2 Header: Team B + End Time */}
            <div className="flex-1 flex border-r-2 border-black items-center px-2 gap-2 bg-white">
-                <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
-                    B
-                </div>
+                <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center"></div>
                 <SRSelector />
-                <input className="w-full border-b border-gray-300 uppercase font-bold outline-none bg-white" defaultValue={teamNameB} />
+                <div className="flex-1 uppercase font-bold bg-white text-center"></div>
+                <div className="flex items-center gap-1 shrink-0 border-l border-black pl-2">
+                    <span className="font-bold text-[9px]">End:</span>
+                    <div className="w-12 bg-transparent text-center font-mono text-xs">{endTime}</div>
+                </div>
            </div>
 
            {/* Panel 3 Header: Team A (Swapped) + Points at Change */}
            <div className="flex-1 flex items-center px-2 gap-2 bg-white relative">
-                <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
-                    A
-                </div>
-                <input className="w-full border-b border-gray-300 uppercase font-bold outline-none bg-white" defaultValue={teamNameA} />
+                <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center"></div>
+                <div className="flex-1 uppercase font-bold bg-white text-center"></div>
                 
                 {/* Points at Change */}
                 <div className="flex items-center gap-1 border-l border-black pl-2 ml-1 shrink-0">
-                    <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-white">
-                         <input 
-                            className="w-full h-full text-center font-bold text-sm outline-none bg-transparent rounded-full" 
-                            defaultValue={pointsAtChange}
-                         />
-                    </div>
+                    <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-white font-bold text-sm">{pointsAtChange}</div>
                     <span className="text-[8px] font-bold leading-none text-center w-8">Pts at Change</span>
                 </div>
            </div>

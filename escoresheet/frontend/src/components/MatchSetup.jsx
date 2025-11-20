@@ -599,6 +599,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           bench_home: benchHome,
           bench_away: benchAway
         })
+        
+        // Also update team colors if teams exist
+        if (match.homeTeamId) {
+          await db.teams.update(match.homeTeamId, { 
+            name: home,
+            color: homeColor 
+          })
+        }
+        if (match.awayTeamId) {
+          await db.teams.update(match.awayTeamId, { 
+            name: away,
+            color: awayColor 
+          })
+        }
       }
       
       return true

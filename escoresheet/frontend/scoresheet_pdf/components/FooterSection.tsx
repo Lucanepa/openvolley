@@ -8,8 +8,6 @@ interface SanctionsProps {
 export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
     // We use a fixed count but allow flex-1 to stretch rows to fill the column height
     const rowCount = 8; 
-    const [improperA, setImproperA] = useState(false);
-    const [improperB, setImproperB] = useState(false);
 
     return (
         <div className="border-2 border-black bg-white flex flex-col h-full relative group overflow-hidden">
@@ -17,36 +15,18 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
                 SANCTIONS
             </div>
 
-            {/* Improper Request Row */}
+            {/* Improper Request Row - Static */}
             <div className="flex items-center justify-between px-2 py-0.5 border-b border-black bg-white shrink-0 min-h-[24px]">
                 <span className="text-[9px] font-bold uppercase">Improper Request</span>
                 <div className="flex items-center gap-3">
                     {/* Team A */}
-                    <div 
-                        className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative cursor-pointer select-none bg-white hover:bg-gray-50"
-                        onClick={() => setImproperA(!improperA)}
-                    >
+                    <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
                         <span className="text-[10px] font-bold leading-none mt-[1px]">A</span>
-                        {improperA && (
-                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                                <line x1="15" y1="15" x2="85" y2="85" stroke="black" strokeWidth="10" />
-                                <line x1="85" y1="15" x2="15" y2="85" stroke="black" strokeWidth="10" />
-                            </svg>
-                        )}
                     </div>
 
                     {/* Team B */}
-                    <div 
-                        className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative cursor-pointer select-none bg-white hover:bg-gray-50"
-                        onClick={() => setImproperB(!improperB)}
-                    >
+                    <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
                         <span className="text-[10px] font-bold leading-none mt-[1px]">B</span>
-                        {improperB && (
-                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                                <line x1="15" y1="15" x2="85" y2="85" stroke="black" strokeWidth="10" />
-                                <line x1="85" y1="15" x2="15" y2="85" stroke="black" strokeWidth="10" />
-                            </svg>
-                        )}
                     </div>
                 </div>
             </div>
@@ -67,41 +47,20 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
                     return (
                     <div key={i} className="grid grid-cols-7 flex-1 border-b border-gray-200 last:border-none text-xs min-h-[20px]">
                          <div className="border-r border-gray-200 flex items-center justify-center p-0.5">
-                            <input 
-                                className="input-dense font-bold text-center text-[10px]" 
-                                defaultValue={item?.type === 'warning' ? 'X' : ''} 
-                            />
+                            <div className="font-bold text-center text-[10px]">{item?.type === 'warning' ? 'X' : ''}</div>
                          </div>
                          <div className="border-r border-gray-200 flex items-center justify-center p-0.5">
-                            <input 
-                                className="input-dense font-bold text-center text-[10px]" 
-                                defaultValue={item?.type === 'penalty' ? 'X' : ''} 
-                            />
+                            <div className="font-bold text-center text-[10px]">{item?.type === 'penalty' ? 'X' : ''}</div>
                          </div>
                          <div className="border-r border-gray-200 flex items-center justify-center p-0.5">
-                            <input 
-                                className="input-dense font-bold text-center text-[10px]" 
-                                defaultValue={item?.type === 'expulsion' ? 'X' : ''} 
-                            />
+                            <div className="font-bold text-center text-[10px]">{item?.type === 'expulsion' ? 'X' : ''}</div>
                          </div>
                          <div className="border-r border-gray-200 flex items-center justify-center p-0.5">
-                            <input 
-                                className="input-dense font-bold text-center text-[10px]" 
-                                defaultValue={item?.type === 'disqualification' ? 'X' : ''} 
-                            />
+                            <div className="font-bold text-center text-[10px]">{item?.type === 'disqualification' ? 'X' : ''}</div>
                          </div>
-                         <input 
-                            className="border-r border-gray-200 input-dense text-center uppercase font-bold" 
-                            defaultValue={item?.team}
-                         />
-                         <input 
-                            className="border-r border-gray-200 input-dense text-center" 
-                            defaultValue={item?.set}
-                         />
-                         <input 
-                            className="input-dense text-center text-[10px]" 
-                            defaultValue={item?.score}
-                         />
+                         <div className="border-r border-gray-200 text-center uppercase font-bold flex items-center justify-center">{item?.team || ''}</div>
+                         <div className="border-r border-gray-200 text-center flex items-center justify-center">{item?.set || ''}</div>
+                         <div className="text-center text-[10px] flex items-center justify-center">{item?.score || ''}</div>
                     </div>
                 )})}
             </div>
@@ -114,13 +73,18 @@ export const Remarks: React.FC = () => {
         <div className="border-2 border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
             <div className="p-1 flex-1 flex flex-col">
-                <textarea className="w-full flex-1 bg-transparent resize-none outline-none text-[9px] leading-tight h-full"></textarea>
+                <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full"></div>
             </div>
         </div>
     );
 }
 
-export const Results: React.FC = () => {
+interface ResultsProps {
+  teamAShortName?: string;
+  teamBShortName?: string;
+}
+
+export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShortName = '' }) => {
     return (
         <div className="border-2 border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
@@ -129,7 +93,7 @@ export const Results: React.FC = () => {
                 <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
-                         <input className="text-[9px] font-bold uppercase outline-none w-full bg-transparent" placeholder="Team A" />
+                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{teamAShortName}</div>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
                         <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div className="border-r border-black">P</div>
@@ -137,18 +101,18 @@ export const Results: React.FC = () => {
                     <div className="flex-1 flex flex-col">
                         {[1,2,3,4,5].map(set => (
                              <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs min-h-[16px]">
-                                <input className="border-r border-gray-200 input-dense" />
-                                <input className="border-r border-gray-200 input-dense" />
-                                <input className="border-r border-gray-200 input-dense" />
-                                <input className="border-r border-gray-200 input-dense" />
+                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
+                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
+                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
+                                <div className="flex items-center justify-center"></div>
                              </div>
                         ))}
                         {/* Total Row */}
                         <div className="h-5 border-t border-black grid grid-cols-4 bg-gray-50">
-                            <input className="border-r border-gray-300 input-dense text-center font-bold" />
-                            <input className="border-r border-gray-300 input-dense text-center font-bold" />
-                            <input className="border-r border-gray-300 input-dense text-center font-bold" />
-                            <input className="input-dense text-center font-bold" />
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
+                            <div className="text-center font-bold flex items-center justify-center"></div>
                         </div>
                     </div>
                 </div>
@@ -164,12 +128,12 @@ export const Results: React.FC = () => {
                         {[1,2,3,4,5].map(set => (
                             <div key={set} className="flex-1 border-b border-gray-200 grid grid-cols-2 font-bold text-xs bg-white min-h-[16px]">
                                 <div className="flex items-center justify-center border-r border-gray-200">{set}</div>
-                                <input className="input-dense" />
+                                <div className="flex items-center justify-center"></div>
                             </div>
                         ))}
                         <div className="h-5 border-t border-black grid grid-cols-2 bg-white">
                             <div className="flex items-center justify-center font-bold text-[9px] border-r border-black">Total</div>
-                            <input className="input-dense text-center font-bold" />
+                            <div className="text-center font-bold flex items-center justify-center"></div>
                         </div>
                      </div>
                 </div>
@@ -178,7 +142,7 @@ export const Results: React.FC = () => {
                  <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50 flex-row-reverse">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
-                         <input className="text-[9px] font-bold uppercase outline-none w-full text-right bg-transparent" placeholder="Team B" />
+                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{teamBShortName}</div>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
                         <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div className="border-r border-black">T</div>
@@ -186,17 +150,17 @@ export const Results: React.FC = () => {
                     <div className="flex-1 flex flex-col">
                         {[1,2,3,4,5].map(set => (
                              <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs min-h-[16px]">
-                                <input className="border-r border-gray-200 input-dense" />
-                                <input className="border-r border-gray-200 input-dense" />
-                                <input className="border-r border-gray-200 input-dense" />
-                                <input className="border-r border-gray-200 input-dense" />
+                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
+                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
+                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
+                                <div className="flex items-center justify-center"></div>
                              </div>
                         ))}
                         <div className="h-5 border-t border-black grid grid-cols-4 bg-gray-50">
-                            <input className="border-r border-gray-300 input-dense text-center font-bold" />
-                            <input className="border-r border-gray-300 input-dense text-center font-bold" />
-                            <input className="border-r border-gray-300 input-dense text-center font-bold" />
-                            <input className="input-dense text-center font-bold" />
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
+                            <div className="text-center font-bold flex items-center justify-center"></div>
                         </div>
                     </div>
                 </div>
@@ -206,19 +170,30 @@ export const Results: React.FC = () => {
             <div className="p-1 grid grid-cols-[1.5fr_1fr] gap-1 border-t-2 border-black h-14 shrink-0 bg-white">
                  <div className="border-b border-gray-300 relative">
                      <span className="text-[8px] absolute top-0 left-0 text-gray-500">WINNER</span>
-                     <input className="w-full h-full text-center font-black uppercase text-lg bg-white outline-none" />
+                     <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-center justify-center"></div>
                  </div>
                  <div className="border-b border-gray-300 relative">
                      <span className="text-[8px] absolute top-0 left-0 text-gray-500">RESULT</span>
-                     <input className="w-full h-full text-center font-black text-lg bg-white outline-none" />
+                     <div className="w-full h-full text-center font-black text-lg bg-white flex items-center justify-center"></div>
                  </div>
             </div>
         </div>
     );
 };
 
-export const Approvals: React.FC = () => {
-    const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant"];
+interface ApprovalsProps {
+  officials?: any[];
+}
+
+export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
+    const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
+    
+    const getOfficial = (role: string) => {
+        return officials.find(o => 
+            o.role?.toLowerCase() === role.toLowerCase() || 
+            (role === 'Assistant Scorer' && o.role?.toLowerCase() === 'assistant scorer')
+        );
+    };
 
     return (
         <div className="border-2 border-black bg-white flex flex-col h-full w-full">
@@ -235,27 +210,32 @@ export const Approvals: React.FC = () => {
 
             {/* Officials List */}
             <div className="flex flex-col border-b border-black flex-1 min-h-0">
-                {roles.map((role, idx) => (
+                {roles.map((role, idx) => {
+                    const official = getOfficial(role);
+                    const fullName = official ? `${official.lastName || ''} ${official.firstName || ''}`.trim() : '';
+                    
+                    return (
                     <div key={idx} className="flex items-center border-b border-gray-200 last:border-none px-2 gap-2 flex-1 min-h-[30px]">
                         <div className="w-20 font-bold text-[9px] shrink-0">{role}</div>
                         
                         <div className="flex flex-col justify-end w-28 shrink-0 h-full pb-1">
-                            <input className="border-b border-gray-300 w-full text-[9px] outline-none bg-white" />
+                            <div className="w-full text-[9px] bg-white">{fullName}</div>
                         </div>
                         
                         <div className="flex flex-col justify-end w-16 shrink-0 h-full pb-1">
-                            <input className="border-b border-gray-300 w-full text-[9px] outline-none bg-white" />
+                            <div className="text-center w-full text-[9px] bg-white">{official?.country || ''}</div>
                         </div>
 
-                         <div className="flex flex-col justify-end w-16 shrink-0 h-full pb-1">
-                            <input className="border-b border-gray-300 w-full text-[9px] outline-none bg-white" />
+                         <div className="flex flex-col justify-end w-16 shrink-0 h-full pb-1"> 
+                            <div className="text-center w-full text-[9px] bg-white">{official?.dob || ''}</div>
                         </div>
 
-                        <div className="flex-1 h-full relative border-b border-gray-300 mb-1 ml-1">
+                        <div className="flex-1 h-full relative mb-1 ml-1">
                             {/* Signature space */}
                         </div>
                     </div>
-                ))}
+                );
+                })}
             </div>
 
             {/* Captains - Central Layout */}
@@ -297,18 +277,8 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     return (
         <div className="border-2 border-black bg-white h-full flex flex-col min-w-0">
             <div className="bg-white text-black border-b border-black font-bold py-0.5 text-xs flex justify-between px-1 items-center h-7 shrink-0">
-                <input 
-                    className="font-bold text-xs outline-none placeholder-gray-400 uppercase w-full bg-white" 
-                    placeholder={team} 
-                    defaultValue={team}
-                />
-                <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 ml-1">
-                     <input 
-                        className="w-full h-full text-center font-bold outline-none bg-transparent text-[10px] rounded-full uppercase" 
-                        placeholder={side}
-                        defaultValue={side}
-                     />
-                </div>
+                <div className="font-bold text-xs uppercase w-full bg-white text-center">{team}</div>
+                <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 ml-1 font-bold text-[10px] uppercase">{side}</div>
             </div>
             {/* Header */}
             <div className={`bg-white border-b border-black ${gridClass} text-[8px] font-bold h-4 items-center shrink-0`}>
@@ -324,25 +294,16 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     const isCaptain = player?.isCaptain;
                     return (
                     <div key={i} className={`${gridClass} border-b border-gray-200 last:border-none flex-1 text-[8px] min-h-[16px]`}>
-                        <input 
-                            className="border-r border-black input-dense text-center" 
-                            defaultValue={player?.dob || ''}
-                        />
+                        <div className="border-r border-black flex items-center justify-center text-center">{player?.dob || ''}</div>
                         <div className="border-r border-black flex items-center justify-center relative">
-                            <input 
-                                className="input-dense font-bold bg-white text-center w-full" 
-                                defaultValue={player?.number || ''}
-                            />
+                            <div className="font-bold bg-white text-center w-full">{player?.number || ''}</div>
                             {isCaptain && (
                                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                                     <circle cx="50" cy="50" r="40" fill="none" stroke="black" strokeWidth="6" />
                                 </svg>
                             )}
                         </div>
-                        <input 
-                            className="input-dense text-left px-1 font-medium uppercase text-[7px]" 
-                            defaultValue={player?.name || ''}
-                        />
+                        <div className="text-left px-1 font-medium uppercase text-[7px] flex items-center">{player?.name || ''}</div>
                     </div>
                 )})}
             </div>
@@ -356,9 +317,9 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     const liberoName = libero?.name ? libero.name.charAt(0).toUpperCase() + libero.name.slice(1).toLowerCase() : '';
                     return (
                         <div key={i} className={`${gridClass} ${i === 0 ? 'border-b border-gray-200' : ''} ${rowHeight} text-[8px]`}>
-                            <input className="border-r border-black input-dense text-center" defaultValue={libero?.dob || ''} />
-                            <input className="border-r border-black input-dense font-bold bg-white text-center" defaultValue={libero?.number || ''} />
-                            <input className="input-dense text-left px-1 font-medium uppercase text-[7px]" defaultValue={liberoName} />
+                            <div className="border-r border-black text-center flex items-center justify-center">{libero?.dob || ''}</div>
+                            <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
+                            <div className="text-left px-1 font-medium uppercase text-[7px] flex items-center">{liberoName}</div>
                         </div>
                     );
                 })}
@@ -380,9 +341,9 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                      
                      return (
                          <div key={roleLabel} className={`${gridClass} text-[8px] items-center ${rowHeight} border-b border-gray-100 last:border-none`}>
-                             <input className="border-r border-black input-dense text-center border-b border-gray-200" defaultValue={official?.dob || ''} />
+                             <div className="border-r border-black text-center border-b border-gray-200 flex items-center justify-center">{official?.dob || ''}</div>
                              <div className="font-bold text-center border-r border-black border-l border-black h-full flex items-center justify-center bg-white text-[7px]">{roleLabel}</div>
-                             <input className="input-dense uppercase bg-white px-1 text-left" defaultValue={fullName} />
+                             <div className="uppercase bg-white px-1 text-left flex items-center">{fullName}</div>
                          </div>
                      );
                  })}
@@ -392,11 +353,11 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
              <div className="h-100 border-t-2 border-black bg-white shrink-0 p-1">
                  <div className="flex items-end gap-2 mb-1">
                     <span className="text-[8px] font-bold uppercase w-12">Captain</span>
-                    <input className="flex-1 border-b border-black text-[9px] bg-white outline-none leading-none" />
+                    <div className="flex-1 border-b border-black text-[9px] bg-white leading-none h-4"></div>
                  </div>
                  <div className="flex items-end gap-2">
                     <span className="text-[8px] font-bold uppercase w-12">Coach</span>
-                    <input className="flex-1 border-b border-black text-[9px] bg-white outline-none leading-none" />
+                    <div className="flex-1 border-b border-black text-[9px] bg-white leading-none h-4"></div>
                  </div>
              </div>
         </div>

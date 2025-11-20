@@ -177,10 +177,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                         <SetFive 
                             teamNameA=""
                             teamNameB=""
+                            startTime={(set5Data && (set5Data.homePoints > 0 || set5Data.awayPoints > 0 || set5Data.startTime)) && set5Data.startTime ? new Date(set5Data.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : ''}
+                            endTime={(set5Data && (set5Data.homePoints > 0 || set5Data.awayPoints > 0 || set5Data.startTime)) && set5Data.endTime ? new Date(set5Data.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : ''}
                             pointsA_Left={(set5Data && (set5Data.homePoints > 0 || set5Data.awayPoints > 0 || set5Data.startTime)) ? (teamAKey === 'home' ? (set5Data.homePoints || 0) : (set5Data.awayPoints || 0)) : 0}
                             pointsB={(set5Data && (set5Data.homePoints > 0 || set5Data.awayPoints > 0 || set5Data.startTime)) ? (teamBKey === 'home' ? (set5Data.homePoints || 0) : (set5Data.awayPoints || 0)) : 0}
                             pointsA_Right={0}
-                            pointsAtChange="8"
+                            pointsAtChange=""
                         />
                     </div>
                     
@@ -199,13 +201,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                                     <Remarks />
                                 </div>
                                 <div className="flex-1">
-                                    <Results />
+                                    <Results teamAShortName={teamAShortName} teamBShortName={teamBShortName} />
                                 </div>
                             </div>
                             
                             {/* Bottom Row: Approvals */}
                             <div className="flex-1">
-                                <Approvals />
+                                <Approvals officials={match?.officials} />
                             </div>
                         </div>
                     </div>
