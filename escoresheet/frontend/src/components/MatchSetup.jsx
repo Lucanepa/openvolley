@@ -565,6 +565,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       } else {
         await db.match_setup.add(draft)
       }
+      
+      // Also update the actual match record if matchId exists
+      if (matchId) {
+        const scheduledAt = (() => {
+          if (!date && !time) return match?.scheduledAt || new Date().toISOString()
+          const iso = new Date(`${date}T${time || '00:00'}:00`).toISOString()
+          return iso
+        })()
+        
+        await db.matches.update(matchId, {
+          hall,
+          city,
+          match_type_1: type1,
+          match_type_1_other: type1 === 'other' ? type1Other : null,
+          championshipType,
+          championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
+          match_type_2: type2,
+          match_type_3: type3,
+          match_type_3_other: type3 === 'other' ? type3Other : null,
+          homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
+          awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
+          game_n: gameN ? Number(gameN) : null,
+          gameNumber: gameN ? gameN : null,
+          league,
+          scheduledAt,
+          officials: [
+            { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+            { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+            { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+            { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+          ],
+          bench_home: benchHome,
+          bench_away: benchAway
+        })
+      }
+      
       return true
     } catch (error) {
       console.error('Error saving draft:', error)
