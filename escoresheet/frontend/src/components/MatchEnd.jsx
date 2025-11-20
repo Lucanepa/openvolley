@@ -365,7 +365,7 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
             sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData));
             
             // Open scoresheet in new window
-            const scoresheetWindow = window.open('/scoresheet_pdf/index_scoresheet.html', '_blank', 'width=1200,height=900');
+            const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900');
             
             if (!scoresheetWindow) {
               alert('Please allow popups to view the scoresheet');
