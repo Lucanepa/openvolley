@@ -95,7 +95,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
 
   return (
     <div className="min-h-screen bg-gray-100 p-2 flex justify-center print:p-0 print:bg-white">
-      <div className="w-[1160px] bg-white shadow-xl print:shadow-none p-2 print:w-full print:max-w-none print:p-0 print:scale-[0.95] print:origin-top-left">
+      <div className="w-full max-w-[1400px] bg-white shadow-xl print:shadow-none p-2 print:w-full print:max-w-none print:p-0 print:scale-[0.90] print:origin-top-left">
         
         {/* Web Only Controls */}
         <div className="mb-2 flex justify-between items-center print:hidden">
@@ -169,8 +169,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
 
             {/* Bottom Section: Split into Set 5/Footer area and Rosters */}
             <div className="flex items-stretch gap-2 mt-1">
-                {/* LEFT COLUMN: Set 5 + Footer Grid (~70% width) */}
-                <div className="w-[70%] flex flex-col gap-2 shrink-0">
+                {/* LEFT COLUMN: Set 5 + Footer Grid (~60% width) */}
+                <div className="w-[60%] flex flex-col gap-2 shrink-0">
                     {/* Set 5 - Always show */}
                     <div>
                         <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 5</h3>
@@ -213,9 +213,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                     </div>
                 </div>
 
-                {/* RIGHT COLUMN: Rosters (Side by Side) - 3/4 Height */}
+                {/* RIGHT COLUMN: Rosters (Side by Side) - Full Height */}
                 <div className="flex-1 flex flex-col min-w-0">
-                    <div className="flex flex-row gap-1 h-[75%]">
+                    <div className="flex flex-row gap-1 h-full">
                         <div className="flex-1 min-w-0 h-full">
                             <Roster 
                               team={teamAShortName} 

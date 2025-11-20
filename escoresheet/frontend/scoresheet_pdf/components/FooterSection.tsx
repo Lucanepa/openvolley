@@ -216,22 +216,23 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
                     
                     return (
                     <div key={idx} className="flex items-center border-b border-gray-200 last:border-none px-2 gap-2 flex-1 min-h-[30px]">
-                        <div className="w-20 font-bold text-[9px] shrink-0">{role}</div>
+                        <div className="w-20 font-bold text-[9px] shrink-0 flex items-center">{role}</div>
                         
-                        <div className="flex flex-col justify-end w-28 shrink-0 h-full pb-1">
-                            <div className="w-full text-[9px] bg-white">{fullName}</div>
+                        <div className="w-28 shrink-0 flex items-center">
+                            <div className="w-full text-[9px] bg-white border-b border-gray-300 pb-0.5">{fullName}</div>
                         </div>
                         
-                        <div className="flex flex-col justify-end w-16 shrink-0 h-full pb-1">
-                            <div className="text-center w-full text-[9px] bg-white">{official?.country || ''}</div>
+                        <div className="w-16 shrink-0 flex items-center">
+                            <div className="text-center w-full text-[9px] bg-white border-b border-gray-300 pb-0.5">{official?.country || ''}</div>
                         </div>
 
-                         <div className="flex flex-col justify-end w-16 shrink-0 h-full pb-1"> 
-                            <div className="text-center w-full text-[9px] bg-white">{official?.dob || ''}</div>
+                         <div className="w-16 shrink-0 flex items-center">
+                            <div className="text-center w-full text-[9px] bg-white border-b border-gray-300 pb-0.5">{official?.dob || ''}</div>
                         </div>
 
-                        <div className="flex-1 h-full relative mb-1 ml-1">
+                        <div className="flex-1 h-full relative flex items-end pb-1">
                             {/* Signature space */}
+                            <div className="w-full border-b border-gray-300 h-6"></div>
                         </div>
                     </div>
                 );
