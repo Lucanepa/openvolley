@@ -13,13 +13,58 @@
 
       /* Custom print styles to ensure background graphics/colors print */
       @media print {
-        body {
+        @page {
+          size: A3 landscape;
+          margin: 0;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 420mm !important;
+          height: 297mm !important;
+          overflow: hidden !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
-        @page {
-          size: landscape;
-          margin: 0.2cm;
+        #root {
+          width: 420mm !important;
+          height: 297mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: hidden !important;
+          position: relative;
+        }
+        #root > div {
+          width: 420mm !important;
+          height: 297mm !important;
+          max-width: 420mm !important;
+          max-height: 297mm !important;
+          display: flex !important;
+          align-items: flex-start !important;
+          justify-content: flex-start !important;
+          overflow: hidden !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          page-break-inside: avoid !important;
+          page-break-after: avoid !important;
+          page-break-before: avoid !important;
+        }
+        #root > div > div {
+          width: 420mm !important;
+          height: 297mm !important;
+          max-width: 420mm !important;
+          max-height: 297mm !important;
+          overflow: hidden !important;
+          box-sizing: border-box !important;
+          page-break-inside: avoid !important;
+          page-break-after: avoid !important;
+          page-break-before: avoid !important;
+        }
+        /* Prevent page breaks on all elements */
+        * {
+          page-break-inside: avoid !important;
+          page-break-after: avoid !important;
+          page-break-before: avoid !important;
         }
       }
       /* Hide scrollbar for cleaner look in inputs */
