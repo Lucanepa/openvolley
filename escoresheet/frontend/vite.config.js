@@ -34,7 +34,7 @@ export default defineConfig({
       input: {
         main: './index.html',
         referee: './referee.html',
-        scoresheet: './scoresheet_pdf/index_scoresheet.html'
+        scoresheet: './scoresheet.html'
       },
       output: {
         // Avoid eval in production builds

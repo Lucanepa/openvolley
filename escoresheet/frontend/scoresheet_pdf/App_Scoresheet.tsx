@@ -42,30 +42,43 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   
   const teamAPlayers = formatPlayers(teamAKey === 'home' ? homePlayers : awayPlayers);
   const teamBPlayers = formatPlayers(teamBKey === 'home' ? homePlayers : awayPlayers);
-  const teamAName = teamAKey === 'home' ? homeTeam?.name || 'Home' : awayTeam?.name || 'Away';
-  const teamBName = teamBKey === 'home' ? homeTeam?.name || 'Home' : awayTeam?.name || 'Away';
+  
+  // Use full team names
+  const teamAName = (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || (teamAKey === 'home' ? 'Home' : 'Away');
+  const teamBName = (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || (teamBKey === 'home' ? 'Home' : 'Away');
+  
+  // Use short names for set labels and rosters
+  const teamAShortName = (teamAKey === 'home' ? match?.homeShortName : match?.awayShortName) || teamAName;
+  const teamBShortName = (teamBKey === 'home' ? match?.homeShortName : match?.awayShortName) || teamBName;
   
   // Helper function to get set data from events and sets
   const getSetData = (setNumber: number, isSwapped: boolean = false) => {
     const setInfo = sets?.find(s => s.index === setNumber);
-    if (!setInfo) return null;
     
-    // TODO: Parse events to get lineups, subs, timeouts, etc.
-    // For now, return basic structure with actual points
-    const leftPoints = !isSwapped 
-      ? (teamAKey === 'home' ? setInfo.homePoints : setInfo.awayPoints)
-      : (teamBKey === 'home' ? setInfo.homePoints : setInfo.awayPoints);
-    const rightPoints = !isSwapped
-      ? (teamBKey === 'home' ? setInfo.homePoints : setInfo.awayPoints)
-      : (teamAKey === 'home' ? setInfo.homePoints : setInfo.awayPoints);
+    // Check if set has been played (has points or startTime)
+    const hasBeenPlayed = setInfo && (setInfo.homePoints > 0 || setInfo.awayPoints > 0 || setInfo.startTime);
+    
+    // Only calculate points if set has been played
+    let leftPoints = 0;
+    let rightPoints = 0;
+    
+    if (hasBeenPlayed) {
+      leftPoints = !isSwapped 
+        ? (teamAKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0))
+        : (teamBKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0));
+      
+      rightPoints = !isSwapped
+        ? (teamBKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0))
+        : (teamAKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0));
+    }
     
     return {
-      startTime: setInfo.startTime ? new Date(setInfo.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : '',
-      endTime: setInfo.endTime ? new Date(setInfo.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : '',
+      startTime: hasBeenPlayed && setInfo?.startTime ? new Date(setInfo.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : '',
+      endTime: hasBeenPlayed && setInfo?.endTime ? new Date(setInfo.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : '',
       leftLineup: [],
       rightLineup: [],
-      leftPoints: leftPoints || 0,
-      rightPoints: rightPoints || 0,
+      leftPoints,
+      rightPoints,
       leftTimeouts: ['', ''] as [string, string],
       rightTimeouts: ['', ''] as [string, string],
       leftSubs: [[], [], [], [], [], []],
@@ -73,6 +86,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     };
   };
 
+  // Always get data for all sets (will be empty if not played)
   const set1Data = getSetData(1, false);
   const set2Data = getSetData(2, true);
   const set3Data = getSetData(3, false);
@@ -102,76 +116,73 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         </div>
 
         <div className="flex flex-col gap-1">
-            <Header />
+            <Header 
+              match={match}
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              teamAName={teamAName}
+              teamBName={teamBName}
+            />
             
-            {/* Grid Layout: Sets 1-4 */}
+            {/* Grid Layout: Sets 1-4 - Always show all sets */}
             <div className="grid grid-cols-2 gap-2">
-                {set1Data && (
-                  <div>
-                      <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 1</h3>
-                      <StandardSet 
-                          setNumber={1} 
-                          teamNameLeft={`Team A (${teamAName})`}
-                          teamNameRight={`Team B (${teamBName})`}
-                          {...set1Data}
-                      />
-                  </div>
-                )}
-                {set2Data && (
-                  <div>
-                      <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 2</h3>
-                      <StandardSet 
-                          setNumber={2} 
-                          isSwapped={true} 
-                          teamNameLeft={`Team A (${teamAName})`}
-                          teamNameRight={`Team B (${teamBName})`}
-                          {...set2Data}
-                      />
-                  </div>
-                )}
-                {set3Data && (
-                  <div>
-                      <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 3</h3>
-                      <StandardSet 
-                          setNumber={3} 
-                          teamNameLeft={`Team A (${teamAName})`}
-                          teamNameRight={`Team B (${teamBName})`}
-                          {...set3Data}
-                      />
-                  </div>
-                )}
-                {set4Data && (
-                  <div>
-                      <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 4</h3>
-                      <StandardSet 
-                          setNumber={4} 
-                          isSwapped={true} 
-                          teamNameLeft={`Team A (${teamAName})`}
-                          teamNameRight={`Team B (${teamBName})`}
-                          {...set4Data}
-                      />
-                  </div>
-                )}
+                <div>
+                    <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 1</h3>
+                    <StandardSet 
+                        setNumber={1} 
+                        teamNameLeft={teamAShortName}
+                        teamNameRight={teamBShortName}
+                        firstServeTeamA={match?.coinTossServeA}
+                        {...set1Data}
+                    />
+                </div>
+                <div>
+                    <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 2</h3>
+                    <StandardSet 
+                        setNumber={2} 
+                        isSwapped={true} 
+                        teamNameLeft=""
+                        teamNameRight=""
+                        {...set2Data}
+                    />
+                </div>
+                <div>
+                    <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 3</h3>
+                    <StandardSet 
+                        setNumber={3} 
+                        teamNameLeft=""
+                        teamNameRight=""
+                        {...set3Data}
+                    />
+                </div>
+                <div>
+                    <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 4</h3>
+                    <StandardSet 
+                        setNumber={4} 
+                        isSwapped={true} 
+                        teamNameLeft=""
+                        teamNameRight=""
+                        {...set4Data}
+                    />
+                </div>
             </div>
 
             {/* Bottom Section: Split into Set 5/Footer area and Rosters */}
             <div className="flex items-stretch gap-2 mt-1">
                 {/* LEFT COLUMN: Set 5 + Footer Grid (~70% width) */}
                 <div className="w-[70%] flex flex-col gap-2 shrink-0">
-                    {/* Set 5 */}
-                    {set5Data && (
-                      <div>
-                          <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 5</h3>
-                          <SetFive 
-                              teamNameA={`Team A (${teamAName})`}
-                              teamNameB={`Team B (${teamBName})`}
-                              pointsA_Left={teamAKey === 'home' ? (set5Data.homePoints || 0) : (set5Data.awayPoints || 0)}
-                              pointsB={teamBKey === 'home' ? (set5Data.homePoints || 0) : (set5Data.awayPoints || 0)}
-                              pointsA_Right={0}
-                              pointsAtChange="8"
-                          />
-                      </div>
-                    )}
+                    {/* Set 5 - Always show */}
+                    <div>
+                        <h3 className="font-black text-sm mb-0.5 text-center uppercase tracking-widest">Set 5</h3>
+                        <SetFive 
+                            teamNameA=""
+                            teamNameB=""
+                            pointsA_Left={(set5Data && (set5Data.homePoints > 0 || set5Data.awayPoints > 0 || set5Data.startTime)) ? (teamAKey === 'home' ? (set5Data.homePoints || 0) : (set5Data.awayPoints || 0)) : 0}
+                            pointsB={(set5Data && (set5Data.homePoints > 0 || set5Data.awayPoints > 0 || set5Data.startTime)) ? (teamBKey === 'home' ? (set5Data.homePoints || 0) : (set5Data.awayPoints || 0)) : 0}
+                            pointsA_Right={0}
+                            pointsAtChange="8"
+                        />
+                    </div>
                     
                     {/* Footer Grid: Sanctions Left, Right Block (Remarks|Results over Approval) */}
                     <div className="flex gap-2 flex-1 min-h-[300px]">
@@ -204,10 +215,20 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                 <div className="flex-1 flex flex-col min-w-0">
                     <div className="flex flex-row gap-1 h-[75%]">
                         <div className="flex-1 min-w-0 h-full">
-                            <Roster team={teamAName} side="A" players={teamAPlayers} />
+                            <Roster 
+                              team={teamAShortName} 
+                              side="A" 
+                              players={teamAPlayers}
+                              benchStaff={teamAKey === 'home' ? match?.bench_home : match?.bench_away}
+                            />
                         </div>
                         <div className="flex-1 min-w-0 h-full">
-                            <Roster team={teamBName} side="B" players={teamBPlayers} />
+                            <Roster 
+                              team={teamBShortName} 
+                              side="B" 
+                              players={teamBPlayers}
+                              benchStaff={teamBKey === 'home' ? match?.bench_home : match?.bench_away}
+                            />
                         </div>
                     </div>
                 </div>
