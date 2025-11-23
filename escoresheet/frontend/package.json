@@ -14,7 +14,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "@supabase/supabase-js": "^2.45.0",
-    "dexie-react-hooks": "^1.1.7"
+    "dexie-react-hooks": "^1.1.7",
+    "pdfjs-dist": "^3.11.174",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "vite": "^5.4.11",
