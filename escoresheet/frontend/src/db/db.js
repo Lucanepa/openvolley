@@ -103,4 +103,23 @@ db.version(8).stores({
   scorers: '++id,seedKey,lastName,createdAt'
 })
 
+// Version 9: Add homeTeamPin and awayTeamPin to matches
+db.version(9).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add team PIN fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homeTeamPin) match.homeTeamPin = null
+    if (!match.awayTeamPin) match.awayTeamPin = null
+  })
+})
+
 

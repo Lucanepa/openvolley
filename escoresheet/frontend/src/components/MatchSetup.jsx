@@ -795,6 +795,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       game_n: gameN ? Number(gameN) : null,
       league,
       refereePin: generatePinCode(),
+      homeTeamPin: generatePinCode(),
+      awayTeamPin: generatePinCode(),
       officials: [
         { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
         { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
