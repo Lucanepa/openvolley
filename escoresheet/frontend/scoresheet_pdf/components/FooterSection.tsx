@@ -176,15 +176,15 @@ export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShor
             
             {/* Set Start/End/Duration Row - spans full width */}
             <div className="border-t-' border-black grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm' }}>
-                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Set Start</div>
+                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Match Start</div>
                 <div className="border-r border-black flex items-center justify-center">
                     <div className="w-full text-center text-[8px] font-bold bg-white"></div>
                 </div>
-                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Set End</div>
+                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Match End</div>
                 <div className="border-r border-black flex items-center justify-center">
                     <div className="w-full text-center text-[8px] font-bold bg-white"></div>
                 </div>
-                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Set Duration</div>
+                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Match Duration</div>
                 <div className="flex items-center justify-center">
                     <div className="w-full text-center text-[8px] font-bold bg-white"></div>
                 </div>

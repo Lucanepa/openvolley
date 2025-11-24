@@ -24,8 +24,13 @@ export async function parseRosterPdf(file) {
       fullText += pageText + '\n'
     }
 
+    console.log('[parseRosterPdf] Extracted text (first 2000 chars):', fullText.substring(0, 2000))
+    console.log('[parseRosterPdf] Full text length:', fullText.length)
+
     // Parse the text to extract player and official data
-    return parseRosterText(fullText)
+    const result = parseRosterText(fullText)
+    console.log('[parseRosterPdf] Parse result:', result)
+    return result
   } catch (error) {
     console.error('Error parsing PDF:', error)
     throw new Error(`Failed to parse PDF: ${error.message}. Please ensure pdfjs-dist is installed.`)
@@ -40,8 +45,12 @@ function parseRosterText(text) {
     ac2: null
   }
 
+  console.log('[parseRosterText] Raw text (first 1000 chars):', text.substring(0, 1000))
+
   // Normalize text - remove extra whitespace
   const normalizedText = text.replace(/\s+/g, ' ').trim()
+  
+  console.log('[parseRosterText] Normalized text (first 1000 chars):', normalizedText.substring(0, 1000))
   
   // Common patterns for different languages
   const patterns = {
@@ -104,19 +113,48 @@ function parseRosterText(text) {
       }
     }
 
-    // If no players found with regex, try a simpler line-by-line approach
+    // If no players found with regex, try Italian format and other patterns
     if (result.players.length === 0) {
-      const lines = text.split('\n').filter(line => line.trim().length > 0)
+      console.log('[parseRosterText] No players found with regex, trying Italian format and other patterns')
       
-      for (const line of lines) {
-        // Look for lines that start with a number followed by a name
-        const simpleMatch = line.match(/^(\d+)[.\s]+(.+?)\s+(\d{1,2}[./]\d{1,2}[./]\d{4})/)
-        if (simpleMatch) {
-          const number = parseInt(simpleMatch[1])
-          const nameParts = simpleMatch[2].trim().split(/\s+/)
-          const lastName = nameParts[nameParts.length - 1] || ''
-          const firstName = nameParts.slice(0, -1).join(' ') || ''
-          const dob = normalizeDate(simpleMatch[3].trim())
+      // Try Italian format: SV number (6 digits), First Name, Last Name, M/F, Date
+      // Pattern: 6-digit number, name, name, M/F, date (DD.MM.YYYY or DD/MM/YYYY)
+      // Example: "312307   Oscar   Bizard   M   29.10.2005"
+      // Use normalized text for consistent spacing
+      const italianPlayerPattern = /(\d{6})\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+[MF]\s+(\d{1,2}[./]\d{1,2}[./]\d{4})/gi
+      
+      let match
+      while ((match = italianPlayerPattern.exec(normalizedText)) !== null) {
+        const svNumber = match[1] // SV number (Swiss Volleyball registration number)
+        const firstName = match[2].trim()
+        const lastName = match[3].trim()
+        const dob = normalizeDate(match[4].trim())
+        
+        // Since player numbers aren't in the PDF, assign sequential numbers starting from 1
+        // Users can adjust these manually if needed
+        const playerNumber = result.players.length + 1
+        
+        console.log('[parseRosterText] Found Italian format player:', { svNumber, firstName, lastName, dob, playerNumber })
+        
+        result.players.push({
+          number: playerNumber,
+          firstName,
+          lastName,
+          dob
+        })
+      }
+      
+      // If still no players, try simpler patterns in the full text
+      if (result.players.length === 0) {
+        // Try pattern: number, firstname, lastname, M/F, date
+        const simplePattern = /(\d+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+[MF]\s+(\d{1,2}[./]\d{1,2}[./]\d{4})/gi
+        while ((match = simplePattern.exec(text)) !== null) {
+          const number = parseInt(match[1])
+          const firstName = match[2].trim()
+          const lastName = match[3].trim()
+          const dob = normalizeDate(match[4].trim())
+          
+          console.log('[parseRosterText] Found simple format player:', { number, firstName, lastName, dob })
           
           result.players.push({
             number,
@@ -125,6 +163,50 @@ function parseRosterText(text) {
             dob
           })
         }
+      }
+      
+      console.log('[parseRosterText] Total players found:', result.players.length)
+    }
+    
+    // Parse Italian coach format: "Allenatore: #52205 | Michelle Howald (1997)"
+    if (!result.coach) {
+      const italianCoachPattern = /Allenatore:\s*#\d+\s*\|\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s*\((\d{4})\)/i
+      const coachMatch = normalizedText.match(italianCoachPattern)
+      if (coachMatch) {
+        result.coach = {
+          firstName: coachMatch[1]?.trim() || '',
+          lastName: coachMatch[2]?.trim() || '',
+          dob: coachMatch[3] ? `01/01/${coachMatch[3]}` : '' // Year only, set to Jan 1
+        }
+        console.log('[parseRosterText] Found Italian coach:', result.coach)
+      }
+    }
+    
+    // Parse Italian assistant coach format: "1. Assistente allenatore: #90382 | Luca Canepa (1993)"
+    if (!result.ac1) {
+      const italianAc1Pattern = /1\.\s*Assistente\s+allenatore:\s*#\d+\s*\|\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s*\((\d{4})\)/i
+      const ac1Match = normalizedText.match(italianAc1Pattern)
+      if (ac1Match) {
+        result.ac1 = {
+          firstName: ac1Match[1]?.trim() || '',
+          lastName: ac1Match[2]?.trim() || '',
+          dob: ac1Match[3] ? `01/01/${ac1Match[3]}` : ''
+        }
+        console.log('[parseRosterText] Found Italian AC1:', result.ac1)
+      }
+    }
+    
+    // Parse Italian assistant coach 2
+    if (!result.ac2) {
+      const italianAc2Pattern = /2\.\s*Assistente\s+allenatore:\s*#\d+\s*\|\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s*\((\d{4})\)/i
+      const ac2Match = normalizedText.match(italianAc2Pattern)
+      if (ac2Match) {
+        result.ac2 = {
+          firstName: ac2Match[1]?.trim() || '',
+          lastName: ac2Match[2]?.trim() || '',
+          dob: ac2Match[3] ? `01/01/${ac2Match[3]}` : ''
+        }
+        console.log('[parseRosterText] Found Italian AC2:', result.ac2)
       }
     }
 
@@ -136,4 +218,3 @@ function normalizeDate(dateStr) {
   // Normalize date format to DD/MM/YYYY
   return dateStr.replace(/\./g, '/')
 }
-
