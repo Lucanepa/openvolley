@@ -106,9 +106,8 @@ export default function RosterSetup({ matchId, team, onBack }) {
   }
 
   const handlePdfUpload = async (file) => {
-    console.log('[RosterSetup] handlePdfUpload called with file:', file)
+    // Removed console.log('[RosterSetup] handlePdfUpload called with file:', file)
     if (!file) {
-      console.log('[RosterSetup] No file provided')
       return
     }
 
@@ -117,9 +116,7 @@ export default function RosterSetup({ matchId, team, onBack }) {
     setPdfFile(file)
 
     try {
-      console.log('[RosterSetup] Parsing PDF:', file.name)
       const parsedData = await parseRosterPdf(file)
-      console.log('[RosterSetup] Parsed data:', parsedData)
       
       // Replace all players with imported ones (overwrite mode)
       const mergedPlayers = parsedData.players.map(parsedPlayer => ({
@@ -132,7 +129,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
         isCaptain: false
       }))
       
-      console.log('[RosterSetup] Replaced', players.length, 'existing players with', mergedPlayers.length, 'imported players')
 
       // Replace all players with imported data
       setPlayers(mergedPlayers)
@@ -169,7 +165,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
       
       // Auto-save to database with overwrite mode
       if (teamId && matchId) {
-        console.log('[RosterSetup] Auto-saving imported data to database (overwrite mode)')
         // Save immediately with overwrite flag
         const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
         for (const ep of existingPlayers) {
@@ -197,8 +192,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
           [benchKey]: importedBenchOfficials
         })
         
-        console.log('[RosterSetup] Overwritten bench officials:', importedBenchOfficials.length, 'officials')
-        console.log('[RosterSetup] Imported data saved to database')
       }
       
       // Reset file input to allow re-uploading the same file
@@ -228,12 +221,9 @@ export default function RosterSetup({ matchId, team, onBack }) {
   }
 
   const handleImportClick = async () => {
-    console.log('[RosterSetup] Import button clicked, pdfFile:', pdfFile)
     if (pdfFile) {
-      console.log('[RosterSetup] Starting import for file:', pdfFile.name)
       await handlePdfUpload(pdfFile)
     } else {
-      console.log('[RosterSetup] No file selected')
       setError('Please select a PDF file first')
     }
   }
@@ -254,7 +244,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
         for (const ep of existingPlayers) {
           await db.players.delete(ep.id)
         }
-        console.log('[RosterSetup] Deleted all existing players for overwrite')
       } else {
         // Normal save: update existing, add new, delete removed
         const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
@@ -313,7 +302,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
             createdAt: new Date().toISOString()
           }))
         )
-        console.log('[RosterSetup] Added', players.length, 'players to database')
       }
 
       // Save bench officials - always overwrite completely
@@ -326,7 +314,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
           dob: o.dob
         }))
       })
-      console.log('[RosterSetup] Updated bench officials in database')
 
       alert('Roster saved successfully!')
     } catch (err) {
@@ -448,7 +435,6 @@ export default function RosterSetup({ matchId, team, onBack }) {
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  console.log('[RosterSetup] Import button onClick triggered')
                   handleImportClick()
                 }}
                 disabled={loading}
