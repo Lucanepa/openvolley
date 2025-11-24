@@ -313,7 +313,7 @@ export async function fillPdfForm(pdfDoc, matchData) {
   })
 
   // Fill player rosters
-  console.log('Filling player rosters...')
+  // Removed console.log('Filling player rosters...')
   
   // Helper to fill individual player fields
   function fillPlayerRoster(players, prefix, maxPlayers) {
@@ -373,7 +373,7 @@ export async function fillPdfForm(pdfDoc, matchData) {
         opacity: 1.0
       })
       
-      console.log(`✓ Circled captain number: ${numberText}`)
+      // Removed console.log(`✓ Circled captain number: ${numberText}`)
     } catch (error) {
       console.error(`Error circling number ${fieldName}:`, error)
     }
@@ -426,11 +426,11 @@ export async function fillPdfForm(pdfDoc, matchData) {
     setField(`home_roster_players${i}_number`, '- -')
     setField(`home_roster_players${i}_name`, '- -')
   }
-  console.log(`✓ Filled ${homePlayersFilled} home player fields, struck ${14 - homePlayers.length} empty rows`)
+  // Removed console.log(`✓ Filled ${homePlayersFilled} home player fields, struck ${14 - homePlayers.length} empty rows`)
   
   // Fill home team liberos (2 max)
   const homeLiberosFilled = fillLiberoRoster(homePlayers, 'home_roster_libero')
-  console.log(`✓ Filled ${homeLiberosFilled} home libero fields`)
+  // Removed console.log(`✓ Filled ${homeLiberosFilled} home libero fields`)
   
   // Fill away team players (14 max) - INCLUDE liberos in player roster
   const awayPlayersFilled = fillPlayerRoster(
@@ -445,14 +445,14 @@ export async function fillPdfForm(pdfDoc, matchData) {
     setField(`away_roster_players${i}_number`, '- -')
     setField(`away_roster_players${i}_name`, '- -')
   }
-  console.log(`✓ Filled ${awayPlayersFilled} away player fields, struck ${14 - awayPlayers.length} empty rows`)
+  // Removed console.log(`✓ Filled ${awayPlayersFilled} away player fields, struck ${14 - awayPlayers.length} empty rows`)
   
   // Fill away team liberos (2 max)
   const awayLiberosFilled = fillLiberoRoster(awayPlayers, 'away_roster_libero')
-  console.log(`✓ Filled ${awayLiberosFilled} away libero fields`)
+  // Removed console.log(`✓ Filled ${awayLiberosFilled} away libero fields`)
   
   // Fill Team A/B short names and lineups
-  console.log('Filling Team A/B data...')
+  // Removed console.log('Filling Team A/B data...')
   
   // Determine which team is A and which is B based on coin toss
   const coinTossTeamA = matchData.coinTossTeamA || matchData.match?.coinTossTeamA || 'home'
@@ -463,22 +463,22 @@ export async function fillPdfForm(pdfDoc, matchData) {
   const teamAShort = coinTossTeamA === 'home' ? matchData.homeShortName : matchData.awayShortName
   const teamBShort = coinTossTeamB === 'home' ? matchData.homeShortName : matchData.awayShortName
   
-  console.log(`Team A: ${coinTossTeamA}, Short: ${teamAShort}`)
-  console.log(`Team B: ${coinTossTeamB}, Short: ${teamBShort}`)
+  // Removed console.log(`Team A: ${coinTossTeamA}, Short: ${teamAShort}`)
+  // Removed console.log(`Team B: ${coinTossTeamB}, Short: ${teamBShort}`)
   
   const teamAShortFinal = teamAShort || teamAName?.substring(0, 3).toUpperCase() || ''
   const teamBShortFinal = teamBShort || teamBName?.substring(0, 3).toUpperCase() || ''
   
   if (setField('teamA_short', teamAShortFinal)) {
     fieldsSet++
-    console.log(`✓ Set teamA_short: ${teamAShortFinal}`)
+    // Removed console.log(`✓ Set teamA_short: ${teamAShortFinal}`)
   } else {
     console.warn('Failed to set teamA_short')
   }
   
   if (setField('teamB_short', teamBShortFinal)) {
     fieldsSet++
-    console.log(`✓ Set teamB_short: ${teamBShortFinal}`)
+    // Removed console.log(`✓ Set teamB_short: ${teamBShortFinal}`)
   } else {
     console.warn('Failed to set teamB_short')
   }
@@ -489,7 +489,7 @@ export async function fillPdfForm(pdfDoc, matchData) {
   
   if (setField('home_AB', homeIsA ? 'A' : 'B', null, { center: true })) {
     fieldsSet++
-    console.log(`✓ Set home_AB: ${homeIsA ? 'A' : 'B'} (centered)`)
+    // Removed console.log(`✓ Set home_AB: ${homeIsA ? 'A' : 'B'} (centered)`)
   } else {
     console.warn('Failed to set home_AB field')
   }
@@ -498,11 +498,11 @@ export async function fillPdfForm(pdfDoc, matchData) {
   // Fill both with the same value
   if (setField('away_AB_1', awayIsA ? 'A' : 'B', null, { center: true })) {
     fieldsSet++
-    console.log(`✓ Set away_AB_1: ${awayIsA ? 'A' : 'B'} (centered)`)
+    // Removed console.log(`✓ Set away_AB_1: ${awayIsA ? 'A' : 'B'} (centered)`)
   }
   if (setField('away_AB_2', awayIsA ? 'A' : 'B', null, { center: true })) {
     fieldsSet++
-    console.log(`✓ Set away_AB_2: ${awayIsA ? 'A' : 'B'} (centered)`)
+    // Removed console.log(`✓ Set away_AB_2: ${awayIsA ? 'A' : 'B'} (centered)`)
   }
   
   // Fill service/reception for set 1 (first serve determines this)
@@ -564,24 +564,24 @@ export async function fillPdfForm(pdfDoc, matchData) {
     }
   }
   
-  console.log(`✓ Filled Team A/B and lineup data`)
+  // Removed console.log(`✓ Filled Team A/B and lineup data`)
   
   // Add signatures as images
-  console.log('Adding signatures...')
-  console.log('Full matchData keys:', Object.keys(matchData))
-  console.log('Signature data check:', {
+  // Removed console.log('Adding signatures...')
+  // Removed console.log('Full matchData keys:', Object.keys(matchData))
+  // Removed console.log('Signature data check:', {
     homeCoach: !!matchData.homeCoachSignature,
     homeCaptain: !!matchData.homeCaptainSignature,
     awayCoach: !!matchData.awayCoachSignature,
     awayCaptain: !!matchData.awayCaptainSignature
   })
-  console.log('First 50 chars of homeCoachSignature:', matchData.homeCoachSignature?.substring(0, 50))
+  // Removed console.log('First 50 chars of homeCoachSignature:', matchData.homeCoachSignature?.substring(0, 50))
   
   // Helper to embed signature image
   async function embedSignature(signatureDataUrl, fieldName) {
-    console.log(`Attempting to embed signature for ${fieldName}...`)
+    // Removed console.log(`Attempting to embed signature for ${fieldName}...`)
     if (!signatureDataUrl) {
-      console.log(`No signature data for ${fieldName}`)
+      // Removed console.log(`No signature data for ${fieldName}`)
       return false
     }
     
@@ -636,8 +636,8 @@ export async function fillPdfForm(pdfDoc, matchData) {
         drawWidth = drawHeight * aspectRatio
       }
       
-      console.log(`Image: ${image.width}x${image.height}, Field: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`)
-      console.log(`Drawing: ${drawWidth.toFixed(1)}x${drawHeight.toFixed(1)} → after 90° rotation: ${drawHeight.toFixed(1)}w x ${drawWidth.toFixed(1)}h`)
+      // Removed console.log(`Image: ${image.width}x${image.height}, Field: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`)
+      // Removed console.log(`Drawing: ${drawWidth.toFixed(1)}x${drawHeight.toFixed(1)} → after 90° rotation: ${drawHeight.toFixed(1)}w x ${drawWidth.toFixed(1)}h`)
       
       // Center in field
       const centerX = rect.x + rect.width / 2
@@ -653,7 +653,7 @@ export async function fillPdfForm(pdfDoc, matchData) {
         opacity: 1.0
       })
       
-      console.log(`✓ Embedded signature: ${fieldName} (${drawWidth.toFixed(1)}x${drawHeight.toFixed(1)}, rotated 90°)`)
+      // Removed console.log(`✓ Embedded signature: ${fieldName} (${drawWidth.toFixed(1)}x${drawHeight.toFixed(1)}, rotated 90°)`)
       return true
     } catch (error) {
       console.error(`❌ Error embedding signature ${fieldName}:`, error.message)
@@ -676,9 +676,9 @@ export async function fillPdfForm(pdfDoc, matchData) {
     if (await embedSignature(matchData.awayCaptainSignature, 'away_captain_sign')) signaturesEmbedded++
   }
   
-  console.log(`✓ Embedded ${signaturesEmbedded} signatures`)
+  // Removed console.log(`✓ Embedded ${signaturesEmbedded} signatures`)
   
-  console.log(`✓ Filled ${fieldsSet} fields in PDF`)
+  // Removed console.log(`✓ Filled ${fieldsSet} fields in PDF`)
   
   return pdfDoc
 }

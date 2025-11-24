@@ -2,6 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { SubRecord } from '../types_scoresheet';
 
+interface ServiceRound {
+  position: number; // 0-5 for I-VI
+  box: number; // 1-6 for Set 5
+  ticked: boolean; // Has tick (4) when player starts serving
+  points: number | null; // Points scored when service lost (null if still serving)
+  rotation8: boolean; // Has "8" when opponent must rotate
+  circled: boolean; // Circled at end of set for last point
+}
+
 interface SetFiveProps {
     teamNameA?: string;
     teamNameB?: string;
@@ -14,6 +23,7 @@ interface SetFiveProps {
     timeoutsA?: [string, string];
     pointsA_Left?: number; // 1-8
     markedPointsA_Left?: number[];
+    serviceRoundsA_Left?: ServiceRound[];
 
     // Panel 2 (Middle B)
     lineupB?: string[];
@@ -21,11 +31,13 @@ interface SetFiveProps {
     timeoutsB?: [string, string];
     pointsB?: number; // 1-15
     markedPointsB?: number[];
+    serviceRoundsB?: ServiceRound[];
 
     // Panel 3 (Right A Swapped)
     // Lineup A is usually same as Panel 1, but conceptually we might want to pass it if it differs visually
     pointsA_Right?: number; // 1-15
     markedPointsA_Right?: number[];
+    serviceRoundsA_Right?: ServiceRound[];
     pointsAtChange?: string;
     
     // Ref for measuring position box width
@@ -69,7 +81,7 @@ const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2 }> = ({ num, fil
             )}
             {filledState === 2 && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="50" y1="0" x2="50" y2="100" stroke="black" strokeWidth="4" />
+                    <line x1="50" y1="-5" x2="50" y2="105" stroke="black" strokeWidth="4" strokeLinecap="butt" />
                  </svg>
             )}
         </div>
@@ -81,8 +93,9 @@ const TeamServiceGridSet5: React.FC<{
     lineup?: string[], 
     subs?: SubRecord[][], 
     startsReceiving?: boolean, 
-    positionBoxRef?: React.RefObject<HTMLDivElement> 
-}> = ({ lineup = [], subs = [], startsReceiving = false, positionBoxRef }) => {
+    positionBoxRef?: React.RefObject<HTMLDivElement>,
+    serviceRounds?: ServiceRound[]
+}> = ({ lineup = [], subs = [], startsReceiving = false, positionBoxRef, serviceRounds = [] }) => {
     const positions = [0, 1, 2, 3, 4, 5];
     
     // Set 5: 6 rotation boxes arranged in 2 columns × 3 rows
@@ -181,6 +194,12 @@ const TeamServiceGridSet5: React.FC<{
                                 {[1, 2, 3, 4, 5, 6].map((num, boxIdx) => {
                                     const showX = startsReceiving && colIdx === 0 && num === 1;
                                     
+                                    // Find service round data for this position and box
+                                    const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
+                                    const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
+                                    const hasRotation8 = serviceRound?.rotation8 || false;
+                                    const isCircled = serviceRound?.circled || false;
+                                    
                                     return (
                                         <div 
                                             key={num} 
@@ -196,6 +215,24 @@ const TeamServiceGridSet5: React.FC<{
                                                     <line x1="80" y1="20" x2="20" y2="80" stroke="black" strokeWidth="8" />
                                                 </svg>
                                             )}
+                                            {/* Points scored when service lost - but not if this is the initial X box */}
+                                            {hasPoints && serviceRound && !showX && (
+                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
+                                                    {serviceRound.points}
+                                                </span>
+                                            )}
+                                            {/* Rotation "8" when opponent must rotate - but not if this is the initial X box */}
+                                            {hasRotation8 && !showX && (
+                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
+                                                    8
+                                                </span>
+                                            )}
+                                            {/* Circle for last point at end of set */}
+                                            {isCircled && (
+                                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                                                    <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="3" />
+                                                </svg>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -208,7 +245,7 @@ const TeamServiceGridSet5: React.FC<{
     );
 };
 
-const PointsColumn5: React.FC<{ currentScore?: number, timeouts?: [string, string], markedPoints?: number[] }> = ({ currentScore = 0, timeouts = ["", ""], markedPoints = [] }) => {
+const PointsColumn5: React.FC<{ currentScore?: number, timeouts?: [string, string], markedPoints?: number[], isSetFinished?: boolean }> = ({ currentScore = 0, timeouts = ["", ""], markedPoints = [], isSetFinished = false }) => {
     return (
         <div className="flex flex-col shrink-0" style={{ width: '15mm', height: '3.5cm' }}>
             <div className="grid grid-cols-3 bg-white border-black shrink-0" style={{ height: '2.48cm' }}>
@@ -216,7 +253,17 @@ const PointsColumn5: React.FC<{ currentScore?: number, timeouts?: [string, strin
                 <div className="flex flex-col h-full">
                     {Array.from({ length: 8 }).map((_, i) => {
                         const num = i + 1;
-                        const state = markedPoints.includes(num) ? 1 : 0;
+                        let state: 0 | 1 | 2 = 0;
+                        if (markedPoints.includes(num)) {
+                            state = 1; // Slashed (scored)
+                        } else if (isSetFinished) {
+                            // Find the maximum marked point
+                            const maxMarkedPoint = markedPoints.length > 0 ? Math.max(...markedPoints) : 0;
+                            // All points after the last marked point should be cancelled
+                            if (num > maxMarkedPoint) {
+                                state = 2; // Vertical bar (cancelled - not scored)
+                            }
+                        }
                         return <PointBox key={i} num={num} filledState={state} />;
                     })}
                 </div>
@@ -234,7 +281,7 @@ const PointsColumn5: React.FC<{ currentScore?: number, timeouts?: [string, strin
     );
 };
 
-const PointsColumn30: React.FC<{ isLast?: boolean, currentScore?: number, timeouts?: [string, string], markedPoints?: number[] }> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [] }) => {
+const PointsColumn30: React.FC<{ isLast?: boolean, currentScore?: number, timeouts?: [string, string], markedPoints?: number[], isSetFinished?: boolean }> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [], isSetFinished = false }) => {
     return (
         <div className={`flex flex-col shrink-0 ${isLast ? '' : 'border-l-0 border-black'}`} style={{ width: '15mm', height: '3.5cm' }}>
             <div className="grid grid-cols-3 bg-white border-b border-black shrink-0" style={{ height: '2.5cm' }}>
@@ -242,7 +289,17 @@ const PointsColumn30: React.FC<{ isLast?: boolean, currentScore?: number, timeou
                     <div key={offset} className="flex flex-col border-l first:border-l-0 border-black border-t-0 h-full">
                         {Array.from({ length: 10 }).map((_, i) => {
                              const num = offset + i + 1;
-                             const state = markedPoints.includes(num) ? 1 : 0;
+                             let state: 0 | 1 | 2 = 0;
+                             if (markedPoints.includes(num)) {
+                                 state = 1; // Slashed (scored)
+                             } else if (isSetFinished) {
+                                 // Find the maximum marked point
+                                 const maxMarkedPoint = markedPoints.length > 0 ? Math.max(...markedPoints) : 0;
+                                 // All points after the last marked point should be cancelled
+                                 if (num > maxMarkedPoint) {
+                                     state = 2; // Vertical bar (cancelled - not scored)
+                                 }
+                             }
                              return <PointBox key={i} num={num} filledState={state} />
                         })}
                     </div>
@@ -269,13 +326,16 @@ export const SetFive: React.FC<SetFiveProps> = ({
     timeoutsA,
     pointsA_Left,
     markedPointsA_Left = [],
+    serviceRoundsA_Left = [],
     lineupB,
     subsB,
     timeoutsB,
     pointsB,
     markedPointsB = [],
+    serviceRoundsB = [],
     pointsA_Right,
     markedPointsA_Right = [],
+    serviceRoundsA_Right = [],
     pointsAtChange,
     positionBoxRef
 }) => {
@@ -348,20 +408,20 @@ export const SetFive: React.FC<SetFiveProps> = ({
        <div className="flex justify-start shrink-0" style={{ width: '229mm', height: '4cm' }}>
             {/* Panel 1: Team A */}
             <div className="flex border border-black border-l-0 border-r-0 border-b-0 shrink-0" style={{ width: '75mm' }}>
-                 <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={false} positionBoxRef={positionBoxRef} />
-                 <PointsColumn5 currentScore={pointsA_Left} timeouts={timeoutsA} markedPoints={markedPointsA_Left} />
+                 <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
+                 <PointsColumn5 currentScore={pointsA_Left} timeouts={timeoutsA} markedPoints={markedPointsA_Left} isSetFinished={!!endTime} />
             </div>
 
             {/* Panel 2: Team B */}
             <div className="flex border border-black border-r-0 border-b-0 shrink-0" style={{ width: '75mm' }}>
-                 <TeamServiceGridSet5 lineup={lineupB} subs={subsB} startsReceiving={false} />
-                 <PointsColumn30 currentScore={pointsB} timeouts={timeoutsB} markedPoints={markedPointsB} />
+                 <TeamServiceGridSet5 lineup={lineupB} subs={subsB} startsReceiving={false} serviceRounds={serviceRoundsB} />
+                 <PointsColumn30 currentScore={pointsB} timeouts={timeoutsB} markedPoints={markedPointsB} isSetFinished={!!endTime} />
             </div>
 
             {/* Panel 3: Team A (Swapped) */}
             <div className="flex border border-black border-l-0 border-r-0 border-b-0 shrink-0" style={{ width: '76mm', marginLeft: '3mm' }}>
-                 <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={false} />
-                 <PointsColumn30 isLast={true} currentScore={pointsA_Right} timeouts={timeoutsA} markedPoints={markedPointsA_Right} />
+                 <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={false} serviceRounds={serviceRoundsA_Right} />
+                 <PointsColumn30 isLast={true} currentScore={pointsA_Right} timeouts={timeoutsA} markedPoints={markedPointsA_Right} isSetFinished={!!endTime} />
             </div>
        </div>
     </div>

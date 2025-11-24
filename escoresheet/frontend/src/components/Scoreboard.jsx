@@ -30,6 +30,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
   const [setEndModal, setSetEndModal] = useState(null) // { set, homePoints, awayPoints } | null
+  const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
   const [exceptionalSubstitutionModal, setExceptionalSubstitutionModal] = useState(null) // { team: 'home'|'away', position: string, playerOut: number, reason: 'expulsion'|'disqualification'|'injury' } | null
   const [substitutionDropdown, setSubstitutionDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, isInjury?: boolean } | null
   const [substitutionConfirm, setSubstitutionConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number, isInjury?: boolean, isExceptional?: boolean, isExpelled?: boolean, isDisqualified?: boolean } | null
@@ -224,14 +225,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const leftIsHome = useMemo(() => {
     if (!data?.set) return true
     
-      // Set 1: Team A on left
+    // Set 1: Team A on left
     if (data.set.index === 1) {
       return teamAKey === 'home'
     } 
     
     // Set 5: Special case with court switch at 8 points
     if (data.set.index === 5) {
-      // Use set5LeftTeam if specified, otherwise default to teams switched (like set 2+)
+      // Use set5LeftTeam if specified, otherwise default to teams switched (like set 2)
       if (data.match?.set5LeftTeam) {
         const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
         let isHome = leftTeamKey === 'home'
@@ -244,7 +245,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return isHome
       }
       
-      // Fallback: Set 5 starts with teams switched (like set 2+)
+      // Fallback: Set 5 starts with teams switched (like set 2)
       let isHome = teamAKey !== 'home'
       
       // If court switch has happened at 8 points, switch again
@@ -255,8 +256,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return isHome
     }
     
-    // Set 2, 3, 4: Teams switch sides (Team A goes right, Team B goes left)
-    return teamAKey !== 'home'
+    // Sets 2, 3, 4: Teams alternate sides
+    // Set 1: Team A left, Team B right
+    // Set 2: Team A right, Team B left (switched)
+    // Set 3: Team A left, Team B right (switched back - same as Set 1)
+    // Set 4: Team A right, Team B left (switched - same as Set 2)
+    // Pattern: odd sets (1, 3) have Team A on left, even sets (2, 4) have Team A on right
+    return data.set.index % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
   }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, teamAKey])
 
   // Calculate set score (number of sets won by each team)
@@ -473,14 +479,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       .map(num => Number(num))
       .filter(num => !Number.isNaN(num) && num !== 0)
     
-    // Debug logging
-    console.log('GET_TEAM_LINEUP_STATE DEBUG:', {
-      teamKey,
-      setIndex: data?.set?.index,
-      cleanedCurrentLineup,
-      playersOnCourt,
-      lineupEventsCount: lineupEvents.length
-    })
 
     const positionLiberoMap = {}
     const playerLiberoMap = {}
@@ -733,14 +731,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const { playersOnCourt, playerLiberoMap } = getTeamLineupState(teamKey)
     const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
     
-    // Debug logging
-    console.log('LEFT TEAM BENCH DEBUG:', {
-      teamKey,
-      totalPlayers: players?.length || 0,
-      playersOnCourt,
-      playersOnCourtSet: Array.from(playersOnCourtSet),
-      allPlayerNumbers: players?.map(p => ({ number: p.number, libero: p.libero })) || []
-    })
 
     const benchPlayers = players
       .filter(p => {
@@ -794,14 +784,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const { playersOnCourt, playerLiberoMap } = getTeamLineupState(teamKey)
     const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
     
-    // Debug logging
-    console.log('RIGHT TEAM BENCH DEBUG:', {
-      teamKey,
-      totalPlayers: players?.length || 0,
-      playersOnCourt,
-      playersOnCourtSet: Array.from(playersOnCourtSet),
-      allPlayerNumbers: players?.map(p => ({ number: p.number, libero: p.libero })) || []
-    })
 
     const benchPlayers = players
       .filter(p => {
@@ -896,7 +878,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             referees: allReferees,
             scorers: allScorers
           })
-          console.log('PDF generated successfully!')
         } catch (error) {
           console.error('Error generating PDF:', error)
         }
@@ -923,7 +904,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }
           
           // Log to console
-          console.log('Match Data JSON:', JSON.stringify(matchData, null, 2))
           
           // Also download as file
           const blob = new Blob([JSON.stringify(matchData, null, 2)], { type: 'application/json' })
@@ -936,8 +916,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           document.body.removeChild(a)
           URL.revokeObjectURL(url)
           
-          console.log('Match data exported and downloaded!')
-          console.log('You can now use this JSON in test-fill-from-json.html')
         } catch (error) {
           console.error('Error exporting match data:', error)
         }
@@ -968,9 +946,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             officials: match.officials || []
           }
 
-          console.log('Generating fillable PDF with data:', fillableData)
           await generateFillablePdf(fillableData)
-          console.log('✓ Fillable PDF generated successfully!')
         } catch (error) {
           console.error('Error generating fillable PDF:', error)
         }
@@ -5348,7 +5324,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 
                 if (!scoresheetWindow) {
                   alert('Please allow popups to view the scoresheet')
+                  return
                 }
+                
+                // Set up error listener for scoresheet window
+                const errorListener = (event) => {
+                  // Only accept messages from the scoresheet window
+                  if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                    setScoresheetErrorModal({
+                      error: event.data.error || 'Unknown error',
+                      details: event.data.details || event.data.stack || ''
+                    })
+                    window.removeEventListener('message', errorListener)
+                  }
+                }
+                
+                window.addEventListener('message', errorListener)
+                
+                // Clean up listener after 30 seconds (scoresheet should load by then)
+                setTimeout(() => {
+                  window.removeEventListener('message', errorListener)
+                }, 30000)
               } catch (error) {
                 console.error('Error opening scoresheet:', error)
                 alert('Error opening scoresheet: ' + error.message)
@@ -5360,6 +5356,59 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </button>
         </div>
       </div>
+
+      {/* Scoresheet Error Modal */}
+      {scoresheetErrorModal && (
+        <Modal
+          title="Scoresheet Error"
+          open={!!scoresheetErrorModal}
+          onClose={() => setScoresheetErrorModal(null)}
+        >
+          <div style={{ padding: '20px' }}>
+            <div style={{ 
+              color: '#ef4444', 
+              fontSize: '16px', 
+              fontWeight: 600, 
+              marginBottom: '12px' 
+            }}>
+              {scoresheetErrorModal.error}
+            </div>
+            {scoresheetErrorModal.details && (
+              <div style={{ 
+                marginTop: '12px',
+                padding: '12px',
+                background: '#1e293b',
+                borderRadius: '6px',
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                color: '#cbd5e1',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: '400px',
+                overflow: 'auto'
+              }}>
+                {scoresheetErrorModal.details}
+              </div>
+            )}
+            <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setScoresheetErrorModal(null)}
+                style={{
+                  padding: '8px 16px',
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Rosters Modal */}
       {showRosters && (
@@ -5837,6 +5886,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const wasSubstitutedOut = substitutions.some(s => String(s.payload?.playerOut) === String(player.number))
                     const waitingForPoint = wasSubstitutedOut && !canComeBack && !hasComeBack
                     
+                    // Find which player on court this bench player replaced (if they were substituted in)
+                    const substitutionWherePlayerIn = substitutions
+                      .filter(s => String(s.payload?.playerIn) === String(player.number))
+                      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
+                    const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
+                    
                     // Check if player is expelled in this set (cannot enter until next set)
                     const isExpelledInSet = data.events?.some(e => 
                       e.type === 'sanction' && 
@@ -5958,11 +6013,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               display: 'flex',
                               flexDirection: 'row',
                               alignItems: 'center',
-                              gap: '1px',
+                              gap: '2px',
                               background: 'rgba(15, 23, 42, 0.95)',
-                              padding: '1px 2px',
+                              padding: '1px 3px',
                               borderRadius: '2px',
-                              minWidth: '14px',
                               minHeight: '12px',
                               justifyContent: 'center',
                               border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -5971,6 +6025,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           >
                             <span style={{ color: '#22c55e', fontWeight: 900 }}>↑</span>
                             <span style={{ color: '#ef4444', fontWeight: 900 }}>↓</span>
+                            {playerOnCourtReplaced && (
+                              <span style={{ 
+                                color: 'rgba(255, 255, 255, 0.8)', 
+                                fontSize: '8px', 
+                                fontWeight: 600,
+                                marginLeft: '2px'
+                              }}>
+                                {playerOnCourtReplaced}
+                              </span>
+                            )}
                           </span>
                         )}
                         {sanctions.length > 0 && (
@@ -6419,40 +6483,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             e.currentTarget.style.boxShadow = 'none'
                         }}
                       >
-                        {player.substitutedPlayerNumber && (
-                          <span style={{
+                        <span className="court-player-position">{player.position}</span>
+                        {/* Bottom-left indicators: Captain C */}
+                        {player.isCaptain && (
+                          <div style={{
                             position: 'absolute',
-                            top: '-8px',
-                            right: '-8px',
-                            width: '18px',
-                            height: '18px',
-                            background: '#FFF8E7',
-                            border: '2px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '4px',
+                            bottom: '-8px',
+                            left: '-8px',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: '#000',
-                            zIndex: 6
+                            gap: '2px',
+                            zIndex: 5
                           }}>
-                            {player.substitutedPlayerNumber}
-                          </span>
+                            {(() => {
+                              if (player.isLibero) {
+                                const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                                const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                                return (
+                                  <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                                )
+                              }
+                              return <span className="court-player-captain">C</span>
+                            })()}
+                          </div>
                         )}
-                        <span className="court-player-position">{player.position}</span>
-                        {player.isCaptain && (() => {
-                          if (player.isLibero) {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                            return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                            )
-                          }
-                          return <span className="court-player-captain">C</span>
-                        })()}
-                        {/* Libero indicator (bottom-left) */}
+                        {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
@@ -6588,41 +6644,46 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             }}
                           />
                         )}
-                        {player.substitutedPlayerNumber && (
-                          <span style={{
-                            position: 'absolute',
-                            top: '-8px',
-                            right: '-8px',
-                            width: '18px',
-                            height: '18px',
-                            background: '#FFF8E7',
-                            border: '2px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: '#000',
-                            zIndex: 6
-                          }}>
-                            {player.substitutedPlayerNumber}
-                          </span>
-                        )}
                         <span className="court-player-position">{player.position}</span>
-                        {player.isCaptain && (() => {
-                          if (player.isLibero) {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                            return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                            )
-                          }
-                          return <span className="court-player-captain">C</span>
-                        })()}
-                        {/* Libero indicator (bottom-left) */}
-                        {player.isLibero && (() => {
+                        {/* Bottom-left indicators: Substituted player number (grey) and/or Captain C */}
+                        <div style={{
+                          position: 'absolute',
+                          bottom: '-8px',
+                          left: '-8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          zIndex: 5
+                        }}>
+                          {/* Substituted player number (grey) - only show if NOT libero substitution */}
+                          {player.substitutedPlayerNumber && !player.isLibero && (
+                            <span style={{
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              color: '#888',
+                              background: 'rgba(255, 255, 255, 0.3)',
+                              padding: '1px 3px',
+                              borderRadius: '2px',
+                              border: '1px solid rgba(255, 255, 255, 0.2)'
+                            }}>
+                              {player.substitutedPlayerNumber}
+                            </span>
+                          )}
+                          {/* Captain indicator */}
+                          {player.isCaptain && (() => {
+                            if (player.isLibero) {
+                              const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                              const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                              const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                              return (
+                                <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                              )
+                            }
+                            return <span className="court-player-captain">C</span>
+                          })()}
+                        </div>
+                        {/* Libero indicator (bottom-left) - only if not captain and not substituted */}
+                        {player.isLibero && !player.isCaptain && !player.substitutedPlayerNumber && (() => {
                           const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
                           const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
@@ -6740,40 +6801,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             e.currentTarget.style.boxShadow = 'none'
                         }}
                       >
-                        {player.substitutedPlayerNumber && (
-                          <span style={{
+                        <span className="court-player-position">{player.position}</span>
+                        {/* Bottom-left indicators: Captain C */}
+                        {player.isCaptain && (
+                          <div style={{
                             position: 'absolute',
-                            top: '-8px',
-                            right: '-8px',
-                            width: '18px',
-                            height: '18px',
-                            background: '#FFF8E7',
-                            border: '2px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '4px',
+                            bottom: '-8px',
+                            left: '-8px',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: '#000',
-                            zIndex: 6
+                            gap: '2px',
+                            zIndex: 5
                           }}>
-                            {player.substitutedPlayerNumber}
-                          </span>
+                            {(() => {
+                              if (player.isLibero) {
+                                const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                                const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                                return (
+                                  <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                                )
+                              }
+                              return <span className="court-player-captain">C</span>
+                            })()}
+                          </div>
                         )}
-                        <span className="court-player-position">{player.position}</span>
-                        {player.isCaptain && (() => {
-                          if (player.isLibero) {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                            return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                            )
-                          }
-                          return <span className="court-player-captain">C</span>
-                        })()}
-                        {/* Libero indicator (bottom-left) */}
+                        {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
@@ -7238,6 +7291,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const wasSubstitutedOut = substitutions.some(s => String(s.payload?.playerOut) === String(player.number))
                     const waitingForPoint = wasSubstitutedOut && !canComeBack && !hasComeBack
                     
+                    // Find which player on court this bench player replaced (if they were substituted in)
+                    const substitutionWherePlayerIn = substitutions
+                      .filter(s => String(s.payload?.playerIn) === String(player.number))
+                      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
+                    const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
+                    
                     // Check if player is expelled in this set (cannot enter until next set)
                     const isExpelledInSet = data.events?.some(e => 
                       e.type === 'sanction' && 
@@ -7359,11 +7418,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               display: 'flex',
                               flexDirection: 'row',
                               alignItems: 'center',
-                              gap: '1px',
+                              gap: '2px',
                               background: 'rgba(15, 23, 42, 0.95)',
-                              padding: '1px 2px',
+                              padding: '1px 3px',
                               borderRadius: '2px',
-                              minWidth: '14px',
                               minHeight: '12px',
                               justifyContent: 'center',
                               border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -7372,6 +7430,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           >
                             <span style={{ color: '#22c55e', fontWeight: 900 }}>↑</span>
                             <span style={{ color: '#ef4444', fontWeight: 900 }}>↓</span>
+                            {playerOnCourtReplaced && (
+                              <span style={{ 
+                                color: 'rgba(255, 255, 255, 0.8)', 
+                                fontSize: '8px', 
+                                fontWeight: 600,
+                                marginLeft: '2px'
+                              }}>
+                                {playerOnCourtReplaced}
+                              </span>
+                            )}
                           </span>
                         )}
                         {sanctions.length > 0 && (
@@ -11386,7 +11454,6 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   seq: maxSeq + 2 + pendingPenalties.indexOf(penalty)
                 })
                 
-                console.log(`✓ Awarded penalty point to ${otherTeam} team after lineups were set`)
               }
             }
           }

@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { SubRecord } from '../types_scoresheet';
 
+interface ServiceRound {
+  position: number; // 0-5 for I-VI
+  box: number; // 1-8
+  ticked: boolean; // Has tick (4) when player starts serving
+  points: number | null; // Points scored when service lost (null if still serving)
+  rotation8: boolean; // Has "8" when opponent must rotate
+  circled: boolean; // Circled at end of set for last point
+}
+
 interface StandardSetProps {
   setNumber: number;
   isSwapped?: boolean;
@@ -17,6 +26,7 @@ interface StandardSetProps {
   leftTimeouts?: [string, string];
   leftPoints?: number;
   leftMarkedPoints?: number[];
+  leftServiceRounds?: ServiceRound[];
 
   // Right Team Data
   rightLineup?: string[];
@@ -24,6 +34,7 @@ interface StandardSetProps {
   rightTimeouts?: [string, string];
   rightPoints?: number;
   rightMarkedPoints?: number[];
+  rightServiceRounds?: ServiceRound[];
   
   // Ref for measuring position box width
   positionBoxRef?: React.RefObject<HTMLDivElement>;
@@ -38,17 +49,17 @@ export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2 }> = ({ n
             style={{ borderColor: '#000' }}
         >
             {/* Background Number */}
-            <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-50' : ''}`}>{num}</span>
+            <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-100' : ''}`}>{num}</span>
             
             {/* Overlays */}
             {filledState === 1 && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="4" />
+                    <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="15" />
                  </svg>
             )}
             {filledState === 2 && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="50" y1="0" x2="50" y2="100" stroke="black" strokeWidth="4" />
+                    <line x1="50" y1="-5" x2="50" y2="105" stroke="black" strokeWidth="15" strokeLinecap="butt" />
                  </svg>
             )}
         </div>
@@ -78,7 +89,14 @@ export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ 
 };
 
 // The 1-48 Point Column for a single team
-export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, timeouts?: [string, string], startsReceiving?: boolean, markedPoints?: number[] }> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [] }) => {
+export const PointsColumn: React.FC<{ 
+  isLast?: boolean, 
+  currentScore?: number, 
+  timeouts?: [string, string], 
+  startsReceiving?: boolean, 
+  markedPoints?: number[],
+  isSetFinished?: boolean
+}> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [], isSetFinished = false }) => {
     return (
         <div className={`flex flex-col h-full shrink-0 ${isLast ? '' : 'border-r border-black'}`} style={{ width: '15mm' }}>
             <div 
@@ -94,7 +112,18 @@ export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, t
                         {Array.from({ length: 12 }).map((_, i) => {
                             const num = offset + i + 1;
                             // Mark point if it's in the markedPoints array
-                            const state: 0 | 1 | 2 = markedPoints.includes(num) ? 1 : 0;
+                            // If set is finished, cancel (vertical bar) all unmarked points
+                            let state: 0 | 1 | 2 = 0;
+                            if (markedPoints.includes(num)) {
+                                state = 1; // Slashed (scored)
+                            } else if (isSetFinished) {
+                                // Find the maximum marked point
+                                const maxMarkedPoint = markedPoints.length > 0 ? Math.max(...markedPoints) : 0;
+                                // All points after the last marked point should be cancelled
+                                if (num > maxMarkedPoint) {
+                                    state = 2; // Vertical bar (cancelled - not scored)
+                                }
+                            }
                             return (
                                 <div 
                                     key={i} 
@@ -110,10 +139,30 @@ export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, t
             </div>
             {/* TO Boxes - Standardized Size */}
             <div className="bg-white flex flex-col items-center justify-start gap-1 border-l border-black py-1" style={{ height: '1.5cm' }}>
-                <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
+                <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>T</span>
                 <div className="flex flex-col w-full px-2 items-center" style={{ height: '1cm' }}>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center" style={{ height: '0.5cm' }}>{timeouts[0] || ":"}</div>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center" style={{ height: '0.5cm' }}>{timeouts[1] || ":"}</div>
+                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-1" style={{ height: '0.5cm' }}>
+                        {timeouts[0] ? (
+                            <>
+                                <span>{timeouts[0].split(':')[0]}</span>
+                                <span>:</span>
+                                <span>{timeouts[0].split(':')[1]}</span>
+                            </>
+                        ) : (
+                            <span>:</span>
+                        )}
+                    </div>
+                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-1" style={{ height: '0.5cm' }}>
+                        {timeouts[1] ? (
+                            <>
+                                <span>{timeouts[1].split(':')[0]}</span>
+                                <span>:</span>
+                                <span>{timeouts[1].split(':')[1]}</span>
+                            </>
+                        ) : (
+                            <span>:</span>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
@@ -121,7 +170,13 @@ export const PointsColumn: React.FC<{ isLast?: boolean, currentScore?: number, t
 };
 
 // TeamServiceGrid for Sets 1-4 (8 rotation boxes)
-export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][], startsReceiving?: boolean, positionBoxRef?: React.RefObject<HTMLDivElement> }> = ({ lineup = [], subs = [], startsReceiving = false, positionBoxRef }) => {
+export const TeamServiceGrid: React.FC<{ 
+  lineup?: string[], 
+  subs?: SubRecord[][], 
+  startsReceiving?: boolean, 
+  positionBoxRef?: React.RefObject<HTMLDivElement>,
+  serviceRounds?: ServiceRound[]
+}> = ({ lineup = [], subs = [], startsReceiving = false, positionBoxRef, serviceRounds = [] }) => {
     // Ensure we have 6 positions for rendering even if data is missing
     const positions = [0, 1, 2, 3, 4, 5];
     
@@ -135,7 +190,7 @@ export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][]
     const totalHeight = '4.5cm';
 
     return (
-        <div className="flex flex-col shrink-0" style={{ width: '60mm', height: totalHeight }}>
+        <div className="flex flex-col shrink-0 border-b" style={{ width: '60mm', height: totalHeight }}>
             {/* Roman Numerals Header */}
             <div className="flex border-b border-black shrink-0" style={{ height: '5mm' }}>
                 {['I', 'II', 'III', 'IV', 'V', 'VI'].map((roman, idx) => (
@@ -169,18 +224,40 @@ export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][]
 
                     return (
                         <div key={colIdx} className="border-r border-black last:border-none flex flex-col h-full" style={{ width: '10mm' }}>
-                            {/* Sub Player Number Row */}
+                            {/* Substitution Row - Only PlayerIn (PlayerOut is already in lineup row) */}
                             <div className="border-b border-black shrink-0 p-0.5 flex items-center justify-center" style={{ height: '0.5cm' }}>
-                                <div className="border-b border-gray-200 text-[10px] text-center font-bold">{sub1 ? sub1.playerIn : ''}</div>
+                                {sub1 ? (
+                                    <div className="text-[14px] text-center font-bold">
+                                        {sub1.playerIn}
+                                    </div>
+                                ) : (
+                                    <div className="text-[14px] text-center"></div>
+                                )}
                             </div>
-                            {/* Sub 1 Score */}
+                            {/* Sub 1 Score - upper box */}
                             <div className="border-b border-black flex items-center justify-center" style={{ height: '0.5cm' }}>
-                                <div className="text-[12px] text-center">{sub1 ? sub1.score : ':'}</div>
+                                {sub1 && sub1.score ? (
+                                    <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
+                                        <span>{sub1.score.split(':')[0]}</span>
+                                        <span>:</span>
+                                        <span>{sub1.score.split(':')[1]}</span>
+                                    </div>
+                                ) : (
+                                    <div className="text-[12px] text-center leading-tight">:</div>
+                                )}
                             </div>
                             
-                            {/* Sub 2 Score (Or Sub 2 Player if needed in a simpler sheet, usually represents score out) */}
-                            <div className="flex items-center justify-center bg-white border-b border-black" style={{ height: '0.5cm' }}>
-                                <div className="text-[12px] text-center">{sub2 ? sub2.score : ':'}</div>
+                            {/* Sub 2 Score - lower box (for return substitution) */}
+                            <div className="flex items-center border-b border-black justify-center bg-white" style={{ height: '0.5cm' }}>
+                                {sub2 && sub2.score ? (
+                                    <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
+                                        <span>{sub2.score.split(':')[0]}</span>
+                                        <span>:</span>
+                                        <span>{sub2.score.split(':')[1]}</span>
+                                    </div>
+                                ) : (
+                                    <div className="text-[12px] text-center leading-tight">:</div>
+                                )}
                             </div>
                         </div>
                     );
@@ -217,6 +294,12 @@ export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][]
                                 {rotationNumbers.map((num, boxIdx) => {
                                     const showX = startsReceiving && colIdx === 0 && num === 1;
                                     
+                                    // Find service round data for this position and box
+                                    const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
+                                    const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
+                                    const hasRotation8 = serviceRound?.rotation8 || false;
+                                    const isCircled = serviceRound?.circled || false;
+                                    
                                     // Calculate row position for horizontal borders
                                     const row = Math.floor(boxIdx / gridCols);
                                     const isLastRow = row === gridRows - 0;
@@ -239,7 +322,7 @@ export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][]
                                             className={boxClass}
                                             style={{
                                                 width: '5mm', 
-                                                height: '5mm',
+                                                height: '5.1mm',
                                             }}
                                         >
                                             <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
@@ -251,7 +334,24 @@ export const TeamServiceGrid: React.FC<{ lineup?: string[], subs?: SubRecord[][]
                                                     <line x1="80" y1="20" x2="20" y2="80" stroke="black" strokeWidth="8" />
                                                 </svg>
                                             )}
-                                            <div className="text-[8px] text-center"></div>
+                                            {/* Points scored when service lost - but not if this is the initial X box */}
+                                            {hasPoints && serviceRound && !showX && (
+                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
+                                                    {serviceRound.points}
+                                                </span>
+                                            )}
+                                            {/* Rotation "8" when opponent must rotate - but not if this is the initial X box */}
+                                            {hasRotation8 && !showX && (
+                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
+                                                    8
+                                                </span>
+                                            )}
+                                            {/* Circle for last point at end of set */}
+                                            {isCircled && (
+                                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                                                    <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="3" />
+                                                </svg>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -277,32 +377,39 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     leftTimeouts,
     leftPoints,
     leftMarkedPoints = [],
+    leftServiceRounds = [],
     rightLineup,
     rightSubs,
     rightTimeouts,
     rightPoints,
     rightMarkedPoints = [],
+    rightServiceRounds = [],
     positionBoxRef
 }) => {
   const leftTeamLabel = isSwapped ? 'B' : 'A';
   const rightTeamLabel = isSwapped ? 'A' : 'B';
   
-  // Determine who serves/receives based on coin toss (only for Set 1)
+  // Determine who serves/receives based on coin toss (Set 1) or switched sides (Set 2)
   let leftServes: 'S' | 'R' | null = null;
   let rightServes: 'S' | 'R' | null = null;
   
-  if (setNumber === 1 && firstServeTeamA !== undefined) {
+  if (firstServeTeamA !== undefined) {
     // Team A is left when not swapped, right when swapped
     const teamAIsLeft = !isSwapped;
     
+    // For Set 2, teams switch sides, so first serve is opposite of Set 1
+    const actualFirstServeTeamA = setNumber === 1 
+      ? firstServeTeamA 
+      : !firstServeTeamA;
+    
     if (teamAIsLeft) {
       // Left = Team A, Right = Team B
-      leftServes = firstServeTeamA ? 'S' : 'R';
-      rightServes = firstServeTeamA ? 'R' : 'S';
+      leftServes = actualFirstServeTeamA ? 'S' : 'R';
+      rightServes = actualFirstServeTeamA ? 'R' : 'S';
     } else {
       // Left = Team B, Right = Team A
-      leftServes = firstServeTeamA ? 'R' : 'S';
-      rightServes = firstServeTeamA ? 'S' : 'R';
+      leftServes = actualFirstServeTeamA ? 'R' : 'S';
+      rightServes = actualFirstServeTeamA ? 'S' : 'R';
     }
   }
 
@@ -352,14 +459,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
         <div className="flex flex-1 justify-start shrink-0" style={{ width: '150mm' }}>
             {/* Team Left Block - fixed width to match header */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
-                <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} positionBoxRef={positionBoxRef} />
-                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} markedPoints={leftMarkedPoints} />
+                <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} positionBoxRef={positionBoxRef} serviceRounds={leftServiceRounds} />
+                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} markedPoints={leftMarkedPoints} isSetFinished={!!endTime} />
             </div>
 
             {/* Team Right Block - fixed width to match header */}
              <div className="flex shrink-0" style={{ width: '75mm' }}>
-                <TeamServiceGrid lineup={rightLineup} subs={rightSubs} startsReceiving={rightServes === 'R'} />
-                <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} />
+                <TeamServiceGrid lineup={rightLineup} subs={rightSubs} startsReceiving={rightServes === 'R'} serviceRounds={rightServiceRounds} />
+                <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} isSetFinished={!!endTime} />
             </div>
         </div>
     </div>

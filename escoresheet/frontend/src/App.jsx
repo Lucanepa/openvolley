@@ -446,7 +446,6 @@ export default function App() {
       }
     })
 
-    console.log('[TestMatch] Cleared local test data')
   }
 
   async function resetSupabaseTestMatch() {
@@ -522,7 +521,6 @@ export default function App() {
       throw new Error('Test match not found on Supabase.')
     }
 
-    console.log('[TestMatch] Supabase match row:', matchData)
 
     const [homeTeamRes, awayTeamRes] = await Promise.all([
       supabase.from('teams').select('*').eq('id', matchData.home_team_id).single(),
@@ -539,8 +537,6 @@ export default function App() {
     const homeTeamData = homeTeamRes.data
     const awayTeamData = awayTeamRes.data
 
-    console.log('[TestMatch] Supabase home team:', homeTeamData)
-    console.log('[TestMatch] Supabase away team:', awayTeamData)
 
     const { data: playersData, error: playersError } = await supabase
       .from('players')
@@ -603,7 +599,6 @@ export default function App() {
       const hasNamedMember = normalized.some(member => member.firstName || member.lastName)
       return hasNamedMember ? normalized : TEST_AWAY_BENCH.map(normalizeBenchMember)
     })()
-    console.log('[TestMatch] Resolved benches:', { homeBench, awayBench })
 
     const homeTeamId = await db.teams.add({
       name: homeTeamData?.name || 'Home',
@@ -753,7 +748,6 @@ export default function App() {
     }
 
     const officials = await resolvedOfficials()
-    console.log('[TestMatch] Resolved officials:', officials)
 
     if (homePlayersData.length) {
       await db.players.bulkAdd(homePlayersData.map(p => normalizePlayer(p, homeTeamId)))
@@ -761,10 +755,6 @@ export default function App() {
     if (awayPlayersData.length) {
       await db.players.bulkAdd(awayPlayersData.map(p => normalizePlayer(p, awayTeamId)))
     }
-    console.log('[TestMatch] Inserted players', {
-      homeCount: homePlayersData.length,
-      awayCount: awayPlayersData.length
-    })
 
     const matchDexieId = await db.matches.add({
       status: matchData.status || 'scheduled',
@@ -809,7 +799,6 @@ export default function App() {
         createdAt: set.created_at,
         updatedAt: set.updated_at
       })))
-      console.log('[TestMatch] Imported Supabase sets:', setsData.length)
     } else {
       await db.sets.add({
         matchId: matchDexieId,
@@ -818,7 +807,6 @@ export default function App() {
         awayPoints: 0,
         finished: false
       })
-      console.log('[TestMatch] Supabase had no sets, created initial set locally')
     }
 
     if (Array.isArray(eventsData) && eventsData.length > 0) {
@@ -829,7 +817,6 @@ export default function App() {
         payload: event.payload || {},
         ts: event.ts || new Date().toISOString()
       })))
-      console.log('[TestMatch] Imported Supabase events:', eventsData.length)
     }
 
     setMatchId(matchDexieId)
@@ -1717,7 +1704,6 @@ export default function App() {
             matchId={matchId} 
             onShowScoresheet={() => {
               // TODO: Implement scoresheet view
-              console.log('Show scoresheet clicked')
             }}
             onGoHome={() => {
               setMatchId(null)
