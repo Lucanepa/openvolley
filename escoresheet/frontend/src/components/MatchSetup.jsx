@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { parseRosterPdf } from '../utils/parseRosterPdf'
 
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showCoinToss = false, onCoinTossClose }) {
   const [home, setHome] = useState('Home')
@@ -121,10 +122,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [showCoinTossRoster, setShowCoinTossRoster] = useState(false) // Show/hide roster in coin toss
   
   // Referee connection
-  const [refereeConnectionEnabled, setRefereeConnectionEnabled] = useState(true)
+  const [refereeConnectionEnabled, setRefereeConnectionEnabled] = useState(false)
   const [editPinModal, setEditPinModal] = useState(false)
+  const [editPinType, setEditPinType] = useState(null) // 'referee', 'benchHome', 'benchAway'
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
+  
+  // Bench connection - separate for each team
+  const [homeTeamConnectionEnabled, setHomeTeamConnectionEnabled] = useState(false)
+  const [awayTeamConnectionEnabled, setAwayTeamConnectionEnabled] = useState(false)
+
+  // PDF upload state for each team
+  const [homePdfFile, setHomePdfFile] = useState(null)
+  const [awayPdfFile, setAwayPdfFile] = useState(null)
+  const [homePdfLoading, setHomePdfLoading] = useState(false)
+  const [awayPdfLoading, setAwayPdfLoading] = useState(false)
+  const [homePdfError, setHomePdfError] = useState('')
+  const [awayPdfError, setAwayPdfError] = useState('')
+  const homeFileInputRef = useRef(null)
+  const awayFileInputRef = useRef(null)
+  const rosterLoadedRef = useRef(false) // Track if roster has been loaded to prevent overwriting user edits
 
   // Cities in Kanton Zürich
   const citiesZurich = [
@@ -243,10 +260,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const isMatchOngoing = match?.status === 'live'
 
   // Load match data if matchId is provided
+  // Split into two effects: one for initial load (matchId only), one for updates (match changes)
+  
+  // Initial load effect - only runs when matchId changes or when match becomes available
   useEffect(() => {
-    if (!matchId || !match) return
+    if (!matchId) return
+    if (!match) return // Wait for match to be loaded from useLiveQuery
+    if (rosterLoadedRef.current) return // Already loaded for this matchId - don't reload to preserve user edits
     
-    async function loadMatchData() {
+    async function loadInitialData() {
       try {
         // Load teams
         const [homeTeam, awayTeam] = await Promise.all([
@@ -316,23 +338,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
         
-        // Generate PIN if it doesn't exist (for matches created before PIN feature)
-        if (!match.refereePin) {
-          const generatePinCode = () => {
-            const chars = '0123456789'
-            let pin = ''
-            for (let i = 0; i < 6; i++) {
-              pin += chars.charAt(Math.floor(Math.random() * chars.length))
-            }
-            return pin
+        // Generate PINs if they don't exist (for matches created before PIN feature)
+        const generatePinCode = () => {
+          const chars = '0123456789'
+          let pin = ''
+          for (let i = 0; i < 6; i++) {
+            pin += chars.charAt(Math.floor(Math.random() * chars.length))
           }
-          await db.matches.update(matchId, { refereePin: generatePinCode() })
+          return pin
         }
         
-        // Load referee connection setting (default to enabled if not set)
-        setRefereeConnectionEnabled(match.refereeConnectionEnabled !== false)
+        const updates = {}
+        if (!match.refereePin) {
+          updates.refereePin = generatePinCode()
+        }
+        if (!match.homeTeamPin) {
+          updates.homeTeamPin = generatePinCode()
+        }
+        if (!match.awayTeamPin) {
+          updates.awayTeamPin = generatePinCode()
+        }
+        if (Object.keys(updates).length > 0) {
+          await db.matches.update(matchId, updates)
+        }
         
-        // Load players
+        // Load players only on initial load (when matchId changes, not when match updates)
+        // This prevents overwriting user edits when the match object updates from the database
         if (match.homeTeamId) {
           const homePlayers = await db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
           setHomeRoster(homePlayers.map(p => ({
@@ -357,6 +388,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             isCaptain: p.isCaptain || false
           })))
         }
+        
+        // Load referee connection setting (default to enabled if not set)
+        setRefereeConnectionEnabled(match.refereeConnectionEnabled !== false)
+        
+        // Load bench connection settings (default to enabled if not set)
+        setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled !== false)
+        setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled !== false)
+        
+        // Mark roster as loaded
+        rosterLoadedRef.current = true
         
         // Load bench officials
         if (match.bench_home || match.bench_away) {
@@ -421,7 +462,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           setTeamB(match.coinTossTeamB)
           setServeA(match.coinTossServeA !== undefined ? match.coinTossServeA : true)
           setServeB(match.coinTossServeB !== undefined ? match.coinTossServeB : false)
-          console.log('Loaded coin toss:', { teamA: match.coinTossTeamA, teamB: match.coinTossTeamB, serveA: match.coinTossServeA, serveB: match.coinTossServeB })
         } else if (match.firstServe) {
           // Fallback: use firstServe to determine serve (but not team assignment)
           // Default team assignment
@@ -436,12 +476,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           }
         }
       } catch (error) {
-        console.error('Error loading match data:', error)
+        console.error('Error loading initial match data:', error)
       }
     }
     
-    loadMatchData()
-  }, [matchId, match])
+    loadInitialData()
+  }, [matchId, match]) // Depend on both matchId and match - but only load once per matchId due to rosterLoadedRef check
+  
+  // Reset roster loaded flag when matchId changes
+  useEffect(() => {
+    rosterLoadedRef.current = false
+  }, [matchId])
+  
+  // Update effect - runs when match changes (for connection settings, etc.)
+  useEffect(() => {
+    if (!matchId || !match) return
+    
+    // Update connection settings (these can change without affecting roster)
+    setRefereeConnectionEnabled(match.refereeConnectionEnabled !== false)
+    setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled !== false)
+    setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled !== false)
+  }, [matchId, match?.refereeConnectionEnabled, match?.homeTeamConnectionEnabled, match?.awayTeamConnectionEnabled])
   
   // Show coin toss view if requested
   useEffect(() => {
@@ -728,6 +783,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }
 
   async function createMatch() {
+    // Validate at least one captain per team
+    const homeHasCaptain = homeRoster.some(p => p.isCaptain)
+    const awayHasCaptain = awayRoster.some(p => p.isCaptain)
+    
+    if (!homeHasCaptain) {
+      setNoticeModal({ message: 'Home team must have at least one captain.' })
+      return
+    }
+    
+    if (!awayHasCaptain) {
+      setNoticeModal({ message: 'Away team must have at least one captain.' })
+      return
+    }
+
     await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
     const homeId = await db.teams.add({ name: home, color: homeColor, createdAt: new Date().toISOString() })
     const awayId = await db.teams.add({ name: away, color: awayColor, createdAt: new Date().toISOString() })
@@ -776,6 +845,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       return pin
     }
 
+    // Generate match PIN code (for opening/continuing match)
+    const matchPin = prompt('Enter a PIN code to protect this match (required):')
+    if (!matchPin || matchPin.trim() === '') {
+      setNoticeModal({ message: 'Match PIN code is required. Please enter a PIN code to create the match.' })
+      return
+    }
+
     const matchId = await db.matches.add({
       homeTeamId: homeId,
       awayTeamId: awayId,
@@ -797,6 +873,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       refereePin: generatePinCode(),
       homeTeamPin: generatePinCode(),
       awayTeamPin: generatePinCode(),
+      matchPin: matchPin.trim(),
+      refereeConnectionEnabled: false,
+      homeTeamConnectionEnabled: false,
+      awayTeamConnectionEnabled: false,
       officials: [
         { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
         { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
@@ -1481,12 +1561,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <input 
                   disabled={isHomeLocked} 
                   type="radio" 
-                  name={`homeCaptain-${i}`} 
+                  name="homeCaptain" 
                   checked={p.isCaptain || false} 
-                  onChange={e => {
+                  onChange={() => {
                     const updated = homeRoster.map((player, idx) => ({
                       ...player,
-                      isCaptain: idx === i ? e.target.checked : false
+                      isCaptain: idx === i
                     }))
                     setHomeRoster(updated)
                   }} 
@@ -1548,6 +1628,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 name: home,
                 color: homeColor
               })
+              
+              // Update players with captain status
+              if (homeRoster.length) {
+                const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
+                const rosterNumbers = new Set(homeRoster.map(p => p.number).filter(n => n != null))
+                
+                for (const rosterPlayer of homeRoster) {
+                  if (!rosterPlayer.number) continue // Skip players without numbers
+                  
+                  const existingPlayer = existingPlayers.find(ep => ep.number === rosterPlayer.number)
+                  if (existingPlayer) {
+                    // Update existing player
+                    await db.players.update(existingPlayer.id, {
+                      name: `${rosterPlayer.lastName} ${rosterPlayer.firstName}`,
+                      lastName: rosterPlayer.lastName,
+                      firstName: rosterPlayer.firstName,
+                      dob: rosterPlayer.dob || null,
+                      libero: rosterPlayer.libero || '',
+                      isCaptain: !!rosterPlayer.isCaptain
+                    })
+                  } else {
+                    // Add new player (including newly added players after unlock)
+                    await db.players.add({
+                      teamId: match.homeTeamId,
+                      number: rosterPlayer.number,
+                      name: `${rosterPlayer.lastName} ${rosterPlayer.firstName}`,
+                      lastName: rosterPlayer.lastName,
+                      firstName: rosterPlayer.firstName,
+                      dob: rosterPlayer.dob || null,
+                      libero: rosterPlayer.libero || '',
+                      isCaptain: !!rosterPlayer.isCaptain,
+                      role: null,
+                      createdAt: new Date().toISOString()
+                    })
+                  }
+                }
+                
+                // Remove players that are no longer in the roster
+                for (const ep of existingPlayers) {
+                  if (!rosterNumbers.has(ep.number)) {
+                    await db.players.delete(ep.id)
+                  }
+                }
+              }
               
               // Update match with short name and restore signatures (re-lock)
               const updateData = {
@@ -1623,6 +1747,69 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         )}
         <h4>Roster</h4>
+        
+        {/* PDF Upload for Away Team */}
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '12px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <input
+              ref={awayFileInputRef}
+              type="file"
+              accept=".pdf"
+              onChange={handleAwayFileSelect}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => awayFileInputRef.current?.click()}
+              disabled={isAwayLocked || awayPdfLoading}
+              style={{ padding: '8px 16px', fontSize: '14px' }}
+            >
+              Choose PDF File
+            </button>
+            {awayPdfFile && !awayPdfLoading && (
+              <span style={{ fontSize: '14px', color: 'var(--text)', flex: 1 }}>
+                Selected: {awayPdfFile.name}
+              </span>
+            )}
+            {awayPdfFile && !awayPdfLoading && (
+              <button
+                type="button"
+                onClick={handleAwayImportClick}
+                disabled={awayPdfLoading}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: awayPdfLoading ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Import
+              </button>
+            )}
+          </div>
+          {awayPdfLoading && (
+            <p style={{ fontSize: '14px', color: 'var(--accent)', marginTop: '10px', marginBottom: 0 }}>
+              Parsing PDF and importing data...
+            </p>
+          )}
+          {awayPdfError && (
+            <p style={{ fontSize: '14px', color: '#ef4444', marginTop: '10px', marginBottom: 0 }}>
+              {awayPdfError}
+            </p>
+          )}
+        </div>
+        
         <div style={{ 
           border: '1px solid rgba(255, 255, 255, 0.2)', 
           borderRadius: '8px', 
@@ -1754,12 +1941,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <input 
                   disabled={isAwayLocked} 
                   type="radio" 
-                  name={`awayCaptain-${i}`} 
+                  name="awayCaptain" 
                   checked={p.isCaptain || false} 
-                  onChange={e => {
+                  onChange={() => {
                     const updated = awayRoster.map((player, idx) => ({
                       ...player,
-                      isCaptain: idx === i ? e.target.checked : false
+                      isCaptain: idx === i
                     }))
                     setAwayRoster(updated)
                   }} 
@@ -1821,6 +2008,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 name: away,
                 color: awayColor
               })
+              
+              // Update players with captain status
+              if (awayRoster.length) {
+                const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
+                const rosterNumbers = new Set(awayRoster.map(p => p.number).filter(n => n != null))
+                
+                for (const rosterPlayer of awayRoster) {
+                  if (!rosterPlayer.number) continue // Skip players without numbers
+                  
+                  const existingPlayer = existingPlayers.find(ep => ep.number === rosterPlayer.number)
+                  if (existingPlayer) {
+                    // Update existing player
+                    await db.players.update(existingPlayer.id, {
+                      name: `${rosterPlayer.lastName} ${rosterPlayer.firstName}`,
+                      lastName: rosterPlayer.lastName,
+                      firstName: rosterPlayer.firstName,
+                      dob: rosterPlayer.dob || null,
+                      libero: rosterPlayer.libero || '',
+                      isCaptain: !!rosterPlayer.isCaptain
+                    })
+                  } else {
+                    // Add new player (including newly added players after unlock)
+                    await db.players.add({
+                      teamId: match.awayTeamId,
+                      number: rosterPlayer.number,
+                      name: `${rosterPlayer.lastName} ${rosterPlayer.firstName}`,
+                      lastName: rosterPlayer.lastName,
+                      firstName: rosterPlayer.firstName,
+                      dob: rosterPlayer.dob || null,
+                      libero: rosterPlayer.libero || '',
+                      isCaptain: !!rosterPlayer.isCaptain,
+                      role: null,
+                      createdAt: new Date().toISOString()
+                    })
+                  }
+                }
+                
+                // Remove players that are no longer in the roster
+                for (const ep of existingPlayers) {
+                  if (!rosterNumbers.has(ep.number)) {
+                    await db.players.delete(ep.id)
+                  }
+                }
+              }
               
               // Update match with short name and restore signatures (re-lock)
               const updateData = {
@@ -3050,14 +3281,336 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     }
   }
 
-  const handleEditPin = () => {
-    setNewPin(match?.refereePin || '')
+  const handleHomeTeamConnectionToggle = async (enabled) => {
+    if (!matchId) return
+    setHomeTeamConnectionEnabled(enabled)
+    try {
+      await db.matches.update(matchId, { homeTeamConnectionEnabled: enabled })
+    } catch (error) {
+      console.error('Failed to update home team connection setting:', error)
+    }
+  }
+
+  const handleAwayTeamConnectionToggle = async (enabled) => {
+    if (!matchId) return
+    setAwayTeamConnectionEnabled(enabled)
+    try {
+      await db.matches.update(matchId, { awayTeamConnectionEnabled: enabled })
+    } catch (error) {
+      console.error('Failed to update away team connection setting:', error)
+    }
+  }
+
+  // PDF upload handlers
+  const handleHomePdfUpload = async (file) => {
+    if (!file) return
+    setHomePdfLoading(true)
+    setHomePdfError('')
+    
+    try {
+      const parsedData = await parseRosterPdf(file)
+      
+      // Replace all players with imported ones (overwrite mode)
+      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+        id: null,
+        number: parsedPlayer.number || null,
+        firstName: parsedPlayer.firstName || '',
+        lastName: parsedPlayer.lastName || '',
+        dob: parsedPlayer.dob || '',
+        libero: '',
+        isCaptain: false
+      }))
+      
+      setHomeRoster(mergedPlayers)
+      
+      // Update bench officials
+      const importedBenchOfficials = []
+      if (parsedData.coach) {
+        importedBenchOfficials.push({ 
+          role: 'Coach', 
+          firstName: parsedData.coach.firstName || '',
+          lastName: parsedData.coach.lastName || '',
+          dob: parsedData.coach.dob || ''
+        })
+      }
+      if (parsedData.ac1) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 1', 
+          firstName: parsedData.ac1.firstName || '',
+          lastName: parsedData.ac1.lastName || '',
+          dob: parsedData.ac1.dob || ''
+        })
+      }
+      if (parsedData.ac2) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 2', 
+          firstName: parsedData.ac2.firstName || '',
+          lastName: parsedData.ac2.lastName || '',
+          dob: parsedData.ac2.dob || ''
+        })
+      }
+      
+      setBenchHome(importedBenchOfficials)
+      
+      // Save to database if match exists
+      if (matchId && match?.homeTeamId) {
+        const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
+        for (const ep of existingPlayers) {
+          await db.players.delete(ep.id)
+        }
+        
+        await db.players.bulkAdd(
+          mergedPlayers.map(p => ({
+            teamId: match.homeTeamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+        
+        await db.matches.update(matchId, {
+          bench_home: importedBenchOfficials
+        })
+      }
+      
+      if (homeFileInputRef.current) {
+        homeFileInputRef.current.value = ''
+      }
+    } catch (err) {
+      console.error('Error parsing PDF:', err)
+      setHomePdfError(`Failed to parse PDF: ${err.message}`)
+    } finally {
+      setHomePdfLoading(false)
+    }
+  }
+
+  const handleAwayPdfUpload = async (file) => {
+    if (!file) return
+    setAwayPdfLoading(true)
+    setAwayPdfError('')
+    
+    try {
+      const parsedData = await parseRosterPdf(file)
+      
+      // Replace all players with imported ones (overwrite mode)
+      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+        id: null,
+        number: parsedPlayer.number || null,
+        firstName: parsedPlayer.firstName || '',
+        lastName: parsedPlayer.lastName || '',
+        dob: parsedPlayer.dob || '',
+        libero: '',
+        isCaptain: false
+      }))
+      
+      setAwayRoster(mergedPlayers)
+      
+      // Update bench officials
+      const importedBenchOfficials = []
+      if (parsedData.coach) {
+        importedBenchOfficials.push({ 
+          role: 'Coach', 
+          firstName: parsedData.coach.firstName || '',
+          lastName: parsedData.coach.lastName || '',
+          dob: parsedData.coach.dob || ''
+        })
+      }
+      if (parsedData.ac1) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 1', 
+          firstName: parsedData.ac1.firstName || '',
+          lastName: parsedData.ac1.lastName || '',
+          dob: parsedData.ac1.dob || ''
+        })
+      }
+      if (parsedData.ac2) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 2', 
+          firstName: parsedData.ac2.firstName || '',
+          lastName: parsedData.ac2.lastName || '',
+          dob: parsedData.ac2.dob || ''
+        })
+      }
+      
+      setBenchAway(importedBenchOfficials)
+      
+      // Save to database if match exists
+      if (matchId && match?.awayTeamId) {
+        const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
+        for (const ep of existingPlayers) {
+          await db.players.delete(ep.id)
+        }
+        
+        await db.players.bulkAdd(
+          mergedPlayers.map(p => ({
+            teamId: match.awayTeamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+        
+        await db.matches.update(matchId, {
+          bench_away: importedBenchOfficials
+        })
+      }
+      
+      if (awayFileInputRef.current) {
+        awayFileInputRef.current.value = ''
+      }
+    } catch (err) {
+      console.error('Error parsing PDF:', err)
+      setAwayPdfError(`Failed to parse PDF: ${err.message}`)
+    } finally {
+      setAwayPdfLoading(false)
+    }
+  }
+
+  const handleHomeFileSelect = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setHomePdfFile(file)
+      setHomePdfError('')
+    }
+  }
+
+  const handleAwayFileSelect = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setAwayPdfFile(file)
+      setAwayPdfError('')
+    }
+  }
+
+  const handleHomeImportClick = async () => {
+    if (homePdfFile) {
+      await handleHomePdfUpload(homePdfFile)
+    } else {
+      setHomePdfError('Please select a PDF file first')
+    }
+  }
+
+  const handleAwayImportClick = async () => {
+    if (awayPdfFile) {
+      await handleAwayPdfUpload(awayPdfFile)
+    } else {
+      setAwayPdfError('Please select a PDF file first')
+    }
+  }
+
+  // Connection Banner Component
+  const ConnectionBanner = ({ team, enabled, onToggle, pin, onEditPin }) => {
+    return (
+      <div style={{
+        marginTop: 12,
+        padding: '12px',
+        background: 'rgba(255,255,255,0.05)',
+        borderRadius: '8px',
+        border: '1px solid rgba(255,255,255,0.1)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: 500,
+            whiteSpace: 'nowrap'
+          }}>
+            <span>Enable Connection</span>
+            <div style={{
+              position: 'relative',
+              width: '44px',
+              height: '24px',
+              background: enabled ? '#22c55e' : '#6b7280',
+              borderRadius: '12px',
+              transition: 'background 0.2s',
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle(!enabled)
+            }}
+            >
+              <div style={{
+                position: 'absolute',
+                top: '2px',
+                left: enabled ? '22px' : '2px',
+                width: '20px',
+                height: '20px',
+                background: '#fff',
+                borderRadius: '50%',
+                transition: 'left 0.2s',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }} />
+            </div>
+          </label>
+          {enabled && pin && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Bench PIN:</span>
+              <span style={{
+                fontWeight: 700,
+                fontSize: '14px',
+                color: 'var(--accent)',
+                letterSpacing: '2px',
+                fontFamily: 'monospace'
+              }}>
+                {pin}
+              </span>
+              <button
+                onClick={onEditPin}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  background: 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const handleEditPin = (type) => {
+    let currentPin = ''
+    if (type === 'referee') {
+      currentPin = match?.refereePin || ''
+    } else if (type === 'benchHome') {
+      currentPin = match?.homeTeamPin || ''
+    } else if (type === 'benchAway') {
+      currentPin = match?.awayTeamPin || ''
+    }
+    setNewPin(currentPin)
     setPinError('')
+    setEditPinType(type)
     setEditPinModal(true)
   }
 
   const handleSavePin = async () => {
-    if (!matchId) return
+    if (!matchId || !editPinType) return
     
     // Validate PIN
     if (!newPin || newPin.length !== 6) {
@@ -3070,9 +3623,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     }
     
     try {
-      await db.matches.update(matchId, { refereePin: newPin })
+      let updateField = {}
+      if (editPinType === 'referee') {
+        updateField = { refereePin: newPin }
+      } else if (editPinType === 'benchHome') {
+        updateField = { homeTeamPin: newPin }
+      } else if (editPinType === 'benchAway') {
+        updateField = { awayTeamPin: newPin }
+      }
+      await db.matches.update(matchId, updateField)
       setEditPinModal(false)
       setPinError('')
+      setEditPinType(null)
     } catch (error) {
       console.error('Failed to update PIN:', error)
       setPinError('Failed to save PIN')
@@ -3084,75 +3646,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <h2 style={{ margin: 0 }}>Match Setup</h2>
         
-        {/* Referee Connection Section */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '8px 16px',
-          background: 'rgba(255,255,255,0.05)',
-          borderRadius: '8px',
-          flex: 1,
-          maxWidth: '500px'
-        }}>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: 500,
-            whiteSpace: 'nowrap'
-          }}>
-            <input
-              type="checkbox"
-              checked={refereeConnectionEnabled}
-              onChange={(e) => handleRefereeConnectionToggle(e.target.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            Enable Referee Connection
-          </label>
-          
-          {refereeConnectionEnabled && match?.refereePin && (
-            <>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '4px 12px',
-                background: 'rgba(0,0,0,0.2)',
-                borderRadius: '6px'
-              }}>
-                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>PIN:</span>
-                <span style={{
-                  fontWeight: 700,
-                  fontSize: '16px',
-                  color: 'var(--accent)',
-                  letterSpacing: '2px',
-                  fontFamily: 'monospace'
-                }}>
-                  {match.refereePin}
-                </span>
-              </div>
-              <button
-                onClick={handleEditPin}
-                style={{
-                  padding: '4px 12px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  background: 'rgba(255,255,255,0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                Edit
-              </button>
-            </>
-          )}
-        </div>
         
         {onGoHome && (
           <button className="secondary" onClick={onGoHome}>
@@ -3207,6 +3700,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               <span>Ass. Scorer:</span>
               <span>{formatOfficial(asstLast, asstFirst)}</span>
             </div>
+            <ConnectionBanner
+              team="referee"
+              enabled={refereeConnectionEnabled}
+              onToggle={handleRefereeConnectionToggle}
+              pin={match?.refereePin}
+              onEditPin={() => handleEditPin('referee')}
+            />
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button></div>
         </div>
@@ -3253,6 +3753,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 {home || 'Home'}
               </span>
             </div>
+            <ConnectionBanner
+              team="home"
+              enabled={homeTeamConnectionEnabled}
+              onToggle={handleHomeTeamConnectionToggle}
+              pin={match?.homeTeamPin}
+              onEditPin={() => handleEditPin('benchHome')}
+            />
             <div
               className="text-sm"
               style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
@@ -3310,6 +3817,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 {away || 'Away'}
               </span>
             </div>
+            <ConnectionBanner
+              team="away"
+              enabled={awayTeamConnectionEnabled}
+              onToggle={handleAwayTeamConnectionToggle}
+              pin={match?.awayTeamPin}
+              onEditPin={() => handleEditPin('benchAway')}
+            />
             <div
               className="text-sm"
               style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
@@ -3830,11 +4344,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       {/* Edit PIN Modal */}
       {editPinModal && (
         <Modal
-          title="Edit Referee PIN"
+          title={editPinType === 'referee' ? 'Edit Referee PIN' : editPinType === 'benchHome' ? 'Edit Home Bench PIN' : 'Edit Away Bench PIN'}
           open={true}
           onClose={() => {
             setEditPinModal(false)
             setPinError('')
+            setEditPinType(null)
           }}
           width={400}
         >
@@ -3882,6 +4397,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 onClick={() => {
                   setEditPinModal(false)
                   setPinError('')
+                  setEditPinType(null)
                 }}
                 style={{
                   padding: '10px 20px',

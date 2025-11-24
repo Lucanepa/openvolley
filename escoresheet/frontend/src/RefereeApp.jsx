@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import Referee from './components/Referee'
@@ -17,6 +17,21 @@ export default function RefereeApp() {
     return matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   }, [])
 
+  // Monitor the current match's connection status
+  const currentMatch = useLiveQuery(async () => {
+    if (!matchId) return null
+    return await db.matches.get(matchId)
+  }, [matchId])
+
+  // Disconnect if connection is disabled
+  useEffect(() => {
+    if (currentMatch && currentMatch.refereeConnectionEnabled === false) {
+      setMatchId(null)
+      setPinInput('')
+      setError('Connection has been disabled. Please enable the connection in the scoreboard and reconnect.')
+    }
+  }, [currentMatch])
+
   const handlePinSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -26,8 +41,40 @@ export default function RefereeApp() {
       return
     }
 
-    // Find match with matching PIN
-    const match = availableMatches?.find(m => m.refereePin === pinInput)
+    // First, check if PIN matches any match (even if disabled)
+    const matchWithPin = availableMatches?.find(m => {
+      const storedPin = m.refereePin
+      if (!storedPin) {
+        return false
+      }
+      const storedPinStr = String(storedPin).trim()
+      const inputPinStr = String(pinInput).trim()
+      return storedPinStr === inputPinStr
+    })
+
+    // If PIN matches but connection is disabled, show specific error
+    if (matchWithPin && matchWithPin.refereeConnectionEnabled === false) {
+      setError('Connection is disabled for this match. Please enable the connection in the scoreboard.')
+      setPinInput('')
+      return
+    }
+
+    // Find match with matching PIN and enabled connection
+    const match = availableMatches?.find(m => {
+      // Check if referee connection is enabled for this match
+      if (m.refereeConnectionEnabled === false) {
+        return false
+      }
+      
+      const storedPin = m.refereePin
+      if (!storedPin) {
+        return false
+      }
+      
+      const storedPinStr = String(storedPin).trim()
+      const inputPinStr = String(pinInput).trim()
+      return storedPinStr === inputPinStr
+    })
 
     if (match) {
       setMatchId(match.id)

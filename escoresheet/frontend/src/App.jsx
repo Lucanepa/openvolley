@@ -1419,6 +1419,7 @@ export default function App() {
         gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
         scheduledAt,
         refereePin: generateRefereePin(),
+        matchPin: '1234567', // Test match PIN is always 1234567
         bench_home: TEST_HOME_BENCH,
         bench_away: TEST_AWAY_BENCH,
         officials,
@@ -1515,6 +1516,13 @@ export default function App() {
     const matches = await db.matches.orderBy('createdAt').reverse().toArray()
     const existing = matches.find(m => m.test === true && m.status !== 'final')
     if (existing) {
+      // Check test match PIN (always 1234567)
+      const enteredPin = prompt('Enter PIN code to open test match:')
+      if (!enteredPin || enteredPin.trim() !== '1234567') {
+        setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
+        return
+      }
+      
       // Check match state to determine where to continue
       const isMatchSetupComplete = existing.homeCoachSignature && 
                                     existing.homeCaptainSignature && 
@@ -1607,6 +1615,20 @@ export default function App() {
     db.matches.get(targetMatchId).then(match => {
       if (!match) return
       
+      // Check match PIN code
+      // Test matches: PIN is 1234567
+      // Other matches: require matchPin
+      const isTestMatch = match.test === true
+      const expectedPin = isTestMatch ? '1234567' : match.matchPin
+      
+      if (expectedPin) {
+        const enteredPin = prompt(`Enter PIN code to open this match${isTestMatch ? ' (test match)' : ''}:`)
+        if (!enteredPin || enteredPin.trim() !== expectedPin) {
+          setAlertModal('Invalid PIN code. Access denied.')
+          return
+        }
+      }
+      
       // Check if coin toss is confirmed
       const isCoinTossConfirmed = match.coinTossTeamA !== null && 
                                    match.coinTossTeamA !== undefined &&
@@ -1635,9 +1657,9 @@ export default function App() {
       
       // Check if match setup is complete (all signatures present)
       const isMatchSetupComplete = match.homeCoachSignature && 
-                                    match.homeCaptainSignature && 
-                                    match.awayCoachSignature && 
-                                    match.awayCaptainSignature
+                                  match.homeCaptainSignature && 
+                                  match.awayCoachSignature && 
+                                  match.awayCaptainSignature
       
       // Only allow continuation if match setup and coin toss are confirmed
       if (!isMatchSetupComplete || !isCoinTossConfirmed) {

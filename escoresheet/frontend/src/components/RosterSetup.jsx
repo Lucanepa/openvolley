@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
@@ -9,6 +9,7 @@ export default function RosterSetup({ matchId, team, onBack }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pdfFile, setPdfFile] = useState(null)
+  const fileInputRef = useRef(null)
 
   const match = useLiveQuery(async () => {
     if (!matchId) return null
@@ -104,84 +105,106 @@ export default function RosterSetup({ matchId, team, onBack }) {
     setBenchOfficials(updated)
   }
 
-  const handlePdfUpload = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  const handlePdfUpload = async (file) => {
+    console.log('[RosterSetup] handlePdfUpload called with file:', file)
+    if (!file) {
+      console.log('[RosterSetup] No file provided')
+      return
+    }
 
     setLoading(true)
     setError('')
+    setPdfFile(file)
 
     try {
+      console.log('[RosterSetup] Parsing PDF:', file.name)
       const parsedData = await parseRosterPdf(file)
+      console.log('[RosterSetup] Parsed data:', parsedData)
       
-      // Merge parsed players with existing players
-      const mergedPlayers = [...players]
+      // Replace all players with imported ones (overwrite mode)
+      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+        id: null, // New players, will be assigned when saved
+        number: parsedPlayer.number || null,
+        firstName: parsedPlayer.firstName || '',
+        lastName: parsedPlayer.lastName || '',
+        dob: parsedPlayer.dob || '',
+        libero: '',
+        isCaptain: false
+      }))
       
-      parsedData.players.forEach(parsedPlayer => {
-        const existingIndex = mergedPlayers.findIndex(p => 
-          p.number === parsedPlayer.number || 
-          (p.lastName.toLowerCase() === parsedPlayer.lastName.toLowerCase() && 
-           p.firstName.toLowerCase() === parsedPlayer.firstName.toLowerCase())
+      console.log('[RosterSetup] Replaced', players.length, 'existing players with', mergedPlayers.length, 'imported players')
+
+      // Replace all players with imported data
+      setPlayers(mergedPlayers)
+      
+      // Prepare bench officials from imported data (will be saved to DB below)
+      const importedBenchOfficials = []
+      if (parsedData.coach) {
+        importedBenchOfficials.push({ 
+          role: 'Coach', 
+          firstName: parsedData.coach.firstName || '',
+          lastName: parsedData.coach.lastName || '',
+          dob: parsedData.coach.dob || ''
+        })
+      }
+      if (parsedData.ac1) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 1', 
+          firstName: parsedData.ac1.firstName || '',
+          lastName: parsedData.ac1.lastName || '',
+          dob: parsedData.ac1.dob || ''
+        })
+      }
+      if (parsedData.ac2) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 2', 
+          firstName: parsedData.ac2.firstName || '',
+          lastName: parsedData.ac2.lastName || '',
+          dob: parsedData.ac2.dob || ''
+        })
+      }
+      
+      // Update UI state immediately
+      setBenchOfficials(importedBenchOfficials)
+      
+      // Auto-save to database with overwrite mode
+      if (teamId && matchId) {
+        console.log('[RosterSetup] Auto-saving imported data to database (overwrite mode)')
+        // Save immediately with overwrite flag
+        const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
+        for (const ep of existingPlayers) {
+          await db.players.delete(ep.id)
+        }
+        
+        await db.players.bulkAdd(
+          mergedPlayers.map(p => ({
+            teamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
         )
         
-        if (existingIndex >= 0) {
-          // Update existing player
-          mergedPlayers[existingIndex] = {
-            ...mergedPlayers[existingIndex],
-            firstName: parsedPlayer.firstName || mergedPlayers[existingIndex].firstName,
-            lastName: parsedPlayer.lastName || mergedPlayers[existingIndex].lastName,
-            dob: parsedPlayer.dob || mergedPlayers[existingIndex].dob
-          }
-        } else {
-          // Add new player
-          mergedPlayers.push({
-            id: null,
-            number: parsedPlayer.number || (mergedPlayers.length > 0 ? Math.max(...mergedPlayers.map(p => p.number || 0)) + 1 : 1),
-            firstName: parsedPlayer.firstName || '',
-            lastName: parsedPlayer.lastName || '',
-            dob: parsedPlayer.dob || '',
-            libero: '',
-            isCaptain: false
-          })
-        }
-      })
-
-      // Update bench officials if found in PDF
-      if (parsedData.coach) {
-        const coachIndex = benchOfficials.findIndex(o => o.role === 'Coach')
-        if (coachIndex >= 0) {
-          const updated = [...benchOfficials]
-          updated[coachIndex] = { ...updated[coachIndex], ...parsedData.coach }
-          setBenchOfficials(updated)
-        } else {
-          setBenchOfficials([...benchOfficials, { role: 'Coach', ...parsedData.coach }])
-        }
+        // Overwrite bench officials in database with imported data
+        const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
+        await db.matches.update(matchId, {
+          [benchKey]: importedBenchOfficials
+        })
+        
+        console.log('[RosterSetup] Overwritten bench officials:', importedBenchOfficials.length, 'officials')
+        console.log('[RosterSetup] Imported data saved to database')
       }
-
-      if (parsedData.ac1) {
-        const ac1Index = benchOfficials.findIndex(o => o.role === 'Assistant Coach 1')
-        if (ac1Index >= 0) {
-          const updated = [...benchOfficials]
-          updated[ac1Index] = { ...updated[ac1Index], ...parsedData.ac1 }
-          setBenchOfficials(updated)
-        } else {
-          setBenchOfficials([...benchOfficials, { role: 'Assistant Coach 1', ...parsedData.ac1 }])
-        }
+      
+      // Reset file input to allow re-uploading the same file
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
       }
-
-      if (parsedData.ac2) {
-        const ac2Index = benchOfficials.findIndex(o => o.role === 'Assistant Coach 2')
-        if (ac2Index >= 0) {
-          const updated = [...benchOfficials]
-          updated[ac2Index] = { ...updated[ac2Index], ...parsedData.ac2 }
-          setBenchOfficials(updated)
-        } else {
-          setBenchOfficials([...benchOfficials, { role: 'Assistant Coach 2', ...parsedData.ac2 }])
-        }
-      }
-
-      setPlayers(mergedPlayers)
-      setPdfFile(null)
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setError(`Failed to parse PDF: ${err.message}`)
@@ -190,7 +213,32 @@ export default function RosterSetup({ matchId, team, onBack }) {
     }
   }
 
-  const handleSave = async () => {
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setPdfFile(file)
+      setError('') // Clear any previous errors
+    }
+  }
+
+  const handleChooseFileClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click()
+    }
+  }
+
+  const handleImportClick = async () => {
+    console.log('[RosterSetup] Import button clicked, pdfFile:', pdfFile)
+    if (pdfFile) {
+      console.log('[RosterSetup] Starting import for file:', pdfFile.name)
+      await handlePdfUpload(pdfFile)
+    } else {
+      console.log('[RosterSetup] No file selected')
+      setError('Please select a PDF file first')
+    }
+  }
+
+  const handleSave = async (overwrite = false) => {
     if (!teamId) {
       setError('Team ID not found')
       return
@@ -200,47 +248,75 @@ export default function RosterSetup({ matchId, team, onBack }) {
     setError('')
 
     try {
-      // Save players
-      const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
-      
-      for (const player of players) {
-        if (player.id) {
-          // Update existing player
-          await db.players.update(player.id, {
-            number: player.number,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            name: `${player.lastName} ${player.firstName}`,
-            dob: player.dob || null,
-            libero: player.libero || '',
-            isCaptain: !!player.isCaptain
-          })
-        } else {
-          // Add new player
-          await db.players.add({
-            teamId,
-            number: player.number,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            name: `${player.lastName} ${player.firstName}`,
-            dob: player.dob || null,
-            libero: player.libero || '',
-            isCaptain: !!player.isCaptain,
-            role: null,
-            createdAt: new Date().toISOString()
-          })
-        }
-      }
-
-      // Delete players that are no longer in the roster
-      const rosterNumbers = new Set(players.map(p => p.number))
-      for (const ep of existingPlayers) {
-        if (!rosterNumbers.has(ep.number)) {
+      // If overwrite is true (e.g., from PDF import), delete all existing players first
+      if (overwrite) {
+        const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
+        for (const ep of existingPlayers) {
           await db.players.delete(ep.id)
         }
+        console.log('[RosterSetup] Deleted all existing players for overwrite')
+      } else {
+        // Normal save: update existing, add new, delete removed
+        const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
+        
+        for (const player of players) {
+          if (player.id) {
+            // Update existing player
+            await db.players.update(player.id, {
+              number: player.number,
+              firstName: player.firstName,
+              lastName: player.lastName,
+              name: `${player.lastName} ${player.firstName}`,
+              dob: player.dob || null,
+              libero: player.libero || '',
+              isCaptain: !!player.isCaptain
+            })
+          } else {
+            // Add new player
+            await db.players.add({
+              teamId,
+              number: player.number,
+              firstName: player.firstName,
+              lastName: player.lastName,
+              name: `${player.lastName} ${player.firstName}`,
+              dob: player.dob || null,
+              libero: player.libero || '',
+              isCaptain: !!player.isCaptain,
+              role: null,
+              createdAt: new Date().toISOString()
+            })
+          }
+        }
+
+        // Delete players that are no longer in the roster
+        const rosterNumbers = new Set(players.map(p => p.number))
+        for (const ep of existingPlayers) {
+          if (!rosterNumbers.has(ep.number)) {
+            await db.players.delete(ep.id)
+          }
+        }
+      }
+      
+      // Add all players (after deletion if overwrite)
+      if (overwrite || players.some(p => !p.id)) {
+        await db.players.bulkAdd(
+          players.map(p => ({
+            teamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+        console.log('[RosterSetup] Added', players.length, 'players to database')
       }
 
-      // Save bench officials
+      // Save bench officials - always overwrite completely
       const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
       await db.matches.update(matchId, {
         [benchKey]: benchOfficials.map(o => ({
@@ -250,6 +326,7 @@ export default function RosterSetup({ matchId, team, onBack }) {
           dob: o.dob
         }))
       })
+      console.log('[RosterSetup] Updated bench officials in database')
 
       alert('Roster saved successfully!')
     } catch (err) {
@@ -327,26 +404,81 @@ export default function RosterSetup({ matchId, team, onBack }) {
             Load roster from PDF
           </h2>
           <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>
-            Upload a roster PDF to automatically populate players and officials
+            Select a roster PDF file to automatically import players and officials
           </p>
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handlePdfUpload}
-            disabled={loading}
-            style={{
-              padding: '10px',
-              fontSize: '14px',
-              background: 'var(--bg-secondary)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '6px',
-              color: 'var(--text)',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                onChange={handleFileSelect}
+                disabled={loading}
+                style={{ display: 'none' }}
+              />
+              <button
+                type="button"
+                onClick={handleChooseFileClick}
+                disabled={loading}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: loading ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.1)',
+                  color: loading ? 'var(--muted)' : 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseOver={(e) => !loading && (e.target.style.opacity = '0.9')}
+                onMouseOut={(e) => !loading && (e.target.style.opacity = '1')}
+              >
+                Choose PDF File
+              </button>
+              {pdfFile && !loading && (
+                <span style={{ fontSize: '14px', color: 'var(--text)', flex: 1 }}>
+                  Selected: {pdfFile.name}
+                </span>
+              )}
+            </div>
+            {pdfFile && !loading && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('[RosterSetup] Import button onClick triggered')
+                  handleImportClick()
+                }}
+                disabled={loading}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'opacity 0.2s',
+                  width: 'fit-content'
+                }}
+                onMouseOver={(e) => !loading && (e.target.style.opacity = '0.9')}
+                onMouseOut={(e) => !loading && (e.target.style.opacity = '1')}
+              >
+                Import
+              </button>
+            )}
+          </div>
           {loading && (
-            <p style={{ fontSize: '14px', color: 'var(--muted)', marginTop: '10px' }}>
-              Parsing PDF...
+            <p style={{ fontSize: '14px', color: 'var(--accent)', marginTop: '10px' }}>
+              Parsing PDF and importing data...
+            </p>
+          )}
+          {error && (
+            <p style={{ fontSize: '14px', color: '#ef4444', marginTop: '10px' }}>
+              {error}
             </p>
           )}
         </div>
@@ -467,27 +599,53 @@ export default function RosterSetup({ matchId, team, onBack }) {
                       />
                     </td>
                     <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={player.libero}
-                        onChange={(e) => handleUpdatePlayer(index, 'libero', e.target.value)}
-                        placeholder="L1, L2, etc."
+                      <select
+                        value={player.libero || ''}
+                        onChange={(e) => {
+                          const newValue = e.target.value
+                          // If L2 is selected but no L1 exists, automatically change L2 to L1
+                          if (newValue === 'libero2') {
+                            const hasL1 = players.some((p, idx) => idx !== index && p.libero === 'libero1')
+                            if (!hasL1) {
+                              handleUpdatePlayer(index, 'libero', 'libero1')
+                              return
+                            }
+                          }
+                          handleUpdatePlayer(index, 'libero', newValue)
+                        }}
                         style={{
-                          width: '80px',
+                          width: '100px',
                           padding: '6px',
                           fontSize: '14px',
-                          background: 'var(--bg-secondary)',
+                          background: '#000000',
                           border: '1px solid rgba(255,255,255,0.2)',
                           borderRadius: '4px',
-                          color: 'var(--text)'
+                          color: 'var(--text)',
+                          cursor: 'pointer'
                         }}
-                      />
+                      >
+                        <option value="" style={{ background: '#000000', color: 'var(--text)' }}>None</option>
+                        {!players.some((p, idx) => idx !== index && p.libero === 'libero1') && (
+                          <option value="libero1" style={{ background: '#000000', color: 'var(--text)' }}>L1</option>
+                        )}
+                        {!players.some((p, idx) => idx !== index && p.libero === 'libero2') && (
+                          <option value="libero2" style={{ background: '#000000', color: 'var(--text)' }}>L2</option>
+                        )}
+                      </select>
                     </td>
                     <td style={{ padding: '12px' }}>
                       <input
-                        type="checkbox"
+                        type="radio"
+                        name={`captain-${team}`}
                         checked={player.isCaptain || false}
-                        onChange={(e) => handleUpdatePlayer(index, 'isCaptain', e.target.checked)}
+                        onChange={(e) => {
+                          // Unset all other captains, set this one
+                          const updatedPlayers = players.map((p, idx) => ({
+                            ...p,
+                            isCaptain: idx === index ? e.target.checked : false
+                          }))
+                          setPlayers(updatedPlayers)
+                        }}
                         style={{
                           width: '20px',
                           height: '20px',
