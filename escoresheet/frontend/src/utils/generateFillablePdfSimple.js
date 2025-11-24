@@ -19,7 +19,7 @@ export async function generateFillablePdf(matchData, pdfTemplatePath = '/matchbl
       throw new Error(`Failed to load PDF template: ${response.statusText}`)
     }
     const templateBytes = await response.arrayBuffer()
-    console.log(`✓ Loaded fresh PDF template (${templateBytes.byteLength} bytes)`)
+    // Removed console.log(`✓ Loaded fresh PDF template (${templateBytes.byteLength} bytes)`)
 
     // Load PDF document
     const pdfDoc = await PDFDocument.load(templateBytes)
@@ -57,11 +57,11 @@ export async function generateFillablePdf(matchData, pdfTemplatePath = '/matchbl
       // Flatten the form (catch any errors from malformed fields)
       try {
         form.flatten()
-        console.log('✓ Form flattened (non-editable)')
+        // Removed console.log('✓ Form flattened (non-editable)')
       } catch (flattenError) {
         // If flatten fails due to malformed fields with "undefined." prefix, just continue
         if (flattenError.message.includes('undefined.')) {
-          console.log('✓ Form flattened (ignored undefined. field errors - please clean up PDF)')
+          // Removed console.log('✓ Form flattened (ignored undefined. field errors - please clean up PDF)')
         } else {
           console.warn('Form flattening error:', flattenError.message)
         }

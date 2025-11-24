@@ -199,22 +199,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
 
   async function unlockTeam(side) {
-    console.log('🔓 unlockTeam called with side:', side)
     
     const password = prompt('Enter 1st Referee password to unlock:')
     
     if (password === null) {
-      console.log('Unlock cancelled')
       return
     }
     
-    console.log('🔓 Password entered, checking...')
     
     if (password === '1234') {
-      console.log('✓ Password correct, unlocking...')
       
       if (side === 'home') {
-        console.log('Unlocking home team')
         setHomeCoachSignature(null)
         setHomeCaptainSignature(null)
         // Update database if matchId exists
@@ -223,10 +218,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             homeCoachSignature: null,
             homeCaptainSignature: null
           })
-          console.log('✓ Database updated for home team')
         }
       } else if (side === 'away') { 
-        console.log('Unlocking away team')
         setAwayCoachSignature(null)
         setAwayCaptainSignature(null)
         // Update database if matchId exists
@@ -235,13 +228,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             awayCoachSignature: null,
             awayCaptainSignature: null
           })
-          console.log('✓ Database updated for away team')
         }
       }
-      console.log('✓ Unlock complete')
       alert('Team unlocked successfully!')
     } else {
-      console.log('❌ Wrong password')
       alert('Wrong password')
     }
   }
@@ -1012,20 +1002,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }
 
   async function confirmCoinToss() {
-    console.log('[COIN TOSS] confirmCoinToss called')
-    console.log('[COIN TOSS] Signatures:', { homeCoach: !!homeCoachSignature, homeCaptain: !!homeCaptainSignature, awayCoach: !!awayCoachSignature, awayCaptain: !!awayCaptainSignature })
     
     if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-      console.log('[COIN TOSS] Missing signatures, showing modal')
       setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
-      console.log('[COIN TOSS] noticeModal set, checking state update')
-      setTimeout(() => console.log('[COIN TOSS] After timeout - modal should be visible'), 100)
       return
     }
     
     // Use matchId if pendingMatchId is not set
     const targetMatchId = pendingMatchId || matchId
-    console.log('[COIN TOSS] Getting match data, targetMatchId:', targetMatchId)
     
     if (!targetMatchId) {
       console.error('[COIN TOSS] No match ID available')
@@ -1035,14 +1019,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     
     const matchData = await db.matches.get(targetMatchId)
     if (!matchData) {
-      console.log('[COIN TOSS] No match data found')
       return
     }
-    console.log('[COIN TOSS] Match data:', matchData)
     
     // Determine which team serves first
     const firstServeTeam = serveA ? teamA : teamB
-    console.log('confirmCoinToss - firstServeTeam:', firstServeTeam, 'serveA:', serveA, 'teamA:', teamA, 'teamB:', teamB)
     
     // Update match with signatures and rosters
     await db.transaction('rw', db.matches, db.players, db.sync_queue, async () => {
@@ -1058,7 +1039,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       coinTossServeA: serveA, // true or false
       coinTossServeB: serveB // true or false
       })
-    console.log('confirmCoinToss - update result:', updateResult, 'coinTossTeamA:', teamA, 'coinTossTeamB:', teamB, 'coinTossServeA:', serveA)
     
     // Add match update to sync queue (only sync fields that exist in Supabase)
     const updatedMatch = await db.matches.get(targetMatchId)
@@ -1206,6 +1186,216 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     // Start the match - directly navigate to scoreboard
     // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
     onStart(targetMatchId)
+  }
+
+  // PDF file handlers - must be defined before conditional returns
+  const handleHomeFileSelect = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setHomePdfFile(file)
+      setHomePdfError('')
+    }
+  }
+
+  const handleAwayFileSelect = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setAwayPdfFile(file)
+      setAwayPdfError('')
+    }
+  }
+
+  const handleHomeImportClick = async () => {
+    if (homePdfFile) {
+      await handleHomePdfUpload(homePdfFile)
+    } else {
+      setHomePdfError('Please select a PDF file first')
+    }
+  }
+
+  const handleAwayImportClick = async () => {
+    if (awayPdfFile) {
+      await handleAwayPdfUpload(awayPdfFile)
+    } else {
+      setAwayPdfError('Please select a PDF file first')
+    }
+  }
+
+  // PDF upload handlers - must be defined before conditional returns
+  const handleHomePdfUpload = async (file) => {
+    if (!file) return
+    setHomePdfLoading(true)
+    setHomePdfError('')
+    
+    try {
+      const parsedData = await parseRosterPdf(file)
+      
+      // Replace all players with imported ones (overwrite mode)
+      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+        id: null,
+        number: parsedPlayer.number || null,
+        firstName: parsedPlayer.firstName || '',
+        lastName: parsedPlayer.lastName || '',
+        dob: parsedPlayer.dob || '',
+        libero: '',
+        isCaptain: false
+      }))
+      
+      setHomeRoster(mergedPlayers)
+      
+      // Update bench officials
+      const importedBenchOfficials = []
+      if (parsedData.coach) {
+        importedBenchOfficials.push({ 
+          role: 'Coach', 
+          firstName: parsedData.coach.firstName || '',
+          lastName: parsedData.coach.lastName || '',
+          dob: parsedData.coach.dob || ''
+        })
+      }
+      if (parsedData.ac1) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 1', 
+          firstName: parsedData.ac1.firstName || '',
+          lastName: parsedData.ac1.lastName || '',
+          dob: parsedData.ac1.dob || ''
+        })
+      }
+      if (parsedData.ac2) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 2', 
+          firstName: parsedData.ac2.firstName || '',
+          lastName: parsedData.ac2.lastName || '',
+          dob: parsedData.ac2.dob || ''
+        })
+      }
+      
+      setBenchHome(importedBenchOfficials)
+      
+      // Save to database if match exists
+      if (matchId && match?.homeTeamId) {
+        const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
+        for (const ep of existingPlayers) {
+          await db.players.delete(ep.id)
+        }
+        
+        await db.players.bulkAdd(
+          mergedPlayers.map(p => ({
+            teamId: match.homeTeamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+        
+        await db.matches.update(matchId, {
+          bench_home: importedBenchOfficials
+        })
+      }
+      
+      if (homeFileInputRef.current) {
+        homeFileInputRef.current.value = ''
+      }
+    } catch (err) {
+      console.error('Error parsing PDF:', err)
+      setHomePdfError(`Failed to parse PDF: ${err.message}`)
+    } finally {
+      setHomePdfLoading(false)
+    }
+  }
+
+  const handleAwayPdfUpload = async (file) => {
+    if (!file) return
+    setAwayPdfLoading(true)
+    setAwayPdfError('')
+    
+    try {
+      const parsedData = await parseRosterPdf(file)
+      
+      // Replace all players with imported ones (overwrite mode)
+      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+        id: null,
+        number: parsedPlayer.number || null,
+        firstName: parsedPlayer.firstName || '',
+        lastName: parsedPlayer.lastName || '',
+        dob: parsedPlayer.dob || '',
+        libero: '',
+        isCaptain: false
+      }))
+      
+      setAwayRoster(mergedPlayers)
+      
+      // Update bench officials
+      const importedBenchOfficials = []
+      if (parsedData.coach) {
+        importedBenchOfficials.push({ 
+          role: 'Coach', 
+          firstName: parsedData.coach.firstName || '',
+          lastName: parsedData.coach.lastName || '',
+          dob: parsedData.coach.dob || ''
+        })
+      }
+      if (parsedData.ac1) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 1', 
+          firstName: parsedData.ac1.firstName || '',
+          lastName: parsedData.ac1.lastName || '',
+          dob: parsedData.ac1.dob || ''
+        })
+      }
+      if (parsedData.ac2) {
+        importedBenchOfficials.push({ 
+          role: 'Assistant Coach 2', 
+          firstName: parsedData.ac2.firstName || '',
+          lastName: parsedData.ac2.lastName || '',
+          dob: parsedData.ac2.dob || ''
+        })
+      }
+      
+      setBenchAway(importedBenchOfficials)
+      
+      // Save to database if match exists
+      if (matchId && match?.awayTeamId) {
+        const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
+        for (const ep of existingPlayers) {
+          await db.players.delete(ep.id)
+        }
+        
+        await db.players.bulkAdd(
+          mergedPlayers.map(p => ({
+            teamId: match.awayTeamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+        
+        await db.matches.update(matchId, {
+          bench_away: importedBenchOfficials
+        })
+      }
+      
+      if (awayFileInputRef.current) {
+        awayFileInputRef.current.value = ''
+      }
+    } catch (err) {
+      console.error('Error parsing PDF:', err)
+      setAwayPdfError(`Failed to parse PDF: ${err.message}`)
+    } finally {
+      setAwayPdfLoading(false)
+    }
   }
 
   if (currentView === 'info') {
@@ -1421,10 +1611,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         {isHomeLocked && (
           <div className="panel" style={{ marginTop:8 }}>
             <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
-              console.log('🔓 Unlock button clicked for home team')
-              console.log('isHomeLocked:', isHomeLocked)
-              console.log('homeCoachSignature:', !!homeCoachSignature)
-              console.log('homeCaptainSignature:', !!homeCaptainSignature)
               unlockTeam('home')
             }}>Unlock</button></p>
           </div>
@@ -1689,7 +1875,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               }
               
               await db.matches.update(matchId, updateData)
-              console.log('✓ Home team saved and re-locked')
             }
             setCurrentView('main')
           }}>Confirm</button>
@@ -1738,10 +1923,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         {isAwayLocked && (
           <div className="panel" style={{ marginTop:8 }}>
             <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
-              console.log('🔓 Unlock button clicked for away team')
-              console.log('isAwayLocked:', isAwayLocked)
-              console.log('awayCoachSignature:', !!awayCoachSignature)
-              console.log('awayCaptainSignature:', !!awayCaptainSignature)
               unlockTeam('away')
             }}>Unlock</button></p>
           </div>
@@ -2069,7 +2250,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               }
               
               await db.matches.update(matchId, updateData)
-              console.log('✓ Away team saved and re-locked')
             }
             setCurrentView('main')
           }}>Confirm</button>
@@ -2958,7 +3138,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               // Save coin toss result and firstServe when returning to match
               if (matchId) {
                 const firstServeTeam = serveA ? teamA : teamB
-                console.log('Return to match - updating coin toss:', { teamA, teamB, serveA, serveB, firstServeTeam })
                 await db.matches.update(matchId, {
                   firstServe: firstServeTeam,
                   coinTossTeamA: teamA,
@@ -3298,215 +3477,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       await db.matches.update(matchId, { awayTeamConnectionEnabled: enabled })
     } catch (error) {
       console.error('Failed to update away team connection setting:', error)
-    }
-  }
-
-  // PDF upload handlers
-  const handleHomePdfUpload = async (file) => {
-    if (!file) return
-    setHomePdfLoading(true)
-    setHomePdfError('')
-    
-    try {
-      const parsedData = await parseRosterPdf(file)
-      
-      // Replace all players with imported ones (overwrite mode)
-      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
-        id: null,
-        number: parsedPlayer.number || null,
-        firstName: parsedPlayer.firstName || '',
-        lastName: parsedPlayer.lastName || '',
-        dob: parsedPlayer.dob || '',
-        libero: '',
-        isCaptain: false
-      }))
-      
-      setHomeRoster(mergedPlayers)
-      
-      // Update bench officials
-      const importedBenchOfficials = []
-      if (parsedData.coach) {
-        importedBenchOfficials.push({ 
-          role: 'Coach', 
-          firstName: parsedData.coach.firstName || '',
-          lastName: parsedData.coach.lastName || '',
-          dob: parsedData.coach.dob || ''
-        })
-      }
-      if (parsedData.ac1) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 1', 
-          firstName: parsedData.ac1.firstName || '',
-          lastName: parsedData.ac1.lastName || '',
-          dob: parsedData.ac1.dob || ''
-        })
-      }
-      if (parsedData.ac2) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 2', 
-          firstName: parsedData.ac2.firstName || '',
-          lastName: parsedData.ac2.lastName || '',
-          dob: parsedData.ac2.dob || ''
-        })
-      }
-      
-      setBenchHome(importedBenchOfficials)
-      
-      // Save to database if match exists
-      if (matchId && match?.homeTeamId) {
-        const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
-        for (const ep of existingPlayers) {
-          await db.players.delete(ep.id)
-        }
-        
-        await db.players.bulkAdd(
-          mergedPlayers.map(p => ({
-            teamId: match.homeTeamId,
-            number: p.number,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            name: `${p.lastName} ${p.firstName}`,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
-        
-        await db.matches.update(matchId, {
-          bench_home: importedBenchOfficials
-        })
-      }
-      
-      if (homeFileInputRef.current) {
-        homeFileInputRef.current.value = ''
-      }
-    } catch (err) {
-      console.error('Error parsing PDF:', err)
-      setHomePdfError(`Failed to parse PDF: ${err.message}`)
-    } finally {
-      setHomePdfLoading(false)
-    }
-  }
-
-  const handleAwayPdfUpload = async (file) => {
-    if (!file) return
-    setAwayPdfLoading(true)
-    setAwayPdfError('')
-    
-    try {
-      const parsedData = await parseRosterPdf(file)
-      
-      // Replace all players with imported ones (overwrite mode)
-      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
-        id: null,
-        number: parsedPlayer.number || null,
-        firstName: parsedPlayer.firstName || '',
-        lastName: parsedPlayer.lastName || '',
-        dob: parsedPlayer.dob || '',
-        libero: '',
-        isCaptain: false
-      }))
-      
-      setAwayRoster(mergedPlayers)
-      
-      // Update bench officials
-      const importedBenchOfficials = []
-      if (parsedData.coach) {
-        importedBenchOfficials.push({ 
-          role: 'Coach', 
-          firstName: parsedData.coach.firstName || '',
-          lastName: parsedData.coach.lastName || '',
-          dob: parsedData.coach.dob || ''
-        })
-      }
-      if (parsedData.ac1) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 1', 
-          firstName: parsedData.ac1.firstName || '',
-          lastName: parsedData.ac1.lastName || '',
-          dob: parsedData.ac1.dob || ''
-        })
-      }
-      if (parsedData.ac2) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 2', 
-          firstName: parsedData.ac2.firstName || '',
-          lastName: parsedData.ac2.lastName || '',
-          dob: parsedData.ac2.dob || ''
-        })
-      }
-      
-      setBenchAway(importedBenchOfficials)
-      
-      // Save to database if match exists
-      if (matchId && match?.awayTeamId) {
-        const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
-        for (const ep of existingPlayers) {
-          await db.players.delete(ep.id)
-        }
-        
-        await db.players.bulkAdd(
-          mergedPlayers.map(p => ({
-            teamId: match.awayTeamId,
-            number: p.number,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            name: `${p.lastName} ${p.firstName}`,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
-        
-        await db.matches.update(matchId, {
-          bench_away: importedBenchOfficials
-        })
-      }
-      
-      if (awayFileInputRef.current) {
-        awayFileInputRef.current.value = ''
-      }
-    } catch (err) {
-      console.error('Error parsing PDF:', err)
-      setAwayPdfError(`Failed to parse PDF: ${err.message}`)
-    } finally {
-      setAwayPdfLoading(false)
-    }
-  }
-
-  const handleHomeFileSelect = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      setHomePdfFile(file)
-      setHomePdfError('')
-    }
-  }
-
-  const handleAwayFileSelect = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      setAwayPdfFile(file)
-      setAwayPdfError('')
-    }
-  }
-
-  const handleHomeImportClick = async () => {
-    if (homePdfFile) {
-      await handleHomePdfUpload(homePdfFile)
-    } else {
-      setHomePdfError('Please select a PDF file first')
-    }
-  }
-
-  const handleAwayImportClick = async () => {
-    if (awayPdfFile) {
-      await handleAwayPdfUpload(awayPdfFile)
-    } else {
-      setAwayPdfError('Please select a PDF file first')
     }
   }
 

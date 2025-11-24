@@ -17,8 +17,10 @@ export interface Player {
 
 // Sub event structure for the UI
 export interface SubRecord {
-  playerIn: string;
-  score: string; // Format "12:15"
+  playerOut: number; // Player leaving the court
+  playerIn: number; // Player coming in
+  score: string; // Format "substitutingTeam:otherTeam" (e.g., "3:7")
+  isCircled?: boolean; // True if playerOut is circled (can't reenter)
 }
 
 // Data required to render a single Set

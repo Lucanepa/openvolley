@@ -24,12 +24,12 @@ export async function parseRosterPdf(file) {
       fullText += pageText + '\n'
     }
 
-    console.log('[parseRosterPdf] Extracted text (first 2000 chars):', fullText.substring(0, 2000))
-    console.log('[parseRosterPdf] Full text length:', fullText.length)
+    // Removed console.log('[parseRosterPdf] Extracted text (first 2000 chars):', fullText.substring(0, 2000))
+    // Removed console.log('[parseRosterPdf] Full text length:', fullText.length)
 
     // Parse the text to extract player and official data
     const result = parseRosterText(fullText)
-    console.log('[parseRosterPdf] Parse result:', result)
+    // Removed console.log('[parseRosterPdf] Parse result:', result)
     return result
   } catch (error) {
     console.error('Error parsing PDF:', error)
@@ -45,12 +45,12 @@ function parseRosterText(text) {
     ac2: null
   }
 
-  console.log('[parseRosterText] Raw text (first 1000 chars):', text.substring(0, 1000))
+  // Removed console.log('[parseRosterText] Raw text (first 1000 chars):', text.substring(0, 1000))
 
   // Normalize text - remove extra whitespace
   const normalizedText = text.replace(/\s+/g, ' ').trim()
   
-  console.log('[parseRosterText] Normalized text (first 1000 chars):', normalizedText.substring(0, 1000))
+  // Removed console.log('[parseRosterText] Normalized text (first 1000 chars):', normalizedText.substring(0, 1000))
   
   // Common patterns for different languages
   const patterns = {
@@ -115,7 +115,7 @@ function parseRosterText(text) {
 
     // If no players found with regex, try Italian format and other patterns
     if (result.players.length === 0) {
-      console.log('[parseRosterText] No players found with regex, trying Italian format and other patterns')
+      // Removed console.log('[parseRosterText] No players found with regex, trying Italian format and other patterns')
       
       // Try Italian format: SV number (6 digits), First Name, Last Name, M/F, Date
       // Pattern: 6-digit number, name, name, M/F, date (DD.MM.YYYY or DD/MM/YYYY)
@@ -134,7 +134,7 @@ function parseRosterText(text) {
         // Users can adjust these manually if needed
         const playerNumber = result.players.length + 1
         
-        console.log('[parseRosterText] Found Italian format player:', { svNumber, firstName, lastName, dob, playerNumber })
+        // Removed console.log('[parseRosterText] Found Italian format player:', { svNumber, firstName, lastName, dob, playerNumber })
         
         result.players.push({
           number: playerNumber,
@@ -154,7 +154,7 @@ function parseRosterText(text) {
           const lastName = match[3].trim()
           const dob = normalizeDate(match[4].trim())
           
-          console.log('[parseRosterText] Found simple format player:', { number, firstName, lastName, dob })
+          // Removed console.log('[parseRosterText] Found simple format player:', { number, firstName, lastName, dob })
           
           result.players.push({
             number,
@@ -165,7 +165,7 @@ function parseRosterText(text) {
         }
       }
       
-      console.log('[parseRosterText] Total players found:', result.players.length)
+      // Removed console.log('[parseRosterText] Total players found:', result.players.length)
     }
     
     // Parse Italian coach format: "Allenatore: #52205 | Michelle Howald (1997)"
@@ -178,7 +178,7 @@ function parseRosterText(text) {
           lastName: coachMatch[2]?.trim() || '',
           dob: coachMatch[3] ? `01/01/${coachMatch[3]}` : '' // Year only, set to Jan 1
         }
-        console.log('[parseRosterText] Found Italian coach:', result.coach)
+        // Removed console.log('[parseRosterText] Found Italian coach:', result.coach)
       }
     }
     
@@ -192,7 +192,7 @@ function parseRosterText(text) {
           lastName: ac1Match[2]?.trim() || '',
           dob: ac1Match[3] ? `01/01/${ac1Match[3]}` : ''
         }
-        console.log('[parseRosterText] Found Italian AC1:', result.ac1)
+        // Removed console.log('[parseRosterText] Found Italian AC1:', result.ac1)
       }
     }
     
@@ -206,7 +206,7 @@ function parseRosterText(text) {
           lastName: ac2Match[2]?.trim() || '',
           dob: ac2Match[3] ? `01/01/${ac2Match[3]}` : ''
         }
-        console.log('[parseRosterText] Found Italian AC2:', result.ac2)
+        // Removed console.log('[parseRosterText] Found Italian AC2:', result.ac2)
       }
     }
 
