@@ -23,6 +23,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [editPinModal, setEditPinModal] = useState(false)
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
+  const [editPinType, setEditPinType] = useState(null) // 'referee' | 'teamA' | 'teamB'
+  const [connectionModal, setConnectionModal] = useState(null) // 'referee' | 'teamA' | 'teamB' | null
+  const [connectionModalPosition, setConnectionModalPosition] = useState({ x: 0, y: 0 })
   const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
@@ -4918,6 +4921,64 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const isAnyRefereeConnected = isReferee1Connected || isReferee2Connected
   const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled !== false
+  const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled !== false
+  const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled !== false
+
+  // Check if bench teams are connected (heartbeat within last 15 seconds)
+  const isHomeTeamConnected = useMemo(() => {
+    if (!data?.match?.lastHomeTeamHeartbeat) return false
+    const lastHeartbeat = new Date(data.match.lastHomeTeamHeartbeat).getTime()
+    const currentTime = new Date().getTime()
+    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
+  }, [data?.match?.lastHomeTeamHeartbeat, now])
+
+  const isAwayTeamConnected = useMemo(() => {
+    if (!data?.match?.lastAwayTeamHeartbeat) return false
+    const lastHeartbeat = new Date(data.match.lastAwayTeamHeartbeat).getTime()
+    const currentTime = new Date().getTime()
+    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
+  }, [data?.match?.lastAwayTeamHeartbeat, now])
+
+  // Helper function to get connection status and color
+  const getConnectionStatus = useCallback((type) => {
+    if (type === 'referee') {
+      if (!refereeConnectionEnabled) {
+        return { status: 'disabled', color: '#6b7280' } // grey
+      }
+      if (isReferee1Connected || isReferee2Connected) {
+        return { status: 'connected', color: '#22c55e' } // green
+      }
+      // Enabled but not connected
+      return { status: 'not_connected', color: '#eab308' } // yellow
+    } else if (type === 'teamA') {
+      if (!homeTeamConnectionEnabled) {
+        return { status: 'disabled', color: '#6b7280' } // grey
+      }
+      const hasPin = !!data?.match?.homeTeamPin
+      if (!hasPin) {
+        return { status: 'error', color: '#ef4444' } // red - no PIN configured
+      }
+      if (isHomeTeamConnected) {
+        return { status: 'connected', color: '#22c55e' } // green
+      }
+      // Enabled, has PIN, but not connected
+      return { status: 'not_connected', color: '#eab308' } // yellow
+    } else if (type === 'teamB') {
+      if (!awayTeamConnectionEnabled) {
+        return { status: 'disabled', color: '#6b7280' } // grey
+      }
+      const hasPin = !!data?.match?.awayTeamPin
+      if (!hasPin) {
+        return { status: 'error', color: '#ef4444' } // red - no PIN configured
+      }
+      if (isAwayTeamConnected) {
+        return { status: 'connected', color: '#22c55e' } // green
+      }
+      // Enabled, has PIN, but not connected
+      return { status: 'not_connected', color: '#eab308' } // yellow
+    }
+    return { status: 'error', color: '#ef4444' } // red - unknown
+  }, [refereeConnectionEnabled, isReferee1Connected, isReferee2Connected, homeTeamConnectionEnabled, awayTeamConnectionEnabled, isHomeTeamConnected, isAwayTeamConnected, data?.match])
 
   const callReferee = useCallback(async () => {
     if (!matchId) return
@@ -4939,11 +5000,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [matchId])
 
-  const handleEditPin = useCallback(() => {
-    setNewPin(data?.match?.refereePin || '')
+  const handleHomeTeamConnectionToggle = useCallback(async (enabled) => {
+    if (!matchId) return
+    try {
+      await db.matches.update(matchId, { homeTeamConnectionEnabled: enabled })
+    } catch (error) {
+      // Silently handle error
+    }
+  }, [matchId])
+
+  const handleAwayTeamConnectionToggle = useCallback(async (enabled) => {
+    if (!matchId) return
+    try {
+      await db.matches.update(matchId, { awayTeamConnectionEnabled: enabled })
+    } catch (error) {
+      // Silently handle error
+    }
+  }, [matchId])
+
+  const handleEditPin = useCallback((type = 'referee') => {
+    let currentPin = ''
+    if (type === 'referee') {
+      currentPin = data?.match?.refereePin || ''
+    } else if (type === 'teamA') {
+      currentPin = data?.match?.homeTeamPin || ''
+    } else if (type === 'teamB') {
+      currentPin = data?.match?.awayTeamPin || ''
+    }
+    setNewPin(currentPin)
     setPinError('')
+    setEditPinType(type)
     setEditPinModal(true)
-  }, [data?.match?.refereePin])
+  }, [data?.match?.refereePin, data?.match?.homeTeamPin, data?.match?.awayTeamPin])
 
   const handleSavePin = useCallback(async () => {
     if (!matchId) return
@@ -4959,13 +5047,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     try {
-      await db.matches.update(matchId, { refereePin: newPin })
+      let updateField = {}
+      if (editPinType === 'referee') {
+        updateField = { refereePin: newPin }
+      } else if (editPinType === 'teamA') {
+        updateField = { homeTeamPin: newPin }
+      } else if (editPinType === 'teamB') {
+        updateField = { awayTeamPin: newPin }
+      }
+      await db.matches.update(matchId, updateField)
       setEditPinModal(false)
       setPinError('')
+      setEditPinType(null)
     } catch (error) {
       setPinError('Failed to save PIN')
     }
-  }, [matchId, newPin])
+  }, [matchId, newPin, editPinType])
 
   const confirmCourtSwitch = useCallback(async () => {
     if (!courtSwitchModal) return
@@ -5023,6 +5120,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const teamALabel = leftTeam.isTeamA ? 'A' : 'B'
   const teamBLabel = rightTeam.isTeamA ? 'A' : 'B'
+  const teamAShortName = leftIsHome 
+    ? (data?.match?.homeShortName || leftTeam.name?.substring(0, 3).toUpperCase() || 'A')
+    : (data?.match?.awayShortName || leftTeam.name?.substring(0, 3).toUpperCase() || 'A')
+  const teamBShortName = leftIsHome 
+    ? (data?.match?.awayShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
+    : (data?.match?.homeShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
 
   return (
     <div className="match-record">
@@ -5038,127 +5141,145 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div className="toolbar-divider" />
           <span className="toolbar-clock">{formatTimestamp(now)}</span>
           
-          {/* Referee Connection Status Indicators */}
-          {refereeConnectionEnabled && (isReferee1Connected || isReferee2Connected) && (
-            <>
-              <div className="toolbar-divider" />
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  background: 'rgba(255,255,255,0.05)',
-                  borderRadius: '6px',
-                  fontSize: '11px'
-                }}>
-                  <div style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: isReferee1Connected ? '#22c55e' : '#6b7280',
-                    boxShadow: isReferee1Connected 
-                      ? '0 0 8px rgba(34, 197, 94, 0.6)' 
-                      : 'none'
-                  }} />
-                  <span style={{ color: isReferee1Connected ? 'var(--text)' : 'var(--muted)' }}>
-                    1st Referee
-                  </span>
-                </div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  background: 'rgba(255,255,255,0.05)',
-                  borderRadius: '6px',
-                  fontSize: '11px'
-                }}>
-                  <div style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: isReferee2Connected ? '#22c55e' : '#6b7280',
-                    boxShadow: isReferee2Connected 
-                      ? '0 0 8px rgba(34, 197, 94, 0.6)' 
-                      : 'none'
-                  }} />
-                  <span style={{ color: isReferee2Connected ? 'var(--text)' : 'var(--muted)' }}>
-                    2nd Referee
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
-          
-          {/* Referee Connection Checkbox and PIN */}
+          {/* Connection Status Indicators */}
           <div className="toolbar-divider" />
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '4px 10px',
-            background: 'rgba(255,255,255,0.05)',
-            borderRadius: '6px'
-          }}>
-            <label style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-              color: 'var(--text)'
-            }}>
-              <input
-                type="checkbox"
-                checked={refereeConnectionEnabled}
-                onChange={(e) => handleRefereeConnectionToggle(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              Referee Connection
-            </label>
-            
-            {refereeConnectionEnabled && data?.match?.refereePin && (
-              <>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '2px 8px',
-                  background: 'rgba(0,0,0,0.3)',
-                  borderRadius: '4px'
-                }}>
-                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>PIN:</span>
-                  <span style={{
-                    fontWeight: 700,
-                    fontSize: '12px',
-                    color: 'var(--accent)',
-                    letterSpacing: '1px',
-                    fontFamily: 'monospace'
-                  }}>
-                    {data.match.refereePin}
-                  </span>
-                </div>
-                <button
-                  onClick={handleEditPin}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    background: 'rgba(255,255,255,0.1)',
-                    color: 'var(--text)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  Edit
-                </button>
-              </>
-            )}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {/* Referee Connection Indicator */}
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
+                setConnectionModal('referee')
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                background: 'rgba(255,255,255,0.05)',
+                borderRadius: '6px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            >
+              {(() => {
+                const status = getConnectionStatus('referee')
+                return (
+                  <>
+                    <div style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: status.color,
+                      boxShadow: status.status === 'connected'
+                        ? `0 0 6px ${status.color}80` 
+                        : 'none'
+                    }} />
+                    <span style={{ 
+                      color: status.status === 'disabled' ? 'var(--muted)' : 'var(--text)',
+                      fontSize: '10px'
+                    }}>
+                      Ref
+                    </span>
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* Team A Connection Indicator */}
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
+                setConnectionModal('teamA')
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                background: 'rgba(255,255,255,0.05)',
+                borderRadius: '6px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            >
+              {(() => {
+                const status = getConnectionStatus('teamA')
+                return (
+                  <>
+                    <div style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: status.color,
+                      boxShadow: status.status === 'connected'
+                        ? `0 0 6px ${status.color}80` 
+                        : 'none'
+                    }} />
+                    <span style={{ 
+                      color: status.status === 'disabled' ? 'var(--muted)' : 'var(--text)',
+                      fontSize: '10px',
+                      fontWeight: 600
+                    }}>
+                      {teamAShortName}
+                    </span>
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* Team B Connection Indicator */}
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
+                setConnectionModal('teamB')
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                background: 'rgba(255,255,255,0.05)',
+                borderRadius: '6px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            >
+              {(() => {
+                const status = getConnectionStatus('teamB')
+                return (
+                  <>
+                    <div style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: status.color,
+                      boxShadow: status.status === 'connected'
+                        ? `0 0 6px ${status.color}80` 
+                        : 'none'
+                    }} />
+                    <span style={{ 
+                      color: status.status === 'disabled' ? 'var(--muted)' : 'var(--text)',
+                      fontSize: '10px',
+                      fontWeight: 600
+                    }}>
+                      {teamBShortName}
+                    </span>
+                  </>
+                )
+              })()}
+            </div>
           </div>
         </div>
         <div className="toolbar-center">
@@ -5240,8 +5361,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </div>
       </div>
 
-      {/* Rosters is now in a modal above - removing inline version */}
-      {false && showRosters && (() => {
+      {/* Rosters Modal */}
+      {showRosters && (
+        <Modal
+          title="Rosters"
+          open={showRosters}
+          onClose={() => setShowRosters(false)}
+          width={1200}
+        >
+          {(() => {
         // Separate players and liberos
         const homePlayers = (data.homePlayers || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
         const homeLiberos = (data.homePlayers || [])
@@ -5281,7 +5409,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const paddedHomeBench = [...homeBench, ...Array(maxBench - homeBench.length).fill(null)]
         const paddedAwayBench = [...awayBench, ...Array(maxBench - awayBench.length).fill(null)]
 
-  return (
+        return (
           <div className="roster-panel">
             {/* Players Section */}
             <div className="roster-tables">
@@ -5526,9 +5654,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </table>
               </div>
             )}
-    </div>
-  )
+          </div>
+        )
       })()}
+        </Modal>
+      )}
 
       <div className="match-content">
         <aside className="team-controls">
@@ -10256,14 +10386,202 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
       
+      {/* Connection Status Popover */}
+      {connectionModal && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setConnectionModal(null)
+            }
+          }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 10000,
+            background: 'transparent'
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: `${connectionModalPosition.x}px`,
+              top: `${connectionModalPosition.y}px`,
+              background: 'rgba(15, 23, 42, 0.98)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '12px',
+              padding: '16px',
+              minWidth: '200px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              zIndex: 10001
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Thought bubble tail */}
+            <div style={{
+              position: 'absolute',
+              top: '-7px',
+              left: '20px',
+              width: 0,
+              height: 0,
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
+              borderBottom: '8px solid rgba(15, 23, 42, 0.98)'
+            }} />
+            <div style={{
+              position: 'absolute',
+              top: '-8px',
+              left: '20px',
+              width: 0,
+              height: 0,
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
+              borderBottom: '8px solid rgba(255,255,255,0.2)'
+            }} />
+            
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px'
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                  {connectionModal === 'referee' ? 'Referee Connection' : connectionModal === 'teamA' ? `Team ${teamAShortName} Connection` : `Team ${teamBShortName} Connection`}
+                </span>
+                <button
+                  onClick={() => setConnectionModal(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--muted)',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    lineHeight: 1,
+                    padding: 0,
+                    width: '20px',
+                    height: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                padding: '8px 0'
+              }}>
+                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                  Enable Connection
+                </span>
+                <div style={{
+                  position: 'relative',
+                  width: '44px',
+                  height: '24px',
+                  background: (connectionModal === 'referee' ? refereeConnectionEnabled : connectionModal === 'teamA' ? homeTeamConnectionEnabled : awayTeamConnectionEnabled) ? '#22c55e' : '#6b7280',
+                  borderRadius: '12px',
+                  transition: 'background 0.2s',
+                  cursor: 'pointer'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (connectionModal === 'referee') {
+                    handleRefereeConnectionToggle(!refereeConnectionEnabled)
+                  } else if (connectionModal === 'teamA') {
+                    handleHomeTeamConnectionToggle(!homeTeamConnectionEnabled)
+                  } else if (connectionModal === 'teamB') {
+                    handleAwayTeamConnectionToggle(!awayTeamConnectionEnabled)
+                  }
+                }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: '2px',
+                    left: (connectionModal === 'referee' ? refereeConnectionEnabled : connectionModal === 'teamA' ? homeTeamConnectionEnabled : awayTeamConnectionEnabled) ? '22px' : '2px',
+                    width: '20px',
+                    height: '20px',
+                    background: '#fff',
+                    borderRadius: '50%',
+                    transition: 'left 0.2s',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  }} />
+                </div>
+              </label>
+              
+              {(connectionModal === 'referee' ? refereeConnectionEnabled : connectionModal === 'teamA' ? homeTeamConnectionEnabled : awayTeamConnectionEnabled) && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '12px',
+                  background: 'rgba(0,0,0,0.3)',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    PIN
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px'
+                  }}>
+                    <span style={{
+                      fontWeight: 700,
+                      fontSize: '18px',
+                      color: 'var(--accent)',
+                      letterSpacing: '2px',
+                      fontFamily: 'monospace'
+                    }}>
+                      {connectionModal === 'referee' 
+                        ? (data?.match?.refereePin || '—') 
+                        : connectionModal === 'teamA'
+                        ? (data?.match?.homeTeamPin || '—')
+                        : (data?.match?.awayTeamPin || '—')}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleEditPin(connectionModal === 'referee' ? 'referee' : connectionModal === 'teamA' ? 'teamA' : 'teamB')
+                        setConnectionModal(null)
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        background: 'rgba(255,255,255,0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit PIN Modal */}
       {editPinModal && (
         <Modal
-          title="Edit Referee PIN"
+          title={editPinType === 'referee' ? 'Edit Referee PIN' : editPinType === 'teamA' ? `Edit Team ${teamAShortName} PIN` : `Edit Team ${teamBShortName} PIN`}
           open={true}
           onClose={() => {
             setEditPinModal(false)
             setPinError('')
+            setEditPinType(null)
           }}
           width={400}
         >
@@ -10311,6 +10629,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 onClick={() => {
                   setEditPinModal(false)
                   setPinError('')
+                  setEditPinType(null)
                 }}
                 style={{
                   padding: '10px 20px',
