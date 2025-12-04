@@ -38,7 +38,8 @@ export default defineConfig({
         main: './index.html',
         referee: './referee.html',
         scoresheet: './scoresheet.html',
-        bench: './bench.html'
+        bench: './bench.html',
+        livescore: './livescore.html'
       },
       output: {
         // Avoid eval in production builds

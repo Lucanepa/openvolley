@@ -17,6 +17,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
   const [showRemarks, setShowRemarks] = useState(false)
+  const [remarksText, setRemarksText] = useState('')
+  const remarksTextareaRef = useRef(null)
   const [showRosters, setShowRosters] = useState(false)
   const [showSanctions, setShowSanctions] = useState(false)
   const [optionsModal, setOptionsModal] = useState(false)
@@ -28,6 +30,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [connectionModalPosition, setConnectionModalPosition] = useState({ x: 0, y: 0 })
   const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
+  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
   const [setEndModal, setSetEndModal] = useState(null) // { set, homePoints, awayPoints } | null
   const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
@@ -213,6 +216,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       })
   }, [data, ensureActiveSet, matchId])
 
+  // Sync remarks text when modal opens
+  useEffect(() => {
+    if (showRemarks) {
+      const currentRemarks = data?.match?.remarks || ''
+      // If there are existing remarks, add a newline at the end for new input
+      setRemarksText(currentRemarks ? `${currentRemarks}\n` : '')
+      // Focus textarea after modal opens
+      setTimeout(() => {
+        if (remarksTextareaRef.current) {
+          remarksTextareaRef.current.focus()
+          const len = remarksTextareaRef.current.value.length
+          remarksTextareaRef.current.setSelectionRange(len, len)
+        }
+      }, 100)
+    }
+  }, [showRemarks, data?.match?.remarks])
+
   // Determine which team is A and which is B based on coin toss
   const teamAKey = useMemo(() => {
     if (!data?.match) return 'home'
@@ -227,13 +247,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const leftIsHome = useMemo(() => {
     if (!data?.set) return true
     
+    const setIndex = data.set.index
+    
+    // Check for manual override first (for sets 1-4)
+    if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
+      const override = data.match.setLeftTeamOverrides[setIndex]
+      if (override) {
+        // Override is 'A' or 'B'
+        const leftTeamKey = override === 'A' ? teamAKey : teamBKey
+        return leftTeamKey === 'home'
+      }
+    }
+    
     // Set 1: Team A on left
-    if (data.set.index === 1) {
+    if (setIndex === 1) {
       return teamAKey === 'home'
     } 
     
     // Set 5: Special case with court switch at 8 points
-    if (data.set.index === 5) {
+    if (setIndex === 5) {
       // Use set5LeftTeam if specified, otherwise default to teams switched (like set 2)
       if (data.match?.set5LeftTeam) {
         const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
@@ -258,14 +290,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return isHome
     }
     
-    // Sets 2, 3, 4: Teams alternate sides
+    // Sets 2, 3, 4: Teams alternate sides (automatic if no override)
     // Set 1: Team A left, Team B right
     // Set 2: Team A right, Team B left (switched)
     // Set 3: Team A left, Team B right (switched back - same as Set 1)
     // Set 4: Team A right, Team B left (switched - same as Set 2)
     // Pattern: odd sets (1, 3) have Team A on left, even sets (2, 4) have Team A on right
-    return data.set.index % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, teamAKey])
+    return setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
+  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey])
 
   // Calculate set score (number of sets won by each team)
   const setScore = useMemo(() => {
@@ -418,6 +450,79 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
     return !hasPoints
   }, [data?.events, data?.set])
+
+  // Check if we're between sets (previous set finished, current set hasn't started)
+  const isBetweenSets = useMemo(() => {
+    if (!data?.sets || !data?.set) return false
+    const allSets = data.sets.sort((a, b) => a.index - b.index)
+    const currentSetIndex = data.set.index
+    if (currentSetIndex === 1) return false // First set, not between sets
+    
+    const previousSet = allSets.find(s => s.index === currentSetIndex - 1)
+    if (!previousSet || !previousSet.finished) return false
+    
+    // Check if current set has started (has points or set_start event)
+    const hasSetStarted = data.events?.some(e => 
+      (e.type === 'point' || e.type === 'set_start') && e.setIndex === currentSetIndex
+    )
+    
+    return !hasSetStarted
+  }, [data?.sets, data?.set, data?.events])
+
+  // Start between-sets countdown when we detect we're between sets
+  useEffect(() => {
+    if (isBetweenSets && !betweenSetsCountdown) {
+      setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
+    } else if (!isBetweenSets && betweenSetsCountdown) {
+      setBetweenSetsCountdown(null)
+    }
+    // Don't restart countdown if it has finished - let it stay finished
+  }, [isBetweenSets, betweenSetsCountdown])
+
+  // Handle between-sets countdown timer
+  useEffect(() => {
+    if (!betweenSetsCountdown || !betweenSetsCountdown.started || betweenSetsCountdown.finished) return
+
+    if (betweenSetsCountdown.countdown <= 0) {
+      setBetweenSetsCountdown({ ...betweenSetsCountdown, finished: true, started: false })
+      return
+    }
+
+    const timer = setInterval(() => {
+      setBetweenSetsCountdown(prev => {
+        if (!prev || !prev.started || prev.finished) return prev
+        const newCountdown = prev.countdown - 1
+        if (newCountdown <= 0) {
+          return { ...prev, finished: true, started: false }
+        }
+        return { ...prev, countdown: newCountdown }
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [betweenSetsCountdown])
+
+  // Format countdown time: ' and '' (no ' when less than a minute)
+  const formatCountdown = useCallback((seconds) => {
+    if (seconds < 60) {
+      return `${seconds}''`
+    }
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    if (remainingSeconds === 0) {
+      return `${minutes}'`
+    }
+    return `${minutes}' ${remainingSeconds}''`
+  }, [])
+
+  const stopBetweenSetsCountdown = useCallback(() => {
+    setBetweenSetsCountdown(null)
+  }, [])
+
+  const beginSet = useCallback(() => {
+    setBetweenSetsCountdown(null)
+    // The set will start when user clicks "Start set" button
+  }, [])
 
   const getTeamLineupState = useCallback((teamKey) => {
     if (!data?.events || !data?.set) {
@@ -765,16 +870,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           return false
         }
         
-        // Filter out players who were exceptionally substituted (cannot take part anymore)
-        const wasExceptionallySubstituted = data.events?.some(e => 
-          e.type === 'substitution' && 
-          e.payload?.team === teamKey &&
-          String(e.payload?.playerOut) === String(playerNumber) &&
-          e.payload?.isExceptional === true
-        )
-        if (wasExceptionallySubstituted) {
-          return false
-        }
+        // Keep expelled/disqualified/exceptionally substituted players on bench (they'll show with X)
+        // They should be visible but not selectable for substitutions/lineups
         
         return true
       })
@@ -818,16 +915,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           return false
         }
         
-        // Filter out players who were exceptionally substituted (cannot take part anymore)
-        const wasExceptionallySubstituted = data.events?.some(e => 
-          e.type === 'substitution' && 
-          e.payload?.team === teamKey &&
-          String(e.payload?.playerOut) === String(playerNumber) &&
-          e.payload?.isExceptional === true
-        )
-        if (wasExceptionallySubstituted) {
-          return false
-        }
+        // Keep expelled/disqualified/exceptionally substituted players on bench (they'll show with X)
+        // They should be visible but not selectable for substitutions/lineups
         
         return true
       })
@@ -1135,13 +1224,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       if (onFinishSet) onFinishSet(set)
     } else {
-      const newSetId = await db.sets.add({ matchId: set.matchId, index: set.index + 1, homePoints: 0, awayPoints: 0, finished: false })
+      const newSetIndex = set.index + 1
+      const newSetId = await db.sets.add({ matchId: set.matchId, index: newSetIndex, homePoints: 0, awayPoints: 0, finished: false })
       
-      // Reset set5CourtSwitched flag when starting a new set
-      await db.matches.update(set.matchId, { set5CourtSwitched: false })
-      
-      // Get match to check if it's a test match
+      // Get match to determine first serve for the new set
       const match = await db.matches.get(set.matchId)
+      const coinTossFirstServe = match?.firstServe || 'home' // Original first serve from coin toss
+      const teamAKey = match?.coinTossTeamA || 'home'
+      const teamBKey = match?.coinTossTeamB || 'away'
+      
+      // Determine first serve based on set number (except set 5 which has its own logic)
+      // The coin toss determines who serves first in set 1, then it alternates
+      // Set 1: Coin toss winner serves, Set 2: Coin toss winner receives, Set 3: Coin toss winner serves, Set 4: Coin toss winner receives
+      let newFirstServe = 'home'
+      if (newSetIndex !== 5) {
+        // For sets 1-4: odd sets (1, 3) = coin toss winner serves, even sets (2, 4) = opposite serves
+        const oppositeTeam = coinTossFirstServe === 'home' ? 'away' : 'home'
+        newFirstServe = newSetIndex % 2 === 1 ? coinTossFirstServe : oppositeTeam
+      } else {
+        // Set 5 uses set5FirstServe if specified, otherwise keep current firstServe
+        if (match?.set5FirstServe) {
+          newFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
+        } else {
+          newFirstServe = match?.firstServe || coinTossFirstServe
+        }
+      }
+      
+      // Update match with new first serve and reset set5CourtSwitched flag
+      await db.matches.update(set.matchId, { 
+        firstServe: newFirstServe,
+        set5CourtSwitched: false 
+      })
+      
       const isTest = match?.test || false
       
       await db.sync_queue.add({
@@ -1684,8 +1798,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
       
       // Check for 5th set court switch at 8 points
+      // Only check if the team that JUST SCORED has reached 8 (not if either team has 8)
       const is5thSet = data.set.index === 5
-      if (is5thSet && (homePoints === 8 || awayPoints === 8)) {
+      const scoringTeamPoints = teamKey === 'home' ? homePoints : awayPoints
+      if (is5thSet && scoringTeamPoints === 8) {
         // Check if we've already switched courts in this set
         const hasSwitchedCourts = await db.matches.get(matchId).then(m => m?.set5CourtSwitched || false)
         
@@ -1976,19 +2092,44 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return
       }
       
+      const newSetIndex = setIndex + 1
       const newSetId = await db.sets.add({ 
         matchId, 
-        index: setIndex + 1, 
+        index: newSetIndex, 
         homePoints: 0, 
         awayPoints: 0, 
         finished: false 
       })
       
-      // Reset set5CourtSwitched flag when starting a new set
-      await db.matches.update(matchId, { set5CourtSwitched: false })
-      
-      // Get match to check if it's a test match
+      // Get match to determine first serve for the new set
       const match = await db.matches.get(matchId)
+      const coinTossFirstServe = match?.firstServe || 'home' // Original first serve from coin toss
+      const teamAKey = match?.coinTossTeamA || 'home'
+      const teamBKey = match?.coinTossTeamB || 'away'
+      
+      // Determine first serve based on set number (except set 5 which has its own logic)
+      // The coin toss determines who serves first in set 1, then it alternates
+      // Set 1: Coin toss winner serves, Set 2: Coin toss winner receives, Set 3: Coin toss winner serves, Set 4: Coin toss winner receives
+      let newFirstServe = 'home'
+      if (newSetIndex !== 5) {
+        // For sets 1-4: odd sets (1, 3) = coin toss winner serves, even sets (2, 4) = opposite serves
+        const oppositeTeam = coinTossFirstServe === 'home' ? 'away' : 'home'
+        newFirstServe = newSetIndex % 2 === 1 ? coinTossFirstServe : oppositeTeam
+      } else {
+        // Set 5 uses set5FirstServe if specified, otherwise keep current firstServe
+        if (match?.set5FirstServe) {
+          newFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
+        } else {
+          newFirstServe = match?.firstServe || coinTossFirstServe
+        }
+      }
+      
+      // Update match with new first serve and reset set5CourtSwitched flag
+      await db.matches.update(matchId, { 
+        firstServe: newFirstServe,
+        set5CourtSwitched: false 
+      })
+      
       const isTest = match?.test || false
       
       await db.sync_queue.add({
@@ -2202,9 +2343,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const durationMs = end - start
         const durationMin = Math.floor(durationMs / 60000)
         const durationSec = Math.floor((durationMs % 60000) / 1000)
-        const startTimeStr = start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-        const endTimeStr = end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-        timeInfo = ` (${startTimeStr} - ${endTimeStr}, ${durationMin}'${String(durationSec).padStart(2, '0')}")`
+        const startTimeStr = start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+        const endTimeStr = end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+        timeInfo = ` (${startTimeStr} - ${endTimeStr}, ${durationMin} min)`
       }
       
       eventDescription = `Team ${winnerLabel} won Set ${setIndex}${timeInfo}`
@@ -2235,6 +2376,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
       
       eventDescription = `Sanction — ${teamName}${target} (${sanctionLabel}) (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
+    } else if (event.type === 'remark') {
+      const remarkText = event.payload?.text || ''
+      // Show first line or first 50 characters
+      const preview = remarkText.split('\n')[0].substring(0, 50)
+      eventDescription = `Remark added — ${preview}${remarkText.length > 50 ? '...' : ''}`
     } else {
       eventDescription = event.type
       if (teamName) {
@@ -3098,6 +3244,67 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }
 
+  // Helper functions to check substitution types
+  const wasSubstitutedDueToExpulsion = useCallback((teamKey, playerNumber) => {
+    if (!data?.events) return false
+    return data.events.some(e => 
+      e.type === 'substitution' && 
+      e.payload?.team === teamKey &&
+      String(e.payload?.playerOut) === String(playerNumber) &&
+      e.payload?.isExpelled === true
+    )
+  }, [data?.events])
+
+  const wasSubstitutedDueToDisqualification = useCallback((teamKey, playerNumber) => {
+    if (!data?.events) return false
+    return data.events.some(e => 
+      e.type === 'substitution' && 
+      e.payload?.team === teamKey &&
+      String(e.payload?.playerOut) === String(playerNumber) &&
+      e.payload?.isDisqualified === true
+    )
+  }, [data?.events])
+
+  const wasExceptionallySubstituted = useCallback((teamKey, playerNumber) => {
+    if (!data?.events) return false
+    return data.events.some(e => 
+      e.type === 'substitution' && 
+      e.payload?.team === teamKey &&
+      String(e.payload?.playerOut) === String(playerNumber) &&
+      e.payload?.isExceptional === true
+    )
+  }, [data?.events])
+
+  const canPlayerReEnter = useCallback((teamKey, playerNumber, currentSetIndex) => {
+    if (!data?.events || !currentSetIndex) return true
+
+    // Check if player was substituted due to disqualification - cannot re-enter for rest of game
+    if (wasSubstitutedDueToDisqualification(teamKey, playerNumber)) {
+      return false
+    }
+
+    // Check if player was exceptionally substituted - cannot re-enter for rest of game
+    if (wasExceptionallySubstituted(teamKey, playerNumber)) {
+      return false
+    }
+
+    // Check if player was substituted due to expulsion - cannot re-enter for rest of set
+    if (wasSubstitutedDueToExpulsion(teamKey, playerNumber)) {
+      // Check if this is the same set where they were expelled
+      const expulsionSub = data.events.find(e => 
+        e.type === 'substitution' && 
+        e.payload?.team === teamKey &&
+        String(e.payload?.playerOut) === String(playerNumber) &&
+        e.payload?.isExpelled === true
+      )
+      if (expulsionSub && expulsionSub.setIndex === currentSetIndex) {
+        return false // Cannot re-enter in same set
+      }
+    }
+
+    return true
+  }, [data?.events, wasSubstitutedDueToExpulsion, wasSubstitutedDueToDisqualification, wasExceptionallySubstituted])
+
   // Check if a player on court can be substituted
   const canPlayerBeSubstituted = useCallback((teamKey, playerNumber) => {
     if (!data?.events || !data?.set) return true
@@ -3273,33 +3480,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         // If already came back, check if exceptional substitution is allowed
         if (allowExceptional) {
-          // For exceptional substitution, return all bench players (except liberos)
-          return available.filter(p => {
-            // Check if player is disqualified - disqualified players cannot re-enter even in exceptional substitution
-            const playerSanctions = data.events?.filter(e => 
-              e.type === 'sanction' && 
-              e.payload?.team === teamKey &&
-              e.payload?.playerNumber === p.number &&
-              e.payload?.type === 'disqualification'
-            ) || []
-            return playerSanctions.length === 0
-          })
+          // For exceptional substitution, return all bench players (except liberos and those who cannot re-enter)
+          return available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index))
         }
         return []
       } else {
         // No point change yet, check if exceptional substitution is allowed
         if (allowExceptional) {
-          // For exceptional substitution, return all bench players (except liberos)
-          return available.filter(p => {
-            // Check if player is disqualified - disqualified players cannot re-enter even in exceptional substitution
-            const playerSanctions = data.events?.filter(e => 
-              e.type === 'sanction' && 
-              e.payload?.team === teamKey &&
-              e.payload?.playerNumber === p.number &&
-              e.payload?.type === 'disqualification'
-            ) || []
-            return playerSanctions.length === 0
-          })
+          // For exceptional substitution, return all bench players (except liberos and those who cannot re-enter)
+          return available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index))
         }
         return []
       }
@@ -3308,39 +3497,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Player was not substituted in, so any bench player can substitute
     // But filter out players who were substituted out but can't come back yet (no point change)
     // And filter out players who already came back (got in and out again)
-    // And filter out disqualified players (cannot re-enter)
-    // And filter out expelled players in the same set (can come back next set)
-    // And filter out players who were exceptionally substituted (cannot take part anymore)
+    // And filter out players who cannot re-enter (expelled/disqualified/exceptionally substituted)
     available = available.filter(player => {
-      // Check if player is disqualified - disqualified players cannot re-enter
-      const playerSanctions = data.events?.filter(e => 
-        e.type === 'sanction' && 
-        e.payload?.team === teamKey &&
-        e.payload?.playerNumber === player.number &&
-        e.payload?.type === 'disqualification'
-      ) || []
-      if (playerSanctions.length > 0) return false // Disqualified, cannot re-enter
-      
-      // Check if player is expelled in the current set - expelled players cannot re-enter in the same set
-      const playerExpulsions = data.events?.filter(e => 
-        e.type === 'sanction' && 
-        e.payload?.team === teamKey &&
-        e.payload?.playerNumber === player.number &&
-        e.payload?.type === 'expulsion' &&
-        e.setIndex === data.set.index
-      ) || []
-      if (playerExpulsions.length > 0) return false // Expelled in this set, cannot re-enter in this set
-      
-      // Check if player was exceptionally substituted - cannot take part anymore
-      // Convert both to strings for comparison to handle type mismatches
-      const playerExceptionalSubs = data.events?.filter(e => 
-        e.type === 'substitution' && 
-        e.payload?.team === teamKey &&
-        String(e.payload?.playerOut) === String(player.number) &&
-        e.payload?.isExceptional === true
-      ) || []
-      if (playerExceptionalSubs.length > 0) {
-        return false // Exceptionally substituted, cannot take part anymore
+      // Check if player can re-enter using helper function
+      if (!canPlayerReEnter(teamKey, player.number, data.set.index)) {
+        return false
       }
       
       // Check if player was substituted out
@@ -3408,7 +3569,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
     
     return available.sort((a, b) => (a.number || 0) - (b.number || 0))
-  }, [data, leftIsHome, leftTeamBench, rightTeamBench, getSubstitutionHistory, data?.events])
+  }, [data, leftIsHome, leftTeamBench, rightTeamBench, getSubstitutionHistory, data?.events, canPlayerReEnter])
 
   // Get available players for exceptional substitution
   // Excludes: liberos, expelled/disqualified players, and the player being replaced
@@ -3434,38 +3595,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Exclude the player being replaced
       if (String(playerNum) === String(playerOutNumber)) return false
       
-      // Exclude expelled players (cannot take part in exceptional substitution)
-      const isExpelled = data.events?.some(e => 
-        e.type === 'sanction' && 
-        e.payload?.team === teamKey &&
-        String(e.payload?.playerNumber) === String(playerNum) &&
-        e.payload?.type === 'expulsion'
-      )
-      if (isExpelled) return false
-      
-      // Exclude disqualified players (cannot take part in exceptional substitution)
-      const isDisqualified = data.events?.some(e => 
-        e.type === 'sanction' && 
-        e.payload?.team === teamKey &&
-        String(e.payload?.playerNumber) === String(playerNum) &&
-        e.payload?.type === 'disqualification'
-      )
-      if (isDisqualified) return false
-      
-      // Exclude players who were already exceptionally substituted (cannot take part anymore)
-      const wasExceptionallySubstituted = data.events?.some(e => 
-        e.type === 'substitution' && 
-        e.payload?.team === teamKey &&
-        String(e.payload?.playerOut) === String(playerNum) &&
-        e.payload?.isExceptional === true
-      )
-      if (wasExceptionallySubstituted) return false
+      // Exclude players who cannot re-enter (expelled/disqualified/exceptionally substituted)
+      if (!canPlayerReEnter(teamKey, playerNum, data.set.index)) return false
       
       return true
     })
     
     return available.sort((a, b) => (a.number || 0) - (b.number || 0))
-  }, [data, leftIsHome, leftTeamBench, rightTeamBench])
+  }, [data, leftIsHome, leftTeamBench, rightTeamBench, canPlayerReEnter])
 
   // Check if a bench player can come back (was substituted out, has point change, hasn't come back yet)
   const canPlayerComeBack = useCallback((teamKey, playerNumber) => {
@@ -4252,6 +4389,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setSanctionConfirmModal(null)
   }, [])
 
+  // Check if a player has a specific sanction type
+  const playerHasSanctionType = useCallback((teamKey, playerNumber, sanctionType) => {
+    if (!data?.events) return false
+    
+    const hasSanction = data.events.some(e => {
+      const isSanction = e.type === 'sanction'
+      const teamMatch = e.payload?.team === teamKey
+      const playerMatch = e.payload?.playerNumber === playerNumber || 
+                         String(e.payload?.playerNumber) === String(playerNumber) ||
+                         Number(e.payload?.playerNumber) === Number(playerNumber)
+      const typeMatch = e.payload?.type === sanctionType
+      
+      return isSanction && teamMatch && playerMatch && typeMatch
+    })
+    
+    console.log('[playerHasSanctionType]', {
+      teamKey,
+      playerNumber,
+      sanctionType,
+      hasSanction
+    })
+    
+    return hasSanction
+  }, [data?.events])
+
   // Get player's current highest sanction
   const getPlayerSanctionLevel = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return null
@@ -4259,12 +4421,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Get all FORMAL sanctions for this player in this match
     // NOTE: delay_warning and delay_penalty are SEPARATE from the formal escalation path
     // A player can have delay warnings AND formal warnings independently
-    const playerSanctions = data.events.filter(e => 
-      e.type === 'sanction' && 
-      e.payload?.team === teamKey &&
-      e.payload?.playerNumber === playerNumber &&
-      ['warning', 'penalty', 'expulsion', 'disqualification'].includes(e.payload?.type)
-    )
+    // Convert playerNumber to both string and number for comparison (in case of type mismatch)
+    const playerSanctions = data.events.filter(e => {
+      const isSanction = e.type === 'sanction'
+      const teamMatch = e.payload?.team === teamKey
+      const playerMatch = e.payload?.playerNumber === playerNumber || 
+                         String(e.payload?.playerNumber) === String(playerNumber) ||
+                         Number(e.payload?.playerNumber) === Number(playerNumber)
+      const isFormalSanction = ['warning', 'penalty', 'expulsion', 'disqualification'].includes(e.payload?.type)
+      
+      return isSanction && teamMatch && playerMatch && isFormalSanction
+    })
+    
+    console.log('[getPlayerSanctionLevel]', {
+      teamKey,
+      playerNumber,
+      playerNumberType: typeof playerNumber,
+      allSanctions: data.events.filter(e => e.type === 'sanction' && e.payload?.team === teamKey),
+      playerSanctions: playerSanctions.map(s => ({
+        type: s.payload?.type,
+        playerNumber: s.payload?.playerNumber,
+        playerNumberType: typeof s.payload?.playerNumber
+      }))
+    })
     
     if (playerSanctions.length === 0) return null
     
@@ -4275,7 +4454,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return level > max ? level : max
     }, 0)
     
-    return Object.keys(levels).find(key => levels[key] === highest)
+    const result = Object.keys(levels).find(key => levels[key] === highest)
+    console.log('[getPlayerSanctionLevel] result:', result)
+    return result
   }, [data?.events])
 
   // Check if team has received a formal warning (only one per team per game)
@@ -4327,6 +4508,40 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!sanctionConfirmModal || !data?.set) return
     
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
+    
+    // Validate that we're not giving the same sanction type again
+    if (playerNumber) {
+      const hasThisSanction = playerHasSanctionType(team, playerNumber, sanctionType)
+      const currentSanction = getPlayerSanctionLevel(team, playerNumber)
+      const teamWarning = teamHasFormalWarning(team)
+      
+      console.log('[confirmPlayerSanction] Validation:', {
+        team,
+        playerNumber,
+        sanctionType,
+        hasThisSanction,
+        currentSanction,
+        teamWarning
+      })
+      
+      // Prevent giving the same sanction type again
+      if (hasThisSanction) {
+        console.warn('[confirmPlayerSanction] BLOCKED: Player already has this specific sanction type')
+        alert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`)
+        setSanctionConfirmModal(null)
+        return
+      }
+      
+      // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
+      if (sanctionType === 'warning' && teamWarning) {
+        console.warn('[confirmPlayerSanction] BLOCKED: Warning cannot be given if team warned')
+        alert(`Warning cannot be given because the team has already been warned.`)
+        setSanctionConfirmModal(null)
+        return
+      }
+      
+      console.log('[confirmPlayerSanction] Validation passed, proceeding with sanction')
+    }
     
     // If expulsion or disqualification for a court player, need to handle substitution
     if ((sanctionType === 'expulsion' || sanctionType === 'disqualification') && type === 'player' && playerNumber && position) {
@@ -4482,7 +4697,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         setSanctionConfirmModal(null)
       }
     }
-  }, [sanctionConfirmModal, data?.set, data?.events, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome])
+  }, [sanctionConfirmModal, data?.set, data?.events, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning])
 
   // Show libero confirmation
   const showLiberoConfirm = useCallback((liberoType) => {
@@ -5310,31 +5525,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <span className="toolbar-clock">{formatTimestamp(now)}</span>
           </div>
         <div className="toolbar-center">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', fontSize: '14px', gap: '12px' }}>
-            {/* Set counter - centered */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                fontSize: '14px',
-                fontWeight: 600,
-                color: 'var(--muted)'
-              }}>
-              </span>
-              {data?.set?.index !== undefined && (
-                <span style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: 'var(--muted)',
-                  alignItems: 'center'  
-                }}>
-                  Set {data.set.index}
-                  <br />
-                <span style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-                  {setScore.left}-{setScore.right}
-                </span>
-                </span>
-              )}
-            </div>
-          </div>
+         Openvolley - eScoresheet
         </div>
         <div className="toolbar-actions">
           {refereeConnectionEnabled && isAnyRefereeConnected && (
@@ -5784,6 +5975,160 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
+      {/* Team Names Container */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        width: 'auto',
+        padding: '12px 16px',
+        background: 'rgba(15, 23, 42, 0.4)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+      }}>
+        {/* Left Team - 40% */}
+        <div style={{
+          flex: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: '8px',
+          paddingRight: '12px',
+          height: '100%'
+        }}>
+
+          <span style={{
+            fontSize: '16px',
+            fontWeight: 600,
+            color: 'var(--text)',
+            lineHeight: '1.2'
+          }}>
+            {leftTeam.name || (leftIsHome ? 'Home' : 'Away')}
+          </span>
+          <div style={{
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: 700,
+            background: leftTeam.color || '#ef4444',
+            color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
+            minWidth: '32px',
+            textAlign: 'center',
+            lineHeight: '1.2',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {teamALabel}
+          </div>
+        </div>
+
+        {/* Set Counter - 20% */}
+        <div style={{
+          flex: '0 0 20%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          gap: '16px'
+        }}>
+          <div style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            fontSize: '16px',
+            fontWeight: 700,
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            color: 'var(--text)',
+            textAlign: 'center',
+            lineHeight: '1',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {setScore.left}
+          </div>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2px'
+          }}>
+            <span style={{
+              fontSize: '20px',
+              fontWeight: 600,
+              color: 'var(--muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              lineHeight: '1'
+            }}>
+              SET
+            </span>
+            <span style={{
+              fontSize: '20px',
+              fontWeight: 700,
+              color: 'var(--text)',
+              lineHeight: '1'
+            }}>
+              {data?.set?.index || 1}
+            </span>
+          </div>
+          <div style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            fontSize: '16px',
+            fontWeight: 700,
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            color: 'var(--text)',
+            textAlign: 'center',
+            lineHeight: '1',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {setScore.right}
+          </div>
+        </div>
+
+        {/* Right Team - 40% */}
+        <div style={{
+          flex: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: '8px',
+          paddingLeft: '12px',
+          height: '100%'
+        }}>
+          
+          <div style={{
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: 700,
+            background: rightTeam.color || '#3b82f6',
+            color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
+            minWidth: '32px',
+            textAlign: 'center',
+            lineHeight: '1.2',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {teamBLabel}
+          </div>
+          <span style={{
+            fontSize: '16px',
+            fontWeight: 600,
+            color: 'var(--text)',
+            lineHeight: '1.2'
+          }}>
+            {rightTeam.name || (leftIsHome ? 'Away' : 'Home')}
+          </span>
+
+        </div>
+      </div>
+
       <div className="match-content">
         <aside className="team-controls">
           <div className="team-info">
@@ -5813,7 +6158,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <span>{teamALabel}</span>
               <span>-</span>
               <span>{teamAShortName}</span>
-              {(() => {
+              {homeTeamConnectionEnabled && (() => {
                 const status = getConnectionStatus('teamA')
                 return (
                   <div style={{
@@ -5873,7 +6218,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <button 
               onClick={() => handleLiberoOut('left')}
               disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(leftIsHome ? 'home' : 'away') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'home' : 'away')}
-              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               Libero out
             </button>
@@ -5903,7 +6248,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                        liberoOnCourtUnable || // Disable if libero on court is unable
                        otherLiberoUnable // Disable if other libero is unable
               })()}
-              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               Exchange libero
             </button>
@@ -6004,22 +6349,39 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
                     const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
                     
-                    // Check if player is expelled in this set (cannot enter until next set)
-                    const isExpelledInSet = data.events?.some(e => 
+                    // Check if player was substituted due to expulsion (cannot re-enter for rest of set)
+                    const wasExpelledSub = wasSubstitutedDueToExpulsion(teamKey, player.number)
+                    const expulsionSub = wasExpelledSub ? data.events?.find(e => 
+                      e.type === 'substitution' && 
+                      e.payload?.team === teamKey &&
+                      String(e.payload?.playerOut) === String(player.number) &&
+                      e.payload?.isExpelled === true
+                    ) : null
+                    const isExpelledInSet = wasExpelledSub && expulsionSub && expulsionSub.setIndex === data.set.index
+                    
+                    // Check if player was substituted due to disqualification (cannot re-enter for rest of game)
+                    const isDisqualifiedSub = wasSubstitutedDueToDisqualification(teamKey, player.number)
+                    
+                    // Check if player was exceptionally substituted (cannot re-enter for rest of game)
+                    const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
+                    
+                    // Also check for sanction-based expulsion/disqualification (for display)
+                    const hasExpulsionSanction = data.events?.some(e => 
                       e.type === 'sanction' && 
                       e.payload?.team === teamKey &&
                       e.payload?.playerNumber === player.number &&
                       e.payload?.type === 'expulsion' &&
                       e.setIndex === data.set.index
                     )
-                    
-                    // Check if player is disqualified (cannot enter for rest of match)
-                    const isDisqualified = data.events?.some(e => 
+                    const hasDisqualificationSanction = data.events?.some(e => 
                       e.type === 'sanction' && 
                       e.payload?.team === teamKey &&
                       e.payload?.playerNumber === player.number &&
                       e.payload?.type === 'disqualification'
                     )
+                    
+                    // Show X if substituted due to expulsion, disqualification, or exceptional substitution
+                    const showX = isExpelledInSet || isDisqualifiedSub || isExceptionallySub || hasExpulsionSanction || hasDisqualificationSanction
                     
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
@@ -6046,14 +6408,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                         style={{ 
                           padding: '4px 8px', 
-                          background: isSubstitutedByLibero ? '#FFF8E7' : (hasComeBack || isExpelledInSet || isDisqualified ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
+                          background: isSubstitutedByLibero ? '#FFF8E7' : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
                           borderRadius: '4px',
                           fontSize: '11px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
                           position: 'relative',
-                          opacity: (hasComeBack || isExpelledInSet || isDisqualified) ? 0.4 : 1,
+                          opacity: (hasComeBack || showX) ? 0.4 : 1,
                           color: isSubstitutedByLibero ? '#000' : undefined,
                           cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
                         }}
@@ -6074,7 +6436,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : 'L2'}
                           </span>
                         )}
-                        {(isExpelledInSet || isDisqualified) && (
+                        {showX && (
                           <span 
                             style={{ 
                               fontSize: '9px',
@@ -6091,12 +6453,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               minHeight: '12px',
                               border: '1px solid rgba(255, 255, 255, 0.2)'
                             }}
-                            title={isDisqualified ? 'Disqualified - cannot play rest of match' : 'Expelled - cannot play this set'}
+                            title={
+                              isDisqualifiedSub || hasDisqualificationSanction 
+                                ? 'Disqualified - cannot play rest of match' 
+                                : isExceptionallySub 
+                                  ? 'Exceptionally substituted - cannot play rest of match'
+                                  : isExpelledInSet || hasExpulsionSanction
+                                    ? 'Expelled - cannot play this set'
+                                    : 'Cannot re-enter'
+                            }
                           >
                             ✕
                           </span>
                         )}
-                        {hasComeBack && !isExpelledInSet && !isDisqualified && (
+                        {hasComeBack && !showX && (
                           <span 
                             style={{ 
                               fontSize: '9px',
@@ -6117,7 +6487,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             ✕
                           </span>
                         )}
-                        {(waitingForPoint || canComeBack) && !hasComeBack && !isExpelledInSet && !isDisqualified && (
+                        {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                           <span 
                             style={{ 
                               fontSize: '7px',
@@ -6514,11 +6884,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               </div>
 
               {/* 1st Referee - Between the court and Last action */}
-              {(() => {
+              {refereeConnectionEnabled && (() => {
                 const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
                 const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}` : 'N/A'
                 const ref1Status = isReferee1Connected
-                const ref1StatusColor = ref1Status ? '#22c55e' : (refereeConnectionEnabled ? '#eab308' : '#6b7280')
+                const ref1StatusColor = ref1Status ? '#22c55e' : '#eab308'
                 
                 return (
                   <div style={{
@@ -7276,11 +7646,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
 
           {/* 2nd Referee - Between the court and rally-controls */}
-          {(() => {
+          {refereeConnectionEnabled && (() => {
             const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
             const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}` : 'N/A'
             const ref2Status = isReferee2Connected
-            const ref2StatusColor = ref2Status ? '#22c55e' : (refereeConnectionEnabled ? '#eab308' : '#6b7280')
+            const ref2StatusColor = ref2Status ? '#22c55e' : '#eab308'
             
             return (
               <div style={{
@@ -7380,8 +7750,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                 const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
                 
-                // Get all sets
+                // Get all sets, filter to show only current set and previous sets
                 const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                const currentSetIndex = data?.set?.index || 1
+                const visibleSets = allSets.filter(set => set.index <= currentSetIndex)
                 
                 return (
                   <div style={{ 
@@ -7412,7 +7784,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         </tr>
                       </thead>
                       <tbody>
-                        {allSets.map(set => {
+                        {visibleSets.map(set => {
                           const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                           const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                           const won = leftPoints > rightPoints ? 1 : 0
@@ -7451,38 +7823,83 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
             {/* Rally Controls - Center */}
             <div className="rally-controls" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              {rallyStatus === 'idle' ? (
-                <button 
-                  className="secondary" 
-                  onClick={handleStartRally}
-                  disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
-                >
-                  {isFirstRally ? 'Start set' : 'Start rally'}
-                </button>
+              {/* Show timeout countdown if timeout is active */}
+              {timeoutModal && timeoutModal.started ? (
+                <>
+                  <div style={{
+                    fontSize: '48px',
+                    fontWeight: 700,
+                    color: 'var(--accent)',
+                    textAlign: 'center',
+                    marginBottom: '16px',
+                    fontFamily: 'monospace'
+                  }}>
+                    {formatCountdown(timeoutModal.countdown)}
+                  </div>
+                  <button
+                    className="secondary"
+                    onClick={stopTimeout}
+                    style={{ width: 'auto' }}
+                  >
+                    Stop timeout
+                  </button>
+                </>
+              ) : betweenSetsCountdown && betweenSetsCountdown.started && !betweenSetsCountdown.finished ? (
+                <>
+                  <div style={{
+                    fontSize: '48px',
+                    fontWeight: 700,
+                    color: 'var(--accent)',
+                    textAlign: 'center',
+                    marginBottom: '16px',
+                    fontFamily: 'monospace'
+                  }}>
+                    {formatCountdown(betweenSetsCountdown.countdown)}
+                  </div>
+                  <button
+                    className="secondary"
+                    onClick={beginSet}
+                    style={{ width: 'auto' }}
+                  >
+                    Begin set
+                  </button>
+                </>
               ) : (
                 <>
-                  <div className="rally-controls-row">
-                    <button className="secondary" onClick={handleReplay}>
-                      Replay rally
+                  {rallyStatus === 'idle' ? (
+                    <button 
+                      className="secondary" 
+                      onClick={handleStartRally}
+                      disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+                    >
+                      {isFirstRally ? 'Start set' : 'Start rally'}
                     </button>
-                  </div>
-                  <div className="rally-controls-row">
-                    <button className="rally-point-button" onClick={() => handlePoint('left')}>
-                      Point {teamALabel}
-                    </button>
-                    <button className="rally-point-button" onClick={() => handlePoint('right')}>
-                      Point {teamBLabel}
-                    </button>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="rally-controls-row">
+                        <button className="secondary" onClick={handleReplay}>
+                          Replay rally
+                        </button>
+                      </div>
+                      <div className="rally-controls-row">
+                        <button className="rally-point-button" onClick={() => handlePoint('left')}>
+                          Point {teamALabel}
+                        </button>
+                        <button className="rally-point-button" onClick={() => handlePoint('right')}>
+                          Point {teamBLabel}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <button
+                    className="danger"
+                    onClick={showUndoConfirm}
+                    disabled={!data?.events || data.events.length === 0}
+                  >
+                    Undo
+                  </button>
                 </>
               )}
-              <button
-                className="danger"
-                onClick={showUndoConfirm}
-                disabled={!data?.events || data.events.length === 0}
-              >
-                Undo
-              </button>
             </div>
 
             {/* Set Results Table - Right Team */}
@@ -7499,8 +7916,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                 const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
                 
-                // Get all sets
+                // Get all sets, filter to show only current set and previous sets
                 const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                const currentSetIndex = data?.set?.index || 1
+                const visibleSets = allSets.filter(set => set.index <= currentSetIndex)
                 
                 return (
                   <div style={{ 
@@ -7531,7 +7950,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         </tr>
                       </thead>
                       <tbody>
-                        {allSets.map(set => {
+                        {visibleSets.map(set => {
                           const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                           const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                           const won = rightPoints > leftPoints ? 1 : 0
@@ -7598,7 +8017,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <span>{teamBLabel}</span>
               <span>-</span>
               <span>{teamBShortName}</span>
-              {(() => {
+              {awayTeamConnectionEnabled && (() => {
                 const status = getConnectionStatus('teamB')
                 return (
                   <div style={{
@@ -7658,7 +8077,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <button 
               onClick={() => handleLiberoOut('right')}
               disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(leftIsHome ? 'away' : 'home') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'away' : 'home')}
-              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               Libero out
             </button>
@@ -7688,7 +8107,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                        liberoOnCourtUnable || // Disable if libero on court is unable
                        otherLiberoUnable // Disable if other libero is unable
               })()}
-              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               Exchange libero
             </button>
@@ -7789,22 +8208,39 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
                     const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
                     
-                    // Check if player is expelled in this set (cannot enter until next set)
-                    const isExpelledInSet = data.events?.some(e => 
+                    // Check if player was substituted due to expulsion (cannot re-enter for rest of set)
+                    const wasExpelledSub = wasSubstitutedDueToExpulsion(teamKey, player.number)
+                    const expulsionSub = wasExpelledSub ? data.events?.find(e => 
+                      e.type === 'substitution' && 
+                      e.payload?.team === teamKey &&
+                      String(e.payload?.playerOut) === String(player.number) &&
+                      e.payload?.isExpelled === true
+                    ) : null
+                    const isExpelledInSet = wasExpelledSub && expulsionSub && expulsionSub.setIndex === data.set.index
+                    
+                    // Check if player was substituted due to disqualification (cannot re-enter for rest of game)
+                    const isDisqualifiedSub = wasSubstitutedDueToDisqualification(teamKey, player.number)
+                    
+                    // Check if player was exceptionally substituted (cannot re-enter for rest of game)
+                    const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
+                    
+                    // Also check for sanction-based expulsion/disqualification (for display)
+                    const hasExpulsionSanction = data.events?.some(e => 
                       e.type === 'sanction' && 
                       e.payload?.team === teamKey &&
                       e.payload?.playerNumber === player.number &&
                       e.payload?.type === 'expulsion' &&
                       e.setIndex === data.set.index
                     )
-                    
-                    // Check if player is disqualified (cannot enter for rest of match)
-                    const isDisqualified = data.events?.some(e => 
+                    const hasDisqualificationSanction = data.events?.some(e => 
                       e.type === 'sanction' && 
                       e.payload?.team === teamKey &&
                       e.payload?.playerNumber === player.number &&
                       e.payload?.type === 'disqualification'
                     )
+                    
+                    // Show X if substituted due to expulsion, disqualification, or exceptional substitution
+                    const showX = isExpelledInSet || isDisqualifiedSub || isExceptionallySub || hasExpulsionSanction || hasDisqualificationSanction
                     
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
@@ -7831,14 +8267,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                         style={{ 
                           padding: '4px 8px', 
-                          background: isSubstitutedByLibero ? '#FFF8E7' : (hasComeBack || isExpelledInSet || isDisqualified ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
+                          background: isSubstitutedByLibero ? '#FFF8E7' : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
                           borderRadius: '4px',
                           fontSize: '11px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
                           position: 'relative',
-                          opacity: (hasComeBack || isExpelledInSet || isDisqualified) ? 0.4 : 1,
+                          opacity: (hasComeBack || showX) ? 0.4 : 1,
                           color: isSubstitutedByLibero ? '#000' : undefined,
                           cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
                         }}
@@ -7859,7 +8295,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : 'L2'}
                           </span>
                         )}
-                        {(isExpelledInSet || isDisqualified) && (
+                        {showX && (
                           <span 
                             style={{ 
                               fontSize: '9px',
@@ -7876,12 +8312,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               minHeight: '12px',
                               border: '1px solid rgba(255, 255, 255, 0.2)'
                             }}
-                            title={isDisqualified ? 'Disqualified - cannot play rest of match' : 'Expelled - cannot play this set'}
+                            title={
+                              isDisqualifiedSub || hasDisqualificationSanction 
+                                ? 'Disqualified - cannot play rest of match' 
+                                : isExceptionallySub 
+                                  ? 'Exceptionally substituted - cannot play rest of match'
+                                  : isExpelledInSet || hasExpulsionSanction
+                                    ? 'Expelled - cannot play this set'
+                                    : 'Cannot re-enter'
+                            }
                           >
                             ✕
                           </span>
                         )}
-                        {hasComeBack && !isExpelledInSet && !isDisqualified && (
+                        {hasComeBack && !showX && (
                           <span 
                             style={{ 
                               fontSize: '9px',
@@ -7902,7 +8346,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             ✕
                           </span>
                         )}
-                        {(waitingForPoint || canComeBack) && !hasComeBack && !isExpelledInSet && !isDisqualified && (
+                        {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                           <span 
                             style={{ 
                               fontSize: '7px',
@@ -8192,128 +8636,227 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           width={400}
         >
           <div style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setShowLogs(true)
-                  setOptionsModal(false)
-                }}
-                style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-              >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowLogs(true)
+                setOptionsModal(false)
+              }}>
                 Show Action Log
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setShowSanctions(true)
-                  setOptionsModal(false)
-                }}
-                style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-              >
+              </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowSanctions(true)
+                setOptionsModal(false)
+              }}>
                 Show Sanctions and Results
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setShowManualPanel(true)
-                  setOptionsModal(false)
-                }}
-                style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-              >
+              </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowManualPanel(true)
+                setOptionsModal(false)
+              }}>
                 Manual Changes
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setShowRemarks(true)
-                  setOptionsModal(false)
-                }}
-                style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-              >
+              </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowRemarks(true)
+                setOptionsModal(false)
+              }}>
                 Open Remarks Recording
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setShowRosters(true)
-                  setOptionsModal(false)
-                }}
-                style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-              >
+              </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowRosters(true)
+                setOptionsModal(false)
+              }}>
                 Show Rosters
-              </button>
+              </div>
               {onOpenMatchSetup && (
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    onOpenMatchSetup()
-                    setOptionsModal(false)
-                  }}
-                  style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-                >
-                  Show Match Setup
-                </button>
-              )}
-              {onOpenCoinToss && (
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    onOpenCoinToss()
-                    setOptionsModal(false)
-                  }}
-                  style={{ width: '100%', textAlign: 'left', padding: '12px 16px' }}
-                >
-                  Show Coin Toss
-                </button>
-              )}
-              <button
-                className="secondary"
-                onClick={async () => {
-                  try {
-                    // Export all database data
-                    const allMatches = await db.matches.toArray()
-                    const allTeams = await db.teams.toArray()
-                    const allPlayers = await db.players.toArray()
-                    const allSets = await db.sets.toArray()
-                    const allEvents = await db.events.toArray()
-                    const allReferees = await db.referees.toArray()
-                    const allScorers = await db.scorers.toArray()
-                    
-                    const exportData = {
-                      exportDate: new Date().toISOString(),
-                      matchId: matchId,
-                      matches: allMatches,
-                      teams: allTeams,
-                      players: allPlayers,
-                      sets: allSets,
-                      events: allEvents,
-                      referees: allReferees,
-                      scorers: allScorers
-                    }
-                    
-                    // Create a blob and download
-                    const jsonString = JSON.stringify(exportData, null, 2)
-                    const blob = new Blob([jsonString], { type: 'application/json' })
-                    const url = URL.createObjectURL(blob)
-                    const link = document.createElement('a')
-                    link.href = url
-                    link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    URL.revokeObjectURL(url)
-                    
-                    setOptionsModal(false)
-                  } catch (error) {
-                    console.error('Error exporting database:', error)
-                    alert('Error exporting database data. Please try again.')
-                  }
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
                 }}
-                style={{ width: '100%', textAlign: 'left', padding: '12px 16px', marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}
-              >
-                📥 Download Database Data (JSON)
-              </button>
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                }}
+                onClick={() => {
+                  onOpenMatchSetup()
+                  setOptionsModal(false)
+                }}>
+                  Show Match Setup
+                </div>
+              )}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                // Open Live Scoring page in new window
+                const baseUrl = window.location.origin
+                const livescoreUrl = `${baseUrl}/livescore.html?gameId=${matchId}`
+                window.open(livescoreUrl, '_blank')
+                setOptionsModal(false)
+              }}>
+                Live Scoring
+              </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                marginTop: '8px',
+                borderTop: '1px solid rgba(255,255,255,0.1)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={async () => {
+                try {
+                  // Export all database data
+                  const allMatches = await db.matches.toArray()
+                  const allTeams = await db.teams.toArray()
+                  const allPlayers = await db.players.toArray()
+                  const allSets = await db.sets.toArray()
+                  const allEvents = await db.events.toArray()
+                  const allReferees = await db.referees.toArray()
+                  const allScorers = await db.scorers.toArray()
+                  
+                  const exportData = {
+                    exportDate: new Date().toISOString(),
+                    matchId: matchId,
+                    matches: allMatches,
+                    teams: allTeams,
+                    players: allPlayers,
+                    sets: allSets,
+                    events: allEvents,
+                    referees: allReferees,
+                    scorers: allScorers
+                  }
+                  
+                  // Create a blob and download
+                  const jsonString = JSON.stringify(exportData, null, 2)
+                  const blob = new Blob([jsonString], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const link = document.createElement('a')
+                  link.href = url
+                  link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
+                  document.body.appendChild(link)
+                  link.click()
+                  document.body.removeChild(link)
+                  URL.revokeObjectURL(url)
+                  
+                  setOptionsModal(false)
+                } catch (error) {
+                  console.error('Error exporting database:', error)
+                  alert('Error exporting database data. Please try again.')
+                }
+              }}>
+                📥 Download Game Data (JSON)
+              </div>
             </div>
           </div>
         </Modal>
@@ -8325,13 +8868,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           title="Action Log"
           open={true}
           onClose={() => setShowLogs(false)}
-          width={900}
+          width={1200}
         >
           <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
             <div style={{ marginBottom: '16px' }}>
               <input
                 type="text"
-                placeholder="Search events (all shown by default)..."
+                placeholder="Search events..."
                 value={logSearchQuery}
                 onChange={(e) => setLogSearchQuery(e.target.value)}
                 style={{
@@ -8350,64 +8893,370 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 return <p>No events recorded yet.</p>
               }
               
+              // Helper function to get set number (before set 1 is set 1, between sets is the next set)
+              const getSetNumber = (event) => {
+                const eventSetIndex = event.setIndex || 1
+                if (eventSetIndex >= 1) return eventSetIndex
+                // If setIndex is 0 or undefined, check if we're before set 1
+                const allSets = data.sets || []
+                const firstSet = allSets.find(s => s.index === 1)
+                if (!firstSet) return 1
+                // Check if event is before first set start
+                const eventTime = typeof event.ts === 'number' ? event.ts : new Date(event.ts).getTime()
+                const firstSetStart = firstSet.startTime ? new Date(firstSet.startTime).getTime() : 0
+                if (eventTime < firstSetStart) return 1
+                // Between sets - find the next set
+                const sortedSets = [...allSets].sort((a, b) => a.index - b.index)
+                for (let i = 0; i < sortedSets.length - 1; i++) {
+                  const currentSet = sortedSets[i]
+                  const nextSet = sortedSets[i + 1]
+                  const currentEnd = currentSet.endTime ? new Date(currentSet.endTime).getTime() : 0
+                  const nextStart = nextSet.startTime ? new Date(nextSet.startTime).getTime() : Infinity
+                  if (eventTime >= currentEnd && eventTime < nextStart) {
+                    return nextSet.index
+                  }
+                }
+                return eventSetIndex || 1
+              }
+              
+              // Helper function to get score at time of event
+              const getScoreAtEvent = (event) => {
+                const setIdx = event.setIndex || 1
+                const setEvents = data.events?.filter(e => (e.setIndex || 1) === setIdx) || []
+                const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                
+                let homeScore = 0
+                let awayScore = 0
+                // Count points up to and including this event
+                for (let i = 0; i <= eventIndex; i++) {
+                  const e = setEvents[i]
+                  if (e.type === 'point') {
+                    if (e.payload?.team === 'home') homeScore++
+                    else if (e.payload?.team === 'away') awayScore++
+                  }
+                }
+                
+                const team = event.payload?.team
+                if (team === 'home') {
+                  // Team A (home) score : Team B (away) score
+                  return `${homeScore}:${awayScore}`
+                } else if (team === 'away') {
+                  // Team B (away) score : Team A (home) score
+                  return `${awayScore}:${homeScore}`
+                }
+                // For non-team events, show home:away
+                return `${homeScore}:${awayScore}`
+              }
+              
+              // Helper function to get team label
+              const getTeamLabel = (event) => {
+                const team = event.payload?.team
+                if (team === 'home' || team === 'away') {
+                  const teamKey = team === 'home' ? teamAKey : teamBKey
+                  return teamKey === teamAKey ? 'A' : 'B'
+                }
+                if (event.type === 'set_start' || event.type === 'set_end' || event.type === 'rally_start' || event.type === 'replay') {
+                  return 'GAME'
+                }
+                if (event.type === 'remark') {
+                  return 'GAME'
+                }
+                if (event.type === 'sanction' && event.payload?.role) {
+                  return 'REF'
+                }
+                return 'GAME'
+              }
+              
+              // Helper function to get participant
+              const getParticipant = (event) => {
+                const team = event.payload?.team
+                const playerNumber = event.payload?.playerNumber
+                const role = event.payload?.role
+                const playerType = event.payload?.playerType
+                
+                if (event.type === 'set_start' || event.type === 'set_end' || event.type === 'rally_start' || event.type === 'replay') {
+                  return 'GAME'
+                }
+                
+                if (event.type === 'remark') {
+                  return 'GAME'
+                }
+                
+                // Sanction events with role (bench official)
+                if (role) {
+                  if (role === 'Coach') return 'C'
+                  if (role === 'Assistant Coach 1') return 'AC1'
+                  if (role === 'Assistant Coach 2') return 'AC2'
+                  if (role === 'Physiotherapist') return 'P'
+                  if (role === 'Medic') return 'M'
+                  return role
+                }
+                
+                // Sanction events with player number
+                if (playerNumber !== undefined && playerNumber !== null) {
+                  return String(playerNumber)
+                }
+                
+                // For substitution events
+                if (event.type === 'substitution') {
+                  const playerOut = event.payload?.playerOut
+                  const playerIn = event.payload?.playerIn
+                  if (playerOut !== undefined && playerOut !== null) {
+                    return `OUT:${playerOut}${playerIn !== undefined && playerIn !== null ? ` IN:${playerIn}` : ''}`
+                  }
+                  // Fall through to team
+                }
+                
+                // For libero events
+                if (event.type === 'libero_entry') {
+                  const liberoIn = event.payload?.liberoIn
+                  const playerOut = event.payload?.playerOut
+                  if (liberoIn) return `L${event.payload?.liberoType === 'libero2' ? '2' : '1'} ${liberoIn}${playerOut ? ` (for ${playerOut})` : ''}`
+                }
+                if (event.type === 'libero_exit') {
+                  const liberoOut = event.payload?.liberoOut
+                  const playerIn = event.payload?.playerIn
+                  if (liberoOut) return `L${event.payload?.liberoType === 'libero2' ? '2' : '1'} ${liberoOut}${playerIn ? ` (${playerIn} in)` : ''}`
+                }
+                if (event.type === 'libero_substitution') {
+                  const liberoOut = event.payload?.liberoOut
+                  const liberoIn = event.payload?.liberoIn
+                  if (liberoOut && liberoIn) {
+                    return `L${event.payload?.liberoOutType === 'libero2' ? '2' : '1'} ${liberoOut} ↔ L${event.payload?.liberoInType === 'libero2' ? '2' : '1'} ${liberoIn}`
+                  }
+                }
+                if (event.type === 'libero_unable') {
+                  const liberoNumber = event.payload?.liberoNumber
+                  if (liberoNumber) return `L${event.payload?.liberoType === 'libero2' ? '2' : '1'} ${liberoNumber}`
+                }
+                
+                // Default to team
+                if (team === 'home' || team === 'away') {
+                  const teamKey = team === 'home' ? teamAKey : teamBKey
+                  return teamKey === teamAKey ? 'A' : 'B'
+                }
+                
+                return 'GAME'
+              }
+              
+              // Sort events by seq descending (most recent first)
+              const sortedEvents = [...data.events].sort((a, b) => {
+                const aSeq = a.seq || 0
+                const bSeq = b.seq || 0
+                if (aSeq !== 0 || bSeq !== 0) {
+                  return bSeq - aSeq // Descending
+                }
+                const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+                const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+                return bTime - aTime // Descending
+              })
+              
+              // Filter events
+              const filteredEvents = sortedEvents.filter(event => {
+                if (logSearchQuery.trim() === '') return true
+                const searchLower = logSearchQuery.toLowerCase()
+                const eventDescription = getActionDescription(event) || ''
+                const descriptionLower = eventDescription.toLowerCase()
+                const setIndex = String(getSetNumber(event))
+                const teamLabel = getTeamLabel(event)
+                const participant = getParticipant(event)
+                return descriptionLower.includes(searchLower) || 
+                       setIndex.includes(searchLower) ||
+                       teamLabel.toLowerCase().includes(searchLower) ||
+                       participant.toLowerCase().includes(searchLower)
+              })
+              
               return (
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-                  gap: '16px'
-                }}>
-                  {(() => {
-                    const sortedEvents = [...data.events].sort((a, b) => {
-                      const aSeq = a.seq || 0
-                      const bSeq = b.seq || 0
-                      if (aSeq !== 0 || bSeq !== 0) {
-                        return aSeq - bSeq
-                      }
-                      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-                      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-                      return aTime - bTime
-                    })
-                    
-                    return sortedEvents
-                      .map(event => {
-                        const eventDescription = getActionDescription(event)
-                        if (!eventDescription) return null
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ 
+                    width: '100%', 
+                    borderCollapse: 'collapse',
+                    fontSize: '12px'
+                  }}>
+                    <thead>
+                      <tr style={{ 
+                        borderBottom: '2px solid rgba(255,255,255,0.2)',
+                        background: 'rgba(255,255,255,0.05)'
+                      }}>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'left', 
+                          fontWeight: 600,
+                          minWidth: '80px'
+                        }}>Action ID</th>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'left', 
+                          fontWeight: 600,
+                          minWidth: '100px'
+                        }}>Time</th>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'center', 
+                          fontWeight: 600,
+                          minWidth: '60px'
+                        }}>Set</th>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'center', 
+                          fontWeight: 600,
+                          minWidth: '80px'
+                        }}>Score</th>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'center', 
+                          fontWeight: 600,
+                          minWidth: '60px'
+                        }}>Team</th>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'left', 
+                          fontWeight: 600,
+                          minWidth: '100px'
+                        }}>Participant</th>
+                        <th style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'left', 
+                          fontWeight: 600
+                        }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Coin Toss Entry - Always first, cannot be undone */}
+                      {data?.match && (() => {
+                        const coinTossTeamA = data.match.coinTossTeamA || 'home'
+                        const coinTossTeamB = data.match.coinTossTeamB || 'away'
+                        const firstServe = data.match.firstServe || 'home'
+                        const firstServeTeam = firstServe === coinTossTeamA ? 'A' : 'B'
+                        const teamAName = coinTossTeamA === 'home' ? (data.homeTeam?.name || 'Home') : (data.awayTeam?.name || 'Away')
+                        const teamBName = coinTossTeamB === 'home' ? (data.homeTeam?.name || 'Home') : (data.awayTeam?.name || 'Away')
                         
-                        const teamName = event.payload?.team === 'home' 
-                          ? (data.homeTeam?.name || 'Home')
-                          : (data.awayTeam?.name || 'Away')
+                        // In Set 1, Team A is on left, Team B is on right
+                        const coinTossDescription = `Coin Toss — Team A: ${teamAName} (Left, Set 1), Team B: ${teamBName} (Right, Set 1), First Serve: Team ${firstServeTeam}`
                         
-                        return {
-                          event,
-                          eventDescription,
-                          teamName
-                        }
-                      })
-                      .filter(item => {
-                        if (!item) return false
-                        if (logSearchQuery.trim() === '') return true
-                        const searchLower = logSearchQuery.toLowerCase()
-                        const descriptionLower = item.eventDescription.toLowerCase()
-                        const teamNameLower = (item.teamName || '').toLowerCase()
-                        const setIndex = String(item.event.setIndex || '')
-                        return descriptionLower.includes(searchLower) || 
-                               teamNameLower.includes(searchLower) ||
-                               setIndex.includes(searchLower)
-                      })
-                      .map(item => (
-                        <div key={item.event.id} style={{
-                          padding: '12px',
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          borderRadius: '8px',
-                          border: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}>
-                          <div style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '4px' }}>
-                            Set {item.event.setIndex || data.set?.index || '?'} | {new Date(item.event.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-                          </div>
-                          <div style={{ fontWeight: 600, fontSize: '14px' }}>{item.eventDescription}</div>
-                        </div>
-                      ))
-                  })()}
+                        // Use match creation time or a very early time
+                        const matchTime = data.match.created_at ? new Date(data.match.created_at) : new Date(0)
+                        const timeStr = matchTime.toLocaleTimeString(undefined, { 
+                          hour: '2-digit', 
+                          minute: '2-digit', 
+                          second: '2-digit', 
+                          hour12: false 
+                        })
+                        
+                        // Check if coin toss should be shown (if search query matches or is empty)
+                        const shouldShowCoinToss = logSearchQuery.trim() === '' || 
+                          coinTossDescription.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+                          'coin toss'.includes(logSearchQuery.toLowerCase()) ||
+                          'A'.includes(logSearchQuery.toLowerCase()) ||
+                          'B'.includes(logSearchQuery.toLowerCase())
+                        
+                        if (!shouldShowCoinToss) return null
+                        
+                        return (
+                          <tr 
+                            key="coin-toss"
+                            style={{ 
+                              borderBottom: '2px solid rgba(255,255,255,0.2)',
+                              background: 'rgba(255,255,255,0.03)',
+                              fontWeight: 600
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+                            }}
+                          >
+                            <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px', color: 'var(--muted)' }}>
+                              COIN
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              {timeStr}
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                              1
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace' }}>
+                              0:0
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>
+                              GAME
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              GAME
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              {coinTossDescription}
+                            </td>
+                          </tr>
+                        )
+                      })()}
+                      
+                      {filteredEvents.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>
+                            No events found
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredEvents.map(event => {
+                          const eventDescription = getActionDescription(event)
+                          if (!eventDescription || eventDescription === 'Unknown action') return null
+                          
+                          const actionId = event.seq || 0
+                          const eventTime = typeof event.ts === 'number' ? new Date(event.ts) : new Date(event.ts)
+                          const timeStr = eventTime.toLocaleTimeString(undefined, { 
+                            hour: '2-digit', 
+                            minute: '2-digit', 
+                            second: '2-digit', 
+                            hour12: false 
+                          })
+                          const setNum = getSetNumber(event)
+                          const score = getScoreAtEvent(event)
+                          const team = getTeamLabel(event)
+                          const participant = getParticipant(event)
+                          
+                          return (
+                            <tr 
+                              key={event.id} 
+                              style={{ 
+                                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                transition: 'background 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'transparent'
+                              }}
+                            >
+                              <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
+                                {actionId}
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                {timeStr}
+                              </td>
+                              <td style={{ padding: '8px', textAlign: 'center' }}>
+                                {setNum}
+                              </td>
+                              <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace' }}>
+                                {score}
+                              </td>
+                              <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>
+                                {team}
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                {participant}
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                {eventDescription}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )
             })()}
@@ -8505,6 +9354,1820 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   )
                 })()}
+                
+                {/* Manual Score Editing */}
+                {data?.set && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Current Set Score</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Manually adjust the score for the current set.
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <label style={{ fontSize: '12px', minWidth: '60px' }}>
+                          {leftIsHome ? 'Home' : 'Away'}:
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="99"
+                          value={data.set.homePoints || 0}
+                          onChange={async (e) => {
+                            const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                            await db.sets.update(data.set.id, { homePoints: newPoints })
+                          }}
+                          style={{
+                            width: '60px',
+                            padding: '6px 8px',
+                            fontSize: '14px',
+                            background: 'var(--bg-secondary)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            color: 'var(--text)'
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <label style={{ fontSize: '12px', minWidth: '60px' }}>
+                          {leftIsHome ? 'Away' : 'Home'}:
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="99"
+                          value={data.set.awayPoints || 0}
+                          onChange={async (e) => {
+                            const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                            await db.sets.update(data.set.id, { awayPoints: newPoints })
+                          }}
+                          style={{
+                            width: '60px',
+                            padding: '6px 8px',
+                            fontSize: '14px',
+                            background: 'var(--bg-secondary)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            color: 'var(--text)'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Edit All Sets */}
+                {data?.sets && data.sets.length > 0 && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit All Sets</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Manually adjust scores for any set.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {data.sets.sort((a, b) => a.index - b.index).map(set => (
+                        <div key={set.id} style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '12px',
+                          padding: '8px',
+                          background: 'rgba(255,255,255,0.03)',
+                          borderRadius: '6px'
+                        }}>
+                          <div style={{ fontWeight: 600, minWidth: '60px' }}>Set {set.index}:</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <label style={{ fontSize: '11px' }}>Home:</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="99"
+                              value={set.homePoints || 0}
+                              onChange={async (e) => {
+                                const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                                await db.sets.update(set.id, { homePoints: newPoints })
+                              }}
+                              style={{
+                                width: '50px',
+                                padding: '4px 6px',
+                                fontSize: '12px',
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                borderRadius: '4px',
+                                color: 'var(--text)'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <label style={{ fontSize: '11px' }}>Away:</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="99"
+                              value={set.awayPoints || 0}
+                              onChange={async (e) => {
+                                const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                                await db.sets.update(set.id, { awayPoints: newPoints })
+                              }}
+                              style={{
+                                width: '50px',
+                                padding: '4px 6px',
+                                fontSize: '12px',
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                borderRadius: '4px',
+                                color: 'var(--text)'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+                            <label style={{ fontSize: '11px' }}>Finished:</label>
+                            <input
+                              type="checkbox"
+                              checked={set.finished || false}
+                              onChange={async (e) => {
+                                await db.sets.update(set.id, { finished: e.target.checked })
+                              }}
+                              style={{
+                                width: '18px',
+                                height: '18px',
+                                cursor: 'pointer'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Edit Coin Toss */}
+                {data?.match && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Coin Toss</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Manually adjust coin toss results (Team A, Team B, and first serve).
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <label style={{ fontSize: '12px', minWidth: '120px' }}>Team A:</label>
+                        <select
+                          value={data.match.coinTossTeamA || 'home'}
+                          onChange={async (e) => {
+                            await db.matches.update(matchId, { coinTossTeamA: e.target.value })
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            background: '#1e293b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            color: 'var(--text)'
+                          }}
+                        >
+                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <label style={{ fontSize: '12px', minWidth: '120px' }}>Team B:</label>
+                        <select
+                          value={data.match.coinTossTeamB || 'away'}
+                          onChange={async (e) => {
+                            await db.matches.update(matchId, { coinTossTeamB: e.target.value })
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            background: '#1e293b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            color: 'var(--text)'
+                          }}
+                        >
+                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <label style={{ fontSize: '12px', minWidth: '120px' }}>First Serve:</label>
+                        <select
+                          value={data.match.firstServe || 'home'}
+                          onChange={async (e) => {
+                            await db.matches.update(matchId, { firstServe: e.target.value })
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            background: '#1e293b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            color: 'var(--text)'
+                          }}
+                        >
+                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Edit Match Information */}
+                {data?.match && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Match Information</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Manually adjust match status and settings.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <label style={{ fontSize: '12px', minWidth: '120px' }}>Match Status:</label>
+                        <select
+                          value={data.match.status || 'live'}
+                          onChange={async (e) => {
+                            await db.matches.update(matchId, { status: e.target.value })
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            background: '#1e293b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                            color: 'var(--text)'
+                          }}
+                        >
+                          <option value="live" style={{ background: '#1e293b', color: 'var(--text)' }}>Live</option>
+                          <option value="final" style={{ background: '#1e293b', color: 'var(--text)' }}>Final</option>
+                          <option value="paused" style={{ background: '#1e293b', color: 'var(--text)' }}>Paused</option>
+                        </select>
+                      </div>
+                      {data?.set?.index === 5 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <label style={{ fontSize: '12px', minWidth: '120px' }}>Set 5 First Serve:</label>
+                          <select
+                            value={data.match.set5FirstServe || 'A'}
+                            onChange={async (e) => {
+                              await db.matches.update(matchId, { set5FirstServe: e.target.value })
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '6px 8px',
+                              fontSize: '12px',
+                              background: '#1e293b',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              color: 'var(--text)'
+                            }}
+                          >
+                            <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>Team A</option>
+                            <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>Team B</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Switch Sides and Serve */}
+                {data?.set && data?.match && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Switch Sides and Serve</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Manually switch which team is on which side or which team serves.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>Switch Sides:</div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {data.set.index === 5 ? (
+                            <>
+                              <button
+                                className="secondary"
+                                onClick={async () => {
+                                  const currentLeftTeam = data.match.set5LeftTeam || (teamAKey === 'home' ? 'A' : 'B')
+                                  const newLeftTeam = currentLeftTeam === 'A' ? 'B' : 'A'
+                                  await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
+                                }}
+                                style={{
+                                  padding: '8px 16px',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                Switch Sides (Set 5)
+                              </button>
+                              <button
+                                className="secondary"
+                                onClick={async () => {
+                                  await db.matches.update(matchId, { 
+                                    set5CourtSwitched: !data.match.set5CourtSwitched 
+                                  })
+                                }}
+                                style={{
+                                  padding: '8px 16px',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                Toggle Court Switch Flag
+                              </button>
+                            </>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+                                Override automatic side switching for Sets 1-4:
+                              </div>
+                              {[1, 2, 3, 4].map(setNum => {
+                                const overrides = data.match?.setLeftTeamOverrides || {}
+                                const currentOverride = overrides[setNum]
+                                // Calculate automatic: odd sets (1,3) = A, even sets (2,4) = B
+                                const automatic = setNum % 2 === 1 ? 'A' : 'B'
+                                const currentValue = currentOverride || automatic
+                                
+                                return (
+                                  <div key={setNum} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <label style={{ fontSize: '11px', minWidth: '60px' }}>Set {setNum}:</label>
+                                    <select
+                                      value={currentValue}
+                                      onChange={async (e) => {
+                                        const newValue = e.target.value
+                                        const currentOverrides = data.match?.setLeftTeamOverrides || {}
+                                        
+                                        if (newValue === automatic) {
+                                          // Remove override if set back to automatic
+                                          const newOverrides = { ...currentOverrides }
+                                          delete newOverrides[setNum]
+                                          await db.matches.update(matchId, { 
+                                            setLeftTeamOverrides: Object.keys(newOverrides).length > 0 ? newOverrides : null
+                                          })
+                                        } else {
+                                          // Set manual override
+                                          await db.matches.update(matchId, { 
+                                            setLeftTeamOverrides: { ...currentOverrides, [setNum]: newValue }
+                                          })
+                                        }
+                                      }}
+                                      style={{
+                                        flex: 1,
+                                        padding: '6px 8px',
+                                        fontSize: '11px',
+                                        background: '#1e293b',
+                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        borderRadius: '4px',
+                                        color: 'var(--text)',
+                                        maxWidth: '120px'
+                                      }}
+                                    >
+                                      <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>Team A (Left)</option>
+                                      <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>Team B (Left)</option>
+                                    </select>
+                                    {currentOverride && (
+                                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>(Override)</span>
+                                    )}
+                                    {!currentOverride && (
+                                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>(Auto)</span>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                              {data.match?.setLeftTeamOverrides && Object.keys(data.match.setLeftTeamOverrides).length > 0 && (
+                                <button
+                                  className="secondary"
+                                  onClick={async () => {
+                                    await db.matches.update(matchId, { setLeftTeamOverrides: null })
+                                  }}
+                                  style={{
+                                    padding: '6px 12px',
+                                    fontSize: '11px',
+                                    marginTop: '4px'
+                                  }}
+                                >
+                                  Clear All Overrides (Use Automatic)
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>Switch Serve:</div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <button
+                            className="secondary"
+                            onClick={async () => {
+                              const currentServe = data.set.index === 5 && data.match.set5FirstServe
+                                ? (data.match.set5FirstServe === 'A' ? teamAKey : teamBKey)
+                                : (data.match.firstServe || 'home')
+                              const newServe = currentServe === 'home' ? 'away' : 'home'
+                              
+                              if (data.set.index === 5) {
+                                const newSet5FirstServe = newServe === teamAKey ? 'A' : 'B'
+                                await db.matches.update(matchId, { set5FirstServe: newSet5FirstServe })
+                              } else {
+                                await db.matches.update(matchId, { firstServe: newServe })
+                              }
+                            }}
+                            style={{
+                              padding: '8px 16px',
+                              fontSize: '12px'
+                            }}
+                          >
+                            Switch Current Serve
+                          </button>
+                          {data.set.index === 5 && (
+                            <button
+                              className="secondary"
+                              onClick={async () => {
+                                const currentSet5Serve = data.match.set5FirstServe || 'A'
+                                const newSet5Serve = currentSet5Serve === 'A' ? 'B' : 'A'
+                                await db.matches.update(matchId, { set5FirstServe: newSet5Serve })
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                fontSize: '12px'
+                              }}
+                            >
+                              Switch Set 5 First Serve (A/B)
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
+                          Current serve: {(() => {
+                            if (data.set.index === 5 && data.match.set5FirstServe) {
+                              return `Set 5: Team ${data.match.set5FirstServe}`
+                            }
+                            const serveTeam = data.match.firstServe || 'home'
+                            return `Sets 1-4: ${serveTeam === 'home' ? 'Home' : 'Away'}`
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Edit Points */}
+                {data?.events && (() => {
+                  const pointEvents = data.events.filter(e => e.type === 'point').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
+                  if (pointEvents.length === 0) return null
+                  
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Points ({pointEvents.length} most recent)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                        Edit or delete point events. Score shown is at time of point.
+                      </div>
+                      <div style={{ 
+                        maxHeight: '300px', 
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {pointEvents.map(event => {
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          
+                          // Calculate score at time of this point
+                          const setEvents = data.events.filter(e => e.setIndex === setIndex)
+                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                          let homeScore = 0
+                          let awayScore = 0
+                          for (let i = 0; i <= eventIndex; i++) {
+                            const e = setEvents[i]
+                            if (e.type === 'point') {
+                              if (e.payload?.team === 'home') homeScore++
+                              else if (e.payload?.team === 'away') awayScore++
+                            }
+                          }
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                              <select
+                                value={team || 'home'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, team: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '80px'
+                                }}
+                              >
+                                <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                              </select>
+                              <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this point event?`)) {
+                                    await db.events.delete(event.id)
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px',
+                                  marginLeft: 'auto'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Edit Timeouts */}
+                {data?.events && (() => {
+                  const timeoutEvents = data.events.filter(e => e.type === 'timeout').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
+                  if (timeoutEvents.length === 0) return null
+                  
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Timeouts ({timeoutEvents.length} most recent)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                        Edit or delete timeout events. Score shown is at time of timeout.
+                      </div>
+                      <div style={{ 
+                        maxHeight: '300px', 
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {timeoutEvents.map(event => {
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          
+                          // Calculate score at time of this timeout
+                          const setEvents = data.events.filter(e => e.setIndex === setIndex)
+                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                          let homeScore = 0
+                          let awayScore = 0
+                          for (let i = 0; i < eventIndex; i++) {
+                            const e = setEvents[i]
+                            if (e.type === 'point') {
+                              if (e.payload?.team === 'home') homeScore++
+                              else if (e.payload?.team === 'away') awayScore++
+                            }
+                          }
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                              <select
+                                value={team || 'home'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, team: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '80px'
+                                }}
+                              >
+                                <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                              </select>
+                              <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this timeout event?`)) {
+                                    await db.events.delete(event.id)
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px',
+                                  marginLeft: 'auto'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Edit Substitutions */}
+                {data?.events && (() => {
+                  const substitutionEvents = data.events.filter(e => e.type === 'substitution').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
+                  if (substitutionEvents.length === 0) return null
+                  
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Substitutions ({substitutionEvents.length} most recent)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                        Edit or delete substitution events. Score shown is at time of substitution.
+                      </div>
+                      <div style={{ 
+                        maxHeight: '300px', 
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {substitutionEvents.map(event => {
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          const playerOut = event.payload?.playerOut
+                          const playerIn = event.payload?.playerIn
+                          const position = event.payload?.position
+                          
+                          // Calculate score at time of this substitution
+                          const setEvents = data.events.filter(e => e.setIndex === setIndex)
+                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                          let homeScore = 0
+                          let awayScore = 0
+                          for (let i = 0; i < eventIndex; i++) {
+                            const e = setEvents[i]
+                            if (e.type === 'point') {
+                              if (e.payload?.team === 'home') homeScore++
+                              else if (e.payload?.team === 'away') awayScore++
+                            }
+                          }
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              padding: '8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                                <select
+                                  value={team || 'home'}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, team: e.target.value }
+                                    })
+                                  }}
+                                  style={{
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)',
+                                    minWidth: '80px'
+                                  }}
+                                >
+                                  <option value="home">Home</option>
+                                  <option value="away">Away</option>
+                                </select>
+                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
+                                <button
+                                  className="danger"
+                                  onClick={async () => {
+                                    if (confirm(`Delete this substitution event?`)) {
+                                      await db.events.delete(event.id)
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '10px',
+                                    marginLeft: 'auto'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <label style={{ fontSize: '10px' }}>Position:</label>
+                                <select
+                                  value={position || 'I'}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, position: e.target.value }
+                                    })
+                                  }}
+                                  style={{
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: '#1e293b',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)',
+                                    width: '50px'
+                                  }}
+                                >
+                                  {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
+                                    <option key={pos} value={pos} style={{ background: '#1e293b', color: 'var(--text)' }}>{pos}</option>
+                                  ))}
+                                </select>
+                                <label style={{ fontSize: '10px' }}>Out:</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="99"
+                                  value={playerOut || ''}
+                                  onChange={async (e) => {
+                                    const val = parseInt(e.target.value) || null
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, playerOut: val }
+                                    })
+                                  }}
+                                  style={{
+                                    width: '50px',
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)'
+                                  }}
+                                />
+                                <label style={{ fontSize: '10px' }}>In:</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="99"
+                                  value={playerIn || ''}
+                                  onChange={async (e) => {
+                                    const val = parseInt(e.target.value) || null
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, playerIn: val }
+                                    })
+                                  }}
+                                  style={{
+                                    width: '50px',
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)'
+                                  }}
+                                />
+                                <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={event.payload?.isInjury || false}
+                                      onChange={async (e) => {
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, isInjury: e.target.checked }
+                                        })
+                                      }}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    Injury
+                                  </label>
+                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={event.payload?.isExceptional || false}
+                                      onChange={async (e) => {
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, isExceptional: e.target.checked }
+                                        })
+                                      }}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    Exceptional
+                                  </label>
+                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={event.payload?.isExpelled || false}
+                                      onChange={async (e) => {
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, isExpelled: e.target.checked }
+                                        })
+                                      }}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    Expelled
+                                  </label>
+                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={event.payload?.isDisqualified || false}
+                                      onChange={async (e) => {
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, isDisqualified: e.target.checked }
+                                        })
+                                      }}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    Disqualified
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Edit Sanctions */}
+                {data?.events && (() => {
+                  const sanctionEvents = data.events.filter(e => e.type === 'sanction').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
+                  if (sanctionEvents.length === 0) return null
+                  
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Sanctions ({sanctionEvents.length} most recent)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                        Edit or delete sanction events. Score shown is at time of sanction.
+                      </div>
+                      <div style={{ 
+                        maxHeight: '300px', 
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {sanctionEvents.map(event => {
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          const sanctionType = event.payload?.type
+                          const playerNumber = event.payload?.playerNumber
+                          const position = event.payload?.position
+                          const role = event.payload?.role
+                          
+                          // Calculate score at time of this sanction
+                          const setEvents = data.events.filter(e => e.setIndex === setIndex)
+                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                          let homeScore = 0
+                          let awayScore = 0
+                          for (let i = 0; i < eventIndex; i++) {
+                            const e = setEvents[i]
+                            if (e.type === 'point') {
+                              if (e.payload?.team === 'home') homeScore++
+                              else if (e.payload?.team === 'away') awayScore++
+                            }
+                          }
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              padding: '8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                                <select
+                                  value={team || 'home'}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, team: e.target.value }
+                                    })
+                                  }}
+                                  style={{
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: '#1e293b',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)',
+                                    minWidth: '80px'
+                                  }}
+                                >
+                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                                </select>
+                                <select
+                                  value={sanctionType || 'warning'}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, type: e.target.value }
+                                    })
+                                  }}
+                                  style={{
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: '#1e293b',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)',
+                                    minWidth: '120px'
+                                  }}
+                                >
+                                  <option value="warning" style={{ background: '#1e293b', color: 'var(--text)' }}>Warning</option>
+                                  <option value="penalty" style={{ background: '#1e293b', color: 'var(--text)' }}>Penalty</option>
+                                  <option value="expulsion" style={{ background: '#1e293b', color: 'var(--text)' }}>Expulsion</option>
+                                  <option value="disqualification" style={{ background: '#1e293b', color: 'var(--text)' }}>Disqualification</option>
+                                  <option value="improper_request" style={{ background: '#1e293b', color: 'var(--text)' }}>Improper Request</option>
+                                  <option value="delay_warning" style={{ background: '#1e293b', color: 'var(--text)' }}>Delay Warning</option>
+                                  <option value="delay_penalty" style={{ background: '#1e293b', color: 'var(--text)' }}>Delay Penalty</option>
+                                </select>
+                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
+                                <button
+                                  className="danger"
+                                  onClick={async () => {
+                                    if (confirm(`Delete this sanction event?`)) {
+                                      await db.events.delete(event.id)
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '10px',
+                                    marginLeft: 'auto'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {playerNumber !== undefined && playerNumber !== null && (
+                                  <>
+                                    <label style={{ fontSize: '10px' }}>Player:</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="99"
+                                      value={playerNumber || ''}
+                                      onChange={async (e) => {
+                                        const val = parseInt(e.target.value) || null
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, playerNumber: val }
+                                        })
+                                      }}
+                                      style={{
+                                        width: '50px',
+                                        padding: '4px 6px',
+                                        fontSize: '11px',
+                                        background: 'var(--bg-secondary)',
+                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        borderRadius: '4px',
+                                        color: 'var(--text)'
+                                      }}
+                                    />
+                                  </>
+                                )}
+                                {position && (
+                                  <>
+                                    <label style={{ fontSize: '10px' }}>Position:</label>
+                                    <select
+                                      value={position || 'I'}
+                                      onChange={async (e) => {
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, position: e.target.value }
+                                        })
+                                      }}
+                                      style={{
+                                        padding: '4px 6px',
+                                        fontSize: '11px',
+                                        background: 'var(--bg-secondary)',
+                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        borderRadius: '4px',
+                                        color: 'var(--text)',
+                                        width: '50px'
+                                      }}
+                                    >
+                                      {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
+                                        <option key={pos} value={pos}>{pos}</option>
+                                      ))}
+                                    </select>
+                                  </>
+                                )}
+                                {role && (
+                                  <>
+                                    <label style={{ fontSize: '10px' }}>Role:</label>
+                                    <select
+                                      value={role || 'Coach'}
+                                      onChange={async (e) => {
+                                        await db.events.update(event.id, {
+                                          payload: { ...event.payload, role: e.target.value }
+                                        })
+                                      }}
+                                      style={{
+                                        padding: '4px 6px',
+                                        fontSize: '11px',
+                                        background: '#1e293b',
+                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        borderRadius: '4px',
+                                        color: 'var(--text)',
+                                        minWidth: '120px'
+                                      }}
+                                    >
+                                      <option value="Coach" style={{ background: '#1e293b', color: 'var(--text)' }}>Coach</option>
+                                      <option value="Assistant Coach 1" style={{ background: '#1e293b', color: 'var(--text)' }}>Assistant Coach 1</option>
+                                      <option value="Assistant Coach 2" style={{ background: '#1e293b', color: 'var(--text)' }}>Assistant Coach 2</option>
+                                      <option value="Physiotherapist" style={{ background: '#1e293b', color: 'var(--text)' }}>Physiotherapist</option>
+                                      <option value="Medic" style={{ background: '#1e293b', color: 'var(--text)' }}>Medic</option>
+                                    </select>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Edit Libero Actions */}
+                {data?.events && (() => {
+                  const liberoEvents = data.events.filter(e => 
+                    e.type === 'libero_entry' || 
+                    e.type === 'libero_exit' || 
+                    e.type === 'libero_substitution' ||
+                    e.type === 'libero_unable' ||
+                    e.type === 'libero_redesignation'
+                  ).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
+                  if (liberoEvents.length === 0) return null
+                  
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Libero Actions ({liberoEvents.length} most recent)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                        Edit or delete libero-related events.
+                      </div>
+                      <div style={{ 
+                        maxHeight: '300px', 
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {liberoEvents.map(event => {
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          const eventType = event.type
+                          
+                          // Calculate score at time of this event
+                          const setEvents = data.events.filter(e => e.setIndex === setIndex)
+                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                          let homeScore = 0
+                          let awayScore = 0
+                          for (let i = 0; i < eventIndex; i++) {
+                            const e = setEvents[i]
+                            if (e.type === 'point') {
+                              if (e.payload?.team === 'home') homeScore++
+                              else if (e.payload?.team === 'away') awayScore++
+                            }
+                          }
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              padding: '8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '100px', fontSize: '10px', fontWeight: 600 }}>
+                                  {eventType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                </span>
+                                <select
+                                  value={team || 'home'}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, team: e.target.value }
+                                    })
+                                  }}
+                                  style={{
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: '#1e293b',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)',
+                                    minWidth: '80px'
+                                  }}
+                                >
+                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                                </select>
+                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
+                                <button
+                                  className="danger"
+                                  onClick={async () => {
+                                    if (confirm(`Delete this ${eventType} event?`)) {
+                                      await db.events.delete(event.id)
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '10px',
+                                    marginLeft: 'auto'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                              {eventType === 'libero_entry' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: '10px' }}>Libero #:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={event.payload?.liberoIn || ''}
+                                    onChange={async (e) => {
+                                      const val = parseInt(e.target.value) || null
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, liberoIn: val }
+                                      })
+                                    }}
+                                    style={{
+                                      width: '50px',
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: 'var(--bg-secondary)',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)'
+                                    }}
+                                  />
+                                  <label style={{ fontSize: '10px' }}>Player Out:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={event.payload?.playerOut || ''}
+                                    onChange={async (e) => {
+                                      const val = parseInt(e.target.value) || null
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, playerOut: val }
+                                      })
+                                    }}
+                                    style={{
+                                      width: '50px',
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: 'var(--bg-secondary)',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)'
+                                    }}
+                                  />
+                                  <label style={{ fontSize: '10px' }}>Type:</label>
+                                  <select
+                                    value={event.payload?.liberoType || 'libero1'}
+                                    onChange={async (e) => {
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, liberoType: e.target.value }
+                                      })
+                                    }}
+                                    style={{
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: '#1e293b',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)',
+                                      minWidth: '80px'
+                                    }}
+                                  >
+                                    <option value="libero1" style={{ background: '#1e293b', color: 'var(--text)' }}>L1</option>
+                                    <option value="libero2" style={{ background: '#1e293b', color: 'var(--text)' }}>L2</option>
+                                  </select>
+                                </div>
+                              )}
+                              {eventType === 'libero_exit' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: '10px' }}>Libero Out:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={event.payload?.liberoOut || ''}
+                                    onChange={async (e) => {
+                                      const val = parseInt(e.target.value) || null
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, liberoOut: val }
+                                      })
+                                    }}
+                                    style={{
+                                      width: '50px',
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: 'var(--bg-secondary)',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)'
+                                    }}
+                                  />
+                                  <label style={{ fontSize: '10px' }}>Player In:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={event.payload?.playerIn || ''}
+                                    onChange={async (e) => {
+                                      const val = parseInt(e.target.value) || null
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, playerIn: val }
+                                      })
+                                    }}
+                                    style={{
+                                      width: '50px',
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: 'var(--bg-secondary)',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)'
+                                    }}
+                                  />
+                                </div>
+                              )}
+                              {eventType === 'libero_unable' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: '10px' }}>Libero #:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={event.payload?.liberoNumber || ''}
+                                    onChange={async (e) => {
+                                      const val = parseInt(e.target.value) || null
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, liberoNumber: val }
+                                      })
+                                    }}
+                                    style={{
+                                      width: '50px',
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: 'var(--bg-secondary)',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)'
+                                    }}
+                                  />
+                                  <label style={{ fontSize: '10px' }}>Reason:</label>
+                                  <select
+                                    value={event.payload?.reason || 'injury'}
+                                    onChange={async (e) => {
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, reason: e.target.value }
+                                      })
+                                    }}
+                                    style={{
+                                      padding: '4px 6px',
+                                      fontSize: '11px',
+                                      background: '#1e293b',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)',
+                                      minWidth: '120px'
+                                    }}
+                                  >
+                                    <option value="injury" style={{ background: '#1e293b', color: 'var(--text)' }}>Injury</option>
+                                    <option value="expulsion" style={{ background: '#1e293b', color: 'var(--text)' }}>Expulsion</option>
+                                    <option value="disqualification" style={{ background: '#1e293b', color: 'var(--text)' }}>Disqualification</option>
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Edit Lineups */}
+                {data?.events && (() => {
+                  const lineupEvents = data.events.filter(e => e.type === 'lineup' && e.payload?.isInitial).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 10)
+                  if (lineupEvents.length === 0) return null
+                  
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Initial Lineups ({lineupEvents.length} most recent)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                        Edit or delete initial lineup events.
+                      </div>
+                      <div style={{ 
+                        maxHeight: '300px', 
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {lineupEvents.map(event => {
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          const lineup = event.payload?.lineup || {}
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              padding: '8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                                <select
+                                  value={team || 'home'}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, team: e.target.value }
+                                    })
+                                  }}
+                                  style={{
+                                    padding: '4px 6px',
+                                    fontSize: '11px',
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text)',
+                                    minWidth: '80px'
+                                  }}
+                                >
+                                  <option value="home">Home</option>
+                                  <option value="away">Away</option>
+                                </select>
+                                <button
+                                  className="secondary"
+                                  onClick={() => {
+                                    setLineupModal({ team, mode: 'manual', lineup })
+                                    setShowManualPanel(false)
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '10px'
+                                  }}
+                                >
+                                  Edit Lineup
+                                </button>
+                                <button
+                                  className="danger"
+                                  onClick={async () => {
+                                    if (confirm(`Delete this lineup event?`)) {
+                                      await db.events.delete(event.id)
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '10px',
+                                    marginLeft: 'auto'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                                I: {lineup.I || '-'} | II: {lineup.II || '-'} | III: {lineup.III || '-'} | IV: {lineup.IV || '-'} | V: {lineup.V || '-'} | VI: {lineup.VI || '-'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Edit Set Times */}
+                {data?.sets && data.sets.length > 0 && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Set Times</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Edit start and end times for sets.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {data.sets.sort((a, b) => a.index - b.index).map(set => (
+                        <div key={set.id} style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          gap: '8px',
+                          padding: '8px',
+                          background: 'rgba(255,255,255,0.03)',
+                          borderRadius: '6px'
+                        }}>
+                          <div style={{ fontWeight: 600, fontSize: '12px' }}>Set {set.index}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <label style={{ fontSize: '11px', minWidth: '80px' }}>Start Time:</label>
+                              <input
+                                type="datetime-local"
+                                value={set.startTime ? new Date(set.startTime).toISOString().slice(0, 16) : ''}
+                                onChange={async (e) => {
+                                  const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
+                                  await db.sets.update(set.id, { startTime: newTime })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: 'var(--bg-secondary)',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)'
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <label style={{ fontSize: '11px', minWidth: '80px' }}>End Time:</label>
+                              <input
+                                type="datetime-local"
+                                value={set.endTime ? new Date(set.endTime).toISOString().slice(0, 16) : ''}
+                                onChange={async (e) => {
+                                  const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
+                                  await db.sets.update(set.id, { endTime: newTime })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: 'var(--bg-secondary)',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Add New Event */}
+                <div
+                  className="manual-item"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    paddingTop: '16px',
+                    borderTop: '1px solid rgba(255,255,255,0.08)'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: '8px' }}>Add New Event</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                    Manually add a new event to the match history.
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ fontSize: '12px', minWidth: '100px' }}>Event Type:</label>
+                      <select
+                        id="newEventType"
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          fontSize: '12px',
+                          background: '#1e293b',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)'
+                        }}
+                      >
+                        <option value="point" style={{ background: '#1e293b', color: 'var(--text)' }}>Point</option>
+                        <option value="timeout" style={{ background: '#1e293b', color: 'var(--text)' }}>Timeout</option>
+                        <option value="substitution" style={{ background: '#1e293b', color: 'var(--text)' }}>Substitution</option>
+                        <option value="sanction" style={{ background: '#1e293b', color: 'var(--text)' }}>Sanction</option>
+                        <option value="lineup" style={{ background: '#1e293b', color: 'var(--text)' }}>Lineup</option>
+                        <option value="libero_entry" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Entry</option>
+                        <option value="libero_exit" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Exit</option>
+                        <option value="libero_substitution" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Substitution</option>
+                        <option value="libero_unable" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Unable</option>
+                        <option value="replay" style={{ background: '#1e293b', color: 'var(--text)' }}>Replay</option>
+                        <option value="rally_start" style={{ background: '#1e293b', color: 'var(--text)' }}>Rally Start</option>
+                        <option value="set_start" style={{ background: '#1e293b', color: 'var(--text)' }}>Set Start</option>
+                        <option value="set_end" style={{ background: '#1e293b', color: 'var(--text)' }}>Set End</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ fontSize: '12px', minWidth: '100px' }}>Set:</label>
+                      <select
+                        id="newEventSet"
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          fontSize: '12px',
+                          background: '#1e293b',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)'
+                        }}
+                      >
+                        {data?.sets?.sort((a, b) => a.index - b.index).map(set => (
+                          <option key={set.id} value={set.index} style={{ background: '#1e293b', color: 'var(--text)' }}>Set {set.index}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ fontSize: '12px', minWidth: '100px' }}>Team:</label>
+                      <select
+                        id="newEventTeam"
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          fontSize: '12px',
+                          background: '#1e293b',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)'
+                        }}
+                      >
+                        <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
+                        <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                      </select>
+                    </div>
+                    <button
+                      className="secondary"
+                      onClick={async () => {
+                        const eventType = document.getElementById('newEventType')?.value
+                        const setIndex = parseInt(document.getElementById('newEventSet')?.value || '1')
+                        const team = document.getElementById('newEventTeam')?.value
+                        
+                        if (!eventType || !setIndex || !team) {
+                          alert('Please fill in all fields')
+                          return
+                        }
+                        
+                        // Get next sequence number
+                        const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+                        const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
+                        
+                        const payload = { team }
+                        
+                        // Add type-specific fields
+                        if (eventType === 'substitution') {
+                          payload.position = 'I'
+                          payload.playerOut = null
+                          payload.playerIn = null
+                        } else if (eventType === 'sanction') {
+                          payload.type = 'warning'
+                        } else if (eventType === 'lineup') {
+                          payload.lineup = { I: null, II: null, III: null, IV: null, V: null, VI: null }
+                          payload.isInitial = true
+                        } else if (eventType === 'libero_entry') {
+                          payload.liberoIn = null
+                          payload.playerOut = null
+                          payload.liberoType = 'libero1'
+                        } else if (eventType === 'libero_exit') {
+                          payload.liberoOut = null
+                          payload.playerIn = null
+                        } else if (eventType === 'libero_unable') {
+                          payload.liberoNumber = null
+                          payload.liberoType = 'libero1'
+                          payload.reason = 'injury'
+                        }
+                        
+                        await db.events.add({
+                          matchId,
+                          setIndex,
+                          type: eventType,
+                          payload,
+                          ts: new Date().toISOString(),
+                          seq: maxSeq + 1
+                        })
+                        
+                        alert('Event added. You can now edit it in the sections above.')
+                      }}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '12px'
+                      }}
+                    >
+                      Add Event
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Delete Events (Simple List) */}
+                {data?.events && data.events.length > 0 && (
+                  <div
+                    className="manual-item"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Delete Events (Quick)</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      Quick delete for any event. Use with caution.
+                    </div>
+                    <div style={{ 
+                      maxHeight: '200px', 
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      {data.events
+                        .sort((a, b) => {
+                          const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+                          const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+                          return bTime - aTime
+                        })
+                        .slice(0, 30)
+                        .map(event => {
+                          const eventType = event.type
+                          const setIndex = event.setIndex || 1
+                          const team = event.payload?.team
+                          const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
+                          const description = eventType === 'point' ? `Point ${teamLabel}` :
+                                            eventType === 'timeout' ? `Timeout ${teamLabel}` :
+                                            eventType === 'substitution' ? `Substitution ${teamLabel}` :
+                                            eventType === 'lineup' ? `Lineup ${teamLabel}` :
+                                            eventType === 'sanction' ? `Sanction ${teamLabel}` :
+                                            eventType === 'libero_entry' ? `Libero Entry ${teamLabel}` :
+                                            eventType === 'libero_exit' ? `Libero Exit ${teamLabel}` :
+                                            eventType === 'libero_substitution' ? `Libero Sub ${teamLabel}` :
+                                            eventType === 'libero_unable' ? `Libero Unable ${teamLabel}` :
+                                            eventType
+                          
+                          return (
+                            <div key={event.id} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '6px 8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '4px',
+                              fontSize: '11px'
+                            }}>
+                              <span>
+                                Set {setIndex} - {description}
+                              </span>
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this ${eventType} event?`)) {
+                                    await db.events.delete(event.id)
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           </div>
@@ -8516,20 +11179,74 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <Modal
           title="Remarks Recording"
           open={true}
-          onClose={() => setShowRemarks(false)}
+          onClose={() => {
+            setShowRemarks(false)
+            setRemarksText('')
+          }}
           width={600}
         >
           <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
             <section className="panel">
               <h3>Remarks</h3>
               <textarea
+                ref={remarksTextareaRef}
                 className="remarks-area"
                 placeholder="Record match remarks…"
-                value={data?.match?.remarks || ''}
+                value={remarksText}
                 onChange={e => {
-                  db.matches.update(matchId, { remarks: e.target.value })
+                  setRemarksText(e.target.value)
+                }}
+                onBlur={async () => {
+                  // When user finishes editing, save and log as event
+                  const oldRemarks = data?.match?.remarks || ''
+                  const newRemarks = remarksText.trim()
+                  
+                  if (newRemarks !== oldRemarks) {
+                    // Save the new remarks
+                    await db.matches.update(matchId, { remarks: newRemarks })
+                    
+                    // Log remark insertion as an event if new text was added
+                    if (data?.set && newRemarks) {
+                      // Get the added text (what's new compared to old)
+                      const oldLines = oldRemarks.split('\n')
+                      const newLines = newRemarks.split('\n')
+                      
+                      // Find what was added (new lines that weren't in old)
+                      const addedLines = newLines.filter((line, idx) => {
+                        // If old remarks is empty, all new lines are added
+                        if (!oldRemarks) return line.trim()
+                        // Check if this line is new (not in old remarks)
+                        return idx >= oldLines.length || line !== oldLines[idx]
+                      }).filter(line => line.trim())
+                      
+                      if (addedLines.length > 0) {
+                        const addedText = addedLines.join('\n')
+                        await logEvent('remark', {
+                          text: addedText,
+                          fullRemarks: newRemarks
+                        })
+                      }
+                    }
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  minHeight: '300px',
+                  padding: '12px',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  color: 'var(--text)',
+                  resize: 'vertical'
                 }}
               />
+              <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--muted)' }}>
+                <div>• Existing remarks are shown above</div>
+                <div>• Add new remarks on a new line</div>
+                <div>• Changes are saved automatically when you click outside the textarea</div>
+              </div>
             </section>
           </div>
         </Modal>
@@ -9909,11 +12626,40 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   const currentSanction = playerNumber ? getPlayerSanctionLevel(teamKey, playerNumber) : null
                   const teamWarning = teamHasFormalWarning(teamKey)
                   
-                  // Determine which sanctions are available based on escalation
-                  const canGetWarning = !currentSanction && !teamWarning
-                  const canGetPenalty = !currentSanction || currentSanction === 'warning'
-                  const canGetExpulsion = !currentSanction || currentSanction === 'warning' || currentSanction === 'penalty'
-                  const canGetDisqualification = true // Always available
+                  // Check if player has each specific sanction type (for back-sanctioning rules)
+                  const hasWarning = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'warning') : false
+                  const hasPenalty = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'penalty') : false
+                  const hasExpulsion = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'expulsion') : false
+                  const hasDisqualification = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'disqualification') : false
+                  
+                  console.log('[Sanction Dropdown]', {
+                    teamKey,
+                    playerNumber,
+                    currentSanction,
+                    teamWarning,
+                    hasWarning,
+                    hasPenalty,
+                    hasExpulsion,
+                    hasDisqualification
+                  })
+                  
+                  // Determine which sanctions are available
+                  // Rule: A player cannot get the same sanction type twice
+                  // Exception: Warning can only be given if team hasn't been warned (player can have other sanctions)
+                  const canGetWarning = !hasWarning && !teamWarning
+                  // Penalty: can be given if player doesn't already have a penalty (back-sanctioning allowed)
+                  const canGetPenalty = !hasPenalty
+                  // Expulsion: can be given if player doesn't already have an expulsion (back-sanctioning allowed)
+                  const canGetExpulsion = !hasExpulsion
+                  // Disqualification: can be given if player doesn't already have a disqualification (back-sanctioning allowed)
+                  const canGetDisqualification = !hasDisqualification
+                  
+                  console.log('[Sanction Dropdown] Available:', {
+                    canGetWarning,
+                    canGetPenalty,
+                    canGetExpulsion,
+                    canGetDisqualification
+                  })
                   
                   return (
                     <>
@@ -10421,42 +13167,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamIsLeft = (liberoReentryModal.team === 'home' && leftIsHome) || (liberoReentryModal.team === 'away' && !leftIsHome)
         
         let modalStyle = {}
-        if (teamIsLeft) {
-          // Left team: find "Libero out" button and center on it
-          const buttons = document.querySelectorAll('button')
-          let liberoOutButton = null
-          for (const btn of buttons) {
-            if (btn.textContent.trim() === 'Libero out') {
-              const rect = btn.getBoundingClientRect()
-              const isLeftSide = rect.left < window.innerWidth / 2
-              if (isLeftSide) {
-                liberoOutButton = btn
-                break
-              }
+        // Find the player in position VI for this team
+        const courtPlayers = document.querySelectorAll('.court-player')
+        let positionVIElement = null
+        
+        for (const playerEl of courtPlayers) {
+          const positionEl = playerEl.querySelector('.court-player-position')
+          if (positionEl && positionEl.textContent.trim() === 'VI') {
+            const rect = playerEl.getBoundingClientRect()
+            const isLeftSide = rect.left < window.innerWidth / 2
+            
+            // Check if this player belongs to the correct team
+            if ((teamIsLeft && isLeftSide) || (!teamIsLeft && !isLeftSide)) {
+              positionVIElement = playerEl
+              break
             }
           }
-          
-          if (liberoOutButton) {
-            const rect = liberoOutButton.getBoundingClientRect()
-            modalStyle = {
-              position: 'fixed',
-              left: `${rect.left + rect.width / 2}px`,
-              top: `${rect.top + rect.height / 2}px`,
-              transform: 'translate(-50%, -50%)',
-              zIndex: 10000
-            }
+        }
+        
+        if (positionVIElement) {
+          const rect = positionVIElement.getBoundingClientRect()
+          modalStyle = {
+            position: 'fixed',
+            left: `${rect.left + rect.width / 2}px`,
+            top: `${rect.top + rect.height / 2}px`,
+            transform: 'translate(-50%, -50%)',
+            zIndex: 10000
           }
         } else {
-          // Right team: position 30px from the right of the net, at the top of the court (same as rotation modal)
+          // Fallback: center on court
           const courtCenter = window.innerWidth / 2
           const court = document.querySelector('.court')
           const courtTop = court ? court.getBoundingClientRect().top : 100
+          const courtHeight = court ? court.getBoundingClientRect().height : 400
           
           modalStyle = {
             position: 'fixed',
-            left: `${courtCenter + 30}px`,
-            top: `${courtTop + 3}px`,
-            transform: 'translate(-50%, 0)',
+            left: `${teamIsLeft ? courtCenter - 150 : courtCenter + 150}px`,
+            top: `${courtTop + courtHeight / 2}px`,
+            transform: 'translate(-50%, -50%)',
             zIndex: 10000
           }
         }
@@ -11674,42 +14423,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamIsLeft = (liberoRotationModal.team === 'home' && leftIsHome) || (liberoRotationModal.team === 'away' && !leftIsHome)
         
         let modalStyle = {}
-        if (teamIsLeft) {
-          // Left team: find "Libero out" button and center on it
-          const buttons = document.querySelectorAll('button')
-          let liberoOutButton = null
-          for (const btn of buttons) {
-            if (btn.textContent.trim() === 'Libero out') {
-              const rect = btn.getBoundingClientRect()
-              const isLeftSide = rect.left < window.innerWidth / 2
-              if (isLeftSide) {
-                liberoOutButton = btn
-                break
-              }
+        // Find the player in position VI for this team
+        const courtPlayers = document.querySelectorAll('.court-player')
+        let positionVIElement = null
+        
+        for (const playerEl of courtPlayers) {
+          const positionEl = playerEl.querySelector('.court-player-position')
+          if (positionEl && positionEl.textContent.trim() === 'VI') {
+            const rect = playerEl.getBoundingClientRect()
+            const isLeftSide = rect.left < window.innerWidth / 2
+            
+            // Check if this player belongs to the correct team
+            if ((teamIsLeft && isLeftSide) || (!teamIsLeft && !isLeftSide)) {
+              positionVIElement = playerEl
+              break
             }
           }
-          
-          if (liberoOutButton) {
-            const rect = liberoOutButton.getBoundingClientRect()
-            modalStyle = {
-              position: 'fixed',
-              left: `${rect.left + rect.width / 2}px`,
-              top: `${rect.top + rect.height / 2}px`,
-              transform: 'translate(-50%, -50%)',
-              zIndex: 10000
-            }
+        }
+        
+        if (positionVIElement) {
+          const rect = positionVIElement.getBoundingClientRect()
+          modalStyle = {
+            position: 'fixed',
+            left: `${rect.left + rect.width / 2}px`,
+            top: `${rect.top + rect.height / 2}px`,
+            transform: 'translate(-50%, -50%)',
+            zIndex: 10000
           }
         } else {
-          // Right team: position 20px from the right of the net, at the top of the court
+          // Fallback: center on court
           const courtCenter = window.innerWidth / 2
           const court = document.querySelector('.court')
           const courtTop = court ? court.getBoundingClientRect().top : 100
+          const courtHeight = court ? court.getBoundingClientRect().height : 400
           
           modalStyle = {
             position: 'fixed',
-            left: `${courtCenter + 30}px`,
-            top: `${courtTop + 3}px`,
-            transform: 'translate(-50%, 0)',
+            left: `${teamIsLeft ? courtCenter - 150 : courtCenter + 150}px`,
+            top: `${courtTop + courtHeight / 2}px`,
+            transform: 'translate(-50%, -50%)',
             zIndex: 10000
           }
         }
@@ -11891,6 +14643,19 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       setErrors(newErrors)
     }
     setConfirmMessage(null)
+  }
+
+  // Handle double-click on available player - fill first available box
+  const handlePlayerDoubleClick = (playerNumber) => {
+    // Find first empty box (I to VI order: indices 5, 4, 3, 2, 1, 0 for I, VI, V, II, III, IV)
+    // But we want I, II, III, IV, V, VI order, so indices: 5, 2, 1, 0, 3, 4
+    const positionOrder = [5, 2, 1, 0, 3, 4] // I, II, III, IV, V, VI
+    for (const idx of positionOrder) {
+      if (!lineup[idx] || lineup[idx].trim() === '') {
+        handleInputChange(idx, String(playerNumber))
+        break
+      }
+    }
   }
 
   const handleConfirm = () => {
@@ -12115,136 +14880,167 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       hideCloseButton={true}
     >
       <div style={{ padding: '24px' }}>
+        {/* Centered container for position inputs */}
         <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '12px',
-          marginBottom: '24px',
-          position: 'relative'
+          display: 'flex',
+          justifyContent: 'center',
+          marginBottom: '24px'
         }}>
-          {/* Net indicator */}
-          <div style={{
-            position: 'absolute',
-            top: '-8px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '100%',
-            height: '2px',
-            background: 'var(--accent)',
-            zIndex: 1
-          }} />
-          <div style={{
-            position: 'absolute',
-            top: '-20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--accent)',
-            zIndex: 2,
-            background: 'var(--bg)',
-            padding: '0 8px'
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '8px',
+            position: 'relative'
           }}>
+            {/* Net indicator */}
+            <div style={{
+              position: 'absolute',
+              top: '-8px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '100%',
+              height: '2px',
+              background: 'var(--accent)',
+              zIndex: 1
+            }} />
+            <div style={{
+              position: 'absolute',
+              top: '-20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--accent)',
+              zIndex: 2,
+              background: 'var(--bg)',
+              padding: '0 8px'
+            }}>
+            </div>
+
+            {/* Top row (closer to net) */}
+            {[
+              { idx: 0, pos: 'IV' },
+              { idx: 1, pos: 'III' },
+              { idx: 2, pos: 'II' }
+            ].map(({ idx, pos }) => (
+              <div key={`top-${idx}`} style={{ 
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center'
+              }}>
+                {/* Position label rectangle */}
+                <div style={{
+                  width: '60px',
+                  height: '24px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '4px 4px 0 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--text)'
+                }}>
+                  {pos}
+                </div>
+                {/* Input square */}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  min="1"
+                  max="99"
+                  value={lineup[idx]}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9]/g, '')
+                    if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
+                      handleInputChange(idx, val)
+                    }
+                  }}
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    padding: '0',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    textAlign: 'center',
+                    background: 'var(--bg-secondary)',
+                    border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    color: 'var(--text)'
+                  }}
+                />
+                <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
+                  {errors[idx] || ''}
+                </div>
+              </div>
+            ))}
+
+            {/* Bottom row (further from net) */}
+            {[
+              { idx: 3, pos: 'V' },
+              { idx: 4, pos: 'VI' },
+              { idx: 5, pos: 'I' }
+            ].map(({ idx, pos }) => (
+              <div 
+                key={`bottom-${idx}`} 
+                style={{ 
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  marginTop: '8px'
+                }}
+              >
+                {/* Position label rectangle */}
+                <div style={{
+                  width: '60px',
+                  height: '24px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '4px 4px 0 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--text)'
+                }}>
+                  {pos}
+                </div>
+                {/* Input square */}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  min="1"
+                  max="99"
+                  value={lineup[idx]}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9]/g, '')
+                    if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
+                      handleInputChange(idx, val)
+                    }
+                  }}
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    padding: '0',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    textAlign: 'center',
+                    background: 'var(--bg-secondary)',
+                    border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    color: 'var(--text)'
+                  }}
+                />
+                <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
+                  {errors[idx] || ''}
+                </div>
+              </div>
+            ))}
           </div>
-
-          {/* Top row (closer to net) */}
-          {[
-            { idx: 0, pos: 'IV' },
-            { idx: 1, pos: 'III' },
-            { idx: 2, pos: 'II' }
-          ].map(({ idx, pos }) => (
-            <div key={`top-${idx}`} style={{ position: 'relative' }}>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '8px', 
-                fontSize: '12px', 
-                color: 'var(--muted)',
-                textAlign: 'center'
-              }}>
-                {pos}
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                min="1"
-                max="99"
-                value={lineup[idx]}
-                onChange={e => {
-                  const val = e.target.value.replace(/[^0-9]/g, '')
-                  if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                    handleInputChange(idx, val)
-                  }
-                }}
-                style={{
-                  width: '60px',
-                  height: '60px',
-                  maxWidth: '100%',
-                  padding: '0',
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                  background: 'var(--bg-secondary)',
-                  border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
-                  borderRadius: '8px',
-                  color: 'var(--text)'
-                }}
-              />
-              <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px' }}>
-                {errors[idx] || ''}
-              </div>
-            </div>
-          ))}
-
-          {/* Bottom row (further from net) */}
-          {[
-            { idx: 3, pos: 'V' },
-            { idx: 4, pos: 'VI' },
-            { idx: 5, pos: 'I' }
-          ].map(({ idx, pos }) => (
-            <div 
-              key={`bottom-${idx}`} 
-              style={{ position: 'relative', marginTop: '24px' }}
-            >
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '8px', 
-                fontSize: '12px', 
-                color: 'var(--muted)',
-                textAlign: 'center'
-              }}>
-                {pos}
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                min="1"
-                max="99"
-                value={lineup[idx]}
-                onChange={e => {
-                  const val = e.target.value.replace(/[^0-9]/g, '')
-                  if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                    handleInputChange(idx, val)
-                  }
-                }}
-                style={{
-                  width: '60px',
-                  height: '60px',
-                  maxWidth: '100%',
-                  padding: '0',
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                  background: 'var(--bg-secondary)',
-                  border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
-                  borderRadius: '8px',
-                  color: 'var(--text)'
-                }}
-              />
-              <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px' }}>
-                {errors[idx] || ''}
-              </div>
-            </div>
-          ))}
         </div>
 
         {/* Available players (excluding liberos and disqualified) */}
@@ -12271,19 +15067,22 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               // Exclude liberos
               if (p.libero && p.libero !== '') return false
               
+              // Exclude players already in the lineup
+              if (lineup.includes(String(p.number))) return false
+              
               if (events) {
-                // Exclude disqualified players (cannot take part ever again)
-                const isDisqualified = events.some(e => 
-                  e.type === 'sanction' && 
+                // Exclude players substituted due to disqualification (cannot take part for rest of game)
+                const wasDisqualifiedSub = events.some(e => 
+                  e.type === 'substitution' && 
                   e.payload?.team === team &&
-                  String(e.payload?.playerNumber) === String(p.number) &&
-                  e.payload?.type === 'disqualification'
+                  String(e.payload?.playerOut) === String(p.number) &&
+                  e.payload?.isDisqualified === true
                 )
-                if (isDisqualified) {
+                if (wasDisqualifiedSub) {
                   return false
                 }
                 
-                // Exclude exceptionally substituted players (cannot take part anymore)
+                // Exclude exceptionally substituted players (cannot take part for rest of game)
                 const wasExceptionallySubstituted = events.some(e => 
                   e.type === 'substitution' && 
                   e.payload?.team === team &&
@@ -12296,6 +15095,19 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 
                 // Exclude expelled players in the current set (cannot take part in this set)
                 if (setIndex) {
+                  // Check for substitution due to expulsion in current set
+                  const wasExpelledSub = events.some(e => 
+                    e.type === 'substitution' && 
+                    e.payload?.team === team &&
+                    String(e.payload?.playerOut) === String(p.number) &&
+                    e.payload?.isExpelled === true &&
+                    e.setIndex === setIndex
+                  )
+                  if (wasExpelledSub) {
+                    return false
+                  }
+                  
+                  // Also check for sanction-based expulsion in current set
                   const isExpelledInSet = events.some(e => 
                     e.type === 'sanction' && 
                     e.payload?.team === team &&
@@ -12307,12 +15119,24 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     return false
                   }
                 }
+                
+                // Also check for sanction-based disqualification
+                const isDisqualified = events.some(e => 
+                  e.type === 'sanction' && 
+                  e.payload?.team === team &&
+                  String(e.payload?.playerNumber) === String(p.number) &&
+                  e.payload?.type === 'disqualification'
+                )
+                if (isDisqualified) {
+                  return false
+                }
               }
               
               return true
             }).sort((a, b) => a.number - b.number).map(p => (
               <div
                 key={p.number}
+                onDoubleClick={() => handlePlayerDoubleClick(p.number)}
                 style={{
                   position: 'relative',
                   width: '40px',
@@ -12326,8 +15150,18 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   fontSize: '14px',
                   fontWeight: 700,
                   color: '#4ade80',
-                  cursor: 'default'
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
                 }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
+                  e.currentTarget.style.transform = 'scale(1.1)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
+                  e.currentTarget.style.transform = 'scale(1)'
+                }}
+                title="Double-click to add to first available position"
               >
                 {p.isCaptain && (
                   <span style={{
