@@ -376,7 +376,7 @@ const PointsColumn30: React.FC<{ isLast?: boolean, isPanel3?: boolean, currentSc
                                  // Panel 3 special logic:
                                  // Points 1-8: vertical bars (|) - points won before the change (only if set has started and court change happened)
                                  // Points 9-30: normal ticks if marked, vertical bars if match finished and not marked
-                                 // Note: markedPoints contains offset values (1,2,3... for actual points 9,10,11...)
+                                 // Note: markedPoints now contains the actual point numbers in Panel 3 (e.g., 6, 7, 8... for points scored after change)
                                  if (num <= 8) {
                                      // Only show vertical bars for points 1-8 if the court change has happened (currentScore >= 8) or set is finished
                                      if (currentScore >= 8 || isSetFinished) {
@@ -385,9 +385,9 @@ const PointsColumn30: React.FC<{ isLast?: boolean, isPanel3?: boolean, currentSc
                                          state = 0; // Empty if court change hasn't happened yet
                                      }
                                  } else {
-                                     // Points 9-30: check if the offset point (num - 8) is in markedPoints
-                                     const offsetPoint = num - 8; // Convert 9,10,11... to 1,2,3...
-                                     if (markedPoints && markedPoints.includes(offsetPoint)) {
+                                     // Points 9-30: check if the actual point number (num) is in markedPoints
+                                     // markedPoints contains values like 6, 7, 8, etc. (the point numbers in Panel 3)
+                                     if (markedPoints && markedPoints.includes(num)) {
                                          state = 1; // Normal tick (scored after change)
                                      } else {
                                          // Point not marked
@@ -413,9 +413,9 @@ const PointsColumn30: React.FC<{ isLast?: boolean, isPanel3?: boolean, currentSc
                                      }
                                  }
                              }
-                             // For Panel 3, circledPoints also contains offset values (1,2,3... for actual points 9,10,11...)
+                             // For Panel 3, circledPoints now contains the actual point numbers in Panel 3 (e.g., 6, 7, 8...)
                              const isCircled = isPanel3 && num > 8
-                                 ? (circledPoints && circledPoints.includes(num - 8))
+                                 ? (circledPoints && circledPoints.includes(num))
                                  : (circledPoints && circledPoints.includes(num));
                              return <PointBox key={i} num={num} filledState={state} isCircled={isCircled} />
                         })}

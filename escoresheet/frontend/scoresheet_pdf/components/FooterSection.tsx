@@ -95,9 +95,10 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
 
 interface RemarksProps {
     overflowSanctions?: SanctionRecord[];
+    remarks?: string;
 }
 
-export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [] }) => {
+export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '' }) => {
     const formatSanction = (sanction: SanctionRecord): string => {
         // Check if it's a delay sanction (playerNr === 'D')
         const isDelay = sanction.playerNr === 'D';
@@ -128,18 +129,30 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [] }) => {
         return `${teamLabel}, ${setLabel}, ${scoreLabel}, ${typeLabel}${playerInfo}`;
     };
 
+    const hasContent = remarks.trim() || overflowSanctions.length > 0;
+
     return (
         <div className="border border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
-            <div className="p-1 flex-1 flex flex-col">
-                {overflowSanctions.length > 0 ? (
+            <div className="p-1 flex-1 flex flex-col overflow-y-auto">
+                {hasContent ? (
                     <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full">
-                        <div className="font-bold mb-1 text-[9px]">Sanctions (overflow):</div>
-                        {overflowSanctions.map((sanction, index) => (
-                            <div key={index} className="text-[9px] leading-tight">
-                                {formatSanction(sanction)}
+                        {remarks.trim() && (
+                            <div className="text-[9px] leading-tight whitespace-pre-wrap mb-1">
+                                {remarks.trim()}
                             </div>
-                        ))}
+                        )}
+                        {overflowSanctions.length > 0 && (
+                            <>
+                                {remarks.trim() && <div className="mb-1"></div>}
+                                <div className="font-bold mb-1 text-[9px]">Sanctions (overflow):</div>
+                                {overflowSanctions.map((sanction, index) => (
+                                    <div key={index} className="text-[9px] leading-tight">
+                                        {formatSanction(sanction)}
+                                    </div>
+                                ))}
+                            </>
+                        )}
                     </div>
                 ) : (
                     <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full"></div>
@@ -382,13 +395,13 @@ export const Results: React.FC<ResultsProps> = ({
             
             {/* Winner Area */}
             <div className="p-1 grid grid-cols-[1.5fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
-                 <div className="border-b border-gray-300 relative">
-                     <span className="text-[8px] absolute top-0 left-0 text-gray-500">WINNER</span>
-                     <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-center justify-center">{winner}</div>
+                 <div className="relative">
+                     <span className="text-[12px] absolute top-0 left-0 text-gray-500">WINNER</span>
+                     <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-end justify-center pb-0.5">{winner}</div>
                  </div>
-                 <div className="border-b border-gray-300 relative">
-                     <span className="text-[8px] absolute top-0 left-0 text-gray-500">RESULT</span>
-                     <div className="w-full h-full text-center font-black text-lg bg-white flex items-center justify-center">{result}</div>
+                 <div className="relative">
+                     <span className="text-[12px] absolute top-0 left-0 text-gray-500">RESULT</span>
+                     <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">3 : {result}</div>
                  </div>
             </div>
         </div>

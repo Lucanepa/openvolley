@@ -7,6 +7,7 @@ import MatchEnd from './components/MatchEnd'
 import Modal from './components/Modal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import mikasaVolleyball from './mikasa_v200w.png'
+import favicon from './favicon.png'
 import {
   TEST_REFEREE_SEED_DATA,
   TEST_SCORER_SEED_DATA,
@@ -1754,78 +1755,93 @@ export default function App() {
           />
         ) : !matchId ? (
           <div className="home-view">
-            <div className="home-grid">
-              <div className="home-card">
-                <div className="home-card-header">
-                  <h2>Official Match</h2>
-                  <div className="connection-status-inline">
-                    <span className="connection-status-label">Connection:</span>
-                    <div className={`status-indicator status-${syncStatus}`}>
-                      <span className="status-dot" />
-                      <span>
-                        {syncStatus === 'offline' && 'Offline'}
-                        {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
-                        {syncStatus === 'connecting' && 'Connecting...'}
-                        {syncStatus === 'syncing' && 'Syncing...'}
-                        {syncStatus === 'synced' && 'Synced'}
-                        {syncStatus === 'error' && 'Sync Error'}
-                      </span>
+            <div className="home-content">
+              <h1 className="home-title">Openvolley eScoresheet</h1>
+              <h2 className="home-subtitle">Indoor</h2>
+              <div className="home-logo">
+                <img src={favicon} alt="Openvolley" />
+              </div>
+              
+              <div className="home-match-section">
+                <div className="home-card">
+                  <div className="home-card-header">
+                    <h2>Official Match</h2>
+                    <div className="connection-status-inline">
+                      <span className="connection-status-label">Connection:</span>
+                      <div className={`status-indicator status-${syncStatus}`}>
+                        <span className="status-dot" />
+                        <span>
+                          {syncStatus === 'offline' && 'Offline'}
+                          {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
+                          {syncStatus === 'connecting' && 'Connecting...'}
+                          {syncStatus === 'syncing' && 'Syncing...'}
+                          {syncStatus === 'synced' && 'Synced'}
+                          {syncStatus === 'error' && 'Sync Error'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="home-card-actions">
-                  <button 
-                    onClick={createNewOfficialMatch}
-                    disabled={matchStatus?.status === 'Match recording'}
-                    className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
-                  >
-                    New official match
-                  </button>
-                  <button 
-                    onClick={() => currentOfficialMatch && continueMatch(currentOfficialMatch.id)}
-                    disabled={!currentOfficialMatch}
-                    className={!currentOfficialMatch ? 'disabled' : ''}
-                  >
-                    Continue official match
-                  </button>
-                  <button 
-                    onClick={showDeleteMatchModal}
-                    disabled={!currentOfficialMatch}
-                    className={'danger ' + (!currentOfficialMatch ? 'disabled' : '')}
-                    style={{ marginTop: '8px' }}
-                  >
-                    Delete official match
-                  </button>
+                  <div className="home-card-actions">
+                    <button 
+                      onClick={createNewOfficialMatch}
+                      disabled={matchStatus?.status === 'Match recording'}
+                      className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
+                    >
+                      New official match
+                    </button>
+                    <button 
+                      onClick={() => currentOfficialMatch && continueMatch(currentOfficialMatch.id)}
+                      disabled={!currentOfficialMatch}
+                      className={!currentOfficialMatch ? 'disabled' : ''}
+                    >
+                      Continue official match
+                    </button>
+                    <button 
+                      onClick={showDeleteMatchModal}
+                      disabled={!currentOfficialMatch}
+                      className={'danger ' + (!currentOfficialMatch ? 'disabled' : '')}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Delete official match
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="home-card home-card--test">
-                <div className="home-card-header">
-                  <h2>Test Match</h2>
+              
+              <div className="home-match-section">
+                <div className="home-card home-card--test">
+                  <div className="home-card-header">
+                    <h2>Test Match</h2>
+                  </div>
+                  <div className="home-card-actions">
+                    <button 
+                      onClick={createNewTestMatch}
+                      disabled={testMatchLoading}
+                      className={testMatchLoading ? 'test-button disabled' : 'test-button'}
+                    >
+                      {testMatchLoading ? 'Preparing…' : 'New test match'}
+                    </button>
+                    <button 
+                      onClick={continueTestMatch}
+                      disabled={testMatchLoading || !currentTestMatch}
+                      className={(testMatchLoading || !currentTestMatch) ? 'test-button disabled' : 'test-button'}
+                    >
+                      {testMatchLoading ? 'Loading…' : 'Continue test match'}
+                    </button>
+                    <button 
+                      onClick={restartTestMatch}
+                      disabled={testMatchLoading || !currentTestMatch}
+                      className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
+                      style={{ marginTop: '8px' }}
+                    >
+                      {testMatchLoading ? 'Clearing…' : 'Clear test match'}
+                    </button>
+                  </div>
                 </div>
-                <div className="home-card-actions">
-                  <button 
-                    onClick={createNewTestMatch}
-                    disabled={testMatchLoading}
-                    className={testMatchLoading ? 'test-button disabled' : 'test-button'}
-                  >
-                    {testMatchLoading ? 'Preparing…' : 'New test match'}
-                  </button>
-                  <button 
-                    onClick={continueTestMatch}
-                    disabled={testMatchLoading || !currentTestMatch}
-                    className={(testMatchLoading || !currentTestMatch) ? 'test-button disabled' : 'test-button'}
-                  >
-                    {testMatchLoading ? 'Loading…' : 'Continue test match'}
-                  </button>
-                  <button 
-                    onClick={restartTestMatch}
-                    disabled={testMatchLoading || !currentTestMatch}
-                    className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
-                    style={{ marginTop: '8px' }}
-                  >
-                    {testMatchLoading ? 'Clearing…' : 'Clear test match'}
-                  </button>
-                </div>
+              </div>
+              
+              <div className="home-support">
+                Support: luca.canepa@gmail.com
               </div>
             </div>
           </div>
