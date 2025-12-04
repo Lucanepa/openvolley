@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { SetFive } from './components/SetFive';
 import { Sanctions, Results, Approvals, Roster, Remarks } from './components/FooterSection';
+import { LeftInfoBox } from './components/LeftInfoBox';
 import { Player, SanctionRecord } from './types_scoresheet';
 
 interface AppScoresheetProps {
@@ -935,22 +936,47 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       
       // Calculate duration (in minutes with single quote, only if set is finished)
       // Use official starting time (match.scheduledAt) for set 1, set's own startTime for others
+      // If startTime is missing, use the first event timestamp as fallback
       let duration = '';
       if (isSetFinished && setInfo?.endTime) {
-        let start: Date;
-        if (setNum === 1 && match?.scheduledAt) {
-          // Set 1 uses official match start time
-          start = new Date(match.scheduledAt);
-        } else if (setInfo?.startTime) {
-          // Other sets use their recorded start time
-          start = new Date(setInfo.startTime);
+        let start: Date | null = null;
+        if (setNum === 1) {
+          // Set 1 uses official match start time if available, otherwise set's startTime
+          if (match?.scheduledAt) {
+            start = new Date(match.scheduledAt);
+          } else if (setInfo?.startTime) {
+            start = new Date(setInfo.startTime);
+          }
         } else {
-          start = new Date(); // Fallback (shouldn't happen)
+          // Sets 2-5 use their recorded start time
+          if (setInfo?.startTime) {
+            start = new Date(setInfo.startTime);
+          }
         }
-        const end = new Date(setInfo.endTime);
-        const durationMs = end.getTime() - start.getTime();
-        const minutes = Math.floor(durationMs / 60000);
-        duration = minutes > 0 ? `${minutes}'` : '';
+        
+        // Fallback: if startTime is missing, use the first event timestamp for this set
+        if (!start && setEvents.length > 0) {
+          const firstEvent = setEvents.sort((a, b) => {
+            const aSeq = a.seq || 0;
+            const bSeq = b.seq || 0;
+            if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
+            return new Date(a.ts).getTime() - new Date(b.ts).getTime();
+          })[0];
+          if (firstEvent?.ts) {
+            start = new Date(firstEvent.ts);
+          }
+        }
+        
+        // Only calculate duration if we have both start and end times
+        if (start) {
+          const end = new Date(setInfo.endTime);
+          const durationMs = end.getTime() - start.getTime();
+          // Only show duration if it's positive (end is after start)
+          if (durationMs > 0) {
+            const minutes = Math.floor(durationMs / 60000);
+            duration = minutes > 0 ? `${minutes}'` : '';
+          }
+        }
       }
       
       results.push({
@@ -1274,8 +1300,27 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const set5MarkedPointsTeamOnRight = set5LeftTeamIsB ? set5MarkedPointsTeamA : set5MarkedPointsTeamB;
   
   // Split points for the team that changes sides (left team)
+  // Panel 1 (1-8 column): Points 1-8 scored before change
   const markedPointsLeftTeam_Left = set5MarkedPointsTeamOnLeft.filter(p => p <= 8); // Points 1-8 on left panel
-  const markedPointsLeftTeam_Right = set5MarkedPointsTeamOnLeft.filter(p => p > 8).map(p => p - 8); // Points 9+ become 1, 2, 3... on right panel
+  // Panel 3 (1-30 column): Points continue from where they left off
+  // If 5 points were scored before change, Panel 3 starts ticking from point 6 onwards
+  // So we need to map points 9+ to start from (9 - 8 + pointsBeforeChange) = (1 + pointsBeforeChange)
+  // But actually, we want to tick point 6, 7, 8, etc. in Panel 3, which means:
+  // - Point 9 (overall) -> Point 6 in Panel 3 (9 - 8 + 5 = 6, but we want 6)
+  // Actually, if 5 points were scored before change, the 6th point overall should be ticked as point 6 in Panel 3
+  // So: point 9 overall -> point 6 in Panel 3 (9 - 3 = 6)
+  // point 10 overall -> point 7 in Panel 3 (10 - 3 = 7)
+  // General formula: if n points before change, point p overall -> point (p - 8 + n) in Panel 3
+  // But wait, the user said "tick the nth point where n = current stand"
+  // So if 5 points before change, tick point 6 in Panel 3 (the 6th point overall)
+  const pointsBeforeChange = markedPointsLeftTeam_Left.length; // Number of points scored before change (max 8)
+  const markedPointsLeftTeam_Right = set5MarkedPointsTeamOnLeft.filter(p => p > 8).map(p => {
+    // Map point p (overall) to point number in Panel 3
+    // If 5 points before change, point 9 overall -> point 6 in Panel 3 (9 - 8 + 5 = 6)
+    // But we want: point 6 overall -> point 6 in Panel 3, point 7 -> 7, etc.
+    // So: point p overall -> point (p - 8 + pointsBeforeChange) in Panel 3
+    return p - 8 + pointsBeforeChange;
+  });
   const markedPointsRightTeam = set5MarkedPointsTeamOnRight; // Team on right doesn't change sides
   
   // Get circled points for each team
@@ -1288,7 +1333,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   
   // Split circled points for the team that changes sides (left team)
   const circledPointsLeftTeam_Left = set5CircledPointsTeamOnLeft.filter(p => p <= 8); // Points 1-8 on left panel
-  const circledPointsLeftTeam_Right = set5CircledPointsTeamOnLeft.filter(p => p > 8).map(p => p - 8); // Points 9+ become 1, 2, 3... on right panel
+  const pointsBeforeChangeForCircled = circledPointsLeftTeam_Left.length; // Number of circled points before change
+  const circledPointsLeftTeam_Right = set5CircledPointsTeamOnLeft.filter(p => p > 8).map(p => {
+    // Map point p (overall) to point number in Panel 3, same logic as marked points
+    return p - 8 + pointsBeforeChangeForCircled;
+  });
   const circledPointsRightTeam = set5CircledPointsTeamOnRight; // Team on right doesn't change sides
   
   // Map to SetFive component expectations
@@ -2091,11 +2140,13 @@ const captureScreenshot = async () => {
             
             {/* Row 1: Sets 1 and 2 - Full Width 50/50 */}
             <div className="flex">
-                  <div
-                    className="bg-white shrink-0"
-                    style={{ width: '50mm', height: '5.3cm', borderRightWidth: 0 }}
-                  ></div>
-                <div className="flex flex-1 gap-1">
+                  <LeftInfoBox 
+                    lineup={set1Data.leftLineup}
+                    subs={set1Data.leftSubs}
+                    serviceRounds={set1Data.leftServiceRounds}
+                    isSet5={false}
+                  />
+                <div className="flex gap-4">
                     <div ref={set1Ref} className="flex flex-1">
                         <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
                             <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
@@ -2136,16 +2187,30 @@ const captureScreenshot = async () => {
                             />
                         </div>
                     </div>
+                    <div
+                        className="flex items-center justify-center text-xl border border-black bg-gray-300"
+                        style={{
+                            width: '97px',
+                            writingMode: 'vertical-lr',
+                            transform: 'rotate(180deg)',
+                            textAlign: 'center',
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        eScoresheet
+                    </div>
                 </div>
             </div>
 
             {/* Row 2: Sets 3 and 4 - Full Width 50/50 */}
             <div className="flex mt-1">
-                      <div
-                        className=" bg-white shrink-0"
-                        style={{ width: '50mm', height: '5.3cm', borderRightWidth: 0 }}
-                      ></div>
-                <div className="flex gap-1 flex-1">
+                      <LeftInfoBox 
+                        lineup={set3Data.leftLineup}
+                        subs={set3Data.leftSubs}
+                        serviceRounds={set3Data.leftServiceRounds}
+                        isSet5={false}
+                      />
+                <div className="flex gap-4 flex">
                     <div ref={set3Ref} className="flex flex-1">
                         <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
                             <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
@@ -2202,19 +2267,35 @@ const captureScreenshot = async () => {
                             />
                         </div>
                     </div>
+                    <div
+                        className="flex items-center justify-center text-xl border border-black bg-gray-300"
+                        style={{
+                            width: '97px',
+                            writingMode: 'vertical-lr',
+                            transform: 'rotate(180deg)',
+                            textAlign: 'center',
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        Openvolley
+                    </div>
                 </div>
             </div>
 
             {/* Rows 3-4: Set 5 + Footer sections on left, Rosters spanning on right */}
             <div className="flex gap-1 mt-1 items-stretch print:flex-1 print:min-h-0">
                 {/* Left side: Set 5 + Footer sections stacked */}
-                <div className="flex flex-col gap-2 min-h-0" style={{ width: '295mm' }}>
+                <div className="flex flex-col gap-2 min-h-0" style={{ width: '290mm' }}>
                     {/* Set 5 */}
                     <div ref={set5Ref} className="flex">
-                        <div
-                          className=" bg-white shrink-0 mr-1"
-                          style={{ width: '49mm', height: '4.8cm', borderRightWidth: 0 }}
-                        ></div>
+                        <div className="mr-1">
+                          <LeftInfoBox 
+                            lineup={hasSet5CoinToss && set5Data ? set5Data.leftLineup : ['', '', '', '', '', '']}
+                            subs={hasSet5CoinToss && set5Data ? set5Data.leftSubs : [[], [], [], [], [], []]}
+                            serviceRounds={hasSet5CoinToss && set5Data ? set5ServiceRoundsLeftTeam_Before : []}
+                            isSet5={true}
+                          />
+                        </div>
                         <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
                             <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                                 <span>S</span>
@@ -2307,7 +2388,7 @@ const captureScreenshot = async () => {
                         <div className="flex-1 flex flex-col gap-2 min-h-0">
                             {/* Remarks - 30% height */}
                             <div ref={remarksRef} className="flex-[3] min-h-0">
-                                <Remarks overflowSanctions={overflowSanctions} />
+                                <Remarks overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
                             </div>
                             {/* Approvals - 70% height */}
                             <div ref={approvalsRef} className="flex-[5] min-h-0">

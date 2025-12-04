@@ -61,6 +61,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
   const [showCallRefereeButton, setShowCallRefereeButton] = useState(false) // Show/hide the call referee button
+  const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -3100,6 +3101,98 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return (substitutionsUsed && substitutionsUsed[teamKey]) || 0
     },
     [mapSideToTeamKey, substitutionsUsed]
+  )
+
+  // Get timeout details with scores
+  const getTimeoutDetails = useCallback(
+    side => {
+      if (!data?.events || !data?.set) return []
+      const teamKey = mapSideToTeamKey(side)
+      const setIndex = data.set.index
+      
+      // Get all timeout events for this team in current set
+      const timeoutEvents = data.events.filter(e => 
+        e.type === 'timeout' && 
+        e.setIndex === setIndex &&
+        e.payload?.team === teamKey
+      )
+      
+      // Calculate scores at the time of each timeout
+      const details = timeoutEvents.map((event, index) => {
+        // Get all point events before this timeout
+        // Sort events by seq if available, otherwise by timestamp
+        const eventTime = event.seq || (typeof event.ts === 'number' ? event.ts : new Date(event.ts).getTime())
+        const pointsBefore = data.events.filter(e => {
+          if (e.type !== 'point' || e.setIndex !== setIndex) return false
+          const eTime = e.seq || (typeof e.ts === 'number' ? e.ts : new Date(e.ts).getTime())
+          return eTime < eventTime
+        })
+        
+        let homeScore = 0
+        let awayScore = 0
+        pointsBefore.forEach(e => {
+          if (e.payload?.team === 'home') homeScore++
+          else if (e.payload?.team === 'away') awayScore++
+        })
+        
+        return {
+          event,
+          score: `${homeScore}:${awayScore}`,
+          index: index + 1
+        }
+      })
+      
+      return details
+    },
+    [data?.events, data?.set, mapSideToTeamKey]
+  )
+
+  // Get substitution details with scores
+  const getSubstitutionDetails = useCallback(
+    side => {
+      if (!data?.events || !data?.set) return []
+      const teamKey = mapSideToTeamKey(side)
+      const setIndex = data.set.index
+      
+      // Get all substitution events for this team in current set
+      const substitutionEvents = data.events.filter(e => 
+        e.type === 'substitution' && 
+        e.setIndex === setIndex &&
+        e.payload?.team === teamKey &&
+        !e.payload?.isExceptional
+      )
+      
+      // Calculate scores at the time of each substitution
+      const details = substitutionEvents.map((event, index) => {
+        // Get all point events before this substitution
+        // Sort events by seq if available, otherwise by timestamp
+        const eventTime = event.seq || (typeof event.ts === 'number' ? event.ts : new Date(event.ts).getTime())
+        const pointsBefore = data.events.filter(e => {
+          if (e.type !== 'point' || e.setIndex !== setIndex) return false
+          const eTime = e.seq || (typeof e.ts === 'number' ? e.ts : new Date(e.ts).getTime())
+          return eTime < eventTime
+        })
+        
+        let homeScore = 0
+        let awayScore = 0
+        pointsBefore.forEach(e => {
+          if (e.payload?.team === 'home') homeScore++
+          else if (e.payload?.team === 'away') awayScore++
+        })
+        
+        return {
+          event,
+          score: `${homeScore}:${awayScore}`,
+          playerOut: event.payload?.playerOut,
+          playerIn: event.payload?.playerIn,
+          position: event.payload?.position,
+          index: index + 1
+        }
+      })
+      
+      return details
+    },
+    [data?.events, data?.set, mapSideToTeamKey]
   )
 
   const handlePlaceholder = message => () => {
@@ -6176,14 +6269,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <div style={{ 
-              flex: 1, 
-              background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px', 
-              padding: '12px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
-            }}>
+            <div 
+              onClick={() => {
+                const timeouts = getTimeoutDetails('left')
+                if (timeouts.length > 0) {
+                  setToSubDetailsModal({ type: 'timeout', side: 'left' })
+                }
+              }}
+              style={{ 
+                flex: 1, 
+                background: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '8px', 
+                padding: '12px',
+                textAlign: 'center',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: getTimeoutDetails('left').length > 0 ? 'pointer' : 'default'
+              }}
+            >
               <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>TO</div>
               <div style={{ 
                 fontSize: '24px', 
@@ -6191,14 +6293,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : 'inherit'
               }}>{getTimeoutsUsed('left')}</div>
             </div>
-            <div style={{ 
-              flex: 1, 
-              background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px', 
-              padding: '12px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
-            }}>
+            <div 
+              onClick={() => {
+                const subs = getSubstitutionDetails('left')
+                if (subs.length > 0) {
+                  setToSubDetailsModal({ type: 'substitution', side: 'left' })
+                }
+              }}
+              style={{ 
+                flex: 1, 
+                background: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '8px', 
+                padding: '12px',
+                textAlign: 'center',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
+              }}
+            >
               <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>SUB</div>
               <div style={{ 
                 fontSize: '24px', 
@@ -8035,14 +8146,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <div style={{ 
-              flex: 1, 
-              background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px', 
-              padding: '12px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
-            }}>
+            <div 
+              onClick={() => {
+                const timeouts = getTimeoutDetails('right')
+                if (timeouts.length > 0) {
+                  setToSubDetailsModal({ type: 'timeout', side: 'right' })
+                }
+              }}
+              style={{ 
+                flex: 1, 
+                background: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '8px', 
+                padding: '12px',
+                textAlign: 'center',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: getTimeoutDetails('right').length > 0 ? 'pointer' : 'default'
+              }}
+            >
               <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>TO</div>
               <div style={{ 
                 fontSize: '24px', 
@@ -8050,14 +8170,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : 'inherit'
               }}>{getTimeoutsUsed('right')}</div>
             </div>
-            <div style={{ 
-              flex: 1, 
-              background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px', 
-              padding: '12px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
-            }}>
+            <div 
+              onClick={() => {
+                const subs = getSubstitutionDetails('right')
+                if (subs.length > 0) {
+                  setToSubDetailsModal({ type: 'substitution', side: 'right' })
+                }
+              }}
+              style={{ 
+                flex: 1, 
+                background: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '8px', 
+                padding: '12px',
+                textAlign: 'center',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
+              }}
+            >
               <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>SUB</div>
               <div style={{ 
                 fontSize: '24px', 
@@ -11206,9 +11335,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   }
                 }}
                 style={{
-                  width: '100%',
+                  width: '95%',
                   minHeight: '300px',
-                  padding: '12px',
                   fontSize: '14px',
                   fontFamily: 'monospace',
                   background: 'var(--bg-secondary)',
@@ -13726,6 +13854,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           onCancel={() => setSetEndTimeModal(null)}
         />
       )}
+
+      {toSubDetailsModal && (
+        <ToSubDetailsModal
+          type={toSubDetailsModal.type}
+          side={toSubDetailsModal.side}
+          timeoutDetails={toSubDetailsModal.type === 'timeout' ? getTimeoutDetails(toSubDetailsModal.side) : null}
+          substitutionDetails={toSubDetailsModal.type === 'substitution' ? getSubstitutionDetails(toSubDetailsModal.side) : null}
+          teamName={toSubDetailsModal.side === 'left' 
+            ? (leftIsHome ? (data?.homeTeam?.name || 'Left Team') : (data?.awayTeam?.name || 'Left Team'))
+            : (leftIsHome ? (data?.awayTeam?.name || 'Right Team') : (data?.homeTeam?.name || 'Right Team'))}
+          onClose={() => setToSubDetailsModal(null)}
+        />
+      )}
       
       {sanctionConfirm && (
         <Modal
@@ -15297,6 +15438,94 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
             Cancel
           </button>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, teamName, onClose }) {
+  return (
+    <Modal
+      title={type === 'timeout' ? `Timeouts - ${teamName}` : `Substitutions - ${teamName}`}
+      open={true}
+      onClose={onClose}
+      width={600}
+    >
+      <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
+        {type === 'timeout' ? (
+          <div>
+            {timeoutDetails && timeoutDetails.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {timeoutDetails.map((detail, index) => (
+                  <div 
+                    key={index}
+                    style={{
+                      padding: '12px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 600 }}>
+                        Timeout {detail.index}
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
+                        {detail.score}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '20px' }}>
+                No timeouts taken yet
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {substitutionDetails && substitutionDetails.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {substitutionDetails.map((detail, index) => (
+                  <div 
+                    key={index}
+                    style={{
+                      padding: '12px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 600 }}>
+                        Substitution {detail.index}
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
+                        {detail.score}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', fontSize: '14px', color: 'var(--muted)' }}>
+                      <div>
+                        <span style={{ fontWeight: 600 }}>Position:</span> {detail.position}
+                      </div>
+                      <div>
+                        <span style={{ fontWeight: 600 }}>Out:</span> {detail.playerOut}
+                      </div>
+                      <div>
+                        <span style={{ fontWeight: 600 }}>In:</span> {detail.playerIn}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '20px' }}>
+                No substitutions taken yet
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   )

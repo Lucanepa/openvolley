@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import swissvolleyLogo from './swissvolleylogo.jpg';
-import fivbLogo from './fivb.png';
+import favicon from '../../src/favicon.png';
 
 interface HeaderProps {
   match?: any;
@@ -12,7 +12,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamAName, teamBName }) => {
   const [imageError, setImageError] = useState(false);
-  const [fivbImageError, setFivbImageError] = useState(false);
+  const [faviconImageError, setFaviconImageError] = useState(false);
   
   // Format date and time
   const scheduledDate = match?.scheduledAt ? new Date(match.scheduledAt) : null;
@@ -128,9 +128,9 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             </div>
             
             {/* Category Block */}
-             <div className="border border-black p-0.5 flex items-center">
-                 <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5 w-full">
-                     <div className="flex items-center gap-0.5">
+            <div className="border border-black p-2">
+                <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
+                    <div className="flex items-center gap-0.5">
                          <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
                              {(match?.category === 'men' || match?.match_type_2 === 'men') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
@@ -195,7 +195,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
 
             {/* Match ID Block */}
              <div className="border border-black p-0.5 flex flex-col h-full text-xs justify-center">
-                <div className="flex justify-between items-center border-b border-gray-300 pl-2 flex-1">
+                <div className="flex justify-between items-center pl-2 flex-1">
                     <span>League:</span>
                     <div className="w-1/2 text-center uppercase text-xs font-bold">{match?.league || ''}</div>
                 </div>
@@ -207,13 +207,13 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
         </div>
 
         <div className="flex items-center justify-center min-w-[140px]">
-            {/* FIVB Logo Section with Fallback */}
-            {!fivbImageError ? (
+            {/* favicon Logo Section with Fallback */}
+            {!faviconImageError ? (
                 <img 
-                    src={fivbLogo} 
-                    alt="FIVB" 
+                    src={favicon} 
+                    alt="favicon" 
                     className="h-10 object-contain mx-auto" 
-                    onError={() => setFivbImageError(true)}
+                    onError={() => setFaviconImageError(true)}
                 />
             ) : (
                 <div className="flex flex-col items-center select-none text-[10px] font-bold text-gray-600">
@@ -226,27 +226,27 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
       {/* Teams and Location */}
       <div className="grid grid-cols-12 gap-0 border-t border-black pt-1 mt-1 text-xs">
         {/* Teams: 2/3rds width =8 cols */}
-        <div className="col-span-6 border-r border-black px-1 flex flex-col justify-between">
+        <div className="col-span-6 border-r order-black px-2 flex flex-col justify-between">
             <div className="w-full text-center mb-0.5">
                 <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
             </div>
              <div className="flex items-end gap-1 mb-0.5">
                  <div className="flex items-center gap-1 flex-1">
                     <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">A</div>
-                     <div className="w-full border-b border-black font-bold text-xs uppercase text-center bg-white pb-0.5">{teamAName || ''}</div>
+                     <div className="w-full font-bold text-xs uppercase text-center bg-white pb-0.5">{teamAName || ''}</div>
                  </div>
                  <div className="flex items-center h-full">
                      <span className="text-base font-bold">:</span>
                  </div>
                  <div className="flex items-center gap-1 flex-1">
-                     <div className="w-full border-b border-black font-bold text-xs uppercase text-center bg-white pb-0.5">{teamBName || ''}</div>
+                     <div className="w-full font-bold text-xs uppercase text-center bg-white pb-0.5">{teamBName || ''}</div>
                     <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">B</div>
                  </div>
             </div>
         </div>
 
         {/* City, Hall, Date, Time: All in one row */}
-        <div className="col-span-6 px-1 flex flex-col justify-center h-full">
+        <div className="col-span-6 px-2 flex flex-col justify-center h-full">
             <div className="flex gap-1 w-full">
                 <div className="flex flex-col flex-[2]">
                     <span className="text-[8px] text-gray-500">City/Country</span>
