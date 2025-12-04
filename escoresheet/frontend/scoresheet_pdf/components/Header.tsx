@@ -227,8 +227,8 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
       <div className="grid grid-cols-12 gap-0 border-t border-black pt-1 mt-1 text-xs">
         {/* Teams: 2/3rds width =8 cols */}
         <div className="col-span-6 border-r border-black px-1 flex flex-col justify-between">
-            <div className="w-full text-center border-b border-gray-200 mb-0.5">
-                <span className="text-[9px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+            <div className="w-full text-center mb-0.5">
+                <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
             </div>
              <div className="flex items-end gap-1 mb-0.5">
                  <div className="flex items-center gap-1 flex-1">

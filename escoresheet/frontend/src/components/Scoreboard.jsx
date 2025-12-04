@@ -36,6 +36,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [substitutionConfirm, setSubstitutionConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number, isInjury?: boolean, isExceptional?: boolean, isExpelled?: boolean, isDisqualified?: boolean } | null
   const [liberoDropdown, setLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', playerNumber: number, element: HTMLElement } | null
   const [liberoConfirm, setLiberoConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', playerOut: number, liberoIn: string } | null
+  const [liberoInDropdown, setLiberoInDropdown] = useState(null) // { team: 'home'|'away', side: 'left'|'right', element: HTMLElement, x?: number, y?: number } | null
   const [undoConfirm, setUndoConfirm] = useState(null) // { event: Event, description: string } | null
   const [liberoReminder, setLiberoReminder] = useState(null) // { teams: ['home'|'away'] } | null - Show reminder at start of set
   const [liberoRotationModal, setLiberoRotationModal] = useState(null) // { team: 'home'|'away', position: 'IV', liberoNumber: number, playerNumber: number } | null
@@ -56,6 +57,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [sanctionConfirmModal, setSanctionConfirmModal] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, sanctionType: 'warning'|'penalty'|'expulsion'|'disqualification' } | null
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
+  const [showCallRefereeButton, setShowCallRefereeButton] = useState(false) // Show/hide the call referee button
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -383,6 +385,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // For lineup events after points, the rally is idle (waiting for next rally_start)
     return 'idle'
+  }, [data?.events, data?.set])
+
+  // Check if the rally is replayed (last event is a replay)
+  const isRallyReplayed = useMemo(() => {
+    if (!data?.events || !data?.set || data.events.length === 0) return false
+    
+    // Get events for current set only and sort by sequence number (most recent first)
+    const currentSetEvents = data.events
+      .filter(e => e.setIndex === data.set.index)
+      .sort((a, b) => {
+        const aSeq = a.seq || 0
+        const bSeq = b.seq || 0
+        if (aSeq !== 0 || bSeq !== 0) {
+          return bSeq - aSeq
+        }
+        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+        return bTime - aTime
+      })
+    
+    if (currentSetEvents.length === 0) return false
+    
+    const lastEvent = currentSetEvents[0]
+    return lastEvent.type === 'replay'
   }, [data?.events, data?.set])
 
   const isFirstRally = useMemo(() => {
@@ -1306,18 +1332,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             />
           )}
         </div>
-        {/* Set score display */}
-        <div style={{
-          fontSize: '14px',
-          fontWeight: 600,
-          color: 'var(--muted)',
-          textAlign: 'center'
-        }}>
-          {setScore.left}-{setScore.right}
-        </div>
       </div>
     ),
-    [leftServing, rightServing, pointsBySide.left, pointsBySide.right, serveBallBaseStyle, setScore.left, setScore.right]
+    [leftServing, rightServing, pointsBySide.left, pointsBySide.right, serveBallBaseStyle]
   )
 
   const openManualLineup = useCallback(
@@ -2108,7 +2125,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     } else if (event.type === 'rally_start') {
       eventDescription = 'Rally started'
     } else if (event.type === 'replay') {
-      eventDescription = 'Replay'
+      eventDescription = 'Rally replayed'
     } else if (event.type === 'lineup') {
       // Only show initial lineups, not rotation lineups or libero substitution lineups
       const isInitial = event.payload?.isInitial === true
@@ -2196,10 +2213,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const sanctionLabel = sanctionType === 'improper_request' ? 'Improper Request' :
                             sanctionType === 'delay_warning' ? 'Delay Warning' :
                             sanctionType === 'delay_penalty' ? 'Delay Penalty' :
-                            sanctionType === 'warning' ? 'Warning (Yellow)' :
-                            sanctionType === 'penalty' ? 'Penalty (Red)' :
-                            sanctionType === 'expulsion' ? 'Expulsion (Y+R)' :
-                            sanctionType === 'disqualification' ? 'Disqualification (Y|R)' :
+                            sanctionType === 'warning' ? 'Warning' :
+                            sanctionType === 'penalty' ? 'Penalty' :
+                            sanctionType === 'expulsion' ? 'Expulsion' :
+                            sanctionType === 'disqualification' ? 'Disqualification' :
                             sanctionType
       
       // Add player/official info if available
@@ -2985,6 +3002,102 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return substitutions
   }, [data?.events, data?.set])
 
+  const leftTeamSubstitutionHistory = useMemo(() => 
+    getSubstitutionHistory(leftIsHome ? 'home' : 'away'),
+    [getSubstitutionHistory, leftIsHome]
+  )
+
+  const rightTeamSubstitutionHistory = useMemo(() => 
+    getSubstitutionHistory(leftIsHome ? 'away' : 'home'),
+    [getSubstitutionHistory, leftIsHome]
+  )
+
+  const buildActiveReplacementMap = (substitutions = []) => {
+    const activeMap = new Map()
+
+    substitutions.forEach(sub => {
+      const playerOut = sub.payload?.playerOut
+      const playerIn = sub.payload?.playerIn
+      if (!playerOut || !playerIn) return
+
+      const playerOutStr = String(playerOut)
+      const playerInStr = String(playerIn)
+      const previouslyReplaced = activeMap.get(playerOutStr)
+
+      activeMap.delete(playerOutStr)
+
+      if (previouslyReplaced && previouslyReplaced === playerInStr) {
+        // Original player returning, do not mark as replacement
+        return
+      }
+
+      activeMap.set(playerInStr, playerOutStr)
+    })
+
+    return activeMap
+  }
+
+  const leftTeamActiveReplacements = useMemo(
+    () => buildActiveReplacementMap(leftTeamSubstitutionHistory),
+    [leftTeamSubstitutionHistory]
+  )
+
+  const rightTeamActiveReplacements = useMemo(
+    () => buildActiveReplacementMap(rightTeamSubstitutionHistory),
+    [rightTeamSubstitutionHistory]
+  )
+
+  const resolveReplacementNumber = (player, activeReplacementMap) => {
+    if (!player || !player.number || player.number === '' || player.isPlaceholder) {
+      return null
+    }
+
+    if (player.isLibero && player.substitutedPlayerNumber) {
+      return String(player.substitutedPlayerNumber)
+    }
+
+    if (!activeReplacementMap) return null
+
+    return activeReplacementMap.get(String(player.number)) || null
+  }
+
+  const getReplacementBadgeStyle = (player) => {
+    const baseStyle = {
+      position: 'absolute',
+      top: '-8px',
+      right: '-8px',
+      width: '18px',
+      height: '18px',
+      borderRadius: '4px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '10px',
+      fontWeight: 700,
+      zIndex: 6
+    }
+
+    const isLiberoReplacement = player?.isLibero && player?.substitutedPlayerNumber
+
+    if (isLiberoReplacement) {
+      return {
+        ...baseStyle,
+        background: '#ffffff',
+        border: '2px solid rgba(255, 255, 255, 0.8)',
+        color: '#0f172a',
+        boxShadow: '0 2px 6px rgba(15, 23, 42, 0.35)'
+      }
+    }
+
+    return {
+      ...baseStyle,
+      background: '#fde047',
+      border: '2px solid rgba(0, 0, 0, 0.25)',
+      color: '#0f172a',
+      boxShadow: '0 2px 4px rgba(15, 23, 42, 0.25)'
+    }
+  }
+
   // Check if a player on court can be substituted
   const canPlayerBeSubstituted = useCallback((teamKey, playerNumber) => {
     if (!data?.events || !data?.set) return true
@@ -3487,6 +3600,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const handlePlayerClick = useCallback((teamKey, position, playerNumber, event) => {
     // Only allow when rally is not in play and lineup is set
     if (rallyStatus !== 'idle') return
+    if (isRallyReplayed) return // Don't allow actions when rally is replayed
     if (!leftTeamLineupSet && teamKey === (leftIsHome ? 'home' : 'away')) return
     if (!rightTeamLineupSet && teamKey === (leftIsHome ? 'away' : 'home')) return
     if (!playerNumber || playerNumber === '') return // Can't substitute placeholder
@@ -3516,7 +3630,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Check substitution limit (6 per set)
     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-    const canSubstitute = !isLibero && teamSubstitutions < 6 && canPlayerBeSubstituted(teamKey, playerNumber)
+    const canSubstitute = !isLibero && !isRallyReplayed && teamSubstitutions < 6 && canPlayerBeSubstituted(teamKey, playerNumber)
     
     // Get the clicked element position (the circle)
     const element = event.currentTarget
@@ -3549,7 +3663,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       canSubstitute,
       canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero
     })
-  }, [rallyStatus, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers])
+  }, [rallyStatus, isRallyReplayed, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers])
 
   // Show substitution confirmation
   const showSubstitutionConfirm = useCallback((substituteNumber) => {
@@ -4383,6 +4497,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setSubstitutionDropdown(null) // Close substitution dropdown when selecting libero
   }, [liberoDropdown])
 
+  // Handle libero in player selection
+  const handleLiberoInPlayerSelect = useCallback(async (position, playerNumber) => {
+    if (!liberoInDropdown || !data?.set) return
+    
+    const { team } = liberoInDropdown
+    
+    // Get available liberos
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+    const availableLiberos = liberos.filter(libero => !isLiberoUnable(team, libero.number))
+    
+    if (availableLiberos.length === 0) {
+      alert('No available liberos')
+      setLiberoInDropdown(null)
+      return
+    }
+    
+    // If only one libero, use it; otherwise show selection
+    let liberoToUse = availableLiberos[0]
+    if (availableLiberos.length > 1) {
+      // For now, use the first available libero
+      // Could enhance to show libero selection if needed
+      liberoToUse = availableLiberos[0]
+    }
+    
+    // Liberos can only enter back row positions (I, V, VI)
+    // Since user selected a player in I (not serving), II, or III, we'll enter libero in position I
+    const liberoEntryPosition = 'I'
+    
+    // Set up libero confirm similar to existing flow
+    setLiberoConfirm({
+      team: team,
+      position: liberoEntryPosition,
+      playerOut: playerNumber,
+      liberoIn: liberoToUse.libero
+    })
+    setLiberoInDropdown(null)
+  }, [liberoInDropdown, data?.set, data?.homePlayers, data?.awayPlayers, isLiberoUnable])
+
   // Confirm libero entry
   const confirmLibero = useCallback(async () => {
     if (!liberoConfirm || !data?.set) return
@@ -4760,6 +4913,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [liberoUnableModal, data?.set, logEvent, checkLiberoRedesignation])
 
+  // Handle libero in button click
+  const handleLiberoIn = useCallback((side, event) => {
+    if (rallyStatus !== 'idle') return
+    
+    const teamKey = mapSideToTeamKey(side)
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+    
+    // Check if a libero is already on court
+    const liberoOnCourt = getLiberoOnCourt(teamKey)
+    if (liberoOnCourt) {
+      alert('A libero is already on court')
+      return
+    }
+    
+    // Check if team has any liberos
+    if (liberos.length === 0) {
+      alert('No liberos available')
+      return
+    }
+    
+    // Check if any libero is available (not unable)
+    const availableLiberos = liberos.filter(libero => !isLiberoUnable(teamKey, libero.number))
+    if (availableLiberos.length === 0) {
+      alert('No available liberos (all are unable to play)')
+      return
+    }
+    
+    // Get button position for dropdown
+    const rect = event.currentTarget.getBoundingClientRect()
+    setLiberoInDropdown({
+      team: teamKey,
+      side: side,
+      element: event.currentTarget,
+      x: rect.left + rect.width / 2,
+      y: rect.bottom + 8
+    })
+  }, [rallyStatus, data?.homePlayers, data?.awayPlayers, getLiberoOnCourt, isLiberoUnable, mapSideToTeamKey, getCurrentServe, getTeamLineupState])
+
   // Handle exchange libero (L1 <-> L2)
   const handleExchangeLibero = useCallback(async (side) => {
     if (rallyStatus !== 'idle') return
@@ -5116,150 +5308,33 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </button>
           <div className="toolbar-divider" />
           <span className="toolbar-clock">{formatTimestamp(now)}</span>
-          
-          {/* Connection Status Indicators */}
-          <div className="toolbar-divider" />
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            {/* Referee Connection Indicator */}
-            <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
-                setConnectionModal('referee')
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 8px',
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '6px',
-                fontSize: '10px',
-                cursor: 'pointer',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-            >
-              {(() => {
-                const status = getConnectionStatus('referee')
-                return (
-                  <>
-                    <div style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: status.color,
-                      boxShadow: status.status === 'connected'
-                        ? `0 0 6px ${status.color}80` 
-                        : 'none'
-                    }} />
-                    <span style={{ 
-                      color: status.status === 'disabled' ? 'var(--muted)' : 'var(--text)',
-                      fontSize: '10px'
-                    }}>
-                      Ref
-                    </span>
-                  </>
-                )
-              })()}
-            </div>
-
-            {/* Team A Connection Indicator */}
-            <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
-                setConnectionModal('teamA')
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 8px',
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '6px',
-                fontSize: '10px',
-                cursor: 'pointer',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-            >
-              {(() => {
-                const status = getConnectionStatus('teamA')
-                return (
-                  <>
-                    <div style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: status.color,
-                      boxShadow: status.status === 'connected'
-                        ? `0 0 6px ${status.color}80` 
-                        : 'none'
-                    }} />
-                    <span style={{ 
-                      color: status.status === 'disabled' ? 'var(--muted)' : 'var(--text)',
-                      fontSize: '10px',
-                      fontWeight: 600
-                    }}>
-                      {teamAShortName}
-                    </span>
-                  </>
-                )
-              })()}
-            </div>
-
-            {/* Team B Connection Indicator */}
-            <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
-                setConnectionModal('teamB')
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 8px',
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '6px',
-                fontSize: '10px',
-                cursor: 'pointer',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-            >
-              {(() => {
-                const status = getConnectionStatus('teamB')
-                return (
-                  <>
-                    <div style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: status.color,
-                      boxShadow: status.status === 'connected'
-                        ? `0 0 6px ${status.color}80` 
-                        : 'none'
-                    }} />
-                    <span style={{ 
-                      color: status.status === 'disabled' ? 'var(--muted)' : 'var(--text)',
-                      fontSize: '10px',
-                      fontWeight: 600
-                    }}>
-                      {teamBShortName}
-                    </span>
-                  </>
-                )
-              })()}
+          </div>
+        <div className="toolbar-center">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', fontSize: '14px', gap: '12px' }}>
+            {/* Set counter - centered */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{
+                fontSize: '14px',
+                fontWeight: 600,
+                color: 'var(--muted)'
+              }}>
+              </span>
+              {data?.set?.index !== undefined && (
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: 'var(--muted)',
+                  alignItems: 'center'  
+                }}>
+                  Set {data.set.index}
+                  <br />
+                <span style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                  {setScore.left}-{setScore.right}
+                </span>
+                </span>
+              )}
             </div>
           </div>
-        </div>
-        <div className="toolbar-center">
-          <div style={{ width: '100%' }}></div>
         </div>
         <div className="toolbar-actions">
           {refereeConnectionEnabled && isAnyRefereeConnected && (
@@ -5712,16 +5787,48 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       <div className="match-content">
         <aside className="team-controls">
           <div className="team-info">
-            <span
-              className="team-badge"
-              style={{
-                background: leftTeam.color || '#ef4444',
-                color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff'
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
+                setConnectionModal('teamA')
               }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                background: leftTeam.color || '#ef4444',
+                color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
+                borderRadius: '6px',
+                fontWeight: 600,
+                fontSize: '14px',
+                marginBottom: '8px',
+                cursor: 'pointer',
+                transition: 'opacity 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
-              {teamALabel}
-            </span>
-            <h3>{leftTeam.name}</h3>
+              <span>{teamALabel}</span>
+              <span>-</span>
+              <span>{teamAShortName}</span>
+              {(() => {
+                const status = getConnectionStatus('teamA')
+                return (
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: status.color,
+                    boxShadow: status.status === 'connected'
+                      ? `0 0 6px ${status.color}80` 
+                      : 'none',
+                    marginLeft: '4px'
+                  }} />
+                )
+              })()}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
             <div style={{ 
@@ -5757,45 +5864,50 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
           <button
             onClick={() => handleTimeout('left')}
-            disabled={getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play'}
+            disabled={getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
             style={{ width: '100%', marginBottom: '8px' }}
           >
             Time-out
           </button>
-          <button 
-            onClick={() => handleLiberoOut('left')}
-            disabled={rallyStatus === 'in_play' || !getLiberoOnCourt(leftIsHome ? 'home' : 'away') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'home' : 'away')}
-          >
-            Libero out
-          </button>
-          <button 
-            onClick={() => handleExchangeLibero('left')}
-            disabled={(() => {
-              const teamKey = leftIsHome ? 'home' : 'away'
-              const teamPlayers = leftIsHome ? data?.homePlayers : data?.awayPlayers
-              const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
-              const liberoOnCourt = getLiberoOnCourt(teamKey)
-              
-              // Check if libero on court is unable
-              const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-              
-              // Check if the other libero is unable
-              const otherLibero = liberos.find(p => 
-                String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-              )
-              const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-              
-              return rallyStatus === 'in_play' || 
-                     !liberoOnCourt || 
-                     !hasPointSinceLastLiberoExchange(teamKey) ||
-                     liberos.length < 2 || // Disable if team has less than 2 liberos
-                     liberoOnCourtUnable || // Disable if libero on court is unable
-                     otherLiberoUnable // Disable if other libero is unable
-            })()}
-          >
-            Exchange libero
-          </button>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+            <button 
+              onClick={() => handleLiberoOut('left')}
+              disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(leftIsHome ? 'home' : 'away') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'home' : 'away')}
+              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+            >
+              Libero out
+            </button>
+            <button 
+              onClick={() => handleExchangeLibero('left')}
+              disabled={(() => {
+                const teamKey = leftIsHome ? 'home' : 'away'
+                const teamPlayers = leftIsHome ? data?.homePlayers : data?.awayPlayers
+                const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+                const liberoOnCourt = getLiberoOnCourt(teamKey)
+                
+                // Check if libero on court is unable
+                const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
+                
+                // Check if the other libero is unable
+                const otherLibero = liberos.find(p => 
+                  String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                  (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+                )
+                const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
+                
+                return rallyStatus === 'in_play' || 
+                       isRallyReplayed ||
+                       !liberoOnCourt || 
+                       !hasPointSinceLastLiberoExchange(teamKey) ||
+                       liberos.length < 2 || // Disable if team has less than 2 liberos
+                       liberoOnCourtUnable || // Disable if libero on court is unable
+                       otherLiberoUnable // Disable if other libero is unable
+              })()}
+              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+            >
+              Exchange libero
+            </button>
+          </div>
           
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
           <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
@@ -6285,108 +6397,218 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </aside>
 
         <section className="court-wrapper">
-          <div className="set-summary">
-            <div className="set-info">
-              <h3 className="set-title">Set {data.set.index}</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', width: '100%' }}>
-                {/* Current score */}
-                {renderScoreDisplay({ margin: '0 auto' })}
-                
-                {/* Previous set scores (only show if set > 1) */}
-                {data.set.index > 1 && data.sets && (() => {
-                  const previousSets = data.sets.filter(s => s.finished && s.index < data.set.index).sort((a, b) => a.index - b.index)
-                  const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
-                  const currentRightTeamKey = leftIsHome ? 'away' : 'home'
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {/* SERVE indicator container - Left (fixed width) */}
+            <div style={{
+              width: '100px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {leftServing && (() => {
+                const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
+                if (!servingPlayer || !servingPlayer.number) return null
+                return (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    zIndex: 10,
+                    pointerEvents: 'none'
+                  }}>
+                    <div style={{
+                      fontSize: '24px',
+                      fontWeight: 700,
+                      color: 'var(--text)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '2px'
+                    }}>
+                      SERVE
+                    </div>
+                    <div style={{
+                      fontSize: '36px',
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      width: '64px',
+                      height: '64px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(34, 197, 94, 0.1)',
+                      border: '4px solid var(--accent)',
+                      borderRadius: '16px'
+                    }}>
+                      {servingPlayer.number}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+
+            <div style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div className="set-summary">
+                <div className="set-info">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', width: '100%' }}>
+                    {/* Current score */}
+                    {renderScoreDisplay({ margin: '0 auto' })}
+                  </div>
+                </div>
+                <div style={{ marginTop: '4px' }}>
+                  <span className="summary-label">Rally status:</span>
+                  <span className="summary-value" style={{ color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c' }}>
+                    {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
+                  </span>
+                </div>
+                {/* Last action */}
+                {data?.events && data.events.length > 0 && (() => {
+                  // Find the last undoable event by sequence number
+                  const allEvents = [...data.events].sort((a, b) => {
+                    const aSeq = a.seq || 0
+                    const bSeq = b.seq || 0
+                    if (aSeq !== 0 || bSeq !== 0) {
+                      return bSeq - aSeq // Descending
+                    }
+                    // Fallback to timestamp
+                    const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+                    const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+                    return bTime - aTime
+                  })
                   
-                  // Helper to convert to Roman numeral
-                  const toRoman = (num) => {
-                    const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
-                    return romanNumerals[num - 1] || num.toString()
+                  // Find events with valid descriptions
+                  let lastEvent = null
+                  for (const e of allEvents) {
+                    // Skip rally_start and replay from display
+                    if (e.type === 'rally_start' || e.type === 'replay') continue
+                    
+                    // For lineup events, only show initial or substitution
+                    if (e.type === 'lineup') {
+                      const hasInitial = e.payload?.isInitial === true
+                      const hasSubstitution = e.payload?.fromSubstitution === true
+                      if (!hasInitial && !hasSubstitution) continue
+                    }
+                    
+                    // Try to get description
+                    const desc = getActionDescription(e)
+                    if (desc && desc !== 'Unknown action') {
+                      lastEvent = e
+                      break
+                    }
                   }
                   
+                  if (!lastEvent) return null
+                  
+                  const description = getActionDescription(lastEvent)
+                  
                   return (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '12px', alignItems: 'center', justifyContent: 'center' }}>
-                      {previousSets.map(set => {
-                        // Always show from current left/right perspective
-                        const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
-                        const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
-                        return (
-                          <div key={set.id} style={{ 
-                            fontSize: '12px', 
-                            fontWeight: 600,
-                            color: 'var(--muted)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}>
-                            <span style={{ fontSize: '11px', fontWeight: 700 }}>{toRoman(set.index)}</span>
-                            <span>{leftPoints}:{rightPoints}</span>
-                          </div>
-                        )
-                      })}
+                    <div>
+                      <span className="summary-label">Last action:</span>
+                      <span className="summary-value" style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                        {description}
+                      </span>
                     </div>
                   )
                 })()}
               </div>
-            </div>
-            <div>
-              <span className="summary-label">Rally status:</span>
-              <span className="summary-value" style={{ color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c' }}>
-                {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
-              </span>
-            </div>
-            {/* Last action */}
-            {data?.events && data.events.length > 0 && (() => {
-              // Find the last undoable event by sequence number
-              const allEvents = [...data.events].sort((a, b) => {
-                const aSeq = a.seq || 0
-                const bSeq = b.seq || 0
-                if (aSeq !== 0 || bSeq !== 0) {
-                  return bSeq - aSeq // Descending
-                }
-                // Fallback to timestamp
-                const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-                const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-                return bTime - aTime
-              })
-              
-              // Find events with valid descriptions
-              let lastEvent = null
-              for (const e of allEvents) {
-                // Skip rally_start and replay from display
-                if (e.type === 'rally_start' || e.type === 'replay') continue
+
+              {/* 1st Referee - Between the court and Last action */}
+              {(() => {
+                const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
+                const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}` : 'N/A'
+                const ref1Status = isReferee1Connected
+                const ref1StatusColor = ref1Status ? '#22c55e' : (refereeConnectionEnabled ? '#eab308' : '#6b7280')
                 
-                // For lineup events, only show initial or substitution
-                if (e.type === 'lineup') {
-                  const hasInitial = e.payload?.isInitial === true
-                  const hasSubstitution = e.payload?.fromSubstitution === true
-                  if (!hasInitial && !hasSubstitution) continue
-                }
-                
-                // Try to get description
-                const desc = getActionDescription(e)
-                if (desc && desc !== 'Unknown action') {
-                  lastEvent = e
-                  break
-                }
-              }
-              
-              if (!lastEvent) return null
-              
-              const description = getActionDescription(lastEvent)
-              
-              return (
-                <div>
-                  <span className="summary-label">Last action:</span>
-                  <span className="summary-value" style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                    {description}
-                  </span>
-                </div>
-              )
-            })()}
+                return (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    marginTop: '8px',
+                    marginBottom: '0',
+                    zIndex: 10,
+                    gap: '8px'
+                  }}>
+                    <div 
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 12px',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(255, 255, 255, 0.2)'
+                      }}
+                    >
+                      <div style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: ref1StatusColor,
+                        boxShadow: ref1Status ? `0 0 8px ${ref1StatusColor}80` : 'none'
+                      }} />
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                        1st Ref: {ref1Name}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* SERVE indicator container - Right (fixed width) */}
+            <div style={{
+              width: '100px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {rightServing && (() => {
+                const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
+                if (!servingPlayer || !servingPlayer.number) return null
+                return (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    zIndex: 10,
+                    pointerEvents: 'none'
+                  }}>
+                    <div style={{
+                      fontSize: '24px',
+                      fontWeight: 700,
+                      color: 'var(--text)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '2px'
+                    }}>
+                      SERVE
+                    </div>
+                    <div style={{
+                      fontSize: '36px',
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      width: '64px',
+                      height: '64px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(34, 197, 94, 0.1)',
+                      border: '4px solid var(--accent)',
+                      borderRadius: '16px'
+                    }}>
+                      {servingPlayer.number}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
           </div>
 
-          <div className="court">
+          <div className="court" style={{ marginTop: '-14px', marginBottom: '-14px' }}>
             <div className="court-attack-line court-attack-left" />
             <div className="court-attack-line court-attack-right" />
             {rallyStatus === 'idle' && isFirstRally && (
@@ -6453,7 +6675,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   {leftTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
                     const teamKey = leftIsHome ? 'home' : 'away'
                     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-                    const canSubstitute = rallyStatus === 'idle' && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
                     
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
@@ -6483,31 +6706,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             e.currentTarget.style.boxShadow = 'none'
                         }}
                       >
-                        <span className="court-player-position">{player.position}</span>
-                        {/* Bottom-left indicators: Captain C */}
-                        {player.isCaptain && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '-8px',
-                            left: '-8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '2px',
-                            zIndex: 5
-                          }}>
-                            {(() => {
-                              if (player.isLibero) {
-                                const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                                const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                                return (
-                                  <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                                )
-                              }
-                              return <span className="court-player-captain">C</span>
-                            })()}
-                          </div>
+                        {replacementNumber && (
+                          <span style={getReplacementBadgeStyle(player)}>
+                            {replacementNumber}
+                          </span>
                         )}
+                        <span className="court-player-position">{player.position}</span>
+                        {/* Captain indicator */}
+                        {player.isCaptain && (() => {
+                          if (player.isLibero) {
+                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            return (
+                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                            )
+                          }
+                          return <span className="court-player-captain">C</span>
+                        })()}
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -6518,7 +6734,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               position: 'absolute',
                               bottom: '-8px',
                               left: '-8px',
-                              width: '20px',
+                              width: '18px',
                               height: '18px',
                               background: '#3b82f6',
                               border: '2px solid rgba(255, 255, 255, 0.4)',
@@ -6526,10 +6742,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '9px',
+                              fontSize: '10px',
                               fontWeight: 700,
                               color: '#fff',
-                              zIndex: 5
+                              zIndex: 5,
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
                               {liberoLabel}
                             </span>
@@ -6595,7 +6812,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const leftTeamServes = currentServe === leftTeamKey
                     const shouldShowBall = player.position === 'I' && leftTeamServes
                     const teamSubstitutions = substitutionsUsed?.[leftTeamKey] || 0
-                    const canSubstitute = rallyStatus === 'idle' && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
                     
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(leftTeamKey, player.number)
@@ -6644,46 +6862,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             }}
                           />
                         )}
+                        {replacementNumber && (
+                          <span style={{
+                            position: 'absolute',
+                            top: '-8px',
+                            right: '-8px',
+                            width: '18px',
+                            height: '18px',
+                            background: '#FFF8E7',
+                            border: '2px solid rgba(0, 0, 0, 0.2)',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            color: '#000',
+                            zIndex: 6
+                          }}>
+                            {replacementNumber}
+                          </span>
+                        )}
                         <span className="court-player-position">{player.position}</span>
-                        {/* Bottom-left indicators: Substituted player number (grey) and/or Captain C */}
-                        <div style={{
-                          position: 'absolute',
-                          bottom: '-8px',
-                          left: '-8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                          zIndex: 5
-                        }}>
-                          {/* Substituted player number (grey) - only show if NOT libero substitution */}
-                          {player.substitutedPlayerNumber && !player.isLibero && (
-                            <span style={{
-                              fontSize: '9px',
-                              fontWeight: 700,
-                              color: '#888',
-                              background: 'rgba(255, 255, 255, 0.3)',
-                              padding: '1px 3px',
-                              borderRadius: '2px',
-                              border: '1px solid rgba(255, 255, 255, 0.2)'
-                            }}>
-                              {player.substitutedPlayerNumber}
-                            </span>
-                          )}
-                          {/* Captain indicator */}
-                          {player.isCaptain && (() => {
-                            if (player.isLibero) {
-                              const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                              const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                              const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                              return (
-                                <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                              )
-                            }
-                            return <span className="court-player-captain">C</span>
-                          })()}
-                        </div>
-                        {/* Libero indicator (bottom-left) - only if not captain and not substituted */}
-                        {player.isLibero && !player.isCaptain && !player.substitutedPlayerNumber && (() => {
+                        {/* Captain indicator */}
+                        {player.isCaptain && (() => {
+                          if (player.isLibero) {
+                            const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            return (
+                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                            )
+                          }
+                          return <span className="court-player-captain">C</span>
+                        })()}
+                        {/* Libero indicator (bottom-left) - only if not captain */}
+                        {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
                           const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
@@ -6692,7 +6906,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               position: 'absolute',
                               bottom: '-8px',
                               left: '-8px',
-                              width: '20px',
+                              width: '18px',
                               height: '18px',
                               background: '#3b82f6',
                               border: '2px solid rgba(255, 255, 255, 0.4)',
@@ -6700,10 +6914,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '9px',
+                              fontSize: '10px',
                               fontWeight: 700,
                               color: '#fff',
-                              zIndex: 5
+                              zIndex: 5,
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
                               {liberoLabel}
                             </span>
@@ -6771,7 +6986,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   {rightTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
                     const teamKey = leftIsHome ? 'away' : 'home'
                     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-                    const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
                     
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
@@ -6801,31 +7017,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             e.currentTarget.style.boxShadow = 'none'
                         }}
                       >
+                        {replacementNumber && (
+                          <span style={getReplacementBadgeStyle(player)}>
+                            {replacementNumber}
+                          </span>
+                        )}
                         <span className="court-player-position">{player.position}</span>
                         {/* Bottom-left indicators: Captain C */}
-                        {player.isCaptain && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '-8px',
-                            left: '-8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '2px',
-                            zIndex: 5
-                          }}>
-                            {(() => {
-                              if (player.isLibero) {
-                                const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                                const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                                return (
-                                  <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                                )
-                              }
-                              return <span className="court-player-captain">C</span>
-                            })()}
-                          </div>
-                        )}
+                        {player.isCaptain && (() => {
+                          if (player.isLibero) {
+                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            return (
+                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                            )
+                          }
+                          return <span className="court-player-captain">C</span>
+                        })()}
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -6836,7 +7045,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               position: 'absolute',
                               bottom: '-8px',
                               left: '-8px',
-                              width: '20px',
+                              width: '18px',
                               height: '18px',
                               background: '#3b82f6',
                               border: '2px solid rgba(255, 255, 255, 0.4)',
@@ -6844,10 +7053,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '9px',
+                              fontSize: '10px',
                               fontWeight: 700,
                               color: '#fff',
-                              zIndex: 5
+                              zIndex: 5,
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
                               {liberoLabel}
                             </span>
@@ -6914,6 +7124,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const shouldShowBall = player.position === 'I' && rightTeamServes
                     const teamSubstitutions = substitutionsUsed?.[rightTeamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                    const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
                     
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(rightTeamKey, player.number)
@@ -6962,25 +7173,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             }}
                           />
                         )}
-                        {player.substitutedPlayerNumber && (
-                          <span style={{
-                            position: 'absolute',
-                            top: '-8px',
-                            right: '-8px',
-                            width: '18px',
-                            height: '18px',
-                            background: '#FFF8E7',
-                            border: '2px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: '#000',
-                            zIndex: 6
-                          }}>
-                            {player.substitutedPlayerNumber}
+                        {replacementNumber && (
+                          <span style={getReplacementBadgeStyle(player)}>
+                            {replacementNumber}
                           </span>
                         )}
                         <span className="court-player-position">{player.position}</span>
@@ -6996,7 +7191,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           return <span className="court-player-captain">C</span>
                         })()}
                         {/* Libero indicator (bottom-left) */}
-                        {player.isLibero && (() => {
+                        {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = rightTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
                           const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
@@ -7005,7 +7200,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               position: 'absolute',
                               bottom: '-8px',
                               left: '-8px',
-                              width: '20px',
+                              width: '18px',
                               height: '18px',
                               background: '#3b82f6',
                               border: '2px solid rgba(255, 255, 255, 0.4)',
@@ -7013,10 +7208,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '9px',
+                              fontSize: '10px',
                               fontWeight: 700,
                               color: '#fff',
-                              zIndex: 5
+                              zIndex: 5,
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
                               {liberoLabel}
                             </span>
@@ -7079,54 +7275,345 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
 
-          <div className="rally-controls">
-            {rallyStatus === 'idle' ? (
-              <button 
-                className="secondary" 
-                onClick={handleStartRally}
-                disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+          {/* 2nd Referee - Between the court and rally-controls */}
+          {(() => {
+            const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
+            const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}` : 'N/A'
+            const ref2Status = isReferee2Connected
+            const ref2StatusColor = ref2Status ? '#22c55e' : (refereeConnectionEnabled ? '#eab308' : '#6b7280')
+            
+            return (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                marginTop: '0.1px',
+                marginBottom: '0.1px',
+                zIndex: 10,
+                gap: '8px'
+              }}>
+                <div 
+                  onClick={() => setShowCallRefereeButton(!showCallRefereeButton)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  }}
+                >
+                  <div style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: ref2StatusColor,
+                    boxShadow: ref2Status ? `0 0 8px ${ref2StatusColor}80` : 'none'
+                  }} />
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                    2nd Ref: {ref2Name}
+                  </span>
+                </div>
+                {showCallRefereeButton && refereeConnectionEnabled && (
+                  <button
+                    onClick={callReferee}
+                    style={{
+                      padding: '12px 24px',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      background: '#ef4444',
+                      border: '2px solid #dc2626',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#dc2626'
+                      e.currentTarget.style.transform = 'scale(1.02)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#ef4444'
+                      e.currentTarget.style.transform = 'scale(1)'
+                    }}
+                  >
+                    <span style={{ fontSize: '20px' }}>🔔</span>
+                    Call Referee
+                  </button>
+                )}
+              </div>
+            )
+          })()}
+
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'stretch', 
+            gap: '16px',
+            width: '100%',
+            minHeight: '200px'
+          }}>
+            {/* Set Results Table - Left Team */}
+            <div style={{ 
+              flex: '0 0 auto',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center'
+            }}>
+              {(() => {
+                // Get current left team
+                const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
+                const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
+                const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
+                const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
+                
+                // Get all sets
+                const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                
+                return (
+                  <div style={{ 
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    fontSize: '9px'
+                  }}>
+                    <h4 style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 600, textAlign: 'center' }}>
+                      <span style={{ 
+                        padding: '2px 8px', 
+                        borderRadius: '4px', 
+                        fontSize: '10px', 
+                        fontWeight: 700, 
+                        background: leftTeamColor, 
+                        color: isBrightColor(leftTeamColor) ? '#000' : '#fff' 
+                      }}>{leftTeamLabel}</span>
+                    </h4>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allSets.map(set => {
+                          const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
+                          const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
+                          const won = leftPoints > rightPoints ? 1 : 0
+                          const substitutions = (data?.events || []).filter(e => 
+                            e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
+                          ).length
+                          const timeouts = (data?.events || []).filter(e => 
+                            e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
+                          ).length
+                          
+                          // Determine row color based on set status
+                          let rowColor = 'inherit'
+                          if (set.finished) {
+                            rowColor = won === 1 ? '#22c55e' : '#ef4444' // Green if won, red if lost
+                          }
+                          
+                          return (
+                            <tr key={set.index} style={{ 
+                              borderBottom: '1px solid rgba(255,255,255,0.1)',
+                              color: rowColor
+                            }}>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{set.index}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftPoints}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{won}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{substitutions}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{timeouts}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* Rally Controls - Center */}
+            <div className="rally-controls" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              {rallyStatus === 'idle' ? (
+                <button 
+                  className="secondary" 
+                  onClick={handleStartRally}
+                  disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+                >
+                  {isFirstRally ? 'Start set' : 'Start rally'}
+                </button>
+              ) : (
+                <>
+                  <div className="rally-controls-row">
+                    <button className="secondary" onClick={handleReplay}>
+                      Replay rally
+                    </button>
+                  </div>
+                  <div className="rally-controls-row">
+                    <button className="rally-point-button" onClick={() => handlePoint('left')}>
+                      Point {teamALabel}
+                    </button>
+                    <button className="rally-point-button" onClick={() => handlePoint('right')}>
+                      Point {teamBLabel}
+                    </button>
+                  </div>
+                </>
+              )}
+              <button
+                className="danger"
+                onClick={showUndoConfirm}
+                disabled={!data?.events || data.events.length === 0}
               >
-                {isFirstRally ? 'Start set' : 'Start rally'}
+                Undo
               </button>
-            ) : (
-              <>
-                <div className="rally-controls-row">
-                  <button className="secondary" onClick={handleReplay}>
-                    Replay rally
-                  </button>
-                </div>
-                <div className="rally-controls-row">
-                  <button className="rally-point-button" onClick={() => handlePoint('left')}>
-                    Point A
-                  </button>
-                  <button className="rally-point-button" onClick={() => handlePoint('right')}>
-                    Point B
-                  </button>
-                </div>
-              </>
-            )}
-            <button
-              className="danger"
-              onClick={showUndoConfirm}
-              disabled={!data?.events || data.events.length === 0}
-            >
-              Undo
-            </button>
+            </div>
+
+            {/* Set Results Table - Right Team */}
+            <div style={{ 
+              flex: '0 0 auto',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center'
+            }}>
+              {(() => {
+                // Get current right team
+                const currentRightTeamKey = leftIsHome ? 'away' : 'home'
+                const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
+                const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
+                const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
+                
+                // Get all sets
+                const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                
+                return (
+                  <div style={{ 
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    fontSize: '9px'
+                  }}>
+                    <h4 style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 600, textAlign: 'center' }}>
+                      <span style={{ 
+                        padding: '2px 8px', 
+                        borderRadius: '4px', 
+                        fontSize: '10px', 
+                        fontWeight: 700, 
+                        background: rightTeamColor, 
+                        color: isBrightColor(rightTeamColor) ? '#000' : '#fff' 
+                      }}>{rightTeamLabel}</span>
+                    </h4>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allSets.map(set => {
+                          const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
+                          const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
+                          const won = rightPoints > leftPoints ? 1 : 0
+                          const substitutions = (data?.events || []).filter(e => 
+                            e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
+                          ).length
+                          const timeouts = (data?.events || []).filter(e => 
+                            e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
+                          ).length
+                          
+                          // Determine row color based on set status
+                          let rowColor = 'inherit'
+                          if (set.finished) {
+                            rowColor = won === 1 ? '#22c55e' : '#ef4444' // Green if won, red if lost
+                          }
+                          
+                          return (
+                            <tr key={set.index} style={{ 
+                              borderBottom: '1px solid rgba(255,255,255,0.1)',
+                              color: rowColor
+                            }}>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{set.index}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightPoints}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{won}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{substitutions}</td>
+                              <td style={{ padding: '4px 2px', textAlign: 'center' }}>{timeouts}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })()}
+            </div>
           </div>
         </section>
 
         <aside className="team-controls">
           <div className="team-info">
-            <h3>{rightTeam.name}</h3>
-            <span
-              className="team-badge"
-              style={{
-                background: rightTeam.color || '#3b82f6',
-                color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff'
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
+                setConnectionModal('teamB')
               }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                background: rightTeam.color || '#3b82f6',
+                color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
+                borderRadius: '6px',
+                fontWeight: 600,
+                fontSize: '14px',
+                marginBottom: '8px',
+                cursor: 'pointer',
+                transition: 'opacity 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
-              {teamBLabel}
-            </span>
+              <span>{teamBLabel}</span>
+              <span>-</span>
+              <span>{teamBShortName}</span>
+              {(() => {
+                const status = getConnectionStatus('teamB')
+                return (
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: status.color,
+                    boxShadow: status.status === 'connected'
+                      ? `0 0 6px ${status.color}80` 
+                      : 'none',
+                    marginLeft: '4px'
+                  }} />
+                )
+              })()}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
             <div style={{ 
@@ -7162,45 +7649,50 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
           <button
             onClick={() => handleTimeout('right')}
-            disabled={getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play'}
+            disabled={getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
             style={{ width: '100%', marginBottom: '8px' }}
           >
             Time-out
           </button>
-          <button 
-            onClick={() => handleLiberoOut('right')}
-            disabled={rallyStatus === 'in_play' || !getLiberoOnCourt(leftIsHome ? 'away' : 'home') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'away' : 'home')}
-          >
-            Libero out
-          </button>
-          <button 
-            onClick={() => handleExchangeLibero('right')}
-            disabled={(() => {
-              const teamKey = leftIsHome ? 'away' : 'home'
-              const teamPlayers = leftIsHome ? data?.awayPlayers : data?.homePlayers
-              const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
-              const liberoOnCourt = getLiberoOnCourt(teamKey)
-              
-              // Check if libero on court is unable
-              const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-              
-              // Check if the other libero is unable
-              const otherLibero = liberos.find(p => 
-                String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-              )
-              const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-              
-              return rallyStatus === 'in_play' || 
-                     !liberoOnCourt || 
-                     !hasPointSinceLastLiberoExchange(teamKey) ||
-                     liberos.length < 2 || // Disable if team has less than 2 liberos
-                     liberoOnCourtUnable || // Disable if libero on court is unable
-                     otherLiberoUnable // Disable if other libero is unable
-            })()}
-          >
-            Exchange libero
-          </button>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+            <button 
+              onClick={() => handleLiberoOut('right')}
+              disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(leftIsHome ? 'away' : 'home') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'away' : 'home')}
+              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+            >
+              Libero out
+            </button>
+            <button 
+              onClick={() => handleExchangeLibero('right')}
+              disabled={(() => {
+                const teamKey = leftIsHome ? 'away' : 'home'
+                const teamPlayers = leftIsHome ? data?.awayPlayers : data?.homePlayers
+                const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+                const liberoOnCourt = getLiberoOnCourt(teamKey)
+                
+                // Check if libero on court is unable
+                const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
+                
+                // Check if the other libero is unable
+                const otherLibero = liberos.find(p => 
+                  String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                  (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+                )
+                const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
+                
+                return rallyStatus === 'in_play' || 
+                       isRallyReplayed ||
+                       !liberoOnCourt || 
+                       !hasPointSinceLastLiberoExchange(teamKey) ||
+                       liberos.length < 2 || // Disable if team has less than 2 liberos
+                       liberoOnCourtUnable || // Disable if libero on court is unable
+                       otherLiberoUnable // Disable if other libero is unable
+              })()}
+              style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px', fontSize: '9px' }}
+            >
+              Exchange libero
+            </button>
+          </div>
           
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
           <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
@@ -9002,6 +9494,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               onClick={() => {
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
+                setLiberoInDropdown(null)
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
@@ -9146,6 +9639,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               onClick={() => {
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
+                setLiberoInDropdown(null)
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
@@ -9215,6 +9709,117 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   ))}
                 </div>
               )}
+              </div>
+            </div>
+          </>
+        )
+      })()}
+      
+      {liberoInDropdown && (() => {
+        const teamKey = liberoInDropdown.team
+        const { playersOnCourt } = getTeamLineupState(teamKey)
+        
+        // Get eligible players (I if not serving, II, III)
+        const currentServe = getCurrentServe()
+        const teamServes = currentServe === teamKey
+        const eligiblePlayers = playersOnCourt.filter(p => {
+          if (p.position === 'I') return !teamServes // Position I only if not serving
+          return p.position === 'II' || p.position === 'III'
+        })
+        
+        // Get dropdown position
+        const dropdownStyle = {
+          position: 'fixed',
+          left: `${liberoInDropdown.x}px`,
+          top: `${liberoInDropdown.y}px`,
+          transform: 'translateX(-50%)',
+          zIndex: 1000
+        }
+        
+        return (
+          <>
+            {/* Backdrop to close dropdown on click outside */}
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 999,
+                background: 'transparent'
+              }}
+              onClick={() => {
+                setLiberoInDropdown(null)
+                setSubstitutionDropdown(null)
+                setLiberoDropdown(null)
+                setSanctionDropdown(null)
+                setInjuryDropdown(null)
+                setPlayerActionMenu(null)
+              }}
+            />
+            {/* Dropdown */}
+            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+              <div
+                data-libero-in-dropdown
+                style={{
+                  background: '#FFF8E7',
+                  border: '2px solid rgba(0, 0, 0, 0.2)',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  minWidth: '120px',
+                  maxWidth: '150px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                }}
+              >
+                <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: '#000', textAlign: 'center', borderBottom: '1px solid rgba(0, 0, 0, 0.1)', paddingBottom: '8px' }}>
+                  Libero In
+                </div>
+                {eligiblePlayers.length === 0 ? (
+                  <div style={{ padding: '8px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
+                    No eligible players
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {eligiblePlayers.map(player => (
+                      <button
+                        key={`${player.position}-${player.number}`}
+                        onClick={() => handleLiberoInPlayerSelect(player.position, player.number)}
+                        style={{
+                          padding: '6px 8px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          background: 'rgba(0, 0, 0, 0.05)',
+                          color: '#000',
+                          border: '1px solid rgba(0, 0, 0, 0.1)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          transition: 'all 0.2s',
+                          width: '100%',
+                          minHeight: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.15)'
+                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
+                          e.currentTarget.style.transform = 'scale(1.05)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
+                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'
+                          e.currentTarget.style.transform = 'scale(1)'
+                        }}
+                      >
+                        <span style={{ fontSize: '10px', opacity: 0.7 }}>Pos {player.position}:</span>
+                        <span>#{player.number}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -9504,6 +10109,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               onClick={() => {
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
+                setLiberoInDropdown(null)
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
@@ -11977,5 +12583,3 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
     </Modal>
   )
 }
-
-

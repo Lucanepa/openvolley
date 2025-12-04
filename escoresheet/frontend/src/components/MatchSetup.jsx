@@ -113,8 +113,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [serveB, setServeB] = useState(false) // true = serves, false = receives
   const [pendingMatchId, setPendingMatchId] = useState(null) // Store match ID before coin toss
   const [showBothRosters, setShowBothRosters] = useState(false) // Show both rosters in match setup
-  const [homeHasAds, setHomeHasAds] = useState(false) // Has ads on uniform
-  const [awayHasAds, setAwayHasAds] = useState(false) // Has ads on uniform
   
   // Coin toss modals
   const [addPlayerModal, setAddPlayerModal] = useState(null) // 'teamA' | 'teamB' | null
@@ -491,9 +489,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   // Show coin toss view if requested
   useEffect(() => {
     if (showCoinToss && matchId) {
+      // Check if team names are set before showing coin toss
+      if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
+        setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+        return
+      }
       setCurrentView('coin-toss')
     }
-  }, [showCoinToss, matchId])
+  }, [showCoinToss, matchId, home, away])
 
   // Load saved draft data on mount (only if no matchId)
   useEffect(() => {
@@ -672,7 +675,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
 
   // Auto-save when data changes (debounced)
   useEffect(() => {
-    if (currentView === 'info' || currentView === 'officials' || currentView === 'home' || currentView === 'away') {
+    if (currentView === 'main' || currentView === 'info' || currentView === 'officials' || currentView === 'home' || currentView === 'away') {
       const timeoutId = setTimeout(() => {
         saveDraft(true) // Silent auto-save
       }, 500) // Debounce 500ms
@@ -680,6 +683,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       return () => clearTimeout(timeoutId)
     }
   }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
+
+  // Helper function to generate smart short name placeholder
+  function generateShortNamePlaceholder(teamName) {
+    if (!teamName) return 'Short name'
+    // Remove common words and spaces, then take first 10 characters
+    const commonWords = ['volley', 'volleyball', 'vbc', 'vc', 'bc', 'club', 'team']
+    let cleaned = teamName.toLowerCase()
+    // Remove common words
+    commonWords.forEach(word => {
+      const regex = new RegExp(`\\b${word}\\b`, 'gi')
+      cleaned = cleaned.replace(regex, '')
+    })
+    // Remove extra spaces and trim
+    cleaned = cleaned.replace(/\s+/g, ' ').trim()
+    // Take first 10 characters and uppercase
+    const short = cleaned.substring(0, 10).toUpperCase()
+    return short || 'Short name'
+  }
 
   // Helper function to determine if a color is bright/light
   function isBrightColor(color) {
@@ -985,6 +1006,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       }
       
     // Don't start match yet - go to coin toss first
+    // Check if team names are set
+    if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
+      setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+      return
+    }
+    
     setPendingMatchId(matchId)
     setCurrentView('coin-toss')
     })
@@ -1182,6 +1209,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     
     // Update match status to 'live' to indicate match has started
     await db.matches.update(targetMatchId, { status: 'live' })
+    
+    // Ensure all roster updates are committed before navigating
+    // Force a small delay to ensure database updates are fully committed
+    await new Promise(resolve => setTimeout(resolve, 100))
     
     // Start the match - directly navigate to scoreboard
     // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
@@ -1587,27 +1618,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <label className="inline"><span>Name</span><input className="w-180 capitalize" value={home} onChange={e=>setHome(e.target.value)} /></label>
           <label className="inline"><span>Short Name</span><input className="w-80" value={homeShortName} onChange={e=>setHomeShortName(e.target.value.toUpperCase())} placeholder="Home short" maxLength={10} /></label>
         </div>
-        <div className="row" style={{ marginTop: 12 }}>
-          <label className="inline" style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 8, 
-            padding: '8px 12px',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '8px',
-            background: homeHasAds ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
-            cursor: 'pointer',
-            width: 'fit-content'
-          }}>
-            <input 
-              type="checkbox" 
-              checked={homeHasAds} 
-              onChange={e=>setHomeHasAds(e.target.checked)}
-              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-            />
-            <span style={{ fontWeight: 500 }}>Ads</span>
-          </label>
-        </div>
         {isHomeLocked && (
           <div className="panel" style={{ marginTop:8 }}>
             <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
@@ -1661,6 +1671,54 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             }}>Add</button>
           </div>
         </div>
+        {/* PDF Upload for Home Team */}
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '12px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <input
+              ref={homeFileInputRef}
+              type="file"
+              accept=".pdf"
+              onChange={handleHomeFileSelect}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => homeFileInputRef.current?.click()}
+              disabled={isHomeLocked || homePdfLoading}
+              style={{ padding: '8px 16px', fontSize: '14px' }}
+            >
+              Choose PDF File
+            </button>
+            {homePdfFile && (
+              <span style={{ fontSize: '14px', color: 'var(--text)' }}>
+                {homePdfFile.name}
+              </span>
+            )}
+            {homePdfFile && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={handleHomeImportClick}
+                disabled={isHomeLocked || homePdfLoading}
+                style={{ padding: '8px 16px', fontSize: '14px' }}
+              >
+                {homePdfLoading ? 'Importing...' : 'Import PDF'}
+              </button>
+            )}
+            {homePdfError && (
+              <span style={{ color: '#ef4444', fontSize: '14px' }}>
+                {homePdfError}
+              </span>
+            )}
+          </div>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {homeRoster.map((p, i) => (
             <div key={`h-${i}`} className="row" style={{ alignItems: 'center' }}>
@@ -1670,10 +1728,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 placeholder="#" 
                 type="number" 
                 inputMode="numeric" 
+                min="1"
+                max="99"
                 value={p.number ?? ''} 
+                onKeyPress={e => {
+                  if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                    e.preventDefault()
+                  }
+                }}
                 onChange={e => {
+                  const val = e.target.value ? Number(e.target.value) : null
+                  if (val !== null && (val < 1 || val > 99)) return
                   const updated = [...homeRoster]
-                  updated[i] = { ...updated[i], number: e.target.value ? Number(e.target.value) : null }
+                  updated[i] = { ...updated[i], number: val }
                   setHomeRoster(updated)
                 }} 
               />
@@ -1774,14 +1841,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           const originalIdx = benchHome.findIndex(b => b === m)
           return (
             <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
-              <select disabled={isHomeLocked} className="w-220" value={m.role} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], role:e.target.value}; return a })}>
-                <option value="">None</option>
-                <option value="" disabled>──────────</option>
-                                <option value="">None</option>
-                                <option value="" disabled>──────────</option>
-                                {BENCH_ROLES.map(role => (
-                                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
-                                ))}
+              <select disabled={isHomeLocked} className="w-220" value={m.role || 'Coach'} onChange={e=>{
+                const newRole = e.target.value || 'Coach'
+                // Check if this role is already taken by another official
+                const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
+                if (isRoleTaken) {
+                  // Don't allow duplicate roles
+                  return
+                }
+                setBenchHome(arr => { 
+                  const a=[...arr]; 
+                  a[originalIdx]={...a[originalIdx], role:newRole}; 
+                  return a 
+                })
+              }}>
+                                {BENCH_ROLES.map(role => {
+                                  const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === role.value)
+                                  return (
+                                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
+                                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                                    </option>
+                                  )
+                                })}
               </select>
               <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
               <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
@@ -1801,7 +1882,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         })}
         {!isHomeLocked && (
           <div className="row" style={{ marginTop: 8 }}>
-            <button type="button" className="secondary" onClick={() => setBenchHome([...benchHome, initBench('Coach')])} style={{ padding: '4px 8px', fontSize: '12px' }}>
+            <button type="button" className="secondary" onClick={() => {
+              // Find the first available role
+              const takenRoles = new Set(benchHome.map(b => b.role))
+              const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+              if (availableRole) {
+                setBenchHome([...benchHome, initBench(availableRole.value)])
+              }
+            }} style={{ padding: '4px 8px', fontSize: '12px' }}>
               Add Bench Official
             </button>
           </div>
@@ -1898,27 +1986,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         <div className="row" style={{ alignItems:'center', gap: '12px' }}>
           <label className="inline"><span>Name</span><input className="w-180 capitalize" value={away} onChange={e=>setAway(e.target.value)} /></label>
           <label className="inline"><span>Short Name</span><input className="w-80" value={awayShortName} onChange={e=>setAwayShortName(e.target.value.toUpperCase())} placeholder="Away short" maxLength={10} /></label>
-        </div>
-        <div className="row" style={{ marginTop: 12 }}>
-          <label className="inline" style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 8, 
-            padding: '8px 12px',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '8px',
-            background: awayHasAds ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
-            cursor: 'pointer',
-            width: 'fit-content'
-          }}>
-            <input 
-              type="checkbox" 
-              checked={awayHasAds} 
-              onChange={e=>setAwayHasAds(e.target.checked)}
-              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-            />
-            <span style={{ fontWeight: 500 }}>Ads</span>
-          </label>
         </div>
         {isAwayLocked && (
           <div className="panel" style={{ marginTop:8 }}>
@@ -2045,10 +2112,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 placeholder="#" 
                 type="number" 
                 inputMode="numeric" 
+                min="1"
+                max="99"
                 value={p.number ?? ''} 
+                onKeyPress={e => {
+                  if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                    e.preventDefault()
+                  }
+                }}
                 onChange={e => {
+                  const val = e.target.value ? Number(e.target.value) : null
+                  if (val !== null && (val < 1 || val > 99)) return
                   const updated = [...awayRoster]
-                  updated[i] = { ...updated[i], number: e.target.value ? Number(e.target.value) : null }
+                  updated[i] = { ...updated[i], number: val }
                   setAwayRoster(updated)
                 }} 
               />
@@ -2149,14 +2225,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           const originalIdx = benchAway.findIndex(b => b === m)
           return (
             <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
-              <select disabled={isAwayLocked} className="w-220" value={m.role} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], role:e.target.value}; return a })}>
-                <option value="">None</option>
-                <option value="" disabled>──────────</option>
-                                <option value="">None</option>
-                                <option value="" disabled>──────────</option>
-                                {BENCH_ROLES.map(role => (
-                                  <option key={role.value} value={role.value}>{role.label} - {role.fullLabel}</option>
-                                ))}
+              <select disabled={isAwayLocked} className="w-220" value={m.role || 'Coach'} onChange={e=>{
+                const newRole = e.target.value || 'Coach'
+                // Check if this role is already taken by another official
+                const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
+                if (isRoleTaken) {
+                  // Don't allow duplicate roles
+                  return
+                }
+                setBenchAway(arr => { 
+                  const a=[...arr]; 
+                  a[originalIdx]={...a[originalIdx], role:newRole}; 
+                  return a 
+                })
+              }}>
+                                {BENCH_ROLES.map(role => {
+                                  const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === role.value)
+                                  return (
+                                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
+                                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                                    </option>
+                                  )
+                                })}
               </select>
               <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
               <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
@@ -2176,7 +2266,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         })}
         {!isAwayLocked && (
           <div className="row" style={{ marginTop: 8 }}>
-            <button type="button" className="secondary" onClick={() => setBenchAway([...benchAway, initBench('Coach')])} style={{ padding: '4px 8px', fontSize: '12px' }}>
+            <button type="button" className="secondary" onClick={() => {
+              // Find the first available role
+              const takenRoles = new Set(benchAway.map(b => b.role))
+              const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+              if (availableRole) {
+                setBenchAway([...benchAway, initBench(availableRole.value)])
+              }
+            }} style={{ padding: '4px 8px', fontSize: '12px' }}>
               Add Bench Official
             </button>
           </div>
@@ -2981,11 +3078,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                         type="button" 
                         className="secondary" 
                         onClick={() => {
-                          const newOfficial = initBench('Coach')
-                          if (teamB === 'home') {
-                            setBenchHome([...benchHome, newOfficial])
-                          } else {
-                            setBenchAway([...benchAway, newOfficial])
+                          const bench = teamB === 'home' ? benchHome : benchAway
+                          // Find the first available role
+                          const takenRoles = new Set(bench.map(b => b.role))
+                          const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+                          if (availableRole) {
+                            const newOfficial = initBench(availableRole.value)
+                            if (teamB === 'home') {
+                              setBenchHome([...benchHome, newOfficial])
+                            } else {
+                              setBenchAway([...benchAway, newOfficial])
+                            }
                           }
                         }}
                         style={{ padding: '4px 8px', fontSize: '12px' }}
@@ -3010,26 +3113,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                           <tr key={`${teamB}-bench-${originalIdx}`}>
                             <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
                               <select
-                                value={official.role || ''}
+                                value={official.role || 'Coach'}
                                 onChange={e => {
+                                  const roleValue = e.target.value || 'Coach'
                                   if (teamB === 'home') {
+                                    // Check if this role is already taken by another official
+                                    const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === roleValue)
+                                    if (isRoleTaken) {
+                                      // Don't allow duplicate roles
+                                      return
+                                    }
                                     const updated = [...benchHome]
-                                    updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                    updated[originalIdx] = { ...updated[originalIdx], role: roleValue }
                                     setBenchHome(updated)
                                   } else {
+                                    // Check if this role is already taken by another official
+                                    const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === roleValue)
+                                    if (isRoleTaken) {
+                                      // Don't allow duplicate roles
+                                      return
+                                    }
                                     const updated = [...benchAway]
-                                    updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                    updated[originalIdx] = { ...updated[originalIdx], role: roleValue }
                                     setBenchAway(updated)
                                   }
                                 }}
                                 className="coin-toss-select"
                                 style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0', width: '100%' }}
                               >
-                                {BENCH_ROLES.map(role => (
-                                  <option key={role.value} value={role.value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>
-                                    {role.label} - {role.fullLabel}
-                                  </option>
-                                ))}
+                                {BENCH_ROLES.map(role => {
+                                  const isRoleTaken = (teamB === 'home' ? benchHome : benchAway).some((b, idx) => idx !== originalIdx && b.role === role.value)
+                                  return (
+                                    <option key={role.value} value={role.value} disabled={isRoleTaken} style={{ background: 'var(--bg)', color: isRoleTaken ? 'rgba(255, 255, 255, 0.3)' : 'var(--text)' }}>
+                                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                                    </option>
+                                  )
+                                })}
                               </select>
                             </td>
                             <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
@@ -3688,23 +3807,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <h3 style={{ margin: 0 }}>Home team</h3>
               </div>
             </div>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8 }}>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  padding: '8px 12px 8px 20px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  background: 'rgba(15, 23, 42, 0.35)',
-                  fontWeight: 700,
-                  fontSize: '16px',
-                  letterSpacing: '0.01em',
-                  minHeight: 48,
-                  minWidth: 'fit-content'
-                }}
-              >
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8, flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
                 <div 
                   className="shirt" 
                   style={{ background: homeColor, cursor: 'pointer' }}
@@ -3720,8 +3824,58 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   <div className="collar" style={{ background: homeColor }} />
                   <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
                 </div>
-                {home || 'Home'}
-              </span>
+                <span></span>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={home}
+                    onChange={e => setHome(e.target.value)}
+                    placeholder="Home team name"
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'rgba(15, 23, 42, 0.35)',
+                      color: 'var(--text)',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      letterSpacing: '0.01em',
+                      minHeight: 48
+                    }}
+                  />
+                  {homeShortName && (
+                    <span style={{ 
+                      fontSize: '14px', 
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap'
+                    }}>
+                      ({homeShortName})
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 8 }}>
+                <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>Team short name:</span>
+                <input
+                  type="text"
+                  value={homeShortName}
+                  onChange={e => setHomeShortName(e.target.value.toUpperCase())}
+                  placeholder={generateShortNamePlaceholder(home)}
+                  maxLength={10}
+                  style={{
+                    width: '80px',
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'rgba(15, 23, 42, 0.35)',
+                    color: 'var(--text)',
+                    fontSize: '14px',
+                    fontWeight: 500
+                  }}
+                />
+              </div>
             </div>
             <ConnectionBanner
               team="home"
@@ -3751,24 +3905,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <StatusBadge ready={awayConfigured} />
                 <h3 style={{ margin: 0 }}>Away team</h3>
               </div>
+              
             </div>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8 }}>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  padding: '8px 12px 8px 20px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  background: 'rgba(15, 23, 42, 0.35)',
-                  fontWeight: 700,
-                  fontSize: '16px',
-                  letterSpacing: '0.01em',
-                  minHeight: 48,
-                  minWidth: 'fit-content'
-                }}
-              >
+            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8, flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
                 <div 
                   className="shirt" 
                   style={{ background: awayColor, cursor: 'pointer' }}
@@ -3784,8 +3924,58 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   <div className="collar" style={{ background: awayColor }} />
                   <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
                 </div>
-                {away || 'Away'}
-              </span>
+                <span></span>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={away}
+                    onChange={e => setAway(e.target.value)}
+                    placeholder="Away team name"
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'rgba(15, 23, 42, 0.35)',
+                      color: 'var(--text)',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      letterSpacing: '0.01em',
+                      minHeight: 48
+                    }}
+                  />
+                  {awayShortName && (
+                    <span style={{ 
+                      fontSize: '14px', 
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap'
+                    }}>
+                      ({awayShortName})
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 8 }}>
+                <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>Team short name:</span>
+                <input
+                  type="text"
+                  value={awayShortName}
+                  onChange={e => setAwayShortName(e.target.value.toUpperCase())}
+                  placeholder={generateShortNamePlaceholder(away)}
+                  maxLength={10}
+                  style={{
+                    width: '80px',
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'rgba(15, 23, 42, 0.35)',
+                    color: 'var(--text)',
+                    fontSize: '14px',
+                    fontWeight: 500
+                  }}
+                />
+              </div>
             </div>
             <ConnectionBanner
               team="away"
@@ -3901,6 +4091,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       createdAt: new Date().toISOString()
                     }))
                   )
+                }
+                
+                // Check if team names are set before going to coin toss
+                if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
+                  setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+                  return
                 }
                 
                 // Go to coin toss

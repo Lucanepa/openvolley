@@ -26,6 +26,7 @@ interface StandardSetProps {
   leftTimeouts?: [string, string];
   leftPoints?: number;
   leftMarkedPoints?: number[];
+  leftCircledPoints?: number[];
   leftServiceRounds?: ServiceRound[];
 
   // Right Team Data
@@ -34,6 +35,7 @@ interface StandardSetProps {
   rightTimeouts?: [string, string];
   rightPoints?: number;
   rightMarkedPoints?: number[];
+  rightCircledPoints?: number[];
   rightServiceRounds?: ServiceRound[];
   
   // Ref for measuring position box width
@@ -41,18 +43,19 @@ interface StandardSetProps {
 }
 
 // Static Point Box: Display only, not interactive
-export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2 }> = ({ num, filledState = 0 }) => {
+export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2; isCircled?: boolean }> = ({ num, filledState = 0, isCircled = false }) => {
     // type: 0 = none, 1 = slash, 2 = vertical bar
     return (
         <div 
             className="flex-1 w-full relative flex items-center justify-center"
-            style={{ borderColor: '#000' }}
+            
         >
             {/* Background Number */}
             <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-100' : ''}`}>{num}</span>
             
             {/* Overlays */}
-            {filledState === 1 && (
+            {/* Only show slash if not circled (penalty points should only have circle, no slash) */}
+            {filledState === 1 && !isCircled && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="15" />
                  </svg>
@@ -61,6 +64,12 @@ export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2 }> = ({ n
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="50" y1="-5" x2="50" y2="105" stroke="black" strokeWidth="15" strokeLinecap="butt" />
                  </svg>
+            )}
+            {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
+            {isCircled && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="48" fill="none" stroke="black" strokeWidth="12" />
+                </svg>
             )}
         </div>
     );
@@ -95,8 +104,9 @@ export const PointsColumn: React.FC<{
   timeouts?: [string, string], 
   startsReceiving?: boolean, 
   markedPoints?: number[],
-  isSetFinished?: boolean
-}> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [], isSetFinished = false }) => {
+  isSetFinished?: boolean,
+  circledPoints?: number[]
+}> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [], isSetFinished = false, circledPoints = [] }) => {
     return (
         <div className={`flex flex-col h-full shrink-0 ${isLast ? '' : 'border-r border-black'}`} style={{ width: '15mm' }}>
             <div 
@@ -130,7 +140,7 @@ export const PointsColumn: React.FC<{
                                     style={{ minHeight: '0', height: 'calc(100% / 12)' }} 
                                     className="flex-1 flex items-center justify-center"
                                 >
-                                    <PointBox num={num} filledState={state} />
+                                    <PointBox num={num} filledState={state} isCircled={circledPoints.includes(num)} />
                                 </div>
                             );
                         })}
@@ -141,7 +151,7 @@ export const PointsColumn: React.FC<{
             <div className="bg-white flex flex-col items-center justify-start gap-1 border-l border-black py-1" style={{ height: '1.5cm' }}>
                 <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>T</span>
                 <div className="flex flex-col w-full px-2 items-center" style={{ height: '1cm' }}>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-1" style={{ height: '0.5cm' }}>
+                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
                         {timeouts[0] ? (
                             <>
                                 <span>{timeouts[0].split(':')[0]}</span>
@@ -152,7 +162,7 @@ export const PointsColumn: React.FC<{
                             <span>:</span>
                         )}
                     </div>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-1" style={{ height: '0.5cm' }}>
+                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
                         {timeouts[1] ? (
                             <>
                                 <span>{timeouts[1].split(':')[0]}</span>
@@ -208,7 +218,7 @@ export const TeamServiceGrid: React.FC<{
             {/* Starting Players Row */}
             <div className="flex border-b border-black shrink-0" style={{ height: '5mm' }}>
                 {positions.map((i) => (
-                    <div key={i} className="border-r border-black last:border-none p-0.5 flex items-center justify-center" style={{ width: '10mm', height: '5mm' }}>
+                    <div key={i} className="border-r border-black last:border-none p-0.5 flex items-center justify-center relative" style={{ width: '10mm', height: '5mm' }}>
                         <div className="font-bold text-sm text-center print:text-base">{lineup[i] || ''}</div>
                     </div>
                 ))}
@@ -225,11 +235,31 @@ export const TeamServiceGrid: React.FC<{
                     return (
                         <div key={colIdx} className="border-r border-black last:border-none flex flex-col h-full" style={{ width: '10mm' }}>
                             {/* Substitution Row - Only PlayerIn (PlayerOut is already in lineup row) */}
-                            <div className="border-b border-black shrink-0 p-0.5 flex items-center justify-center" style={{ height: '0.5cm' }}>
+                            <div className="border-b border-black shrink-0 p-0.5 flex items-center justify-center relative" style={{ height: '0.5cm' }}>
                                 {sub1 ? (
-                                    <div className="text-[14px] text-center font-bold">
-                                        {sub1.playerIn}
-                                    </div>
+                                    <>
+                                        <div className="text-[14px] text-center font-bold">
+                                            {sub1.playerIn}
+                                        </div>
+                                        {/* Circle around playerIn if substitution is closed (can't re-enter) */}
+                                        {sub1.isCircled && (
+                                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
+                                                <circle cx="50" cy="50" r="42" fill="none" stroke="black" strokeWidth="2" />
+                                            </svg>
+                                        )}
+                                    </>
+                                ) : sub2 ? (
+                                    <>
+                                        <div className="text-[14px] text-center font-bold">
+                                            {sub2.playerIn}
+                                        </div>
+                                        {/* Circle around playerIn if substitution is closed (can't re-enter) */}
+                                        {sub2.isCircled && (
+                                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
+                                                <circle cx="50" cy="50" r="42" fill="none" stroke="black" strokeWidth="2" />
+                                            </svg>
+                                        )}
+                                    </>
                                 ) : (
                                     <div className="text-[14px] text-center"></div>
                                 )}
@@ -377,19 +407,22 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     leftTimeouts,
     leftPoints,
     leftMarkedPoints = [],
+    leftCircledPoints = [],
     leftServiceRounds = [],
     rightLineup,
     rightSubs,
     rightTimeouts,
     rightPoints,
     rightMarkedPoints = [],
+    rightCircledPoints = [],
     rightServiceRounds = [],
     positionBoxRef
 }) => {
   const leftTeamLabel = isSwapped ? 'B' : 'A';
   const rightTeamLabel = isSwapped ? 'A' : 'B';
   
-  // Determine who serves/receives based on coin toss (Set 1) or switched sides (Set 2)
+  // Determine who serves/receives based on coin toss (Set 1) or switched sides
+  // Pattern: Set 1 (A serves if coinTossServeA), Set 2 (opposite - teams switch), Set 3 (same as Set 1 - teams back), Set 4 (opposite - teams switch)
   let leftServes: 'S' | 'R' | null = null;
   let rightServes: 'S' | 'R' | null = null;
   
@@ -397,10 +430,9 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     // Team A is left when not swapped, right when swapped
     const teamAIsLeft = !isSwapped;
     
-    // For Set 2, teams switch sides, so first serve is opposite of Set 1
-    const actualFirstServeTeamA = setNumber === 1 
-      ? firstServeTeamA 
-      : !firstServeTeamA;
+    // Service alternates: Set 1 = firstServeTeamA, Set 2 = !firstServeTeamA, Set 3 = firstServeTeamA, Set 4 = !firstServeTeamA
+    // This is because teams switch sides in sets 2 and 4
+    const actualFirstServeTeamA = (setNumber % 2 === 1) ? firstServeTeamA : !firstServeTeamA;
     
     if (teamAIsLeft) {
       // Left = Team A, Right = Team B
@@ -460,13 +492,13 @@ export const StandardSet: React.FC<StandardSetProps> = ({
             {/* Team Left Block - fixed width to match header */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                 <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} positionBoxRef={positionBoxRef} serviceRounds={leftServiceRounds} />
-                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} markedPoints={leftMarkedPoints} isSetFinished={!!endTime} />
+                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} markedPoints={leftMarkedPoints} circledPoints={leftCircledPoints} isSetFinished={!!endTime} />
             </div>
 
             {/* Team Right Block - fixed width to match header */}
              <div className="flex shrink-0" style={{ width: '75mm' }}>
                 <TeamServiceGrid lineup={rightLineup} subs={rightSubs} startsReceiving={rightServes === 'R'} serviceRounds={rightServiceRounds} />
-                <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} isSetFinished={!!endTime} />
+                <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} isSetFinished={!!endTime} />
             </div>
         </div>
     </div>
