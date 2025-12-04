@@ -122,4 +122,23 @@ db.version(9).stores({
   })
 })
 
+// Version 10: Add sessionId and gamePin to matches
+db.version(10).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add sessionId and gamePin fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.sessionId) match.sessionId = null
+    if (!match.gamePin) match.gamePin = null
+  })
+})
+
 
