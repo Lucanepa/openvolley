@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { ConnectionManager } from '../utils/connectionManager'
 
 export default function Referee({ matchId, onExit }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
@@ -9,6 +10,17 @@ export default function Referee({ matchId, onExit }) {
   const [processedTimeouts, setProcessedTimeouts] = useState(new Set()) // Track which timeout events we've already shown
   const [activeSubstitution, setActiveSubstitution] = useState(null) // { team: 'home'|'away', playerOut, playerIn, eventId: number, countdown: 5 }
   const [processedSubstitutions, setProcessedSubstitutions] = useState(new Set()) // Track which substitution events we've already shown
+  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  
+  // Connection state
+  const [connectionModal, setConnectionModal] = useState(null) // 'bluetooth' | 'lan' | 'internet' | null
+  const [connectionType, setConnectionType] = useState(null) // 'bluetooth' | 'lan' | 'internet' | 'database'
+  const [connectionStatus, setConnectionStatus] = useState('disconnected') // 'connected' | 'disconnected' | 'connecting' | 'error'
+  const [connectionError, setConnectionError] = useState('')
+  const [lanIP, setLanIP] = useState('')
+  const [lanPort, setLanPort] = useState('8080')
+  const [internetURL, setInternetURL] = useState('')
+  const connectionManagerRef = useRef(null)
   
   // Send heartbeat to indicate referee is connected (only if connection is enabled)
   useEffect(() => {
@@ -48,6 +60,117 @@ export default function Referee({ matchId, onExit }) {
         .catch(err => console.error('Failed to clear heartbeat:', err))
     }
   }, [matchId, refereeView])
+
+  // Initialize connection manager
+  useEffect(() => {
+    const handleData = (data) => {
+      // Handle incoming data from connection
+      // This would sync match data, events, etc.
+      console.log('Received data via connection:', data)
+    }
+
+    const handleError = (error) => {
+      setConnectionError(error.message || 'Connection error')
+      setConnectionStatus('error')
+    }
+
+    const handleDisconnect = () => {
+      setConnectionStatus('disconnected')
+      setConnectionType('database') // Fallback to database
+    }
+
+    connectionManagerRef.current = new ConnectionManager(handleData, handleError, handleDisconnect)
+
+    return () => {
+      if (connectionManagerRef.current) {
+        connectionManagerRef.current.disconnect()
+      }
+    }
+  }, [])
+
+  // Handle Bluetooth connection
+  const handleConnectBluetooth = useCallback(async () => {
+    setConnectionStatus('connecting')
+    setConnectionError('')
+    try {
+      const result = await connectionManagerRef.current.connectBluetooth()
+      setConnectionType('bluetooth')
+      setConnectionStatus('connected')
+      setConnectionModal(null)
+    } catch (error) {
+      setConnectionError(error.message || 'Failed to connect via Bluetooth')
+      setConnectionStatus('error')
+    }
+  }, [])
+
+  // Handle LAN connection
+  const handleConnectLAN = useCallback(async () => {
+    if (!lanIP || !lanPort) {
+      setConnectionError('Please enter IP address and port')
+      return
+    }
+    setConnectionStatus('connecting')
+    setConnectionError('')
+    try {
+      const port = parseInt(lanPort, 10)
+      if (isNaN(port) || port < 1 || port > 65535) {
+        throw new Error('Invalid port number')
+      }
+      const result = await connectionManagerRef.current.connectLAN(lanIP, port)
+      setConnectionType('lan')
+      setConnectionStatus('connected')
+      setConnectionModal(null)
+    } catch (error) {
+      setConnectionError(error.message || 'Failed to connect via LAN')
+      setConnectionStatus('error')
+    }
+  }, [lanIP, lanPort])
+
+  // Handle Internet connection
+  const handleConnectInternet = useCallback(async () => {
+    if (!internetURL) {
+      setConnectionError('Please enter a WebSocket URL')
+      return
+    }
+    setConnectionStatus('connecting')
+    setConnectionError('')
+    try {
+      const result = await connectionManagerRef.current.connectInternet(internetURL)
+      setConnectionType('internet')
+      setConnectionStatus('connected')
+      setConnectionModal(null)
+    } catch (error) {
+      setConnectionError(error.message || 'Failed to connect via Internet')
+      setConnectionStatus('error')
+    }
+  }, [internetURL])
+
+  // Handle disconnect
+  const handleDisconnect = useCallback(async () => {
+    try {
+      await connectionManagerRef.current.disconnect()
+      setConnectionType('database')
+      setConnectionStatus('disconnected')
+      setConnectionError('')
+    } catch (error) {
+      console.error('Error disconnecting:', error)
+    }
+  }, [])
+
+  // Check connection status periodically
+  useEffect(() => {
+    if (connectionType && connectionType !== 'database') {
+      const interval = setInterval(() => {
+        const isConnected = connectionManagerRef.current?.isConnected()
+        if (isConnected && connectionStatus !== 'connected') {
+          setConnectionStatus('connected')
+        } else if (!isConnected && connectionStatus === 'connected') {
+          setConnectionStatus('disconnected')
+        }
+      }, 1000)
+      return () => clearInterval(interval)
+    }
+  }, [connectionType, connectionStatus])
 
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
@@ -341,6 +464,71 @@ export default function Referee({ matchId, onExit }) {
     return { home: homeSetsWon, away: awaySetsWon }
   }, [data])
 
+  // Check if we're between sets
+  const isBetweenSets = useMemo(() => {
+    if (!data?.sets || !data?.currentSet) return false
+    const finishedSets = data.sets.filter(s => s.finished)
+    const currentSetIndex = data.currentSet.index
+    // If the last finished set is not the current set, we're between sets
+    const lastFinishedSet = finishedSets[finishedSets.length - 1]
+    return lastFinishedSet && lastFinishedSet.index < currentSetIndex
+  }, [data?.sets, data?.currentSet])
+
+  // Format countdown (M'SS'' or SS'')
+  const formatCountdown = useCallback((seconds) => {
+    if (seconds < 60) {
+      return `${seconds}''`
+    }
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    if (remainingSeconds === 0) {
+      return `${minutes}'`
+    }
+    return `${minutes}' ${remainingSeconds}''`
+  }, [])
+
+  // Stop timeout countdown
+  const stopTimeout = useCallback(() => {
+    setActiveTimeout(null)
+  }, [])
+
+  // Hide between sets countdown
+  const hideBetweenSetsCountdown = useCallback(() => {
+    setBetweenSetsCountdown(null)
+  }, [])
+
+  // Initialize between sets countdown
+  useEffect(() => {
+    if (isBetweenSets && !betweenSetsCountdown) {
+      setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
+    } else if (!isBetweenSets && betweenSetsCountdown) {
+      setBetweenSetsCountdown(null)
+    }
+  }, [isBetweenSets, betweenSetsCountdown])
+
+  // Countdown timer for between sets
+  useEffect(() => {
+    if (!betweenSetsCountdown || !betweenSetsCountdown.started || betweenSetsCountdown.finished) return
+
+    if (betweenSetsCountdown.countdown <= 0) {
+      setBetweenSetsCountdown({ ...betweenSetsCountdown, finished: true, started: false })
+      return
+    }
+
+    const timer = setInterval(() => {
+      setBetweenSetsCountdown(prev => {
+        if (!prev || !prev.started) return prev
+        const newCountdown = prev.countdown - 1
+        if (newCountdown <= 0) {
+          return { ...prev, finished: true, started: false }
+        }
+        return { ...prev, countdown: newCountdown }
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [betweenSetsCountdown])
+
   // Determine who has serve based on events
   const getCurrentServe = useMemo(() => {
     if (!data?.currentSet || !data?.match) {
@@ -434,6 +622,108 @@ export default function Referee({ matchId, onExit }) {
   // Count liberos for each team
   const leftLiberoCount = (leftTeam === 'home' ? data?.homePlayers : data?.awayPlayers)?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
   const rightLiberoCount = (rightTeam === 'home' ? data?.homePlayers : data?.awayPlayers)?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+  
+  // Build substitution history for active replacement tracking
+  const leftTeamSubstitutionHistory = useMemo(() => {
+    if (!data?.events) return []
+    return data.events
+      .filter(e => e.type === 'substitution' && e.payload?.team === leftTeam)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+  }, [data?.events, leftTeam])
+
+  const rightTeamSubstitutionHistory = useMemo(() => {
+    if (!data?.events) return []
+    return data.events
+      .filter(e => e.type === 'substitution' && e.payload?.team === rightTeam)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+  }, [data?.events, rightTeam])
+
+  // Build active replacement map
+  const buildActiveReplacementMap = (substitutions = []) => {
+    const activeMap = new Map()
+
+    substitutions.forEach(sub => {
+      const playerOut = sub.payload?.playerOut
+      const playerIn = sub.payload?.playerIn
+      if (!playerOut || !playerIn) return
+
+      const playerOutStr = String(playerOut)
+      const playerInStr = String(playerIn)
+      const previouslyReplaced = activeMap.get(playerOutStr)
+
+      activeMap.delete(playerOutStr)
+
+      if (previouslyReplaced && previouslyReplaced === playerInStr) {
+        // Original player returning, do not mark as replacement
+        return
+      }
+
+      activeMap.set(playerInStr, playerOutStr)
+    })
+
+    return activeMap
+  }
+
+  const leftTeamActiveReplacements = useMemo(
+    () => buildActiveReplacementMap(leftTeamSubstitutionHistory),
+    [leftTeamSubstitutionHistory]
+  )
+
+  const rightTeamActiveReplacements = useMemo(
+    () => buildActiveReplacementMap(rightTeamSubstitutionHistory),
+    [rightTeamSubstitutionHistory]
+  )
+
+  const resolveReplacementNumber = (playerNumber, team, activeReplacementMap, liberoSubInfo) => {
+    if (!playerNumber || playerNumber === '') {
+      return null
+    }
+
+    // Priority: libero substitution
+    if (liberoSubInfo?.playerNumber) {
+      return String(liberoSubInfo.playerNumber)
+    }
+
+    // Check active replacement map
+    if (!activeReplacementMap) return null
+
+    return activeReplacementMap.get(String(playerNumber)) || null
+  }
+
+  const getReplacementBadgeStyle = (isLiberoReplacement) => {
+    const baseStyle = {
+      position: 'absolute',
+      top: '-8px',
+      right: '-8px',
+      width: '18px',
+      height: '18px',
+      borderRadius: '4px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '10px',
+      fontWeight: 700,
+      zIndex: 6
+    }
+
+    if (isLiberoReplacement) {
+      return {
+        ...baseStyle,
+        background: '#ffffff',
+        border: '2px solid rgba(255, 255, 255, 0.8)',
+        color: '#0f172a',
+        boxShadow: '0 2px 6px rgba(15, 23, 42, 0.35)'
+      }
+    }
+
+    return {
+      ...baseStyle,
+      background: '#fde047',
+      border: '2px solid rgba(0, 0, 0, 0.25)',
+      color: '#0f172a',
+      boxShadow: '0 2px 4px rgba(15, 23, 42, 0.25)'
+    }
+  }
   
   // Helper to determine if a color is bright
   const isBrightColor = (color) => {
@@ -546,6 +836,16 @@ export default function Referee({ matchId, onExit }) {
     }
     
     const latestSubstitution = currentSetEvents[currentSetEvents.length - 1]
+    
+    // Check if this substitution was logged recently (within last 10 seconds)
+    const substitutionTime = new Date(latestSubstitution.ts).getTime()
+    const now = Date.now()
+    const timeSinceSubstitution = (now - substitutionTime) / 1000 // in seconds
+    
+    // Only show notification if substitution is recent (within 10 seconds)
+    if (timeSinceSubstitution > 10) {
+      return
+    }
     
     // Check if we've already processed this substitution
     if (processedSubstitutions.has(latestSubstitution.id)) {
@@ -674,8 +974,10 @@ export default function Referee({ matchId, onExit }) {
     // Determine libero label for bottom-left corner
     const liberoLabel = isLibero ? (teamLiberoCount === 1 ? 'L' : liberoType) : null
     
-    // Get substituted player number (from liberoSubInfo)
-    const substitutedPlayerNumber = liberoSubInfo?.playerNumber
+    // Get substituted player number (for top-right badge)
+    const activeReplacementMap = team === leftTeam ? leftTeamActiveReplacements : rightTeamActiveReplacements
+    const replacementNumber = resolveReplacementNumber(number, team, activeReplacementMap, liberoSubInfo)
+    const isLiberoReplacement = !!liberoSubInfo?.playerNumber
     
     return (
       <div 
@@ -684,19 +986,26 @@ export default function Referee({ matchId, onExit }) {
           position: 'relative',
           background: isLibero ? '#FFF8E7' : undefined,
           color: isLibero ? '#000' : undefined,
-          width: 'clamp(28px, 7.8vw, 62px)', // 30% bigger than original clamp(28px, 6vw, 48px)
-          height: 'clamp(18px, 7.8vw, 62px)',
-          fontSize: 'clamp(12px, 3.25vw, 23px)' // 30% bigger than original clamp(12px, 2.5vw, 18px)
+          width: '48px', // Maximum width
+          height: '48px',
+          fontSize: '25px', // Maximum font size
+          maxWidth: '80px'
         }}
       >
+        {/* Substituted player indicator (top-right) */}
+        {replacementNumber && (
+          <span style={getReplacementBadgeStyle(isLiberoReplacement)}>
+            {replacementNumber}
+          </span>
+        )}
         {shouldShowBall && (
           <img 
             src={mikasaVolleyball} 
             alt="Volleyball" 
             style={{
               position: 'absolute',
-              left: team === leftTeam ? '-30px' : 'auto',
-              right: team === rightTeam ? '-30px' : 'auto',
+              left: team === leftTeam ? '-35px' : 'auto',
+              right: team === rightTeam ? '-35px' : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
               width: '22px', // 40% smaller than 36px
@@ -750,28 +1059,6 @@ export default function Referee({ matchId, onExit }) {
             </span>
           )
         })()}
-        {/* Substituted player number (top-right, referee only) */}
-        {substitutedPlayerNumber && (
-          <span style={{
-            position: 'absolute',
-            top: '-6.4px',
-            right: '-6.4px',
-            width: '12px', // 20% smaller than 18px
-            height: '12px',
-            background: '#FFF8E7',
-            border: '1.6px solid rgba(0, 0, 0, 0.2)',
-            borderRadius: '3.2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '6px', // 20% smaller than 10px
-            fontWeight: 700,
-            color: '#000',
-            zIndex: 6
-          }}>
-            {substitutedPlayerNumber}
-          </span>
-        )}
         {/* Libero indicator (bottom-left) */}
         {liberoLabel && (
           <span 
@@ -883,7 +1170,7 @@ export default function Referee({ matchId, onExit }) {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '60vh',
       maxHeight: '100vh',
       overflow: 'hidden',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
@@ -944,6 +1231,90 @@ export default function Referee({ matchId, onExit }) {
               Score
             </span>
           </div>
+
+          {/* Connection Type Indicator */}
+          {connectionType && connectionType !== 'database' && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 6px',
+              background: connectionStatus === 'connected' 
+                ? 'rgba(34, 197, 94, 0.15)' 
+                : connectionStatus === 'connecting'
+                ? 'rgba(251, 191, 36, 0.15)'
+                : 'rgba(239, 68, 68, 0.15)',
+              borderRadius: '4px',
+              fontSize: '9px',
+              border: `1px solid ${connectionStatus === 'connected' 
+                ? 'rgba(34, 197, 94, 0.4)' 
+                : connectionStatus === 'connecting'
+                ? 'rgba(251, 191, 36, 0.4)'
+                : 'rgba(239, 68, 68, 0.4)'}`
+            }}>
+              <div style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: connectionStatus === 'connected' 
+                  ? '#22c55e' 
+                  : connectionStatus === 'connecting'
+                  ? '#eab308'
+                  : '#ef4444',
+                boxShadow: connectionStatus === 'connected' 
+                  ? '0 0 6px rgba(34, 197, 94, 0.6)' 
+                  : 'none'
+              }} />
+              <span style={{ 
+                color: connectionStatus === 'connected' 
+                  ? '#22c55e' 
+                  : connectionStatus === 'connecting'
+                  ? '#eab308'
+                  : '#ef4444',
+                fontWeight: 600
+              }}>
+                {connectionType === 'bluetooth' ? 'BT' : connectionType === 'lan' ? 'LAN' : 'NET'}
+              </span>
+              {connectionStatus === 'connected' && (
+                <button
+                  onClick={handleDisconnect}
+                  style={{
+                    padding: '1px 4px',
+                    fontSize: '7px',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '3px',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    marginLeft: '4px'
+                  }}
+                  title="Disconnect"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Connection Button */}
+          {(!connectionType || connectionType === 'database') && (
+            <button
+              onClick={() => setConnectionModal('select')}
+              style={{
+                padding: '3px 6px',
+                fontSize: '9px',
+                fontWeight: 600,
+                background: 'rgba(255,255,255,0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title="Connect via Bluetooth, LAN, or Internet"
+            >
+              Connect
+            </button>
+          )}
 
           {/* Rally Status */}
           <div style={{
@@ -1023,7 +1394,45 @@ export default function Referee({ matchId, onExit }) {
         </div>
       </div>
 
-      {/* Score Display */}
+      {/* Score Display or Between Sets Countdown */}
+      {betweenSetsCountdown ? (
+        <div style={{
+          background: 'var(--bg-secondary)',
+          borderRadius: '6px',
+          padding: '16px',
+          marginBottom: '4px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '12px',
+          flexShrink: 0
+        }}>
+          <div style={{
+            fontSize: '48px',
+            fontWeight: 800,
+            color: 'var(--accent)',
+            lineHeight: 1
+          }}>
+            {formatCountdown(betweenSetsCountdown.countdown)}
+          </div>
+          <button
+            onClick={hideBetweenSetsCountdown}
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: 'rgba(255,255,255,0.1)',
+              color: 'var(--text)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Hide countdown
+          </button>
+        </div>
+      ) : (
       <div style={{
         background: 'var(--bg-secondary)',
         borderRadius: '6px',
@@ -1033,68 +1442,180 @@ export default function Referee({ matchId, onExit }) {
         justifyContent: 'center',
         alignItems: 'center',
         flexDirection: 'column',
-        gap: '4px',
+          gap: '8px',
         flexShrink: 0
       }}>
-        {/* Team Names */}
+          {/* Sets Counter - Above (like livescore) - Centered horizontally on whole page */}
         <div style={{
           display: 'flex',
           width: '100%',
           justifyContent: 'center',
           alignItems: 'center',
-          gap: '12px'
+            gap: '12px',
+            position: 'relative'
         }}>
-          <div style={{ textAlign: 'center', flex: 1 }}>
+            {/* Left Set Score Box */}
+            <div style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+                fontSize: '16px',
+                fontWeight: 700,
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              color: 'var(--text)',
+              textAlign: 'center',
+              lineHeight: '1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {leftSetScore}
+            </div>
+            
+            {/* SET # Indicator - Centered on whole page */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '2px',
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)'
+            }}>
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                lineHeight: '1'
+              }}>
+                SET
+            </span>
+              <span style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                color: 'var(--text)',
+                lineHeight: '1'
+              }}>
+                {data?.currentSet?.index || 1}
+              </span>
+            </div>
+            
+            {/* Right Set Score Box */}
+            <div style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 700,
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              color: 'var(--text)',
+              textAlign: 'center',
+              lineHeight: '1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginLeft: '30px',
+            }}>
+              {rightSetScore}
+            </div>
+          </div>
+          
+          {/* Score Counter - Layout: SERVE # | Label (short name) | Ball (reserved) | Score | : (centered) | Score | Ball (reserved) | Label (short name) | SERVE # */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            width: '100%',
+            gap: '8px',
+            position: 'relative'
+          }}>
+            {/* Left side: SERVE #, Label, Ball (reserved), Score */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              flex: 1,
+              justifyContent: 'flex-end'
+            }}>
+              {/* SERVE # indicator */}
+              {leftServing && leftLineup?.I && (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginRight: '30px' // Gap from team label
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px'
+                  }}>
+                    SERVE
+                  </div>
+                  <div style={{
+                    fontSize: '24px',
+                    fontWeight: 700,
+                    color: 'var(--accent)',
+                    width: '48px',
+                    height: '48px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    border: '3px solid var(--accent)',
+                    borderRadius: '12px'
+                  }}>
+                    {leftLineup.I}
+                  </div>
+                </div>
+              )}
+              
+              {/* Team Label with short name */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                marginRight: '30px',
+                marginLeft: '30px',
+              }}>
             <span
               className="team-badge"
               style={{
-                background: leftColor,
-                color: isBrightColor(leftColor) ? '#000' : '#fff',
+                    background: leftColor,
+                    color: isBrightColor(leftColor) ? '#000' : '#fff',
                 padding: '4px 10px',
                 borderRadius: '4px',
                 fontSize: '16px',
                 fontWeight: 700,
-                display: 'inline-block',
-                marginBottom: '2px',
-                minWidth: '32px',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
               }}
             >
-              {leftLabel}
+                  {leftLabel}
             </span>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: 1 }}>
-              {leftTeamData?.name || (leftTeam === 'home' ? 'Home' : 'Away')}
-            </div>
-          </div>
-          
-          <div style={{ fontSize: '18px', color: 'var(--muted)', flexShrink: 0, padding: '0 8px' }}>-</div>
-          
-          <div style={{ textAlign: 'center', flex: 1 }}>
-            <span
-              className="team-badge"
-              style={{
-                background: rightColor,
-                color: isBrightColor(rightColor) ? '#000' : '#fff',
-                padding: '4px 10px',
-                borderRadius: '4px',
-                fontSize: '16px',
-                fontWeight: 700,
-                display: 'inline-block',
-                marginBottom: '2px',
-                minWidth: '32px',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
-              }}
-            >
-              {rightLabel}
-            </span>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: 1 }}>
-              {rightTeamData?.name || (rightTeam === 'home' ? 'Home' : 'Away')}
-            </div>
-          </div>
+                <span style={{
+                  fontSize: '10px',
+                  color: 'var(--muted)',
+                  fontWeight: 600
+                }}>
+                  {leftTeam === 'home' ? (data?.match?.homeShortName || leftTeamData?.name?.substring(0, 3).toUpperCase() || 'HOM') : (data?.match?.awayShortName || leftTeamData?.name?.substring(0, 3).toUpperCase() || 'AWY')}
+                </span>
         </div>
 
-        {/* Score with Ball */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+              {/* Ball - reserved space */}
+              <div style={{
+                width: '20px',
+                height: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
           {leftServing && (
             <img
               src={mikasaVolleyball}
@@ -1106,19 +1627,58 @@ export default function Referee({ matchId, onExit }) {
               }}
             />
           )}
-          <div style={{
-            fontSize: '36px',
+              </div>
+              
+              {/* Score */}
+              <span style={{
+                fontSize: '56px',
             fontWeight: 800,
             color: 'var(--accent)',
+                lineHeight: 1
+              }}>
+                {leftScore}
+              </span>
+            </div>
+
+            {/* Colon - Centered on net */}
+            <div style={{
+              fontSize: '56px',
+              fontWeight: 800,
+              color: 'var(--muted)',
+              width: '16px',
+              textAlign: 'center',
+              lineHeight: 1,
+              flexShrink: 0
+            }}>
+              :
+            </div>
+
+            {/* Right side: Score, Ball (reserved), Label, SERVE # */}
+            <div style={{ 
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
+              flex: 1,
+              justifyContent: 'flex-start'
+            }}>
+              {/* Score */}
+              <span style={{
+                fontSize: '56px',
+                fontWeight: 800,
+                color: 'var(--accent)',
             lineHeight: 1
           }}>
-            <span>{leftScore}</span>
-            <span style={{ fontSize: '24px', color: 'var(--muted)' }}>:</span>
-            <span>{rightScore}</span>
-          </div>
+                {rightScore}
+              </span>
+              
+              {/* Ball - reserved space */}
+              <div style={{
+                width: '20px',
+                height: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
           {rightServing && (
             <img
               src={mikasaVolleyball}
@@ -1131,16 +1691,78 @@ export default function Referee({ matchId, onExit }) {
             />
           )}
         </div>
-        {/* Set Score */}
+              
+              {/* Team Label with short name */}
         <div style={{
-          fontSize: '11px',
-          fontWeight: 600,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                marginRight: '30px',
+                marginLeft: '30px',
+              }}>
+                <span
+                  className="team-badge"
+                  style={{
+                    background: rightColor,
+                    color: isBrightColor(rightColor) ? '#000' : '#fff',
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                  }}
+                >
+                  {rightLabel}
+                </span>
+                <span style={{
+                  fontSize: '10px',
           color: 'var(--muted)',
-          textAlign: 'center'
+                  fontWeight: 600
         }}>
-          Sets: {leftSetScore}-{rightSetScore}
+                  {rightTeam === 'home' ? (data?.match?.homeShortName || rightTeamData?.name?.substring(0, 3).toUpperCase() || 'HOM') : (data?.match?.awayShortName || rightTeamData?.name?.substring(0, 3).toUpperCase() || 'AWY')}
+                </span>
         </div>
+              
+              {/* SERVE # indicator */}
+              {rightServing && rightLineup?.I && (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginLeft: '16px' // Gap from team label
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px'
+                  }}>
+                    SERVE
       </div>
+                  <div style={{
+                    fontSize: '24px',
+                    fontWeight: 700,
+                    color: 'var(--accent)',
+                    width: '48px',
+                    height: '48px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    border: '3px solid var(--accent)',
+                    borderRadius: '12px'
+                  }}>
+                    {rightLineup.I}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Court */}
       {(!leftLineup || Object.keys(leftLineup).length === 0) && (!rightLineup || Object.keys(rightLineup).length === 0) ? (
@@ -1156,21 +1778,10 @@ export default function Referee({ matchId, onExit }) {
           Waiting for lineups to be set...
         </div>
       ) : (
-        <div style={{ marginBottom: '4px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* Set Title */}
-          {data?.currentSet && (
-            <div style={{
-              textAlign: 'center',
-              fontSize: '12px',
-              fontWeight: 700,
-              marginBottom: '2px',
-              color: 'var(--text)',
-              flexShrink: 0
-            }}>
-              Set {data.currentSet.index}
-            </div>
-          )}
-          <div className="court" style={{ minHeight: '180px', maxHeight: '220px', flex: '0 0 auto' }}>
+        <div style={{ marginBottom: '4px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {/* Court */}
+          <div style={{ width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
+            <div className="court" style={{ minHeight: '240px', maxHeight: '280px', height: '260px', flex: '0 0 auto', width: '100%', maxWidth: '600px' }}>
           <div className="court-attack-line court-attack-left" />
           <div className="court-attack-line court-attack-right" />
           
@@ -1207,48 +1818,51 @@ export default function Referee({ matchId, onExit }) {
           </div>
         </div>
         </div>
-      )}
 
-      {/* Team Statistics */}
+          {/* TO and SUB beneath court - Centered horizontally on whole page */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '6px',
-        flexShrink: 0
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-start',
+            width: '100%',
+            maxWidth: '800px',
+            marginTop: '8px',
+            flexShrink: 0,
+            gap: '16px'
       }}>
-        {/* Left Team Stats */}
+            {/* Left Column - Left Team TO/SUB */}
         <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '6px',
-          padding: '8px'
-        }}>
-          {/* TO and SUB Cards */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
             <div 
-              onClick={() => activeTimeout && activeTimeout.team === leftTeam && setActiveTimeout(null)}
+                onClick={() => activeTimeout && activeTimeout.team === leftTeam && stopTimeout()}
               style={{ 
-                flex: 1, 
                 background: activeTimeout && activeTimeout.team === leftTeam 
                   ? 'rgba(251, 191, 36, 0.15)' 
                   : 'rgba(255, 255, 255, 0.05)', 
                 borderRadius: '4px', 
-                padding: '6px',
+                  padding: '6px 12px',
                 textAlign: 'center',
                 border: activeTimeout && activeTimeout.team === leftTeam
                   ? '2px solid var(--accent)'
                   : '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: activeTimeout && activeTimeout.team === leftTeam ? 'pointer' : 'default'
+                  cursor: activeTimeout && activeTimeout.team === leftTeam ? 'pointer' : 'default',
+                  minWidth: '60px'
               }}
             >
-              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>TO</div>
+                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>TO</div>
               {activeTimeout && activeTimeout.team === leftTeam ? (
                 <div style={{ 
-                  fontSize: '18px', 
+                    fontSize: '16px', 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
                 }}>
-                  {activeTimeout.countdown}"
+                    {formatCountdown(activeTimeout.countdown)}
                 </div>
               ) : (
                 <div style={{ 
@@ -1259,16 +1873,37 @@ export default function Referee({ matchId, onExit }) {
                   {leftStats.timeouts}
                 </div>
               )}
+                {activeTimeout && activeTimeout.team === leftTeam && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      stopTimeout()
+                    }}
+                    style={{
+                      marginTop: '4px',
+                      padding: '2px 6px',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'var(--text)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Stop TO
+                  </button>
+                )}
             </div>
             <div style={{ 
-              flex: 1, 
               background: 'rgba(255, 255, 255, 0.05)', 
               borderRadius: '4px', 
-              padding: '6px',
+                padding: '6px 12px',
               textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                minWidth: '60px'
             }}>
-              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
+                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>SUB</div>
               <div style={{ 
                 fontSize: '16px', 
                 fontWeight: 700,
@@ -1277,13 +1912,112 @@ export default function Referee({ matchId, onExit }) {
             </div>
           </div>
           
-          {leftStats.sanctions.length > 0 && (
-            <div>
-              <div style={{ fontSize: '9px', color: 'var(--muted)', marginBottom: '3px', fontWeight: 600 }}>
-                Sanctions:
+            {/* Middle Column - Results and Sanctions */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              flex: '0 1 auto',
+              minWidth: 0
+            }}>
+              {/* Results Table */}
+              {(() => {
+                const allSets = data?.sets || []
+                const currentSetIndex = data?.currentSet?.index || 1
+                const completedSets = allSets.filter(set => set.finished)
+                
+                return (
+                  <div style={{ 
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    fontSize: '16px',
+                    minWidth: '400px'
+                  }}>
+                    <h4 style={{ margin: '0 0 6px', fontSize: '20px', fontWeight: 600, textAlign: 'center' }}>
+                      Results
+                    </h4>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '16px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>T</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>S</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>W</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>P</th>
+                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px', borderRight: '1px solid rgba(255,255,255,0.2)' }}>SET</th>
+                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>Dur</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>P</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>W</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>S</th>
+                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>T</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allSets.filter(set => set.index <= currentSetIndex).map((set, idx) => {
+                          const setEvents = data?.events?.filter(e => e.setIndex === set.index) || []
+                          const leftSetPoints = set.homePoints || 0
+                          const rightSetPoints = set.awayPoints || 0
+                          const leftSetWon = set.finished && leftSetPoints > rightSetPoints
+                          const rightSetWon = set.finished && rightSetPoints > leftSetPoints
+                          const leftSetTimeouts = setEvents.filter(e => e.type === 'timeout' && e.payload?.team === (leftTeam === 'home' ? 'home' : 'away')).length
+                          const rightSetTimeouts = setEvents.filter(e => e.type === 'timeout' && e.payload?.team === (rightTeam === 'home' ? 'home' : 'away')).length
+                          const leftSetSubs = setEvents.filter(e => e.type === 'substitution' && e.payload?.team === (leftTeam === 'home' ? 'home' : 'away')).length
+                          const rightSetSubs = setEvents.filter(e => e.type === 'substitution' && e.payload?.team === (rightTeam === 'home' ? 'home' : 'away')).length
+                          const setDuration = set.finished && set.endTime && set.startTime 
+                            ? Math.round((new Date(set.endTime) - new Date(set.startTime)) / 1000 / 60)
+                            : set.startTime 
+                            ? Math.round((Date.now() - new Date(set.startTime)) / 1000 / 60)
+                            : '-'
+                          
+                          return (
+                            <tr key={set.id || idx} style={{ 
+                              borderBottom: '1px solid rgba(255,255,255,0.1)',
+                              background: set.finished 
+                                ? (leftSetWon ? 'rgba(34, 197, 94, 0.1)' : rightSetWon ? 'rgba(239, 68, 68, 0.1)' : 'transparent')
+                                : 'transparent'
+                            }}>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetTimeouts}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetSubs}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetWon ? '1' : rightSetWon ? '0' : '-'}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetPoints}</td>
+                              <td style={{ padding: '1px 2px', textAlign: 'center', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)' }}>{set.index}</td>
+                              <td style={{ padding: '1px 2px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>{setDuration}{setDuration !== '-' ? "'" : ''}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetPoints}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetWon ? '1' : leftSetWon ? '0' : '-'}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetSubs}</td>
+                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetTimeouts}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px' }}>
-                {leftStats.sanctions.map((s, i) => (
+                )
+              })()}
+              
+              {/* Sanctions Table */}
+              {(() => {
+                const leftSanctionsWithTeam = (leftStats.sanctions || []).map(s => ({ ...s, team: 'left' }))
+                const rightSanctionsWithTeam = (rightStats.sanctions || []).map(s => ({ ...s, team: 'right' }))
+                const allSanctions = [...leftSanctionsWithTeam, ...rightSanctionsWithTeam]
+                if (allSanctions.length === 0) return null
+                
+                return (
+                  <div style={{ 
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    fontSize: '8px'
+                  }}>
+                    <h4 style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: 600, textAlign: 'center' }}>
+                      Sanctions
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px', maxHeight: '120px', overflowY: 'auto' }}>
+                      {allSanctions.map((s, i) => {
+                        const teamLabel = s.team === 'left' ? leftLabel : rightLabel
+                        return (
                   <div key={i} style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -1338,59 +2072,63 @@ export default function Referee({ matchId, onExit }) {
                         </svg>
                       </div>
                     ) : s.type === 'disqualification' ? (
-                      <div style={{ display: 'flex', gap: '1.5px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
                         <div style={{ 
-                          width: '8px', 
-                          height: '12px',
+                                  width: '6px', 
+                                  height: '10px',
                           flexShrink: 0,
-                          borderRadius: '1.5px',
+                                  borderRadius: '1px',
                           background: 'linear-gradient(160deg, #fde047, #facc15)'
                         }}></div>
                         <div style={{ 
-                          width: '8px', 
-                          height: '12px',
+                                  width: '6px', 
+                                  height: '10px',
                           flexShrink: 0,
-                          borderRadius: '1.5px',
+                                  borderRadius: '1px',
                           background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
                         }}></div>
                       </div>
                     ) : s.type === 'expulsion' ? (
-                      <div style={{ position: 'relative', width: '13px', height: '14px' }}>
+                              <div style={{ position: 'relative', width: '11px', height: '12px' }}>
                         <div style={{ 
-                          width: '8px', 
-                          height: '12px',
+                                  width: '6px', 
+                                  height: '10px',
                           position: 'absolute',
                           left: '0',
                           top: '1px',
                           transform: 'rotate(-8deg)',
                           zIndex: 1,
-                          borderRadius: '1.5px',
+                                  borderRadius: '1px',
                           background: 'linear-gradient(160deg, #fde047, #facc15)'
                         }}></div>
                         <div style={{ 
-                          width: '8px', 
-                          height: '12px',
+                                  width: '6px', 
+                                  height: '10px',
                           position: 'absolute',
                           right: '0',
-                          top: '1px',
+                                  top: '0',
                           transform: 'rotate(8deg)',
                           zIndex: 2,
-                          borderRadius: '1.5px',
+                                  borderRadius: '1px',
                           background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
                         }}></div>
                       </div>
-                    ) : (
+                            ) : s.type === 'warning' ? (
                       <div style={{ 
-                        width: '12px', 
-                        height: '14px',
-                        flexShrink: 0,
-                        borderRadius: '1.5px',
-                        background: s.type === 'warning' 
-                          ? 'linear-gradient(160deg, #fde047, #facc15)'
-                          : 'linear-gradient(160deg, #ef4444, #b91c1c)'
+                                width: '8px', 
+                                height: '10px',
+                                borderRadius: '1px',
+                                background: 'linear-gradient(160deg, #fde047, #facc15)'
                       }}></div>
-                    )}
-                    <div style={{ fontSize: '7px', fontWeight: 600, textAlign: 'center', marginTop: '1px' }}>
+                            ) : s.type === 'penalty' ? (
+                              <div style={{ 
+                                width: '8px', 
+                                height: '10px',
+                                borderRadius: '1px',
+                                background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
+                              }}></div>
+                            ) : null}
+                            <div style={{ fontSize: '6px', fontWeight: 600, textAlign: 'center', marginTop: '1px' }}>
                       {s.type === 'improper_request' ? 'IR' :
                        s.type === 'delay_warning' ? 'DW' :
                        s.type === 'delay_penalty' ? 'DP' :
@@ -1399,49 +2137,51 @@ export default function Referee({ matchId, onExit }) {
                        s.type === 'expulsion' ? 'E' :
                        s.type === 'disqualification' ? 'D' : s.type}
                     </div>
-                    <div style={{ fontSize: '8px', fontWeight: 600, color: 'var(--text)' }}>
-                      {s.target || 'Team'}
+                            <div style={{ fontSize: '7px', fontWeight: 600, color: 'var(--text)' }}>
+                              {teamLabel} {s.target || ''}
                     </div>
                   </div>
-                ))}
+                        )
+                      })}
               </div>
             </div>
-          )}
+                )
+              })()}
         </div>
 
-        {/* Right Team Stats */}
+            {/* Right Column - Right Team TO/SUB */}
         <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '6px',
-          padding: '8px'
-        }}>
-          {/* TO and SUB Cards */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
             <div 
-              onClick={() => activeTimeout && activeTimeout.team === rightTeam && setActiveTimeout(null)}
+                onClick={() => activeTimeout && activeTimeout.team === rightTeam && stopTimeout()}
               style={{ 
-                flex: 1, 
                 background: activeTimeout && activeTimeout.team === rightTeam 
                   ? 'rgba(251, 191, 36, 0.15)' 
                   : 'rgba(255, 255, 255, 0.05)', 
                 borderRadius: '4px', 
-                padding: '6px',
+                  padding: '6px 12px',
                 textAlign: 'center',
                 border: activeTimeout && activeTimeout.team === rightTeam
                   ? '2px solid var(--accent)'
                   : '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: activeTimeout && activeTimeout.team === rightTeam ? 'pointer' : 'default'
+                  cursor: activeTimeout && activeTimeout.team === rightTeam ? 'pointer' : 'default',
+                  minWidth: '60px'
               }}
             >
-              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>TO</div>
+                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>TO</div>
               {activeTimeout && activeTimeout.team === rightTeam ? (
                 <div style={{ 
-                  fontSize: '18px', 
+                    fontSize: '16px', 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
                 }}>
-                  {activeTimeout.countdown}"
+                    {formatCountdown(activeTimeout.countdown)}
                 </div>
               ) : (
                 <div style={{ 
@@ -1452,16 +2192,37 @@ export default function Referee({ matchId, onExit }) {
                   {rightStats.timeouts}
                 </div>
               )}
+                {activeTimeout && activeTimeout.team === rightTeam && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      stopTimeout()
+                    }}
+                    style={{
+                      marginTop: '4px',
+                      padding: '2px 6px',
+                      fontSize: '8px',
+                      fontWeight: 600,
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'var(--text)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Stop TO
+                  </button>
+                )}
             </div>
             <div style={{ 
-              flex: 1, 
               background: 'rgba(255, 255, 255, 0.05)', 
               borderRadius: '4px', 
-              padding: '6px',
+                padding: '6px 12px',
               textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)'
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                minWidth: '60px'
             }}>
-              <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
+                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>SUB</div>
               <div style={{ 
                 fontSize: '16px', 
                 fontWeight: 700,
@@ -1469,139 +2230,9 @@ export default function Referee({ matchId, onExit }) {
               }}>{rightStats.substitutions}</div>
             </div>
           </div>
-          
-          {rightStats.sanctions.length > 0 && (
-            <div>
-              <div style={{ fontSize: '9px', color: 'var(--muted)', marginBottom: '3px', fontWeight: 600 }}>
-                Sanctions:
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px' }}>
-                {rightStats.sanctions.map((s, i) => (
-                  <div key={i} style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '1px',
-                    padding: '3px',
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    borderRadius: '3px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)'
-                  }}>
-                    {s.type === 'improper_request' ? (
-                      <div style={{
-                        fontSize: '14px',
-                        fontWeight: 700,
-                        color: '#9ca3af',
-                        width: '12px',
-                        height: '14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>✕</div>
-                    ) : s.type === 'delay_warning' ? (
-                      <div style={{
-                        width: '12px',
-                        height: '14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative'
-                      }}>
-                        <svg width="11" height="11" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
-                          <circle cx="7" cy="7" r="6" fill="#fbbf24" stroke="#d97706" strokeWidth="1"/>
-                          <line x1="7" y1="7" x2="7" y2="4" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/>
-                          <line x1="7" y1="7" x2="9.5" y2="7" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/>
-                          <circle cx="7" cy="7" r="0.8" fill="#000"/>
-                        </svg>
                       </div>
-                    ) : s.type === 'delay_penalty' ? (
-                      <div style={{
-                        width: '12px',
-                        height: '14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative'
-                      }}>
-                        <svg width="11" height="11" viewBox="0 0 14 14" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>
-                          <circle cx="7" cy="7" r="6" fill="#ef4444" stroke="#b91c1c" strokeWidth="1"/>
-                          <line x1="7" y1="7" x2="7" y2="4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
-                          <line x1="7" y1="7" x2="9.5" y2="7" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
-                          <circle cx="7" cy="7" r="0.8" fill="#fff"/>
-                        </svg>
-                      </div>
-                    ) : s.type === 'disqualification' ? (
-                      <div style={{ display: 'flex', gap: '1.5px', alignItems: 'center' }}>
-                        <div style={{ 
-                          width: '8px', 
-                          height: '12px',
-                          flexShrink: 0,
-                          borderRadius: '1.5px',
-                          background: 'linear-gradient(160deg, #fde047, #facc15)'
-                        }}></div>
-                        <div style={{ 
-                          width: '8px', 
-                          height: '12px',
-                          flexShrink: 0,
-                          borderRadius: '1.5px',
-                          background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
-                        }}></div>
-                      </div>
-                    ) : s.type === 'expulsion' ? (
-                      <div style={{ position: 'relative', width: '13px', height: '14px' }}>
-                        <div style={{ 
-                          width: '8px', 
-                          height: '12px',
-                          position: 'absolute',
-                          left: '0',
-                          top: '1px',
-                          transform: 'rotate(-8deg)',
-                          zIndex: 1,
-                          borderRadius: '1.5px',
-                          background: 'linear-gradient(160deg, #fde047, #facc15)'
-                        }}></div>
-                        <div style={{ 
-                          width: '8px', 
-                          height: '12px',
-                          position: 'absolute',
-                          right: '0',
-                          top: '1px',
-                          transform: 'rotate(8deg)',
-                          zIndex: 2,
-                          borderRadius: '1.5px',
-                          background: 'linear-gradient(160deg, #ef4444, #b91c1c)'
-                        }}></div>
-                      </div>
-                    ) : (
-                      <div style={{ 
-                        width: '12px', 
-                        height: '14px',
-                        flexShrink: 0,
-                        borderRadius: '1.5px',
-                        background: s.type === 'warning' 
-                          ? 'linear-gradient(160deg, #fde047, #facc15)'
-                          : 'linear-gradient(160deg, #ef4444, #b91c1c)'
-                      }}></div>
-                    )}
-                    <div style={{ fontSize: '7px', fontWeight: 600, textAlign: 'center', marginTop: '1px' }}>
-                      {s.type === 'improper_request' ? 'IR' :
-                       s.type === 'delay_warning' ? 'DW' :
-                       s.type === 'delay_penalty' ? 'DP' :
-                       s.type === 'warning' ? 'W' :
-                       s.type === 'penalty' ? 'P' :
-                       s.type === 'expulsion' ? 'E' :
-                       s.type === 'disqualification' ? 'D' : s.type}
-                    </div>
-                    <div style={{ fontSize: '8px', fontWeight: 600, color: 'var(--text)' }}>
-                      {s.target || 'Team'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Court Switch Waiting Modal */}
       {data?.match && data.currentSet?.index === 5 && 
@@ -1673,7 +2304,7 @@ export default function Referee({ matchId, onExit }) {
           justifyContent: 'center',
           background: 'rgba(0, 0, 0, 0.8)',
           zIndex: 9999,
-          animation: 'blink 1s infinite'
+          animation: 'blink 2s infinite'
         }}>
           <style>{`
             @keyframes blink {
@@ -1824,7 +2455,456 @@ export default function Referee({ matchId, onExit }) {
         )
       })()}
 
+      {/* Connection Modal */}
+      {connectionModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0, 0, 0, 0.8)',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: 'var(--bg-secondary)',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            border: '2px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            {connectionModal === 'select' ? (
+              <>
+                <h2 style={{
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Connect to Scoreboard
+                </h2>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <button
+                    onClick={() => setConnectionModal('bluetooth')}
+                    style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#fff',
+                      border: '2px solid rgba(59, 130, 246, 0.4)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <span>📶</span>
+                    <span>Bluetooth</span>
+                  </button>
+                  <button
+                    onClick={() => setConnectionModal('lan')}
+                    style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'rgba(34, 197, 94, 0.2)',
+                      color: '#fff',
+                      border: '2px solid rgba(34, 197, 94, 0.4)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <span>🌐</span>
+                    <span>LAN (Local Network)</span>
+                  </button>
+                  <button
+                    onClick={() => setConnectionModal('internet')}
+                    style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'rgba(139, 92, 246, 0.2)',
+                      color: '#fff',
+                      border: '2px solid rgba(139, 92, 246, 0.4)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <span>🌍</span>
+                    <span>Internet</span>
+                  </button>
+                  <button
+                    onClick={() => setConnectionModal(null)}
+                    style={{
+                      padding: '8px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      background: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      marginTop: '8px'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : connectionModal === 'bluetooth' ? (
+              <>
+                <h2 style={{
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Connect via Bluetooth
+                </h2>
+                <p style={{
+                  fontSize: '12px',
+                  color: 'var(--muted)',
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Make sure the scoreboard is advertising Bluetooth and is nearby.
+                </p>
+                {connectionError && (
+                  <div style={{
+                    padding: '8px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '6px',
+                    color: '#ef4444',
+                    fontSize: '12px',
+                    marginBottom: '16px'
+                  }}>
+                    {connectionError}
+                  </div>
+                )}
+                <div style={{
+                  display: 'flex',
+                  gap: '8px'
+                }}>
+                  <button
+                    onClick={handleConnectBluetooth}
+                    disabled={connectionStatus === 'connecting'}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: connectionStatus === 'connecting' 
+                        ? 'rgba(255,255,255,0.1)' 
+                        : 'var(--accent)',
+                      color: connectionStatus === 'connecting' ? 'var(--muted)' : '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: connectionStatus === 'connecting' ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {connectionStatus === 'connecting' ? 'Connecting...' : 'Connect'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConnectionModal(null)
+                      setConnectionError('')
+                    }}
+                    style={{
+                      padding: '12px 16px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : connectionModal === 'lan' ? (
+              <>
+                <h2 style={{
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Connect via LAN
+                </h2>
+                <p style={{
+                  fontSize: '12px',
+                  color: 'var(--muted)',
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Enter the IP address and port of the scoreboard device.
+                </p>
+                {connectionError && (
+                  <div style={{
+                    padding: '8px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '6px',
+                    color: '#ef4444',
+                    fontSize: '12px',
+                    marginBottom: '16px'
+                  }}>
+                    {connectionError}
+                  </div>
+                )}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      marginBottom: '4px',
+                      color: 'var(--text)'
+                    }}>
+                      IP Address
+                    </label>
+                    <input
+                      type="text"
+                      value={lanIP}
+                      onChange={(e) => setLanIP(e.target.value)}
+                      placeholder="192.168.1.100"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontSize: '14px',
+                        background: 'rgba(255,255,255,0.1)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      marginBottom: '4px',
+                      color: 'var(--text)'
+                    }}>
+                      Port
+                    </label>
+                    <input
+                      type="number"
+                      value={lanPort}
+                      onChange={(e) => setLanPort(e.target.value)}
+                      placeholder="8080"
+                      min="1"
+                      max="65535"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontSize: '14px',
+                        background: 'rgba(255,255,255,0.1)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: '8px'
+                }}>
+                  <button
+                    onClick={handleConnectLAN}
+                    disabled={connectionStatus === 'connecting' || !lanIP || !lanPort}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: (connectionStatus === 'connecting' || !lanIP || !lanPort)
+                        ? 'rgba(255,255,255,0.1)' 
+                        : 'var(--accent)',
+                      color: (connectionStatus === 'connecting' || !lanIP || !lanPort) ? 'var(--muted)' : '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: (connectionStatus === 'connecting' || !lanIP || !lanPort) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {connectionStatus === 'connecting' ? 'Connecting...' : 'Connect'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConnectionModal(null)
+                      setConnectionError('')
+                      setLanIP('')
+                      setLanPort('8080')
+                    }}
+                    style={{
+                      padding: '12px 16px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : connectionModal === 'internet' ? (
+              <>
+                <h2 style={{
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Connect via Internet
+                </h2>
+                <p style={{
+                  fontSize: '12px',
+                  color: 'var(--muted)',
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  Enter the WebSocket URL of the scoreboard server (e.g., wss://example.com:8080 or ws://example.com:8080)
+                </p>
+                {connectionError && (
+                  <div style={{
+                    padding: '8px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '6px',
+                    color: '#ef4444',
+                    fontSize: '12px',
+                    marginBottom: '16px'
+                  }}>
+                    {connectionError}
+                  </div>
+                )}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      marginBottom: '4px',
+                      color: 'var(--text)'
+                    }}>
+                      WebSocket URL
+                    </label>
+                    <input
+                      type="text"
+                      value={internetURL}
+                      onChange={(e) => setInternetURL(e.target.value)}
+                      placeholder="wss://scoreboard.example.com:8080"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontSize: '14px',
+                        background: 'rgba(255,255,255,0.1)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        outline: 'none'
+                      }}
+                    />
+                    <p style={{
+                      fontSize: '10px',
+                      color: 'var(--muted)',
+                      marginTop: '4px',
+                      marginBottom: 0
+                    }}>
+                      Use wss:// for secure (HTTPS) or ws:// for non-secure (HTTP) connections
+                    </p>
+                  </div>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: '8px'
+                }}>
+                  <button
+                    onClick={handleConnectInternet}
+                    disabled={connectionStatus === 'connecting' || !internetURL}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: (connectionStatus === 'connecting' || !internetURL)
+                        ? 'rgba(255,255,255,0.1)' 
+                        : 'var(--accent)',
+                      color: (connectionStatus === 'connecting' || !internetURL) ? 'var(--muted)' : '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: (connectionStatus === 'connecting' || !internetURL) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {connectionStatus === 'connecting' ? 'Connecting...' : 'Connect'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConnectionModal(null)
+                      setConnectionError('')
+                      setInternetURL('')
+                    }}
+                    style={{
+                      padding: '12px 16px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
-
