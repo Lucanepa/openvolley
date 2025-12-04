@@ -8771,31 +8771,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   Show Match Setup
                 </div>
               )}
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
-              }}
-              onClick={() => {
-                // Open Live Scoring page in new window
-                const baseUrl = window.location.origin
-                const livescoreUrl = `${baseUrl}/livescore.html?gameId=${matchId}`
-                window.open(livescoreUrl, '_blank')
-                setOptionsModal(false)
-              }}>
-                Live Scoring
-              </div>
+           
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
