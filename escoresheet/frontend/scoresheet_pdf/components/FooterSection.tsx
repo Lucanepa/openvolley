@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 
 interface SanctionsProps {
     items?: SanctionRecord[];
+    improperRequests?: { teamA: boolean; teamB: boolean };
 }
 
-export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
+export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
     const rowCount = 10; 
 
     return (
@@ -21,12 +22,18 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
                 <div className="flex items-center gap-3">
                     {/* Team A */}
                     <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
-                        <span className="text-[10px] font-bold leading-none mt-[1px]">A</span>
+                        <span className="text-[20px] font-bold leading-none relative z-0">A</span>
+                        {improperRequests.teamA && (
+                            <span className="absolute inset-0 flex items-center justify-center text-[30px] text-gray-500 leading-none z-10">X</span>
+                        )}
                     </div>
 
                     {/* Team B */}
                     <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
-                        <span className="text-[10px] font-bold leading-none mt-[1px]">B</span>
+                        <span className="text-[20px] font-bold leading-none relative z-0">B</span>
+                        {improperRequests.teamB && (
+                            <span className="absolute inset-0 flex items-center justify-center text-[30px] text-gray-500 leading-none z-10">X</span>
+                        )}
                     </div>
                 </div>
             </div>
@@ -42,7 +49,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
                         <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white">B</div>
                     </div>
                     <div className="flex flex-col items-center justify-center h-full ml-1">
-                        <span className="text-[8px] font-normal text-gray-500" style={{ lineHeight: '100%' }}>or</span>
+                        <span className="text-[8px] font-normal text-gray-700" style={{ lineHeight: '100%' }}>or</span>
                     </div>
                 </div>
                 <div className="border-r border-black flex items-center justify-center">Set</div>
@@ -55,20 +62,30 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
                     return (
                     <div key={i} className="grid grid-cols-7 flex-1 last:border-none text-xs min-h-0">
                          <div className="flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">{item?.type === 'warning' ? 'X' : ''}</div>
+                            <div className="font-bold text-center text-[10px]">
+                                {item?.type === 'warning' ? (item.playerNr || '') : ''}
+                            </div>
                          </div>
                          <div className=" flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">{item?.type === 'penalty' ? 'X' : ''}</div>
+                            <div className="font-bold text-center text-[10px]">
+                                {item?.type === 'penalty' ? (item.playerNr || '') : ''}
+                            </div>
                          </div>
                          <div className=" flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">{item?.type === 'expulsion' ? 'X' : ''}</div>
+                            <div className="font-bold text-center text-[10px]">
+                                {item?.type === 'expulsion' ? (item.playerNr || '') : ''}
+                            </div>
                          </div>
                          <div className=" flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">{item?.type === 'disqualification' ? 'X' : ''}</div>
+                            <div className="font-bold text-center text-[10px]">
+                                {item?.type === 'disqualification' ? (item.playerNr || '') : ''}
+                            </div>
                          </div>
-                         <div className="text-center uppercase font-bold flex items-center justify-center" style={{ aspectRatio: '1' }}>{item?.team || ''}</div>
-                         <div className=" text-center flex items-center justify-center" style={{ aspectRatio: '1' }}>{item?.set || ''}</div>
-                         <div className="text-center text-[10px] flex items-center justify-center" style={{ aspectRatio: '1' }}>{item?.score || ''}</div>
+                         <div className="text-center uppercase font-bold flex items-center justify-center text-[10px] px-0.5" style={{ aspectRatio: '1' }}>
+                            {item?.team || ''}
+                         </div>
+                         <div className="text-center font-bold flex items-center justify-center text-[10px]" style={{ aspectRatio: '1' }}>{item?.set || ''}</div>
+                         <div className="text-center font-bold flex items-center justify-center text-[10px]" style={{ aspectRatio: '1' }}>{item?.score || ''}</div>
                     </div>
                 )})}
             </div>
@@ -76,23 +93,140 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [] }) => {
     );
 };
 
-export const Remarks: React.FC = () => {
+interface RemarksProps {
+    overflowSanctions?: SanctionRecord[];
+}
+
+export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [] }) => {
+    const formatSanction = (sanction: SanctionRecord): string => {
+        // Check if it's a delay sanction (playerNr === 'D')
+        const isDelay = sanction.playerNr === 'D';
+        
+        // Capitalize sanction type
+        const typeLabel = sanction.type === 'warning' 
+            ? (isDelay ? 'Delay Warning' : 'Warning')
+            : sanction.type === 'penalty' 
+            ? (isDelay ? 'Delay Penalty' : 'Penalty')
+            : sanction.type === 'expulsion' 
+            ? 'Expulsion'
+            : sanction.type === 'disqualification' 
+            ? 'Disqualification'
+            : '';
+        
+        // Format: Team A/B, Set X, Score X:X, sanction and player n/function if necessarily
+        const teamLabel = `Team ${sanction.team}`;
+        const setLabel = `Set ${sanction.set}`;
+        const scoreLabel = `Score ${sanction.score}`;
+        
+        // Include player number/function if it exists and is not a delay sanction
+        // For delay sanctions, we already wrote "Delay" in the type, so no player info needed
+        // For non-delay sanctions, include the player number or function
+        const playerInfo = !isDelay && sanction.playerNr 
+            ? `, ${sanction.playerNr}` 
+            : '';
+        
+        return `${teamLabel}, ${setLabel}, ${scoreLabel}, ${typeLabel}${playerInfo}`;
+    };
+
     return (
         <div className="border border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
             <div className="p-1 flex-1 flex flex-col">
-                <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full"></div>
+                {overflowSanctions.length > 0 ? (
+                    <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full">
+                        <div className="font-bold mb-1 text-[9px]">Sanctions (overflow):</div>
+                        {overflowSanctions.map((sanction, index) => (
+                            <div key={index} className="text-[9px] leading-tight">
+                                {formatSanction(sanction)}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full"></div>
+                )}
             </div>
         </div>
     );
 }
 
+interface SetResult {
+  setNumber: number;
+  teamATimeouts: number;
+  teamASubstitutions: number;
+  teamAWon: number;
+  teamAPoints: number;
+  teamBTimeouts: number;
+  teamBSubstitutions: number;
+  teamBWon: number;
+  teamBPoints: number;
+  duration: string;
+  endTime?: string; // Add endTime to track when set ended
+}
+
 interface ResultsProps {
   teamAShortName?: string;
   teamBShortName?: string;
+  setResults?: SetResult[];
+  matchStart?: string;
+  matchEnd?: string;
+  matchDuration?: string;
+  winner?: string;
+  result?: string;
 }
 
-export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShortName = '' }) => {
+// Countdown timer component for set intervals
+const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = ({ endTime, duration }) => {
+  const [countdown, setCountdown] = useState<string>('');
+
+  useEffect(() => {
+    // If duration is already calculated, show it instead of countdown
+    if (duration) {
+      setCountdown('');
+      return;
+    }
+
+    if (!endTime) {
+      setCountdown('');
+      return;
+    }
+
+    const calculateCountdown = () => {
+      const end = new Date(endTime);
+      const now = new Date();
+      const elapsed = now.getTime() - end.getTime();
+      const intervalDuration = 3 * 60 * 1000; // 3 minutes in milliseconds
+      const remaining = intervalDuration - elapsed;
+
+      if (remaining <= 0) {
+        setCountdown('');
+        return;
+      }
+
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      setCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+    };
+
+    calculateCountdown();
+    const interval = setInterval(calculateCountdown, 1000);
+
+    return () => clearInterval(interval);
+  }, [endTime, duration]);
+
+  // Show countdown if active, otherwise show duration
+  return <span>{countdown || duration || ''}</span>;
+};
+
+export const Results: React.FC<ResultsProps> = ({ 
+  teamAShortName = '', 
+  teamBShortName = '',
+  setResults = [],
+  matchStart = '',
+  matchEnd = '',
+  matchDuration = '',
+  winner = '',
+  result = ''
+}) => {
     return (
         <div className="border border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
@@ -107,20 +241,40 @@ export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShor
                         <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div className="border-r">P</div>
                     </div>
                     <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => (
+                        {[1,2,3,4,5].map(set => {
+                            const setData = setResults.find(r => r.setNumber === set);
+                            const isFinished = setData && setData.teamATimeouts !== null;
+                            return (
                              <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs">
-                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
-                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
-                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
-                                <div className="flex items-center justify-center"></div>
+                                <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamATimeouts ?? 0) : ''}
+                                </div>
+                                <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamASubstitutions ?? 0) : ''}
+                                </div>
+                                <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamAWon ?? 0) : ''}
+                                </div>
+                                <div className="flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamAPoints ?? 0) : ''}
+                                </div>
                              </div>
-                        ))}
+                            );
+                        })}
                         {/* Total Row */}
                         <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
-                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
-                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
-                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
-                            <div className="text-center font-bold flex items-center justify-center"></div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamATimeouts !== null ? (r.teamATimeouts || 0) : 0), 0) || ''}
+                            </div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamASubstitutions !== null ? (r.teamASubstitutions || 0) : 0), 0) || ''}
+                            </div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamAWon !== null ? (r.teamAWon || 0) : 0), 0) || ''}
+                            </div>
+                            <div className="text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamAPoints !== null ? (r.teamAPoints || 0) : 0), 0) || ''}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -133,15 +287,31 @@ export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShor
                          <span className="flex-1">Time</span>
                      </div>
                      <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => (
+                        {[1,2,3,4,5].map(set => {
+                            const setData = setResults.find(r => r.setNumber === set);
+                            return (
                             <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white" style={{ gridTemplateColumns: '1fr 2fr' }}>
                                 <div className="flex items-center justify-center border-r border-black text-[9px]">{set}</div>
-                                <div className="flex items-center justify-center"></div>
+                                <div className="flex items-center justify-center text-[9px]">
+                                    <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
+                                </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         <div className="border-t border-black grid bg-white" style={{ gridTemplateColumns: '1fr 2fr', height: '0.7cm' }}>
                             <div className="flex items-center justify-center font-bold text-[9px] border-r border-black">Total</div>
-                            <div className="text-center font-bold flex items-center justify-center"></div>
+                            <div className="text-center font-bold flex items-center justify-center text-[9px]">
+                                {(() => {
+                                    // Total is the sum of all set durations (in minutes)
+                                    const totalMinutes = setResults.reduce((sum, r) => {
+                                        if (!r.duration) return sum;
+                                        // Parse duration string like "25'" to get minutes
+                                        const match = r.duration.match(/(\d+)'/);
+                                        return sum + (match ? parseInt(match[1], 10) : 0);
+                                    }, 0);
+                                    return totalMinutes > 0 ? `${totalMinutes}'` : '';
+                                })()}
+                            </div>
                         </div>
                      </div>
                 </div>
@@ -156,19 +326,39 @@ export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShor
                         <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div>T</div>
                     </div>
                     <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => (
+                        {[1,2,3,4,5].map(set => {
+                            const setData = setResults.find(r => r.setNumber === set);
+                            const isFinished = setData && setData.teamBTimeouts !== null;
+                            return (
                              <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs min-h-[16px]">
-                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
-                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
-                                <div className="border-r border-gray-200 flex items-center justify-center"></div>
-                                <div className="flex items-center justify-center"></div>
+                                <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamBPoints ?? 0) : ''}
+                                </div>
+                                <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamBWon ?? 0) : ''}
+                                </div>
+                                <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamBSubstitutions ?? 0) : ''}
+                                </div>
+                                <div className="flex items-center justify-center text-[9px] font-bold">
+                                    {isFinished ? (setData.teamBTimeouts ?? 0) : ''}
+                                </div>
                              </div>
-                        ))}
+                            );
+                        })}
                         <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
-                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
-                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
-                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center"></div>
-                            <div className="text-center font-bold flex items-center justify-center"></div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamBPoints !== null ? (r.teamBPoints || 0) : 0), 0) || ''}
+                            </div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamBWon !== null ? (r.teamBWon || 0) : 0), 0) || ''}
+                            </div>
+                            <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamBSubstitutions !== null ? (r.teamBSubstitutions || 0) : 0), 0) || ''}
+                            </div>
+                            <div className="text-center font-bold flex items-center justify-center text-[9px]">
+                                {setResults.reduce((sum, r) => sum + (r.teamBTimeouts !== null ? (r.teamBTimeouts || 0) : 0), 0) || ''}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -178,15 +368,15 @@ export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShor
             <div className="border-t-' border-black grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm' }}>
                 <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Match Start</div>
                 <div className="border-r border-black flex items-center justify-center">
-                    <div className="w-full text-center text-[8px] font-bold bg-white"></div>
+                    <div className="w-full text-center text-[8px] font-bold bg-white">{matchStart}</div>
                 </div>
                 <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Match End</div>
                 <div className="border-r border-black flex items-center justify-center">
-                    <div className="w-full text-center text-[8px] font-bold bg-white"></div>
+                    <div className="w-full text-center text-[8px] font-bold bg-white">{matchEnd}</div>
                 </div>
                 <div className="border-r border-black text-[8px] font-bold flex items-center justify-start pl-1">Match Duration</div>
                 <div className="flex items-center justify-center">
-                    <div className="w-full text-center text-[8px] font-bold bg-white"></div>
+                    <div className="w-full text-center text-[8px] font-bold bg-white">{matchDuration}</div>
                 </div>
             </div>
             
@@ -194,11 +384,11 @@ export const Results: React.FC<ResultsProps> = ({ teamAShortName = '', teamBShor
             <div className="p-1 grid grid-cols-[1.5fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
                  <div className="border-b border-gray-300 relative">
                      <span className="text-[8px] absolute top-0 left-0 text-gray-500">WINNER</span>
-                     <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-center justify-center"></div>
+                     <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-center justify-center">{winner}</div>
                  </div>
                  <div className="border-b border-gray-300 relative">
                      <span className="text-[8px] absolute top-0 left-0 text-gray-500">RESULT</span>
-                     <div className="w-full h-full text-center font-black text-lg bg-white flex items-center justify-center"></div>
+                     <div className="w-full h-full text-center font-black text-lg bg-white flex items-center justify-center">{result}</div>
                  </div>
             </div>
         </div>
@@ -353,17 +543,60 @@ interface RosterProps {
   side: string;
   players?: Player[];
   benchStaff?: any[];
+  preGameCaptainSignature?: string;
+  preGameCoachSignature?: string;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [] }) => {
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature }) => {
     const [openSignature, setOpenSignature] = useState<string | null>(null);
-    const [signatures, setSignatures] = useState<Record<string, string>>({});
+    
+    // Create unique signature keys based on side
+    const captainSignatureKey = `roster-${side.toLowerCase()}-captain`;
+    const coachSignatureKey = `roster-${side.toLowerCase()}-coach`;
+    
+    // Initialize signatures with pre-game signatures from coin toss
+    const [signatures, setSignatures] = useState<Record<string, string>>(() => {
+        const initial: Record<string, string> = {};
+        if (preGameCaptainSignature) {
+            initial[captainSignatureKey] = preGameCaptainSignature;
+        }
+        if (preGameCoachSignature) {
+            initial[coachSignatureKey] = preGameCoachSignature;
+        }
+        return initial;
+    });
+    
+    // Update signatures when pre-game signatures change
+    useEffect(() => {
+        if (preGameCaptainSignature) {
+            setSignatures(prev => ({ ...prev, [captainSignatureKey]: preGameCaptainSignature }));
+        }
+        if (preGameCoachSignature) {
+            setSignatures(prev => ({ ...prev, [coachSignatureKey]: preGameCoachSignature }));
+        }
+    }, [preGameCaptainSignature, preGameCoachSignature, captainSignatureKey, coachSignatureKey]);
 
     const handleSignatureClick = (signatureType: string) => {
+        // Don't allow editing pre-game signatures
+        if (signatureType === captainSignatureKey && preGameCaptainSignature) {
+            return;
+        }
+        if (signatureType === coachSignatureKey && preGameCoachSignature) {
+            return;
+        }
         setOpenSignature(signatureType);
     };
 
     const handleSignatureSave = (signatureType: string, signatureDataUrl: string) => {
+        // Don't allow overwriting pre-game signatures
+        if (signatureType === captainSignatureKey && preGameCaptainSignature) {
+            setOpenSignature(null);
+            return;
+        }
+        if (signatureType === coachSignatureKey && preGameCoachSignature) {
+            setOpenSignature(null);
+            return;
+        }
         setSignatures(prev => ({ ...prev, [signatureType]: signatureDataUrl }));
         setOpenSignature(null);
     };
@@ -376,10 +609,6 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // Separate players and liberos
     const regularPlayers = players.filter(p => !p.libero).slice(0, 14);
     const liberos = players.filter(p => p.libero).slice(0, 2);
-
-    // Create unique signature keys based on side
-    const captainSignatureKey = `roster-${side.toLowerCase()}-captain`;
-    const coachSignatureKey = `roster-${side.toLowerCase()}-coach`;
     
     return (
         <div className="border border-black bg-white h-full flex flex-col min-w-0">
@@ -472,15 +701,19 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Captain</span>
                         <div 
-                            className="flex-1 border-b border-black relative cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white min-h-[20px]"
-                            onClick={() => handleSignatureClick(captainSignatureKey)}
-                            title="Click to sign"
+                            className={`flex-1 border-b border-black relative min-h-[20px] ${
+                                preGameCaptainSignature 
+                                    ? 'cursor-default' 
+                                    : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
+                            }`}
+                            onClick={preGameCaptainSignature ? undefined : () => handleSignatureClick(captainSignatureKey)}
+                            title={preGameCaptainSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
                         >
                             {signatures[captainSignatureKey] ? (
                                 <img 
                                     src={signatures[captainSignatureKey]} 
                                     alt="Captain signature"
-                                    className="w-full h-5 object-contain"
+                                    className="w-full h-5 object-contain pointer-events-none"
                                     style={{ maxHeight: '20px' }}
                                 />
                             ) : (
@@ -492,15 +725,19 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Coach</span>
                         <div 
-                            className="flex-1 border-b border-black relative cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white min-h-[20px]"
-                            onClick={() => handleSignatureClick(coachSignatureKey)}
-                            title="Click to sign"
+                            className={`flex-1 border-b border-black relative min-h-[20px] ${
+                                preGameCoachSignature 
+                                    ? 'cursor-default' 
+                                    : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
+                            }`}
+                            onClick={preGameCoachSignature ? undefined : () => handleSignatureClick(coachSignatureKey)}
+                            title={preGameCoachSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
                         >
                             {signatures[coachSignatureKey] ? (
                                 <img 
                                     src={signatures[coachSignatureKey]} 
                                     alt="Coach signature"
-                                    className="w-full h-5 object-contain"
+                                    className="w-full h-5 object-contain pointer-events-none"
                                     style={{ maxHeight: '20px' }}
                                 />
                             ) : (
@@ -510,8 +747,11 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     </div>
                  </div>
 
-                 {/* Signature Modal */}
+                 {/* Signature Modal - only show if signature is not pre-filled */}
                  {openSignature && (
+                     (openSignature === captainSignatureKey && !preGameCaptainSignature) ||
+                     (openSignature === coachSignatureKey && !preGameCoachSignature)
+                 ) && (
                      <SignatureModal
                          open={true}
                          onClose={() => setOpenSignature(null)}
