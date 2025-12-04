@@ -13,6 +13,7 @@ import {
   TEST_TEAM_SEED_DATA
 } from './constants/testSeeds'
 import { supabase } from './lib/supabaseClient'
+import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 
 const TEST_MATCH_SEED_KEY = 'test-match-default'
 const TEST_MATCH_EXTERNAL_ID = 'test-match-default'
@@ -362,6 +363,13 @@ export default function App() {
       // - Only update match status to 'final' - DO NOT DELETE ANYTHING
       await db.matches.update(cur.matchId, { status: 'final' })
       
+      // Unlock session when match ends
+      try {
+        await unlockMatchSession(cur.matchId)
+      } catch (error) {
+        console.error('Error unlocking session:', error)
+      }
+      
       // Only sync official matches
       if (!isTestMatch) {
         await db.sync_queue.add({
@@ -415,7 +423,15 @@ export default function App() {
   
   const returnToMatch = () => setShowMatchSetup(false)
   
-  const goHome = () => {
+  const goHome = async () => {
+    // Unlock session if match was open
+    if (matchId) {
+      try {
+        await unlockMatchSession(matchId)
+      } catch (error) {
+        console.error('Error unlocking session:', error)
+      }
+    }
     setMatchId(null)
     setShowMatchSetup(false)
   }
@@ -1502,19 +1518,6 @@ export default function App() {
     const matches = await db.matches.orderBy('createdAt').reverse().toArray()
     const existing = matches.find(m => m.test === true && m.status !== 'final')
     if (existing) {
-      // Check test match PIN (always 1234567)
-      const enteredPin = prompt('Enter PIN code to open test match:\n(for test match psw is 1234567)')
-      if (!enteredPin || enteredPin.trim() !== '1234567') {
-        setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
-        return
-      }
-      
-      // Check match state to determine where to continue
-      const isMatchSetupComplete = existing.homeCoachSignature && 
-                                    existing.homeCaptainSignature && 
-                                    existing.awayCoachSignature && 
-                                    existing.awayCaptainSignature
-      
       // Check if coin toss is confirmed
       const isCoinTossConfirmed = existing.coinTossTeamA !== null && 
                                    existing.coinTossTeamA !== undefined &&
@@ -1524,6 +1527,22 @@ export default function App() {
                                    existing.coinTossServeA !== undefined &&
                                    existing.coinTossServeB !== null && 
                                    existing.coinTossServeB !== undefined
+      
+      // Only check PIN if coin toss is not confirmed
+      if (!isCoinTossConfirmed) {
+        // Check test match PIN (always 1234567)
+        const enteredPin = prompt('Enter PIN code to open test match:\n(for test match psw is 1234567)')
+        if (!enteredPin || enteredPin.trim() !== '1234567') {
+          setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
+          return
+        }
+      }
+      
+      // Check match state to determine where to continue
+      const isMatchSetupComplete = existing.homeCoachSignature && 
+                                  existing.homeCaptainSignature && 
+                                  existing.awayCoachSignature && 
+                                  existing.awayCaptainSignature
       
       setMatchId(existing.id)
       
@@ -1593,32 +1612,42 @@ export default function App() {
     })
   }
 
-  function continueMatch(matchIdParam) {
+  async function continueMatch(matchIdParam) {
     const targetMatchId = matchIdParam || currentOfficialMatch?.id
     if (!targetMatchId) return
     
-    // Get the match to check its status
-    db.matches.get(targetMatchId).then(match => {
+    try {
+      // Get the match to check its status
+      const match = await db.matches.get(targetMatchId)
       if (!match) return
       
-      // Check match PIN code
-      // Test matches: PIN is 1234567
-      // Other matches: require matchPin
-      const isTestMatch = match.test === true
-      const expectedPin = isTestMatch ? '1234567' : match.matchPin
-      
-      if (expectedPin) {
-        const promptMessage = isTestMatch 
-          ? 'Enter PIN code to open this match (test match):\n(for test match psw is 1234567)'
-          : 'Enter PIN code to open this match:'
-        const enteredPin = prompt(promptMessage)
-        if (!enteredPin || enteredPin.trim() !== expectedPin) {
-          setAlertModal('Invalid PIN code. Access denied.')
-          return
+      // Check session lock (only for non-test matches)
+      if (!match.test) {
+        const sessionCheck = await checkMatchSession(targetMatchId)
+        
+        if (sessionCheck.locked && !sessionCheck.isCurrentSession) {
+          // Match is locked by another session - require game PIN
+          if (!match.gamePin) {
+            // No game PIN set - allow access (backward compatibility)
+            await lockMatchSession(targetMatchId)
+          } else {
+            // Require game PIN to take over
+            const enteredPin = prompt('This match is open in another session. Enter Game PIN to open it here:')
+            if (!enteredPin || !(await verifyGamePin(targetMatchId, enteredPin.trim()))) {
+              setAlertModal('Invalid Game PIN. Access denied.')
+              return
+            }
+            // PIN verified - take over the session
+            await lockMatchSession(targetMatchId)
+          }
+        } else if (!sessionCheck.locked) {
+          // Match is not locked - lock it for this session
+          await lockMatchSession(targetMatchId)
         }
+        // If isCurrentSession is true, we already own it - no need to lock again
       }
       
-      // Check if coin toss is confirmed
+      // Check match PIN code (only if coin toss not confirmed)
       const isCoinTossConfirmed = match.coinTossTeamA !== null && 
                                    match.coinTossTeamA !== undefined &&
                                    match.coinTossTeamB !== null && 
@@ -1627,6 +1656,23 @@ export default function App() {
                                    match.coinTossServeA !== undefined &&
                                    match.coinTossServeB !== null && 
                                    match.coinTossServeB !== undefined
+      
+      // Only check matchPin if coin toss is not confirmed (for backward compatibility)
+      if (!isCoinTossConfirmed) {
+        const isTestMatch = match.test === true
+        const expectedPin = isTestMatch ? '1234567' : match.matchPin
+        
+        if (expectedPin) {
+          const promptMessage = isTestMatch 
+            ? 'Enter PIN code to open this match (test match):\n(for test match psw is 1234567)'
+            : 'Enter PIN code to open this match:'
+          const enteredPin = prompt(promptMessage)
+          if (!enteredPin || enteredPin.trim() !== expectedPin) {
+            setAlertModal('Invalid PIN code. Access denied.')
+            return
+          }
+        }
+      }
       
       // If coin toss is confirmed and match is live, allow test matches to go to scoreboard
       // (This handles the case when coin toss is just confirmed)
@@ -1667,45 +1713,16 @@ export default function App() {
         setMatchId(targetMatchId)
         setShowMatchSetup(true)
       }
-    })
+    } catch (error) {
+      console.error('Error continuing match:', error)
+      setAlertModal('Error opening match. Please try again.')
+    }
   }
 
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
-      {/* Openvolley on the left side */}
-      <div style={{
-        position: 'fixed',
-        left: '20px',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        zIndex: 1000,
-        writingMode: 'vertical-rl',
-        textOrientation: 'mixed',
-        fontSize: '24px',
-        fontWeight: 700,
-        color: 'var(--text)',
-        opacity: 0.6
-      }}>
-        OPENVOLLEY
-      </div>
       
-      {/* eScoresheet on the right side */}
-      <div style={{
-        position: 'fixed',
-        right: '20px',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        zIndex: 1000,
-        writingMode: 'vertical-rl',
-        textOrientation: 'mixed',
-        fontSize: '24px',
-        fontWeight: 700,
-        color: 'var(--text)',
-        opacity: 0.6
-      }}>
-        ESCORESHEET
-      </div>
       
     <div className="container">
 

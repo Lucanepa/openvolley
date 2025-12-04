@@ -24,6 +24,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [type3Other, setType3Other] = useState('') // For "other" level
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
+  const [gamePin, setGamePin] = useState('') // Game PIN for official matches (not test matches)
   const [homeColor, setHomeColor] = useState('#ef4444')
   const [awayColor, setAwayColor] = useState('#3b82f6')
   const [homeShortName, setHomeShortName] = useState('')
@@ -325,6 +326,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.awayShortName) setAwayShortName(match.awayShortName)
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
+        if (match.gamePin) setGamePin(match.gamePin)
         
         // Generate PINs if they don't exist (for matches created before PIN feature)
         const generatePinCode = () => {
@@ -637,6 +639,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
+          gamePin: match && !match.test ? (gamePin || null) : null,
           scheduledAt,
           officials: [
             { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
@@ -881,6 +884,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
       game_n: gameN ? Number(gameN) : null,
       league,
+      gamePin: gamePin || null, // Game PIN for official matches (not test matches)
       refereePin: generatePinCode(),
       homeTeamPin: generatePinCode(),
       awayTeamPin: generatePinCode(),
@@ -1522,6 +1526,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div className="field"><label>Game #</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
           <div className="field"><label>League</label><input className="w-100 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
         </div>
+        {match && !match.test && (
+          <div className="row" style={{ marginTop:12 }}>
+            <div className="field">
+              <label>Game PIN</label>
+              <input 
+                className="w-80" 
+                type="text" 
+                inputMode="numeric" 
+                pattern="[0-9]*"
+                value={gamePin} 
+                onChange={e=>{
+                  const val = e.target.value.replace(/[^0-9]/g, '')
+                  setGamePin(val)
+                }} 
+                placeholder="Enter PIN to open in new session"
+                maxLength={20}
+              />
+              <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                Required to open this match in a new session if already open elsewhere
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
