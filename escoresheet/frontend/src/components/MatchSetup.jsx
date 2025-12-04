@@ -329,24 +329,60 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.gamePin) setGamePin(match.gamePin)
         
         // Generate PINs if they don't exist (for matches created before PIN feature)
-        const generatePinCode = () => {
+        const generatePinCode = (existingPins = []) => {
           const chars = '0123456789'
           let pin = ''
+          let attempts = 0
+          const maxAttempts = 100
+          
+          do {
+            pin = ''
           for (let i = 0; i < 6; i++) {
             pin += chars.charAt(Math.floor(Math.random() * chars.length))
           }
+            attempts++
+            if (attempts >= maxAttempts) {
+              // If we can't generate a unique PIN after many attempts, just return this one
+              break
+            }
+          } while (existingPins.includes(pin))
+          
           return pin
         }
         
         const updates = {}
+        const existingPins = []
         if (!match.refereePin) {
-          updates.refereePin = generatePinCode()
+          const refPin = generatePinCode(existingPins)
+          updates.refereePin = refPin
+          existingPins.push(refPin)
+        } else {
+          existingPins.push(match.refereePin)
         }
         if (!match.homeTeamPin) {
-          updates.homeTeamPin = generatePinCode()
+          const homePin = generatePinCode(existingPins)
+          updates.homeTeamPin = homePin
+          existingPins.push(homePin)
+        } else {
+          existingPins.push(match.homeTeamPin)
         }
         if (!match.awayTeamPin) {
-          updates.awayTeamPin = generatePinCode()
+          const awayPin = generatePinCode(existingPins)
+          updates.awayTeamPin = awayPin
+          existingPins.push(awayPin)
+        } else {
+          existingPins.push(match.awayTeamPin)
+        }
+        if (!match.homeTeamUploadPin) {
+          const homeUploadPin = generatePinCode(existingPins)
+          updates.homeTeamUploadPin = homeUploadPin
+          existingPins.push(homeUploadPin)
+        } else {
+          existingPins.push(match.homeTeamUploadPin)
+        }
+        if (!match.awayTeamUploadPin) {
+          const awayUploadPin = generatePinCode(existingPins)
+          updates.awayTeamUploadPin = awayUploadPin
         }
         if (Object.keys(updates).length > 0) {
           await db.matches.update(matchId, updates)
@@ -850,12 +886,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     })()
 
     // Generate 6-digit PIN code for referee authentication
-    const generatePinCode = () => {
+    const generatePinCode = (existingPins = []) => {
       const chars = '0123456789'
       let pin = ''
+      let attempts = 0
+      const maxAttempts = 100
+      
+      do {
+        pin = ''
       for (let i = 0; i < 6; i++) {
         pin += chars.charAt(Math.floor(Math.random() * chars.length))
       }
+        attempts++
+        if (attempts >= maxAttempts) {
+          // If we can't generate a unique PIN after many attempts, just return this one
+          break
+        }
+      } while (existingPins.includes(pin))
+      
       return pin
     }
 
@@ -885,9 +933,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       game_n: gameN ? Number(gameN) : null,
       league,
       gamePin: gamePin || null, // Game PIN for official matches (not test matches)
-      refereePin: generatePinCode(),
-      homeTeamPin: generatePinCode(),
-      awayTeamPin: generatePinCode(),
+      ...(() => {
+        // Generate all three PINs together to ensure uniqueness
+        const refPin = generatePinCode([])
+        const homePin = generatePinCode([refPin])
+        const awayPin = generatePinCode([refPin, homePin])
+        return {
+          refereePin: refPin,
+          homeTeamPin: homePin,
+          awayTeamPin: awayPin
+        }
+      })(),
       matchPin: matchPin.trim(),
       refereeConnectionEnabled: false,
       homeTeamConnectionEnabled: false,
@@ -1698,7 +1754,165 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             }}>Add</button>
           </div>
         </div>
-        {/* PDF Upload for Home Team */}
+        {/* Upload PIN for Home Team */}
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '12px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '14px', fontWeight: 600 }}>Upload PIN:</span>
+            {match?.homeTeamUploadPin ? (
+              <>
+                <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
+                  {match.homeTeamUploadPin}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={async () => {
+                    if (!matchId) return
+                    const generatePinCode = (existingPins = []) => {
+                      const chars = '0123456789'
+                      let pin = ''
+                      let attempts = 0
+                      const maxAttempts = 100
+                      do {
+                        pin = ''
+                        for (let i = 0; i < 6; i++) {
+                          pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                        }
+                        attempts++
+                        if (attempts >= maxAttempts) break
+                      } while (existingPins.includes(pin))
+                      return pin
+                    }
+                    const match = await db.matches.get(matchId)
+                    const existingPins = [
+                      match?.refereePin,
+                      match?.homeTeamPin,
+                      match?.awayTeamPin,
+                      match?.awayTeamUploadPin
+                    ].filter(Boolean)
+                    const newPin = generatePinCode(existingPins)
+                    await db.matches.update(matchId, { homeTeamUploadPin: newPin })
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                >
+                  Regenerate
+                </button>
+                <a
+                  href={`upload_roster.html?matchId=${matchId}&team=home&pin=${match.homeTeamUploadPin}`}
+                  target="_blank"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    background: 'var(--accent)',
+                    color: '#000',
+                    textDecoration: 'none',
+                    borderRadius: '4px',
+                    fontWeight: 600
+                  }}
+                >
+                  Open Upload Page
+                </a>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="secondary"
+                onClick={async () => {
+                  if (!matchId) return
+                  const generatePinCode = (existingPins = []) => {
+                    const chars = '0123456789'
+                    let pin = ''
+                    let attempts = 0
+                    const maxAttempts = 100
+                    do {
+                      pin = ''
+                      for (let i = 0; i < 6; i++) {
+                        pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                      }
+                      attempts++
+                      if (attempts >= maxAttempts) break
+                    } while (existingPins.includes(pin))
+                    return pin
+                  }
+                  const match = await db.matches.get(matchId)
+                  const existingPins = [
+                    match?.refereePin,
+                    match?.homeTeamPin,
+                    match?.awayTeamPin,
+                    match?.awayTeamUploadPin
+                  ].filter(Boolean)
+                  const newPin = generatePinCode(existingPins)
+                  await db.matches.update(matchId, { homeTeamUploadPin: newPin })
+                }}
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+              >
+                Generate Upload PIN
+              </button>
+            )}
+            {match?.pendingHomeRoster && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={async () => {
+                  if (!matchId || !match?.pendingHomeRoster) return
+                  const pending = match.pendingHomeRoster
+                  const importedPlayers = pending.players || []
+                  const importedBench = pending.bench || []
+                  
+                  // Update state
+                  setHomeRoster(importedPlayers)
+                  setBenchHome(importedBench)
+                  
+                  // Save to database immediately
+                  if (match.homeTeamId) {
+                    // Delete existing players
+                    const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
+                    for (const ep of existingPlayers) {
+                      await db.players.delete(ep.id)
+                    }
+                    
+                    // Add imported players
+                    if (importedPlayers.length) {
+                      await db.players.bulkAdd(
+                        importedPlayers.map(p => ({
+                          teamId: match.homeTeamId,
+                          number: p.number,
+                          name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+                          lastName: p.lastName || '',
+                          firstName: p.firstName || '',
+                          dob: p.dob || null,
+                          libero: p.libero || '',
+                          isCaptain: !!p.isCaptain,
+                          role: null,
+                          createdAt: new Date().toISOString()
+                        }))
+                      )
+                    }
+                    
+                    // Update match with bench officials
+                    await db.matches.update(matchId, {
+                      bench_home: importedBench,
+                      pendingHomeRoster: null
+                    })
+                  } else {
+                    // If no teamId yet, just clear pending
+                    await db.matches.update(matchId, { pendingHomeRoster: null })
+                  }
+                }}
+                style={{ padding: '6px 12px', fontSize: '12px', background: '#22c55e', color: '#000' }}
+              >
+                Confirm Import
+              </button>
+            )}
+          </div>
+        </div>
+        {/* PDF Upload for Home Team (Legacy - kept for backward compatibility) */}
         <div style={{
           border: '1px solid rgba(255, 255, 255, 0.2)',
           borderRadius: '8px',
@@ -2023,7 +2237,165 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         )}
         <h4>Roster</h4>
         
-        {/* PDF Upload for Away Team */}
+        {/* Upload PIN for Away Team */}
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '12px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '14px', fontWeight: 600 }}>Upload PIN:</span>
+            {match?.awayTeamUploadPin ? (
+              <>
+                <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
+                  {match.awayTeamUploadPin}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={async () => {
+                    if (!matchId) return
+                    const generatePinCode = (existingPins = []) => {
+                      const chars = '0123456789'
+                      let pin = ''
+                      let attempts = 0
+                      const maxAttempts = 100
+                      do {
+                        pin = ''
+                        for (let i = 0; i < 6; i++) {
+                          pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                        }
+                        attempts++
+                        if (attempts >= maxAttempts) break
+                      } while (existingPins.includes(pin))
+                      return pin
+                    }
+                    const match = await db.matches.get(matchId)
+                    const existingPins = [
+                      match?.refereePin,
+                      match?.homeTeamPin,
+                      match?.awayTeamPin,
+                      match?.homeTeamUploadPin
+                    ].filter(Boolean)
+                    const newPin = generatePinCode(existingPins)
+                    await db.matches.update(matchId, { awayTeamUploadPin: newPin })
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                >
+                  Regenerate
+                </button>
+                <a
+                  href={`upload_roster.html?matchId=${matchId}&team=away&pin=${match.awayTeamUploadPin}`}
+                  target="_blank"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    background: 'var(--accent)',
+                    color: '#000',
+                    textDecoration: 'none',
+                    borderRadius: '4px',
+                    fontWeight: 600
+                  }}
+                >
+                  Open Upload Page
+                </a>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="secondary"
+                onClick={async () => {
+                  if (!matchId) return
+                  const generatePinCode = (existingPins = []) => {
+                    const chars = '0123456789'
+                    let pin = ''
+                    let attempts = 0
+                    const maxAttempts = 100
+                    do {
+                      pin = ''
+                      for (let i = 0; i < 6; i++) {
+                        pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                      }
+                      attempts++
+                      if (attempts >= maxAttempts) break
+                    } while (existingPins.includes(pin))
+                    return pin
+                  }
+                  const match = await db.matches.get(matchId)
+                  const existingPins = [
+                    match?.refereePin,
+                    match?.homeTeamPin,
+                    match?.awayTeamPin,
+                    match?.homeTeamUploadPin
+                  ].filter(Boolean)
+                  const newPin = generatePinCode(existingPins)
+                  await db.matches.update(matchId, { awayTeamUploadPin: newPin })
+                }}
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+              >
+                Generate Upload PIN
+              </button>
+            )}
+            {match?.pendingAwayRoster && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={async () => {
+                  if (!matchId || !match?.pendingAwayRoster) return
+                  const pending = match.pendingAwayRoster
+                  const importedPlayers = pending.players || []
+                  const importedBench = pending.bench || []
+                  
+                  // Update state
+                  setAwayRoster(importedPlayers)
+                  setBenchAway(importedBench)
+                  
+                  // Save to database immediately
+                  if (match.awayTeamId) {
+                    // Delete existing players
+                    const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
+                    for (const ep of existingPlayers) {
+                      await db.players.delete(ep.id)
+                    }
+                    
+                    // Add imported players
+                    if (importedPlayers.length) {
+                      await db.players.bulkAdd(
+                        importedPlayers.map(p => ({
+                          teamId: match.awayTeamId,
+                          number: p.number,
+                          name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+                          lastName: p.lastName || '',
+                          firstName: p.firstName || '',
+                          dob: p.dob || null,
+                          libero: p.libero || '',
+                          isCaptain: !!p.isCaptain,
+                          role: null,
+                          createdAt: new Date().toISOString()
+                        }))
+                      )
+                    }
+                    
+                    // Update match with bench officials
+                    await db.matches.update(matchId, {
+                      bench_away: importedBench,
+                      pendingAwayRoster: null
+                    })
+                  } else {
+                    // If no teamId yet, just clear pending
+                    await db.matches.update(matchId, { pendingAwayRoster: null })
+                  }
+                }}
+                style={{ padding: '6px 12px', fontSize: '12px', background: '#22c55e', color: '#000' }}
+              >
+                Confirm Import
+              </button>
+            )}
+          </div>
+        </div>
+        {/* PDF Upload for Away Team (Legacy - kept for backward compatibility) */}
         <div style={{
           border: '1px solid rgba(255, 255, 255, 0.2)',
           borderRadius: '8px',
@@ -3677,7 +4049,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </label>
           {enabled && pin && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Bench PIN:</span>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                {team === 'referee' ? 'Referee PIN:' : team === 'home' ? 'Home Bench PIN:' : 'Away Bench PIN:'}
+              </span>
               <span style={{
                 fontWeight: 700,
                 fontSize: '14px',

@@ -1530,19 +1530,19 @@ export default function App() {
       
       // Only check PIN if coin toss is not confirmed
       if (!isCoinTossConfirmed) {
-        // Check test match PIN (always 1234567)
-        const enteredPin = prompt('Enter PIN code to open test match:\n(for test match psw is 1234567)')
-        if (!enteredPin || enteredPin.trim() !== '1234567') {
-          setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
-          return
+      // Check test match PIN (always 1234567)
+      const enteredPin = prompt('Enter PIN code to open test match:\n(for test match psw is 1234567)')
+      if (!enteredPin || enteredPin.trim() !== '1234567') {
+        setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
+        return
         }
       }
       
       // Check match state to determine where to continue
       const isMatchSetupComplete = existing.homeCoachSignature && 
-                                  existing.homeCaptainSignature && 
-                                  existing.awayCoachSignature && 
-                                  existing.awayCaptainSignature
+                                    existing.homeCaptainSignature && 
+                                    existing.awayCoachSignature && 
+                                    existing.awayCaptainSignature
       
       setMatchId(existing.id)
       
@@ -1617,7 +1617,7 @@ export default function App() {
     if (!targetMatchId) return
     
     try {
-      // Get the match to check its status
+    // Get the match to check its status
       const match = await db.matches.get(targetMatchId)
       if (!match) return
       
@@ -1635,8 +1635,8 @@ export default function App() {
             const enteredPin = prompt('This match is open in another session. Enter Game PIN to open it here:')
             if (!enteredPin || !(await verifyGamePin(targetMatchId, enteredPin.trim()))) {
               setAlertModal('Invalid Game PIN. Access denied.')
-              return
-            }
+          return
+        }
             // PIN verified - take over the session
             await lockMatchSession(targetMatchId)
           }

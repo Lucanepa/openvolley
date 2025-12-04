@@ -141,4 +141,25 @@ db.version(10).stores({
   })
 })
 
+// Version 11: Add upload pins and pending roster data to matches
+db.version(11).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add upload pin and pending roster fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homeTeamUploadPin) match.homeTeamUploadPin = null
+    if (!match.awayTeamUploadPin) match.awayTeamUploadPin = null
+    if (!match.pendingHomeRoster) match.pendingHomeRoster = null
+    if (!match.pendingAwayRoster) match.pendingAwayRoster = null
+  })
+})
+
 
