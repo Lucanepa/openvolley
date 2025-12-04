@@ -18,6 +18,7 @@ export default function LivescoreApp() {
   const [gameId, setGameId] = useState(null)
   const [gameIdInput, setGameIdInput] = useState('')
   const [error, setError] = useState('')
+  const [sidesSwitched, setSidesSwitched] = useState(false)
 
   // Get gameId from URL (optional)
   useEffect(() => {
@@ -89,6 +90,49 @@ export default function LivescoreApp() {
 
   // Determine left/right teams
   const leftIsHome = useMemo(() => {
+    // If sides are manually switched, override the computed value
+    if (sidesSwitched) {
+      // Get the base leftIsHome value
+      if (!data?.set) return false
+      
+      const setIndex = data.set.index
+      
+      // Check for manual override first (for sets 1-4)
+      if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
+        const override = data.match.setLeftTeamOverrides[setIndex]
+        if (override) {
+          const leftTeamKey = override === 'A' ? teamAKey : teamBKey
+          return leftTeamKey !== 'home' // Invert for switch
+        }
+      }
+      
+      // Set 1: Team A on left
+      if (setIndex === 1) {
+        return teamAKey !== 'home' // Invert for switch
+      } 
+      
+      // Set 5: Special case with court switch at 8 points
+      if (setIndex === 5) {
+        if (data.match?.set5LeftTeam) {
+          const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
+          let isHome = leftTeamKey === 'home'
+          if (data.match?.set5CourtSwitched) {
+            isHome = !isHome
+          }
+          return !isHome // Invert for switch
+        }
+        let isHome = teamAKey !== 'home'
+        if (data.match?.set5CourtSwitched) {
+          isHome = !isHome
+        }
+        return !isHome // Invert for switch
+      }
+      
+      // Sets 2, 3, 4: Teams alternate sides
+      return setIndex % 2 === 1 ? (teamAKey !== 'home') : (teamAKey === 'home') // Invert for switch
+    }
+    
+    // Normal computation (not switched)
     if (!data?.set) return true
     
     const setIndex = data.set.index
@@ -126,7 +170,7 @@ export default function LivescoreApp() {
     
     // Sets 2, 3, 4: Teams alternate sides
     return setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey])
+  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey, sidesSwitched])
 
   // Calculate set score (number of sets won by each team)
   const setScore = useMemo(() => {
@@ -272,6 +316,7 @@ export default function LivescoreApp() {
           <form onSubmit={handleGameIdSubmit} style={{
             display: 'flex',
             flexDirection: 'column',
+            alignItems: 'center',
             gap: '16px'
           }}>
             <input
@@ -292,7 +337,9 @@ export default function LivescoreApp() {
                 color: '#fff',
                 textAlign: 'center',
                 outline: 'none',
-                transition: 'border-color 0.2s'
+                transition: 'border-color 0.2s',
+                width: '100%',
+                maxWidth: '300px'
               }}
               onFocus={(e) => {
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)'
@@ -309,7 +356,10 @@ export default function LivescoreApp() {
                 border: '1px solid rgba(239, 68, 68, 0.4)',
                 borderRadius: '6px',
                 color: '#ff6b6b',
-                fontSize: '14px'
+                fontSize: '14px',
+                width: '100%',
+                maxWidth: '300px',
+                textAlign: 'center'
               }}>
                 {error}
               </div>
@@ -325,7 +375,9 @@ export default function LivescoreApp() {
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                transition: 'opacity 0.2s'
+                transition: 'opacity 0.2s',
+                width: '100%',
+                maxWidth: '300px'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.opacity = '0.9'
@@ -443,6 +495,28 @@ export default function LivescoreApp() {
           gap: '16px',
           fontSize: '14px'
         }}>
+          <button
+            onClick={() => setSidesSwitched(!sidesSwitched)}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'background 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            Switch Sides
+          </button>
           <span style={{ color: 'var(--muted)' }}>Game ID: {gameId}</span>
           <button
             onClick={() => {
@@ -473,167 +547,16 @@ export default function LivescoreApp() {
         </div>
       </div>
 
-      {/* Teams Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
-        minHeight: '80px',
-        padding: '16px 20px',
-        background: 'rgba(15, 23, 42, 0.4)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-      }}>
-        {/* Left Team - 40% */}
-        <div style={{
-          flex: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gap: '8px',
-          paddingRight: '12px',
-          height: '100%'
-        }}>
-          <div style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '16px',
-            fontWeight: 700,
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            color: 'var(--text)',
-            textAlign: 'center',
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minWidth: '50px'
-          }}>
-            {setScore.left}
-          </div>
-          <span style={{
-            fontSize: '18px',
-            fontWeight: 600,
-            color: 'var(--text)',
-            lineHeight: '1.2'
-          }}>
-            {leftTeam.name}
-          </span>
-          <div style={{
-            padding: '4px 10px',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: 700,
-            background: leftTeam.color,
-            color: isBrightColor(leftTeam.color) ? '#000' : '#fff',
-            minWidth: '32px',
-            textAlign: 'center',
-            lineHeight: '1.2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            {leftTeam.isTeamA ? 'A' : 'B'}
-          </div>
-        </div>
-
-        {/* Set Counter - 20% */}
-        <div style={{
-          flex: '0 0 20%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          gap: '16px'
-        }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '2px'
-          }}>
-            <span style={{
-              fontSize: '20px',
-              fontWeight: 600,
-              color: 'var(--muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              lineHeight: '1'
-            }}>
-              SET
-            </span>
-            <span style={{
-              fontSize: '20px',
-              fontWeight: 700,
-              color: 'var(--text)',
-              lineHeight: '1'
-            }}>
-              {data?.set?.index || 1}
-            </span>
-          </div>
-        </div>
-
-        {/* Right Team - 40% */}
-        <div style={{
-          flex: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          gap: '8px',
-          paddingLeft: '12px',
-          height: '100%'
-        }}>
-          <div style={{
-            padding: '4px 10px',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: 700,
-            background: rightTeam.color,
-            color: isBrightColor(rightTeam.color) ? '#000' : '#fff',
-            minWidth: '32px',
-            textAlign: 'center',
-            lineHeight: '1.2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            {rightTeam.isTeamA ? 'A' : 'B'}
-          </div>
-          <span style={{
-            fontSize: '18px',
-            fontWeight: 600,
-            color: 'var(--text)',
-            lineHeight: '1.2'
-          }}>
-            {rightTeam.name}
-          </span>
-          <div style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '16px',
-            fontWeight: 700,
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            color: 'var(--text)',
-            textAlign: 'center',
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minWidth: '50px'
-          }}>
-            {setScore.right}
-          </div>
-        </div>
-      </div>
 
       {/* Score Counter */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '40px 20px',
-        gap: '40px'
+        padding: '100px 20px',
+        width: '100%',
+        position: 'relative',
+        gap: '20px'
       }}>
         {/* Left Team Score */}
         <div style={{
@@ -642,17 +565,19 @@ export default function LivescoreApp() {
           alignItems: 'center',
           gap: '12px',
           position: 'relative',
-          padding: '0 44px'
+          padding: '0 20px 0 44px',
+          flex: '0 1 auto',
+          minWidth: 0
         }}>
           {leftIsServing && (
             <img
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '32px',
-                height: '32px',
+                width: '80px',
+                height: '80px',
                 position: 'absolute',
-                left: 10,
+                left: -50,
                 top: '50%',
                 transform: 'translateY(-50%)',
                 filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
@@ -660,15 +585,16 @@ export default function LivescoreApp() {
             />
           )}
           <div style={{
-            fontSize: '72px',
+            fontSize: '200px',
             fontWeight: 700,
             color: '#fff',
-            lineHeight: '1'
+            lineHeight: '1',
+            textAlign: 'center'
           }}>
             {currentScore.left}
           </div>
           <div style={{
-            fontSize: '16px',
+            fontSize: '20px',
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)',
             textTransform: 'uppercase'
@@ -677,11 +603,18 @@ export default function LivescoreApp() {
           </div>
         </div>
 
-        {/* Separator */}
+        {/* Separator - Always Centered */}
         <div style={{
-          fontSize: '48px',
+          fontSize: '200px',
           fontWeight: 700,
-          color: 'rgba(255, 255, 255, 0.5)'
+          color: 'rgba(255, 255, 255, 0.5)',
+          flexShrink: 0,
+          width: '10px',
+          textAlign: 'center',
+          lineHeight: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}>
           :
         </div>
@@ -693,17 +626,19 @@ export default function LivescoreApp() {
           alignItems: 'center',
           gap: '12px',
           position: 'relative',
-          padding: '0 44px'
+          padding: '0 44px 0 20px',
+          flex: '0 1 auto',
+          minWidth: 0
         }}>
           {rightIsServing && (
             <img
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '32px',
-                height: '32px',
+                width: '80px',
+                height: '80px',
                 position: 'absolute',
-                right: 10,
+                right: -50,
                 top: '50%',
                 transform: 'translateY(-50%)',
                 filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
@@ -711,15 +646,16 @@ export default function LivescoreApp() {
             />
           )}
           <div style={{
-            fontSize: '72px',
+            fontSize: '200px',
             fontWeight: 700,
             color: '#fff',
-            lineHeight: '1'
+            lineHeight: '1',
+            textAlign: 'center'
           }}>
             {currentScore.right}
           </div>
           <div style={{
-            fontSize: '16px',
+            fontSize: '20px',
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)',
             textTransform: 'uppercase'
@@ -728,7 +664,77 @@ export default function LivescoreApp() {
           </div>
         </div>
       </div>
+
+      {/* Set Score and Set Number */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        gap: '24px'
+      }}>
+        <div style={{
+          padding: '6px 12px',
+          borderRadius: '6px',
+          fontSize: '100px',
+          fontWeight: 700,
+          background: 'rgba(255, 255, 255, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          color: 'var(--text)',
+          textAlign: 'center',
+          lineHeight: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          {setScore.left}
+        </div>
+        
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <span style={{
+            fontSize: '100px',
+            fontWeight: 800,
+            color: 'var(--text)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            gap: '10px',
+            lineHeight: '1'
+          }}>
+            SET 
+            
+          </span>
+          <span style={{
+              fontSize: '100px',
+              fontWeight: 800,
+              color: 'var(--text)',
+              lineHeight: '1'
+            }}>
+              {data?.set?.index || 1}
+            </span>
+        </div>
+        
+        <div style={{
+          padding: '6px 12px',
+          borderRadius: '6px',
+          fontSize: '100px',
+          fontWeight: 700,
+          background: 'rgba(255, 255, 255, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          color: 'var(--text)',
+          textAlign: 'center',
+          lineHeight: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          {setScore.right}
+        </div>
+      </div>
     </div>
   )
 }
-

@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import Referee from './components/Referee'
-import mikasaVolleyball from './mikasa_v200w.png'
-
+import refereeIcon from './ref.png'
 export default function RefereeApp() {
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
@@ -108,9 +107,9 @@ export default function RefereeApp() {
         textAlign: 'center'
       }}>
         <img 
-          src={mikasaVolleyball} 
-          alt="Volleyball" 
-          style={{ width: '80px', height: '80px', marginBottom: '20px' }} 
+          src={refereeIcon} 
+          alt="Referee Icon" 
+          style={{ width: 'auto', height: 'auto', marginBottom: '20px' }} 
         />
         <h1 style={{ 
           fontSize: '24px', 
