@@ -1498,13 +1498,12 @@ export default function App() {
   async function continueTestMatch() {
     if (testMatchLoading) return
 
-    // Test matches are local only - just load from Dexie
     // Use toArray and filter to avoid index requirement
     const matches = await db.matches.orderBy('createdAt').reverse().toArray()
     const existing = matches.find(m => m.test === true && m.status !== 'final')
     if (existing) {
       // Check test match PIN (always 1234567)
-      const enteredPin = prompt('Enter PIN code to open test match:')
+      const enteredPin = prompt('Enter PIN code to open test match:\n(for test match psw is 1234567)')
       if (!enteredPin || enteredPin.trim() !== '1234567') {
         setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
         return
@@ -1609,7 +1608,10 @@ export default function App() {
       const expectedPin = isTestMatch ? '1234567' : match.matchPin
       
       if (expectedPin) {
-        const enteredPin = prompt(`Enter PIN code to open this match${isTestMatch ? ' (test match)' : ''}:`)
+        const promptMessage = isTestMatch 
+          ? 'Enter PIN code to open this match (test match):\n(for test match psw is 1234567)'
+          : 'Enter PIN code to open this match:'
+        const enteredPin = prompt(promptMessage)
         if (!enteredPin || enteredPin.trim() !== expectedPin) {
           setAlertModal('Invalid PIN code. Access denied.')
           return
@@ -1670,19 +1672,42 @@ export default function App() {
 
 
   return (
-    <div className="container">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <h1 style={{ margin: 0 }}>Openvolley eScoresheet</h1>
+    <div style={{ position: 'relative', minHeight: '100vh' }}>
+      {/* Openvolley on the left side */}
+      <div style={{
+        position: 'fixed',
+        left: '20px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        zIndex: 1000,
+        writingMode: 'vertical-rl',
+        textOrientation: 'mixed',
+        fontSize: '24px',
+        fontWeight: 700,
+        color: 'var(--text)',
+        opacity: 0.6
+      }}>
+        OPENVOLLEY
       </div>
       
-      {/* Test Match Banner - show when test match is active */}
-      {matchId && currentMatch && currentMatch.test === true && (
-        <div className="test-match-banner">
-          <div className="test-match-content">
-            <span className="test-match-label">Test Match</span>
-          </div>
-        </div>
-      )}
+      {/* eScoresheet on the right side */}
+      <div style={{
+        position: 'fixed',
+        right: '20px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        zIndex: 1000,
+        writingMode: 'vertical-rl',
+        textOrientation: 'mixed',
+        fontSize: '24px',
+        fontWeight: 700,
+        color: 'var(--text)',
+        opacity: 0.6
+      }}>
+        ESCORESHEET
+      </div>
+      
+    <div className="container">
 
       {!matchId && matchStatus && (
         <div className="match-status-banner">
@@ -1759,7 +1784,6 @@ export default function App() {
               <div className="home-card home-card--test">
                 <div className="home-card-header">
                   <h2>Test Match</h2>
-                  <span className="home-card-hint">Local only</span>
                 </div>
                 <div className="home-card-actions">
                   <button 
@@ -1974,6 +1998,7 @@ export default function App() {
           </div>
         </Modal>
       )}
+    </div>
     </div>
   )
 }
