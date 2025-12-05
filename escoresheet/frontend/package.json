@@ -6,6 +6,7 @@
   "main": "electron/main.js",
   "description": "Openvolley eScoresheet - Offline-first volleyball match scoring application",
   "author": "Luca Canepa <luca.canepa@gmail.com>",
+  "homepage": "https://github.com/lucacanepa/openvolley",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
