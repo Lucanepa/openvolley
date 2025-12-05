@@ -709,18 +709,46 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           bench_away: benchAway
         })
         
-        // Also update team colors if teams exist
-        if (match?.homeTeamId) {
-          await db.teams.update(match.homeTeamId, { 
-            name: home,
-            color: homeColor 
-          })
+        // Update or create teams
+        let homeTeamId = match?.homeTeamId
+        let awayTeamId = match?.awayTeamId
+        
+        if (home && home.trim()) {
+          if (homeTeamId) {
+            // Update existing team
+            await db.teams.update(homeTeamId, { 
+              name: home.trim(),
+              color: homeColor 
+            })
+          } else {
+            // Create new team if it doesn't exist
+            homeTeamId = await db.teams.add({
+              name: home.trim(),
+              color: homeColor,
+              createdAt: new Date().toISOString()
+            })
+            // Update match with new team ID
+            await db.matches.update(matchId, { homeTeamId })
+          }
         }
-        if (match?.awayTeamId) {
-          await db.teams.update(match.awayTeamId, { 
-            name: away,
-            color: awayColor 
-          })
+        
+        if (away && away.trim()) {
+          if (awayTeamId) {
+            // Update existing team
+            await db.teams.update(awayTeamId, { 
+              name: away.trim(),
+              color: awayColor 
+            })
+          } else {
+            // Create new team if it doesn't exist
+            awayTeamId = await db.teams.add({
+              name: away.trim(),
+              color: awayColor,
+              createdAt: new Date().toISOString()
+            })
+            // Update match with new team ID
+            await db.matches.update(matchId, { awayTeamId })
+          }
         }
       }
       
@@ -4024,8 +4052,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     </span>
   )
 
+  // Officials are complete if at least 1st referee and scorer are filled
+  // 2nd referee and assistant scorer are optional
   const officialsConfigured =
-    !!(ref1Last && ref1First && ref2Last && ref2First && scorerLast && scorerFirst && asstLast && asstFirst)
+    !!(ref1Last && ref1First && scorerLast && scorerFirst)
   const matchInfoConfigured = !!(date || time || hall || city || league)
   const homeConfigured = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
   const awayConfigured = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
