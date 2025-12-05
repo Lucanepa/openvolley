@@ -1801,10 +1801,6 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="home-support">
-                Support: luca.canepa@gmail.com
-              </div>
-              
               <div style={{ marginTop: '24px' }}>
                 <button
                   onClick={() => setHomeOptionsModal(true)}
@@ -1821,6 +1817,11 @@ export default function App() {
                 >
                   Options
                 </button>
+              </div>
+              
+              
+              <div className="home-support">
+                Support: luca.canepa@gmail.com
               </div>
             </div>
           </div>
@@ -2210,6 +2211,125 @@ export default function App() {
                 <span style={{ fontSize: '20px' }}>?</span>
                 <span>Show Guide</span>
               </button>
+            </div>
+            
+            <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>Download Desktop App</h3>
+              {(() => {
+                const githubRepo = import.meta.env.VITE_GITHUB_REPO || 'lucacanepa/openvolley'
+                const baseUrl = `https://github.com/${githubRepo}/releases/latest/download`
+                const releasesUrl = `https://github.com/${githubRepo}/releases/latest`
+                
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <a
+                      href={`${baseUrl}/Openvolley-eScoresheet-Setup-x64.exe`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 16px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                    >
+                      <span style={{ fontSize: '20px' }}>🪟</span>
+                      <span>Windows (64-bit)</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '14px', opacity: 0.7 }}>→</span>
+                    </a>
+                    
+                    <a
+                      href={`${baseUrl}/Openvolley-eScoresheet-x64.dmg`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 16px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                    >
+                      <span style={{ fontSize: '20px' }}>🍎</span>
+                      <span>macOS (Intel & Apple Silicon)</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '14px', opacity: 0.7 }}>→</span>
+                    </a>
+                    
+                    <a
+                      href={`${baseUrl}/Openvolley-eScoresheet-x64.AppImage`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 16px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                    >
+                      <span style={{ fontSize: '20px' }}>🐧</span>
+                      <span>Linux (AppImage)</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '14px', opacity: 0.7 }}>→</span>
+                    </a>
+                    
+                    <div style={{ 
+                      marginTop: '8px', 
+                      fontSize: '12px', 
+                      color: 'var(--muted)',
+                      textAlign: 'center'
+                    }}>
+                      <a
+                        href={releasesUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--muted)', textDecoration: 'underline' }}
+                      >
+                        View all downloads
+                      </a>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>

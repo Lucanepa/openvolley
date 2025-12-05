@@ -7,25 +7,41 @@ export default function GuideModal({ open, onClose }) {
 
   useEffect(() => {
     if (open) {
-      // Fetch the USER_GUIDE.md file
-      fetch('/USER_GUIDE.md')
-        .then(response => {
-          if (!response.ok) {
-            // Try alternative path
-            return fetch('../USER_GUIDE.md')
-          }
-          return response
-        })
-        .then(response => response.text())
-        .then(text => {
-          setGuideContent(text)
-          setLoading(false)
-        })
-        .catch(error => {
-          console.error('Error loading guide:', error)
+      // Fetch the USER_GUIDE.md file from public directory
+      // Try multiple paths to handle different deployment scenarios
+      const basePath = import.meta.env.BASE_URL || '/'
+      const paths = [
+        `${basePath}USER_GUIDE.md`.replace(/\/\//g, '/'), // Normalize double slashes
+        '/USER_GUIDE.md',
+        './USER_GUIDE.md'
+      ]
+      
+      const tryFetch = async (pathIndex) => {
+        if (pathIndex >= paths.length) {
           setGuideContent('Error loading user guide. Please check the USER_GUIDE.md file.')
           setLoading(false)
-        })
+          return
+        }
+        
+        try {
+          const response = await fetch(paths[pathIndex])
+          if (response.ok) {
+            const text = await response.text()
+            if (text) {
+              setGuideContent(text)
+              setLoading(false)
+              return
+            }
+          }
+          // If this path failed, try the next one
+          tryFetch(pathIndex + 1)
+        } catch (error) {
+          // Try next path
+          tryFetch(pathIndex + 1)
+        }
+      }
+      
+      tryFetch(0)
     }
   }, [open])
 
