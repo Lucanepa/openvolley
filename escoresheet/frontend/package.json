@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
-    "electron:clean": "node -e \"require('fs').rmSync('dist-electron', {recursive: true, force: true})\" || exit 0",
+    "electron:clean": "node -e \"const fs=require('fs'); try{fs.rmSync('dist-electron',{recursive:true,force:true})}catch(e){console.log('Clean failed, continuing...')}\"",
     "electron:build": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder",
     "electron:build:win": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --win",
     "electron:build:win:pwsh": "npm run electron:clean && $env:ELECTRON='true'; npm run build; electron-builder --win",
