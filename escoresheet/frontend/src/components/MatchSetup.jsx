@@ -267,15 +267,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         setBenchHome(resolvedHomeBench)
         setBenchAway(resolvedAwayBench)
         
-        // Update input widths when teams are loaded
+        // Update input widths when teams are loaded - set default width based on content
         setTimeout(() => {
           if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-            homeTeamMeasureRef.current.textContent = home || 'Home team name'
+            const currentValue = home || 'Home team name'
+            homeTeamMeasureRef.current.textContent = currentValue
             const measuredWidth = homeTeamMeasureRef.current.offsetWidth
             homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
           }
           if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-            awayTeamMeasureRef.current.textContent = away || 'Away team name'
+            const currentValue = away || 'Away team name'
+            awayTeamMeasureRef.current.textContent = currentValue
             const measuredWidth = awayTeamMeasureRef.current.offsetWidth
             awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
           }
@@ -733,22 +735,48 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     }
   }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
 
-  // Update input widths when home/away values change
+  // Update input widths when home/away values change - set default width based on content
   useEffect(() => {
     if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-      homeTeamMeasureRef.current.textContent = home || 'Home team name'
+      const currentValue = home || 'Home team name'
+      homeTeamMeasureRef.current.textContent = currentValue
       const measuredWidth = homeTeamMeasureRef.current.offsetWidth
+      // Always set width based on content, not just on focus
       homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
     }
-  }, [home])
+  }, [home, currentView]) // Also update when view changes (e.g., going back)
 
   useEffect(() => {
     if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-      awayTeamMeasureRef.current.textContent = away || 'Away team name'
+      const currentValue = away || 'Away team name'
+      awayTeamMeasureRef.current.textContent = currentValue
       const measuredWidth = awayTeamMeasureRef.current.offsetWidth
+      // Always set width based on content, not just on focus
       awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
     }
-  }, [away])
+  }, [away, currentView]) // Also update when view changes (e.g., going back)
+  
+  // Set initial width when returning to main view to ensure width is correct
+  useEffect(() => {
+    if (currentView === 'main') {
+      // Small delay to ensure refs are available after view change
+      const timeoutId = setTimeout(() => {
+        if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
+          const currentValue = home || 'Home team name'
+          homeTeamMeasureRef.current.textContent = currentValue
+          const measuredWidth = homeTeamMeasureRef.current.offsetWidth
+          homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+        }
+        if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
+          const currentValue = away || 'Away team name'
+          awayTeamMeasureRef.current.textContent = currentValue
+          const measuredWidth = awayTeamMeasureRef.current.offsetWidth
+          awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+        }
+      }, 50)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [currentView, home, away])
 
   // Helper function to generate smart short name placeholder
   function generateShortNamePlaceholder(teamName) {
@@ -4310,22 +4338,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
             <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8, flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', flexWrap: 'wrap' }}>
-                <div 
-                  className="shirt" 
-                  style={{ background: homeColor, cursor: 'pointer' }}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const centerX = rect.left + rect.width / 2
-                    setColorPickerModal({ 
-                      team: 'home', 
-                      position: { x: centerX, y: rect.bottom + 8 } 
-                    })
-                  }}
-                >
-                  <div className="collar" style={{ background: homeColor }} />
-                  <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
-                </div>
-                <span></span>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, position: 'relative', minWidth: 0 }}>
                   <span
                     ref={homeTeamMeasureRef}
@@ -4357,7 +4369,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     placeholder="Home team name"
                     style={{
                       minWidth: '80px',
-                      width: '80px',
                       padding: '8px 12px',
                       borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -4398,6 +4409,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                         fontWeight: 500
                       }}
                     />
+                    <div 
+                      className="shirt" 
+                      style={{ background: homeColor, cursor: 'pointer', marginLeft: '4px' }}
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const centerX = rect.left + rect.width / 2
+                        setColorPickerModal({ 
+                          team: 'home', 
+                          position: { x: centerX, y: rect.bottom + 8 } 
+                        })
+                      }}
+                    >
+                      <div className="collar" style={{ background: homeColor }} />
+                      <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4434,22 +4460,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
             <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8, flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', flexWrap: 'wrap' }}>
-                <div 
-                  className="shirt" 
-                  style={{ background: awayColor, cursor: 'pointer' }}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const centerX = rect.left + rect.width / 2
-                    setColorPickerModal({ 
-                      team: 'away', 
-                      position: { x: centerX, y: rect.bottom + 8 } 
-                    })
-                  }}
-                >
-                  <div className="collar" style={{ background: awayColor }} />
-                  <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
-                </div>
-                <span></span>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, position: 'relative', minWidth: 0 }}>
                   <span
                     ref={awayTeamMeasureRef}
@@ -4481,7 +4491,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     placeholder="Away team name"
                     style={{
                       minWidth: '80px',
-                      width: '80px',
                       padding: '8px 12px',
                       borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -4522,6 +4531,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                         fontWeight: 500
                       }}
                     />
+                    <div 
+                      className="shirt" 
+                      style={{ background: awayColor, cursor: 'pointer', marginLeft: '4px' }}
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const centerX = rect.left + rect.width / 2
+                        setColorPickerModal({ 
+                          team: 'away', 
+                          position: { x: centerX, y: rect.bottom + 8 } 
+                        })
+                      }}
+                    >
+                      <div className="collar" style={{ background: awayColor }} />
+                      <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
+                    </div>
                   </div>
                 </div>
               </div>
