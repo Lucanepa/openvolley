@@ -2217,7 +2217,7 @@ export default function App() {
               <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>Download Desktop App</h3>
               {(() => {
                 const githubRepo = import.meta.env.VITE_GITHUB_REPO || 'lucacanepa/openvolley'
-                const releasesUrl = `https://github.com/${githubRepo}/releases/latest`
+                const releasesUrl = `https://github.com/Lucanepa/openvolley/releases`
                 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
