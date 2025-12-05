@@ -1766,7 +1766,6 @@ export default function App() {
           <div className="home-view">
             <div className="home-content">
               <h1 className="home-title">Openvolley eScoresheet Indoor</h1>
-              <p className="home-subtitle">Version {__APP_VERSION__ || '1.0.0'}</p>
               <div className="home-logo" style={{ width: '200px' }}>
                 <img src={favicon} alt="Openvolley" style={{ width: '100%' }} />
               </div>
@@ -1822,6 +1821,8 @@ export default function App() {
               
               <div className="home-support">
                 Support: luca.canepa@gmail.com
+                
+              <p className="home-subtitle">Version {__APP_VERSION__ || '1.0.0'}</p>
               </div>
             </div>
           </div>
