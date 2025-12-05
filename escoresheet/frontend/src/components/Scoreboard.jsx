@@ -10087,7 +10087,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             onClick={() => setReopenSetConfirm({ setId: set.id, setIndex: set.index })}
                             style={{ textAlign: 'left', padding: '10px 16px' }}
                           >
-                            Reopen Set {set.index + 1} ({set.homePoints} - {set.awayPoints})
+                            Reopen Set {set.index} ({set.homePoints} - {set.awayPoints})
                           </button>
                         ))}
                       </div>
