@@ -646,8 +646,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           match_type_2: type2,
           match_type_3: type3,
           match_type_3_other: type3 === 'other' ? type3Other : null,
-          homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
-          awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
+          homeShortName: homeShortName || home.substring(0, 8).toUpperCase(),
+          awayShortName: awayShortName || away.substring(0, 8).toUpperCase(),
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
@@ -781,19 +781,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   // Helper function to generate smart short name placeholder
   function generateShortNamePlaceholder(teamName) {
     if (!teamName) return 'Short name'
-    // Remove common words and spaces, then take first 10 characters
+    // Common words to skip
     const commonWords = ['volley', 'volleyball', 'vbc', 'vc', 'bc', 'club', 'team']
-    let cleaned = teamName.toLowerCase()
-    // Remove common words
-    commonWords.forEach(word => {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi')
-      cleaned = cleaned.replace(regex, '')
-    })
-    // Remove extra spaces and trim
-    cleaned = cleaned.replace(/\s+/g, ' ').trim()
-    // Take first 10 characters and uppercase
-    const short = cleaned.substring(0, 10).toUpperCase()
-    return short || 'Short name'
+    // Split into words and find the first word that is NOT a common word
+    const words = teamName.trim().split(/\s+/)
+    for (const word of words) {
+      const lowerWord = word.toLowerCase()
+      if (!commonWords.includes(lowerWord) && word.length > 0) {
+        // Take first 8 characters and uppercase
+        return word.substring(0, 8).toUpperCase()
+      }
+    }
+    // If all words are common, use the first word anyway
+    if (words.length > 0) {
+      return words[0].substring(0, 8).toUpperCase()
+    }
+    return 'Short name'
   }
 
   // Helper function to determine if a color is bright/light
@@ -4336,94 +4339,108 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <h3 style={{ margin: 0 }}>Home team</h3>
               </div>
             </div>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8, flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, position: 'relative', minWidth: 0 }}>
-                  <span
-                    ref={homeTeamMeasureRef}
-                    style={{
-                      position: 'absolute',
-                      visibility: 'hidden',
-                      whiteSpace: 'pre',
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      letterSpacing: '0.01em',
-                      padding: '0 12px'
-                    }}
-                  >
-                    {home || 'Home team name'}
-                  </span>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%', flexWrap: 'wrap' }}>
+                {/* Team Name */}
+                <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Team Name</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span
+                      ref={homeTeamMeasureRef}
+                      style={{
+                        position: 'absolute',
+                        visibility: 'hidden',
+                        whiteSpace: 'pre',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        letterSpacing: '0.01em',
+                        padding: '0 12px'
+                      }}
+                    >
+                      {home || 'Home team name'}
+                    </span>
+                    <input
+                      ref={homeTeamInputRef}
+                      type="text"
+                      value={home}
+                      onChange={e => {
+                        setHome(e.target.value)
+                        // Update width on change
+                        if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
+                          homeTeamMeasureRef.current.textContent = e.target.value || 'Home team name'
+                          const measuredWidth = homeTeamMeasureRef.current.offsetWidth
+                          homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+                        }
+                      }}
+                      placeholder="Home team name"
+                      style={{
+                        minWidth: '80px',
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        background: 'rgba(15, 23, 42, 0.35)',
+                        color: 'var(--text)',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        letterSpacing: '0.01em',
+                        minHeight: 48,
+                        boxSizing: 'border-box',
+                        transition: 'width 0.1s ease'
+                      }}
+                      onFocus={() => {
+                        if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
+                          homeTeamMeasureRef.current.textContent = home || 'Home team name'
+                          const measuredWidth = homeTeamMeasureRef.current.offsetWidth
+                          homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                
+                {/* Short Name */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '90px', flexShrink: 0 }}>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Short</label>
                   <input
-                    ref={homeTeamInputRef}
                     type="text"
-                    value={home}
-                    onChange={e => {
-                      setHome(e.target.value)
-                      // Update width on change
-                      if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-                        homeTeamMeasureRef.current.textContent = e.target.value || 'Home team name'
-                        const measuredWidth = homeTeamMeasureRef.current.offsetWidth
-                        homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                      }
-                    }}
-                    placeholder="Home team name"
+                    value={homeShortName}
+                    onChange={e => setHomeShortName(e.target.value.toUpperCase())}
+                    placeholder={generateShortNamePlaceholder(home)}
+                    maxLength={8}
                     style={{
-                      minWidth: '80px',
-                      padding: '8px 12px',
+                      width: '100%',
+                      padding: '8px 8px',
                       borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       background: 'rgba(15, 23, 42, 0.35)',
                       color: 'var(--text)',
                       fontSize: '16px',
-                      fontWeight: 700,
-                      letterSpacing: '0.01em',
+                      fontWeight: 500,
                       minHeight: 48,
                       boxSizing: 'border-box',
-                      transition: 'width 0.1s ease',
-                      flexShrink: 0
-                    }}
-                    onFocus={() => {
-                      if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-                        homeTeamMeasureRef.current.textContent = home || 'Home team name'
-                        const measuredWidth = homeTeamMeasureRef.current.offsetWidth
-                        homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                      }
+                      textAlign: 'center'
                     }}
                   />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', whiteSpace: 'nowrap' }}>Short:</span>
-                    <input
-                      type="text"
-                      value={homeShortName}
-                      onChange={e => setHomeShortName(e.target.value.toUpperCase())}
-                      placeholder={generateShortNamePlaceholder(home)}
-                      maxLength={10}
-                      style={{
-                        width: '80px',
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        background: 'rgba(15, 23, 42, 0.35)',
-                        color: 'var(--text)',
-                        fontSize: '14px',
-                        fontWeight: 500
-                      }}
-                    />
-                    <div 
-                      className="shirt" 
-                      style={{ background: homeColor, cursor: 'pointer', marginLeft: '4px' }}
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const centerX = rect.left + rect.width / 2
-                        setColorPickerModal({ 
-                          team: 'home', 
-                          position: { x: centerX, y: rect.bottom + 8 } 
-                        })
-                      }}
-                    >
-                      <div className="collar" style={{ background: homeColor }} />
-                      <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
-                    </div>
+                </div>
+                
+                {/* Color Selector */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Click to select color</label>
+                  <div 
+                    className="shirt" 
+                    style={{ background: homeColor, cursor: 'pointer' }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      const centerX = rect.left + rect.width / 2
+                      setColorPickerModal({ 
+                        team: 'home', 
+                        position: { x: centerX, y: rect.bottom + 8 } 
+                      })
+                    }}
+                  >
+                    <div className="collar" style={{ background: homeColor }} />
+                    <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
                   </div>
                 </div>
               </div>
@@ -4458,94 +4475,108 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               </div>
               
             </div>
-            <div className="inline" style={{ justifyContent:'space-between', alignItems:'center', marginTop: 8, gap: 8, flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, position: 'relative', minWidth: 0 }}>
-                  <span
-                    ref={awayTeamMeasureRef}
-                    style={{
-                      position: 'absolute',
-                      visibility: 'hidden',
-                      whiteSpace: 'pre',
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      letterSpacing: '0.01em',
-                      padding: '0 12px'
-                    }}
-                  >
-                    {away || 'Away team name'}
-                  </span>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%', flexWrap: 'wrap' }}>
+                {/* Team Name */}
+                <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Team Name</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span
+                      ref={awayTeamMeasureRef}
+                      style={{
+                        position: 'absolute',
+                        visibility: 'hidden',
+                        whiteSpace: 'pre',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        letterSpacing: '0.01em',
+                        padding: '0 12px'
+                      }}
+                    >
+                      {away || 'Away team name'}
+                    </span>
+                    <input
+                      ref={awayTeamInputRef}
+                      type="text"
+                      value={away}
+                      onChange={e => {
+                        setAway(e.target.value)
+                        // Update width on change
+                        if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
+                          awayTeamMeasureRef.current.textContent = e.target.value || 'Away team name'
+                          const measuredWidth = awayTeamMeasureRef.current.offsetWidth
+                          awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+                        }
+                      }}
+                      placeholder="Away team name"
+                      style={{
+                        minWidth: '80px',
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        background: 'rgba(15, 23, 42, 0.35)',
+                        color: 'var(--text)',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        letterSpacing: '0.01em',
+                        minHeight: 48,
+                        boxSizing: 'border-box',
+                        transition: 'width 0.1s ease'
+                      }}
+                      onFocus={() => {
+                        if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
+                          awayTeamMeasureRef.current.textContent = away || 'Away team name'
+                          const measuredWidth = awayTeamMeasureRef.current.offsetWidth
+                          awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                
+                {/* Short Name */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '90px', flexShrink: 0 }}>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Short</label>
                   <input
-                    ref={awayTeamInputRef}
                     type="text"
-                    value={away}
-                    onChange={e => {
-                      setAway(e.target.value)
-                      // Update width on change
-                      if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-                        awayTeamMeasureRef.current.textContent = e.target.value || 'Away team name'
-                        const measuredWidth = awayTeamMeasureRef.current.offsetWidth
-                        awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                      }
-                    }}
-                    placeholder="Away team name"
+                    value={awayShortName}
+                    onChange={e => setAwayShortName(e.target.value.toUpperCase())}
+                    placeholder={generateShortNamePlaceholder(away)}
+                    maxLength={8}
                     style={{
-                      minWidth: '80px',
-                      padding: '8px 12px',
+                      width: '100%',
+                      padding: '8px 8px',
                       borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       background: 'rgba(15, 23, 42, 0.35)',
                       color: 'var(--text)',
                       fontSize: '16px',
-                      fontWeight: 700,
-                      letterSpacing: '0.01em',
+                      fontWeight: 500,
                       minHeight: 48,
                       boxSizing: 'border-box',
-                      transition: 'width 0.1s ease',
-                      flexShrink: 0
-                    }}
-                    onFocus={() => {
-                      if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-                        awayTeamMeasureRef.current.textContent = away || 'Away team name'
-                        const measuredWidth = awayTeamMeasureRef.current.offsetWidth
-                        awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                      }
+                      textAlign: 'center'
                     }}
                   />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', whiteSpace: 'nowrap' }}>Short:</span>
-                    <input
-                      type="text"
-                      value={awayShortName}
-                      onChange={e => setAwayShortName(e.target.value.toUpperCase())}
-                      placeholder={generateShortNamePlaceholder(away)}
-                      maxLength={10}
-                      style={{
-                        width: '80px',
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        background: 'rgba(15, 23, 42, 0.35)',
-                        color: 'var(--text)',
-                        fontSize: '14px',
-                        fontWeight: 500
-                      }}
-                    />
-                    <div 
-                      className="shirt" 
-                      style={{ background: awayColor, cursor: 'pointer', marginLeft: '4px' }}
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const centerX = rect.left + rect.width / 2
-                        setColorPickerModal({ 
-                          team: 'away', 
-                          position: { x: centerX, y: rect.bottom + 8 } 
-                        })
-                      }}
-                    >
-                      <div className="collar" style={{ background: awayColor }} />
-                      <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
-                    </div>
+                </div>
+                
+                {/* Color Selector */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Click to select color</label>
+                  <div 
+                    className="shirt" 
+                    style={{ background: awayColor, cursor: 'pointer' }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      const centerX = rect.left + rect.width / 2
+                      setColorPickerModal({ 
+                        team: 'away', 
+                        position: { x: centerX, y: rect.bottom + 8 } 
+                      })
+                    }}
+                  >
+                    <div className="collar" style={{ background: awayColor }} />
+                    <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
                   </div>
                 </div>
               </div>
