@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import Modal from './Modal'
+import GuideModal from './GuideModal'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -9376,7 +9377,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   document.body.removeChild(link)
                   URL.revokeObjectURL(url)
                   
-                  setOptionsModal(false)
+                  setMenuModal(false)
                 } catch (error) {
                   console.error('Error exporting database:', error)
                   alert('Error exporting database data. Please try again.')
@@ -9388,6 +9389,111 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
         </Modal>
       )}
+
+      {/* Scoreboard Options Modal */}
+      {scoreboardOptionsModal && (
+        <Modal
+          title="Options"
+          open={true}
+          onClose={() => setScoreboardOptionsModal(false)}
+          width={500}
+        >
+          <div style={{ padding: '24px' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px',
+                cursor: 'pointer',
+                fontSize: '16px'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={(() => {
+                    const saved = localStorage.getItem('manageCaptainOnCourt')
+                    return saved === 'true'
+                  })()}
+                  onChange={(e) => {
+                    const value = e.target.checked
+                    localStorage.setItem('manageCaptainOnCourt', value.toString())
+                  }}
+                  style={{
+                    width: '20px',
+                    height: '20px',
+                    cursor: 'pointer'
+                  }}
+                />
+                <span>Manage Captain on Court</span>
+              </label>
+              <div style={{ 
+                marginTop: '8px', 
+                fontSize: '14px', 
+                color: 'var(--muted)',
+                paddingLeft: '32px'
+              }}>
+                When enabled and referee app is connected, referees can designate a captain on court when the team captain is not playing.
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: '24px' }}>
+              <button
+                onClick={() => {
+                  setScoreboardOptionsModal(false)
+                  setScoreboardGuideModal(true)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                }}
+              >
+                <span style={{ fontSize: '20px' }}>?</span>
+                <span>Show Guide</span>
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+              <button
+                onClick={() => setScoreboardOptionsModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Scoreboard Guide Modal */}
+      <GuideModal
+        open={scoreboardGuideModal}
+        onClose={() => setScoreboardGuideModal(false)}
+      />
 
       {/* Help & Video Guides Modal */}
       {showHelpModal && (
