@@ -35,10 +35,17 @@ jobs:
           done
       - name: Build
         working-directory: frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           # Determine base path: use '/' when CNAME set, else '/<repo-name>/'
           if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
           export VITE_BASE_PATH="$BASE_PATH"
+          # Debug: Check if env vars are set (without exposing values)
+          echo "🔍 Environment check:"
+          echo "  - VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:+SET (${#VITE_SUPABASE_URL} chars)}"
+          echo "  - VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:+SET (${#VITE_SUPABASE_ANON_KEY} chars)}"
           npm run build
           # Create SPA fallback for GitHub Pages
           cp dist/index.html dist/404.html

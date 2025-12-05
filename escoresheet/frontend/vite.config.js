@@ -12,10 +12,13 @@ const __dirname = dirname(__filename)
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
 const appVersion = packageJson.version
 
+const isElectron = process.env.ELECTRON === 'true'
+
 export default defineConfig({
   // Set base from env for GitHub Pages project site deployments.
   // If deploying to a custom domain (CNAME), use '/'. Otherwise set to '/<repo-name>/'
-  base: process.env.VITE_BASE_PATH || '/',
+  // For Electron, use './' for relative paths
+  base: isElectron ? './' : (process.env.VITE_BASE_PATH || '/'),
   optimizeDeps: {
     include: ['pdfjs-dist']
   },
