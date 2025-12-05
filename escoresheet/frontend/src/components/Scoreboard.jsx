@@ -7,7 +7,7 @@ import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { generateScoresheetPDF } from '../utils/generateScoresheetPDF'
 
-export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss }) {
+export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, manageCaptainOnCourt = false }) {
   const { syncStatus } = useSyncQueue()
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
@@ -62,6 +62,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
   const [showCallRefereeButton, setShowCallRefereeButton] = useState(false) // Show/hide the call referee button
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
+  const [showHelpModal, setShowHelpModal] = useState(false)
+  const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -4268,6 +4270,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setSubstitutionConfirm(null)
     setLiberoDropdown(null) // Close libero dropdown when confirming substitution
     
+    // Check if captain is on court after substitution
+    setTimeout(() => {
+      checkAndRequestCaptainOnCourt(team)
+    }, 100)
+    
     // Check if this is an injury substitution for a libero - if so, log libero_unable and check for re-designation
     if (isInjury && playerOut) {
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -4935,6 +4942,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
     
     setLiberoConfirm(null)
+    
+    // Check if captain is on court after libero entry
+    setTimeout(() => {
+      checkAndRequestCaptainOnCourt(team)
+    }, 100)
     setSubstitutionDropdown(null) // Close substitution dropdown if open
     setLiberoDropdown(null) // Close libero dropdown if open
   }, [liberoConfirm, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable])
@@ -5400,6 +5412,51 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled !== false
   const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled !== false
 
+  // Check if captain is on court and request captain on court if needed
+  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
+    if (!manageCaptainOnCourt || !refereeConnectionEnabled || !isAnyRefereeConnected) return
+    
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
+    const teamLineupState = getTeamLineupState(teamKey)
+    const playersOnCourt = teamLineupState.playersOnCourt || []
+    
+    // Find team captain
+    const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
+    if (!teamCaptain) return
+    
+    // Check if captain is on court
+    const captainOnCourt = playersOnCourt.includes(Number(teamCaptain.number))
+    
+    // Get current captain on court from match
+    const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    
+    // If captain is on court, clear any court captain designation
+    if (captainOnCourt) {
+      if (currentCourtCaptain) {
+        await db.matches.update(matchId, { [captainOnCourtField]: null })
+      }
+      return
+    }
+    
+    // Captain is not on court - check if we need to request
+    // If there's already a court captain and they're still on court, no need to ask
+    if (currentCourtCaptain) {
+      const courtCaptainOnCourt = playersOnCourt.includes(Number(currentCourtCaptain))
+      if (courtCaptainOnCourt) return // Court captain is still on court, no need to ask
+    }
+    
+    // Request captain on court from referee
+    await db.matches.update(matchId, {
+      [`${teamKey}CaptainOnCourtRequest`]: {
+        team: teamKey,
+        playersOnCourt: playersOnCourt,
+        lineup: teamLineupState.currentLineup,
+        timestamp: new Date().toISOString()
+      }
+    })
+  }, [manageCaptainOnCourt, refereeConnectionEnabled, isAnyRefereeConnected, data, matchId, getTeamLineupState])
+
   // Check if bench teams are connected (heartbeat within last 15 seconds)
   const isHomeTeamConnected = useMemo(() => {
     if (!data?.match?.lastHomeTeamHeartbeat) return false
@@ -5603,6 +5660,262 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     ? (data?.match?.awayShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
     : (data?.match?.homeShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
 
+  // Help content function
+  const getHelpContent = (topicId) => {
+    switch (topicId) {
+      case 'recording-points':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Recording Points</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you record a point:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>The score updates automatically for the team that scored</li>
+                <li>The point is logged in the event history</li>
+                <li>The serving team indicator updates</li>
+                <li>If a team reaches 25 points (or 15 in set 5) with a 2-point lead, you'll be prompted to end the set</li>
+                <li>All actions are saved automatically to the database</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Keyboard Shortcuts:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li><strong>Space</strong>: Award point to home team</li>
+                <li><strong>Enter</strong>: Award point to away team</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'timeouts':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Timeouts</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you request a timeout:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>A 30-second countdown timer starts automatically</li>
+                <li>The timeout is recorded in the event log</li>
+                <li>Each team is limited to 2 timeouts per set</li>
+                <li>The timeout countdown is displayed on screen</li>
+                <li>You can see timeout history in the timeout details panel</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Important Notes:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Timeouts cannot be requested if the team has already used both timeouts in the set</li>
+                <li>The timer continues even if you navigate away from the scoreboard</li>
+                <li>Timeouts are automatically saved to the database</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'substitutions':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Substitutions</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you make a substitution:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Click on the player position on the court to open substitution options</li>
+                <li>Select the player going out and the player coming in</li>
+                <li>The substitution is recorded with the current score</li>
+                <li>The lineup updates immediately on the scoreboard</li>
+                <li>Substitution history is tracked and can be viewed</li>
+                <li>Each team has unlimited substitutions per set</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Special Cases:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li><strong>Injury Substitution</strong>: Mark as injury if a player is injured</li>
+                <li><strong>Exceptional Substitution</strong>: For expelled/disqualified players</li>
+                <li><strong>Libero Substitution</strong>: Special rules apply for libero exchanges</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'libero':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Libero Substitutions</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens with libero substitutions:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Liberos can only replace back-row players</li>
+                <li>Libero exchanges don't count as regular substitutions</li>
+                <li>Each team can have up to 2 liberos (Libero 1 and Libero 2)</li>
+                <li>Libero exchanges are unlimited but must follow rotation rules</li>
+                <li>The libero must exit before the next serve</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Libero Rules:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Libero cannot serve (except in specific situations)</li>
+                <li>Libero cannot attack from front row</li>
+                <li>Libero redesignation is possible if a libero becomes unable to play</li>
+                <li>All libero actions are automatically tracked</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'sanctions':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Sanctions</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you record a sanction:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li><strong>Warning (Yellow Card)</strong>: First offense, no point penalty</li>
+                <li><strong>Penalty (Red Card)</strong>: Second offense, point awarded to opponent</li>
+                <li><strong>Expulsion</strong>: Player must leave the set, can return next set</li>
+                <li><strong>Disqualification</strong>: Player must leave the match entirely</li>
+                <li>Sanctions are recorded with the score at the time of the sanction</li>
+                <li>All sanctions appear in the sanctions table on the match end screen</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Who Can Receive Sanctions:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Players on the court</li>
+                <li>Bench players</li>
+                <li>Coaches and bench officials</li>
+                <li>Team (delay warnings/penalties)</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'ending-set':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Ending a Set</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you end a set:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>You'll be prompted to confirm the set end time</li>
+                <li>The set is marked as finished in the database</li>
+                <li>Set statistics are calculated (timeouts, substitutions, duration)</li>
+                <li>If it's set 4, you'll be asked to choose sides and first serve for set 5</li>
+                <li>If it's set 5, the match ends automatically</li>
+                <li>If a team wins 3 sets, the match ends and you go to the Match End screen</li>
+                <li>Otherwise, the next set begins automatically</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Set End Conditions:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li><strong>Sets 1-4</strong>: First team to 25 points with 2-point lead</li>
+                <li><strong>Set 5</strong>: First team to 15 points with 2-point lead</li>
+                <li>No cap - sets continue until a team wins by 2 points</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'match-end':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Match End</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when the match ends:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>The match status is automatically set to "final"</li>
+                <li>You're taken to the Match End screen</li>
+                <li>All match data is preserved (sets, events, players, teams)</li>
+                <li>For official matches, the match is queued for sync to Supabase</li>
+                <li>The session lock is released</li>
+                <li>You can review results, sanctions, and match statistics</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Match End Screen:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>View final score and set-by-set breakdown</li>
+                <li>Review all sanctions issued</li>
+                <li>Collect signatures from captains and officials</li>
+                <li>Approve and export match data (PDF, JPG, JSON)</li>
+                <li>Return to home screen when done</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'undo':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Undo Actions</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you undo an action:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>The last action is reversed (point, substitution, timeout, etc.)</li>
+                <li>The score or state returns to what it was before</li>
+                <li>The undo event is logged in the action history</li>
+                <li>You can undo multiple actions in sequence</li>
+                <li>Undo works for most actions except set/match end</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>How to Undo:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Click the <strong>Undo</strong> button in the rally controls</li>
+                <li>Or use the keyboard shortcut (if available)</li>
+                <li>Confirm the undo action when prompted</li>
+                <li>Check the action log to see undo history</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Limitations:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Cannot undo set end or match end</li>
+                <li>Cannot undo actions from previous sets</li>
+                <li>Undo only affects the current set</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'lineup':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Setting Lineup</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you set the lineup:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>You assign 6 players to court positions (I, II, III, IV, V, VI)</li>
+                <li>The lineup determines the serving order</li>
+                <li>Players rotate positions when they win the serve back</li>
+                <li>The lineup is saved and used throughout the set</li>
+                <li>You can set lineup manually or use automatic lineup</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Lineup Rules:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>Must have exactly 6 players on court</li>
+                <li>Liberos cannot be in the initial lineup</li>
+                <li>Lineup must be set before the set starts</li>
+                <li>Lineup can be adjusted manually if needed</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      case 'set-5':
+        return (
+          <div>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Set 5 (Tie-break)</h3>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens in Set 5:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>First team to 15 points wins (instead of 25)</li>
+                <li>Must win by 2 points (no cap)</li>
+                <li>Teams switch sides when one team reaches 8 points</li>
+                <li>You'll be prompted to choose which team is on which side</li>
+                <li>First serve is determined by coin toss result or set 4 outcome</li>
+                <li>All other rules remain the same (timeouts, substitutions, etc.)</li>
+              </ul>
+              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Court Switch at 8 Points:</h4>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+                <li>When a team reaches 8 points, the app will prompt for court switch</li>
+                <li>You'll confirm which team is now on which side</li>
+                <li>The scoreboard updates to reflect the new positions</li>
+                <li>Play continues without interruption</li>
+              </ul>
+            </div>
+          </div>
+        )
+      
+      default:
+        return <div>Topic not found</div>
+    }
+  }
+
   return (
     <div className="match-record">
       <div className="match-toolbar">
@@ -5643,6 +5956,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               Call Referee
             </button>
           )}
+          <button 
+            className="secondary" 
+            onClick={() => setShowHelpModal(true)}
+            style={{ 
+              background: '#3b82f6', 
+              color: '#fff', 
+              fontWeight: 600,
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px',
+              padding: 0
+            }}
+            title="Help & Video Guides"
+          >
+            ?
+          </button>
           <button 
             className="secondary" 
             onClick={() => setOptionsModal(true)}
@@ -7205,6 +7538,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }
                           return <span className="court-player-captain">C</span>
                         })()}
+                        {/* Captain on Court indicator (different color) */}
+                        {(() => {
+                          const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+                          const courtCaptain = data?.match?.[courtCaptainField]
+                          const isCourtCaptain = courtCaptain && Number(courtCaptain) === Number(player.number) && !player.isCaptain
+                          if (isCourtCaptain) {
+                            return (
+                              <span 
+                                className="court-player-captain" 
+                                style={{ 
+                                  color: '#fbbf24', // Different color (amber/yellow)
+                                  borderColor: '#fbbf24'
+                                }}
+                              >
+                                C
+                              </span>
+                            )
+                          }
+                          return null
+                        })()}
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -7377,6 +7730,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }
                           return <span className="court-player-captain">C</span>
                         })()}
+                        {/* Captain on Court indicator (different color) */}
+                        {(() => {
+                          const courtCaptainField = leftTeamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+                          const courtCaptain = data?.match?.[courtCaptainField]
+                          const isCourtCaptain = courtCaptain && Number(courtCaptain) === Number(player.number) && !player.isCaptain
+                          if (isCourtCaptain) {
+                            return (
+                              <span 
+                                className="court-player-captain" 
+                                style={{ 
+                                  color: '#fbbf24', // Different color (amber/yellow)
+                                  borderColor: '#fbbf24'
+                                }}
+                              >
+                                C
+                              </span>
+                            )
+                          }
+                          return null
+                        })()}
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -7515,6 +7888,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )
                           }
                           return <span className="court-player-captain">C</span>
+                        })()}
+                        {/* Captain on Court indicator (different color) */}
+                        {(() => {
+                          const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+                          const courtCaptain = data?.match?.[courtCaptainField]
+                          const isCourtCaptain = courtCaptain && Number(courtCaptain) === Number(player.number) && !player.isCaptain
+                          if (isCourtCaptain) {
+                            return (
+                              <span 
+                                className="court-player-captain" 
+                                style={{ 
+                                  color: '#fbbf24', // Different color (amber/yellow)
+                                  borderColor: '#fbbf24'
+                                }}
+                              >
+                                C
+                              </span>
+                            )
+                          }
+                          return null
                         })()}
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
@@ -7670,6 +8063,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )
                           }
                           return <span className="court-player-captain">C</span>
+                        })()}
+                        {/* Captain on Court indicator (different color) */}
+                        {(() => {
+                          const courtCaptainField = rightTeamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+                          const courtCaptain = data?.match?.[courtCaptainField]
+                          const isCourtCaptain = courtCaptain && Number(courtCaptain) === Number(player.number) && !player.isCaptain
+                          if (isCourtCaptain) {
+                            return (
+                              <span 
+                                className="court-player-captain" 
+                                style={{ 
+                                  color: '#fbbf24', // Different color (amber/yellow)
+                                  borderColor: '#fbbf24'
+                                }}
+                              >
+                                C
+                              </span>
+                            )
+                          }
+                          return null
                         })()}
                         {/* Libero indicator (bottom-left) */}
                         {player.isLibero && !player.isCaptain && (() => {
@@ -8963,6 +9376,92 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 📥 Download Game Data (JSON)
               </div>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Help & Video Guides Modal */}
+      {showHelpModal && (
+        <Modal
+          title="Help & Video Guides"
+          open={true}
+          onClose={() => {
+            setShowHelpModal(false)
+            setSelectedHelpTopic(null)
+          }}
+          width={800}
+        >
+          <div style={{ padding: '24px' }}>
+            {!selectedHelpTopic ? (
+              <div>
+                <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--muted)' }}>
+                  Select a topic to view video guides and explanations:
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' }}>
+                  {[
+                    { id: 'recording-points', title: 'Recording Points', description: 'How to record points and update the score' },
+                    { id: 'timeouts', title: 'Timeouts', description: 'How to request and manage timeouts' },
+                    { id: 'substitutions', title: 'Substitutions', description: 'How to make player substitutions' },
+                    { id: 'libero', title: 'Libero Substitutions', description: 'How to handle libero exchanges' },
+                    { id: 'sanctions', title: 'Sanctions', description: 'How to record warnings, penalties, and expulsions' },
+                    { id: 'ending-set', title: 'Ending a Set', description: 'What happens when you end a set' },
+                    { id: 'match-end', title: 'Match End', description: 'What happens when the match ends' },
+                    { id: 'undo', title: 'Undo Actions', description: 'How to undo mistakes' },
+                    { id: 'lineup', title: 'Setting Lineup', description: 'How to set initial lineup' },
+                    { id: 'set-5', title: 'Set 5 (Tie-break)', description: 'Special rules for the deciding set' }
+                  ].map((topic) => (
+                    <div
+                      key={topic.id}
+                      onClick={() => setSelectedHelpTopic(topic.id)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                        e.currentTarget.style.transform = 'translateY(-2px)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.transform = 'translateY(0)'
+                      }}
+                    >
+                      <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>
+                        {topic.title}
+                      </div>
+                      <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
+                        {topic.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <button
+                  onClick={() => setSelectedHelpTopic(null)}
+                  style={{
+                    marginBottom: '20px',
+                    padding: '8px 16px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  ← Back to Topics
+                </button>
+                {getHelpContent(selectedHelpTopic)}
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -11988,9 +12487,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         teamAKey={teamAKey}
         teamBKey={teamBKey}
         onClose={() => setLineupModal(null)}
-        onSave={() => {
+        onSave={async () => {
+          const teamKey = lineupModal.team
           setLineupModal(null)
-          // Force re-render by updating data
+          // Check if captain is on court after lineup is saved
+          setTimeout(() => {
+            checkAndRequestCaptainOnCourt(teamKey)
+          }, 100)
         }}
       />}
       

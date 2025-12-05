@@ -77,6 +77,12 @@ export default function App() {
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [homeCardModal, setHomeCardModal] = useState(null) // 'official' | 'test' | null
+  const [homeOptionsModal, setHomeOptionsModal] = useState(false)
+  const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
+    // Load from localStorage
+    const saved = localStorage.getItem('manageCaptainOnCourt')
+    return saved === 'true'
+  })
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
 
@@ -1796,10 +1802,35 @@ export default function App() {
               <div className="home-support">
                 Support: luca.canepa@gmail.com
               </div>
+              
+              <div style={{ marginTop: '24px' }}>
+                <button
+                  onClick={() => setHomeOptionsModal(true)}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Options
+                </button>
+              </div>
             </div>
           </div>
         ) : (
-          <Scoreboard matchId={matchId} onFinishSet={finishSet} onOpenSetup={openMatchSetup} onOpenMatchSetup={openMatchSetupView} onOpenCoinToss={openCoinTossView} />
+          <Scoreboard 
+            matchId={matchId} 
+            onFinishSet={finishSet} 
+            onOpenSetup={openMatchSetup} 
+            onOpenMatchSetup={openMatchSetupView} 
+            onOpenCoinToss={openCoinTossView}
+            manageCaptainOnCourt={manageCaptainOnCourt}
+          />
         )}
       </div>
 
@@ -2097,6 +2128,70 @@ export default function App() {
                 className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
               >
                 {testMatchLoading ? 'Clearing…' : 'Clear test match'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Home Options Modal */}
+      {homeOptionsModal && (
+        <Modal
+          title="Options"
+          open={true}
+          onClose={() => setHomeOptionsModal(false)}
+          width={500}
+        >
+          <div style={{ padding: '24px' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px',
+                cursor: 'pointer',
+                fontSize: '16px'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={manageCaptainOnCourt}
+                  onChange={(e) => {
+                    const value = e.target.checked
+                    setManageCaptainOnCourt(value)
+                    localStorage.setItem('manageCaptainOnCourt', value.toString())
+                  }}
+                  style={{
+                    width: '20px',
+                    height: '20px',
+                    cursor: 'pointer'
+                  }}
+                />
+                <span>Manage Captain on Court</span>
+              </label>
+              <div style={{ 
+                marginTop: '8px', 
+                fontSize: '14px', 
+                color: 'var(--muted)',
+                paddingLeft: '32px'
+              }}>
+                When enabled and referee app is connected, referees can designate a captain on court when the team captain is not playing.
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+              <button
+                onClick={() => setHomeOptionsModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
               </button>
             </div>
           </div>
