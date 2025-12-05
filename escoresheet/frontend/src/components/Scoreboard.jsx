@@ -10062,7 +10062,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 
                 {/* Reopen completed sets */}
                 {data?.sets && (() => {
-                  const completedSets = data.sets.filter(s => s.finished).sort((a, b) => b.index - a.index)
+                  // Filter out the current set - only show finished sets that are not the current set
+                  const currentSetIndex = data?.set?.index
+                  const completedSets = data.sets
+                    .filter(s => s.finished && s.index !== currentSetIndex)
+                    .sort((a, b) => b.index - a.index)
                   if (completedSets.length === 0) return null
                   
                   return (
