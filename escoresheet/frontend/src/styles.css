@@ -1297,6 +1297,61 @@
   /* Home View */
   .home-view {
     padding: 24px;
+    width: 50%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .home-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    width: 100%;
+  }
+
+  .home-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0;
+    text-align: center;
+    color: var(--text);
+  }
+
+  .home-subtitle {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .home-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 8px 0;
+  }
+
+  .home-match-section {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  .home-match-section + .home-match-section {
+    margin-top: 16px;
+  }
+
+  .home-support {
+    font-size: 14px;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 8px;
   }
 
   .home-grid {
@@ -1304,7 +1359,7 @@
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 24px;
     align-items: stretch;
-    min-height: 280px;
+    min-height: 320px;
   }
 
   .home-card {
@@ -1314,8 +1369,18 @@
     padding: 32px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    min-height: 320px;
+    gap: 8px;
+  }
+
+  .home-card--clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .home-card--clickable:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
   }
 
   .home-card h2 {
@@ -1333,13 +1398,15 @@
 
   .home-card-actions {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 12px;
-    margin-top: auto;
+    margin-top: 8px;
   }
 
   .home-card-actions button {
-    width: 100%;
+    flex: 1 1 calc(50% - 6px);
+    min-width: 140px;
     padding: 16px 24px;
     font-size: 16px;
     font-weight: 700;
@@ -1379,9 +1446,9 @@
   .home-card-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 12px;
-    margin-bottom: 4px;
+    margin-bottom: 0;
     flex-wrap: wrap;
   }
 

@@ -76,6 +76,8 @@ export default function App() {
   const [testMatchLoading, setTestMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
+  const [homeCardModal, setHomeCardModal] = useState(null) // 'official' | 'test' | null
+  const [rosterUploadModal, setRosterUploadModal] = useState(null) // { matchId, team, players, bench }
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
 
@@ -322,6 +324,89 @@ export default function App() {
       restoredRef.current = false
     }
   }, [activeMatch, matchId])
+
+  // Check for pending roster upload on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const rosterUploadParam = params.get('rosterUpload')
+    if (rosterUploadParam === 'true') {
+      const pendingData = localStorage.getItem('pendingRosterUpload')
+      if (pendingData) {
+        try {
+          const data = JSON.parse(pendingData)
+          setRosterUploadModal(data)
+          // Clear from localStorage
+          localStorage.removeItem('pendingRosterUpload')
+          // Clean URL
+          window.history.replaceState({}, '', 'index.html')
+        } catch (error) {
+          console.error('Error parsing pending roster data:', error)
+        }
+      }
+    }
+  }, [])
+
+  // Handle roster upload confirmation
+  const handleConfirmRosterUpload = async () => {
+    if (!rosterUploadModal) return
+    
+    try {
+      const { matchId: targetMatchId, team, players, bench } = rosterUploadModal
+      const match = await db.matches.get(targetMatchId)
+      if (!match) {
+        setAlertModal('Match not found')
+        setRosterUploadModal(null)
+        return
+      }
+
+      const teamId = team === 'home' ? match.homeTeamId : match.awayTeamId
+      if (!teamId) {
+        setAlertModal('Team not found for this match')
+        setRosterUploadModal(null)
+        return
+      }
+
+      // Delete existing players for this team
+      const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
+      for (const player of existingPlayers) {
+        await db.players.delete(player.id)
+      }
+
+      // Add new players
+      for (const player of players) {
+        await db.players.add({
+          teamId,
+          number: player.number,
+          firstName: player.firstName,
+          lastName: player.lastName,
+          name: `${player.firstName} ${player.lastName}`.trim(),
+          dob: player.dob,
+          libero: player.libero || '',
+          isCaptain: player.isCaptain || false
+        })
+      }
+
+      // Update bench officials
+      const benchField = team === 'home' ? 'bench_home' : 'bench_away'
+      await db.matches.update(targetMatchId, {
+        [benchField]: bench
+      })
+
+      setAlertModal('Roster uploaded successfully!')
+      setRosterUploadModal(null)
+      
+      // If we're viewing this match, refresh
+      if (matchId === targetMatchId) {
+        // Force refresh by updating matchId
+        setMatchId(null)
+        setTimeout(() => setMatchId(targetMatchId), 100)
+      }
+    } catch (error) {
+      console.error('Error confirming roster upload:', error)
+      setAlertModal(`Failed to upload roster: ${error.message}`)
+      setRosterUploadModal(null)
+    }
+  }
 
   // Update document title based on match type
   useEffect(() => {
@@ -1691,18 +1776,6 @@ export default function App() {
         return
       }
       
-      // Check if match setup is complete (all signatures present)
-      const isMatchSetupComplete = match.homeCoachSignature && 
-                                  match.homeCaptainSignature && 
-                                  match.awayCoachSignature && 
-                                  match.awayCaptainSignature
-      
-      // Only allow continuation if match setup and coin toss are confirmed
-      if (!isMatchSetupComplete || !isCoinTossConfirmed) {
-        setAlertModal('Cannot continue match: Match setup and coin toss must be confirmed first.')
-        return
-      }
-      
       // Determine where to continue based on status
       if (match.status === 'live' || match.status === 'final') {
         // Go directly to scoreboard
@@ -1756,86 +1829,37 @@ export default function App() {
         ) : !matchId ? (
           <div className="home-view">
             <div className="home-content">
-              <h1 className="home-title">Openvolley eScoresheet</h1>
-              <h2 className="home-subtitle">Indoor</h2>
-              <div className="home-logo">
-                <img src={favicon} alt="Openvolley" />
+              <h1 className="home-title">Openvolley eScoresheet Indoor</h1>
+              <div className="home-logo" style={{ width: '200px' }}>
+                <img src={favicon} alt="Openvolley" style={{ width: '100%' }} />
               </div>
               
               <div className="home-match-section">
-                <div className="home-card">
+                <div className="home-card home-card--clickable" onClick={() => setHomeCardModal('official')}>
                   <div className="home-card-header">
                     <h2>Official Match</h2>
-                    <div className="connection-status-inline">
-                      <span className="connection-status-label">Connection:</span>
-                      <div className={`status-indicator status-${syncStatus}`}>
-                        <span className="status-dot" />
-                        <span>
-                          {syncStatus === 'offline' && 'Offline'}
-                          {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
-                          {syncStatus === 'connecting' && 'Connecting...'}
-                          {syncStatus === 'syncing' && 'Syncing...'}
-                          {syncStatus === 'synced' && 'Synced'}
-                          {syncStatus === 'error' && 'Sync Error'}
-                        </span>
-                      </div>
-                    </div>
                   </div>
-                  <div className="home-card-actions">
-                    <button 
-                      onClick={createNewOfficialMatch}
-                      disabled={matchStatus?.status === 'Match recording'}
-                      className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
-                    >
-                      New official match
-                    </button>
-                    <button 
-                      onClick={() => currentOfficialMatch && continueMatch(currentOfficialMatch.id)}
-                      disabled={!currentOfficialMatch}
-                      className={!currentOfficialMatch ? 'disabled' : ''}
-                    >
-                      Continue official match
-                    </button>
-                    <button 
-                      onClick={showDeleteMatchModal}
-                      disabled={!currentOfficialMatch}
-                      className={'danger ' + (!currentOfficialMatch ? 'disabled' : '')}
-                      style={{ marginTop: '8px' }}
-                    >
-                      Delete official match
-                    </button>
+                  <div className="connection-status-inline">
+                    <span className="connection-status-label">Connection:</span>
+                    <div className={`status-indicator status-${syncStatus}`}>
+                      <span className="status-dot" />
+                      <span>
+                        {syncStatus === 'offline' && 'Offline'}
+                        {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
+                        {syncStatus === 'connecting' && 'Connecting...'}
+                        {syncStatus === 'syncing' && 'Syncing...'}
+                        {syncStatus === 'synced' && 'Synced'}
+                        {syncStatus === 'error' && 'Sync Error'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
               
               <div className="home-match-section">
-                <div className="home-card home-card--test">
+                <div className="home-card home-card--test home-card--clickable" onClick={() => setHomeCardModal('test')}>
                   <div className="home-card-header">
                     <h2>Test Match</h2>
-                  </div>
-                  <div className="home-card-actions">
-                    <button 
-                      onClick={createNewTestMatch}
-                      disabled={testMatchLoading}
-                      className={testMatchLoading ? 'test-button disabled' : 'test-button'}
-                    >
-                      {testMatchLoading ? 'Preparing…' : 'New test match'}
-                    </button>
-                    <button 
-                      onClick={continueTestMatch}
-                      disabled={testMatchLoading || !currentTestMatch}
-                      className={(testMatchLoading || !currentTestMatch) ? 'test-button disabled' : 'test-button'}
-                    >
-                      {testMatchLoading ? 'Loading…' : 'Continue test match'}
-                    </button>
-                    <button 
-                      onClick={restartTestMatch}
-                      disabled={testMatchLoading || !currentTestMatch}
-                      className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
-                      style={{ marginTop: '8px' }}
-                    >
-                      {testMatchLoading ? 'Clearing…' : 'Clear test match'}
-                    </button>
                   </div>
                 </div>
               </div>
@@ -2026,6 +2050,179 @@ export default function App() {
                 }}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Official Match Modal */}
+      {homeCardModal === 'official' && (
+        <Modal
+          title="Official Match"
+          open={true}
+          onClose={() => setHomeCardModal(null)}
+          width={500}
+        >
+          <div style={{ padding: '24px' }}>
+            <div className="connection-status-inline" style={{ marginBottom: '24px', justifyContent: 'center' }}>
+              <span className="connection-status-label">Connection:</span>
+              <div className={`status-indicator status-${syncStatus}`}>
+                <span className="status-dot" />
+                <span>
+                  {syncStatus === 'offline' && 'Offline'}
+                  {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
+                  {syncStatus === 'connecting' && 'Connecting...'}
+                  {syncStatus === 'syncing' && 'Syncing...'}
+                  {syncStatus === 'synced' && 'Synced'}
+                  {syncStatus === 'error' && 'Sync Error'}
+                </span>
+              </div>
+            </div>
+            {currentOfficialMatch?.gamePin && (
+              <div style={{ 
+                marginBottom: '24px', 
+                padding: '12px 16px', 
+                background: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game PIN</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                  {currentOfficialMatch.gamePin}
+                </div>
+              </div>
+            )}
+            <div className="home-card-actions" style={{ flexDirection: 'column', marginTop: 0 }}>
+              <button 
+                onClick={() => {
+                  setHomeCardModal(null)
+                  createNewOfficialMatch()
+                }}
+                disabled={matchStatus?.status === 'Match recording'}
+                className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
+              >
+                New official match
+              </button>
+              <button 
+                onClick={() => {
+                  setHomeCardModal(null)
+                  if (currentOfficialMatch) continueMatch(currentOfficialMatch.id)
+                }}
+                disabled={!currentOfficialMatch}
+                className={!currentOfficialMatch ? 'disabled' : ''}
+              >
+                Continue official match
+              </button>
+              <button 
+                onClick={() => {
+                  setHomeCardModal(null)
+                  showDeleteMatchModal()
+                }}
+                disabled={!currentOfficialMatch}
+                className={'danger ' + (!currentOfficialMatch ? 'disabled' : '')}
+              >
+                Delete official match
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Test Match Modal */}
+      {homeCardModal === 'test' && (
+        <Modal
+          title="Test Match"
+          open={true}
+          onClose={() => setHomeCardModal(null)}
+          width={500}
+        >
+          <div style={{ padding: '24px' }}>
+            <div className="home-card-actions" style={{ flexDirection: 'column', marginTop: 0 }}>
+              <button 
+                onClick={() => {
+                  setHomeCardModal(null)
+                  createNewTestMatch()
+                }}
+                disabled={testMatchLoading}
+                className={testMatchLoading ? 'test-button disabled' : 'test-button'}
+              >
+                {testMatchLoading ? 'Preparing…' : 'New test match'}
+              </button>
+              <button 
+                onClick={() => {
+                  setHomeCardModal(null)
+                  continueTestMatch()
+                }}
+                disabled={testMatchLoading || !currentTestMatch}
+                className={(testMatchLoading || !currentTestMatch) ? 'test-button disabled' : 'test-button'}
+              >
+                {testMatchLoading ? 'Loading…' : 'Continue test match'}
+              </button>
+              <button 
+                onClick={() => {
+                  setHomeCardModal(null)
+                  restartTestMatch()
+                }}
+                disabled={testMatchLoading || !currentTestMatch}
+                className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
+              >
+                {testMatchLoading ? 'Clearing…' : 'Clear test match'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Roster Upload Confirmation Modal */}
+      {rosterUploadModal && (
+        <Modal
+          title="Confirm Roster Upload"
+          open={true}
+          onClose={() => setRosterUploadModal(null)}
+          width={600}
+        >
+          <div style={{ padding: '24px' }}>
+            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+              A roster has been uploaded for the {rosterUploadModal.team === 'home' ? 'Home' : 'Away'} team.
+            </p>
+            <div style={{ marginBottom: '16px' }}>
+              <p style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>Players: {rosterUploadModal.players?.length || 0}</p>
+              <p style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>Bench Officials: {rosterUploadModal.bench?.length || 0}</p>
+            </div>
+            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
+              This will replace the existing roster for this team. Continue?
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => setRosterUploadModal(null)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRosterUpload}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Confirm & Save
               </button>
             </div>
           </div>
