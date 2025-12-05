@@ -12,10 +12,13 @@ export function useSyncQueue() {
 
   // Check Supabase connection
   const checkSupabaseConnection = useCallback(async () => {
+    console.log('🔍 Checking Supabase connection...')
     if (!supabase) {
+      console.warn('⚠️ Supabase client is null')
       setSyncStatus('online_no_supabase')
       return false
     }
+    console.log('✅ Supabase client exists, testing connection...')
 
     try {
       setSyncStatus('connecting')
