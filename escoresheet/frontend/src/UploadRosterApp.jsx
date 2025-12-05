@@ -2,45 +2,226 @@ import { useState, useEffect, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
+import Modal from './components/Modal'
+
+// Date conversion helpers
+function formatDateToISO(dateStr) {
+  if (!dateStr) return ''
+  // If already in ISO format (YYYY-MM-DD), return as-is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+  // If in DD/MM/YYYY format, convert to YYYY-MM-DD
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('/')
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  // Try to parse as date
+  const date = new Date(dateStr)
+  if (!isNaN(date.getTime())) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  return dateStr
+}
+
+function formatDateToDDMMYYYY(dateStr) {
+  if (!dateStr) return ''
+  // If already in DD/MM/YYYY format, return as-is
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) return dateStr
+  // If in ISO format (YYYY-MM-DD), convert to DD/MM/YYYY
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-')
+    return `${day}/${month}/${year}`
+  }
+  // Try to parse as date
+  const date = new Date(dateStr)
+  if (!isNaN(date.getTime())) {
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+  return dateStr
+}
 
 export default function UploadRosterApp() {
+  const [gameNumber, setGameNumber] = useState('')
+  const [team, setTeam] = useState('home') // 'home' or 'away'
+  const [uploadPin, setUploadPin] = useState('')
+  const [match, setMatch] = useState(null)
   const [matchId, setMatchId] = useState(null)
-  const [team, setTeam] = useState(null) // 'home' or 'away'
-  const [pin, setPin] = useState('')
-  const [enteredPin, setEnteredPin] = useState('')
+  const [homeTeam, setHomeTeam] = useState(null)
+  const [awayTeam, setAwayTeam] = useState(null)
+  const [validationError, setValidationError] = useState('')
   const [pdfFile, setPdfFile] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState('')
-  const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [parsedData, setParsedData] = useState(null) // { players: [], bench: [] }
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const fileInputRef = useRef(null)
 
-  // Parse URL parameters
+  // Find match by game number
+  const findMatchByGameNumber = async (gameNum) => {
+    try {
+      // Try to find by gameNumber or game_n
+      const matches = await db.matches.toArray()
+      const found = matches.find(m => 
+        m.gameNumber === gameNum || 
+        m.game_n === Number(gameNum) || 
+        String(m.game_n) === gameNum ||
+        String(m.gameNumber) === gameNum
+      )
+      return found
+    } catch (error) {
+      console.error('Error finding match:', error)
+      return null
+    }
+  }
+
+  // Check if match exists and is in setup (not started or finished)
+  const checkMatchStatus = async (gameNum) => {
+    if (!gameNum || !gameNum.trim()) {
+      setMatchStatusCheck(null)
+      setMatch(null)
+      setMatchId(null)
+      setValidationError('')
+      return
+    }
+
+    setMatchStatusCheck('checking')
+    
+    try {
+      const foundMatch = await findMatchByGameNumber(gameNum.trim())
+      
+      if (!foundMatch) {
+        setMatchStatusCheck('invalid')
+        setMatch(null)
+        setMatchId(null)
+        setValidationError('Match not found with this game number')
+        return
+      }
+
+      // Check if match has started (has events or active sets)
+      const sets = await db.sets.where('matchId').equals(foundMatch.id).toArray()
+      const events = await db.events.where('matchId').equals(foundMatch.id).toArray()
+      
+      // Check if match is finished
+      const isFinished = foundMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished))
+      
+      // Check if match has started (has active sets or events)
+      const hasActiveSet = sets.some(set => {
+        return Boolean(
+          set.finished ||
+          set.startTime ||
+          set.homePoints > 0 ||
+          set.awayPoints > 0
+        )
+      })
+      
+      const hasEventActivity = events.some(event =>
+        ['set_start', 'rally_start', 'point'].includes(event.type)
+      )
+
+      if (isFinished) {
+        setMatchStatusCheck('invalid')
+        setMatch(null)
+        setMatchId(null)
+        setValidationError('This match has already ended')
+        return
+      }
+
+      if (hasActiveSet || hasEventActivity) {
+        setMatchStatusCheck('invalid')
+        setMatch(null)
+        setMatchId(null)
+        setValidationError('This match has already started. Roster cannot be uploaded.')
+        return
+      }
+
+      // Match is valid for roster upload
+      setMatchStatusCheck('valid')
+      setMatch(foundMatch)
+      setMatchId(foundMatch.id)
+      setValidationError('')
+    } catch (error) {
+      console.error('Error checking match status:', error)
+      setMatchStatusCheck('invalid')
+      setMatch(null)
+      setMatchId(null)
+      setValidationError('Error checking match status')
+    }
+  }
+
+  // Check match status when game number changes (with debounce)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlMatchId = params.get('matchId')
-    const urlTeam = params.get('team')
-    const urlPin = params.get('pin')
+    const timeoutId = setTimeout(() => {
+      if (gameNumber) {
+        checkMatchStatus(gameNumber)
+      } else {
+        setMatchStatusCheck(null)
+        setMatch(null)
+        setMatchId(null)
+        setValidationError('')
+      }
+    }, 500) // 500ms debounce
 
-    if (urlMatchId) {
-      setMatchId(Number(urlMatchId))
-    }
-    if (urlTeam === 'home' || urlTeam === 'away') {
-      setTeam(urlTeam)
-    }
-    if (urlPin) {
-      setPin(urlPin)
-    }
-  }, [])
+    return () => clearTimeout(timeoutId)
+  }, [gameNumber])
 
-  // Load match data
-  const match = useLiveQuery(async () => {
-    if (!matchId) return null
-    return await db.matches.get(matchId)
-  }, [matchId])
+  // Load teams when match is found
+  useEffect(() => {
+    if (!match) {
+      setHomeTeam(null)
+      setAwayTeam(null)
+      return
+    }
 
-  // Verify PIN
-  const correctPin = team === 'home' ? match?.homeTeamUploadPin : match?.awayTeamUploadPin
-  const isPinValid = pin && correctPin && pin === correctPin
+    const loadTeams = async () => {
+      if (match.homeTeamId) {
+        const home = await db.teams.get(match.homeTeamId)
+        setHomeTeam(home)
+      }
+      if (match.awayTeamId) {
+        const away = await db.teams.get(match.awayTeamId)
+        setAwayTeam(away)
+      }
+    }
+    loadTeams()
+  }, [match])
+
+  // Validate inputs
+  const validateInputs = async () => {
+    setValidationError('')
+    
+    if (!gameNumber.trim()) {
+      setValidationError('Please enter a game number')
+      return false
+    }
+
+    const foundMatch = await findMatchByGameNumber(gameNumber.trim())
+    if (!foundMatch) {
+      setValidationError('Match not found with this game number')
+      return false
+    }
+
+    setMatch(foundMatch)
+    setMatchId(foundMatch.id)
+
+    const correctPin = team === 'home' ? foundMatch.homeTeamUploadPin : foundMatch.awayTeamUploadPin
+    if (!uploadPin.trim()) {
+      setValidationError('Please enter an upload PIN')
+      return false
+    }
+
+    if (!correctPin || uploadPin.trim() !== correctPin) {
+      setValidationError('Invalid upload PIN')
+      return false
+    }
+
+    return true
+  }
 
   // Handle file selection
   const handleFileSelect = (e) => {
@@ -48,37 +229,26 @@ export default function UploadRosterApp() {
     if (file && file.type === 'application/pdf') {
       setPdfFile(file)
       setPdfError('')
-      setUploadSuccess(false)
+      setParsedData(null)
     } else {
       setPdfError('Please select a valid PDF file')
       setPdfFile(null)
     }
   }
 
-  // Handle PIN entry
-  const handlePinSubmit = (e) => {
-    e.preventDefault()
-    if (enteredPin === correctPin) {
-      setPin(enteredPin)
-      setPdfError('')
-    } else {
-      setPdfError('Invalid PIN')
-    }
-  }
-
   // Handle PDF upload and parse
   const handleUpload = async () => {
-    if (!pdfFile || !matchId || !team || !isPinValid) return
+    if (!pdfFile || !matchId) return
 
     setPdfLoading(true)
     setPdfError('')
-    setUploadSuccess(false)
+    setParsedData(null)
 
     try {
-      const parsedData = await parseRosterPdf(pdfFile)
+      const data = await parseRosterPdf(pdfFile)
 
       // Prepare roster data
-      const players = parsedData.players.map(p => ({
+      const players = data.players.map(p => ({
         number: p.number || null,
         firstName: p.firstName || '',
         lastName: p.lastName || '',
@@ -89,42 +259,32 @@ export default function UploadRosterApp() {
 
       // Prepare bench officials
       const bench = []
-      if (parsedData.coach) {
+      if (data.coach) {
         bench.push({
           role: 'Coach',
-          firstName: parsedData.coach.firstName || '',
-          lastName: parsedData.coach.lastName || '',
-          dob: parsedData.coach.dob || ''
+          firstName: data.coach.firstName || '',
+          lastName: data.coach.lastName || '',
+          dob: data.coach.dob || ''
         })
       }
-      if (parsedData.ac1) {
+      if (data.ac1) {
         bench.push({
           role: 'Assistant Coach 1',
-          firstName: parsedData.ac1.firstName || '',
-          lastName: parsedData.ac1.lastName || '',
-          dob: parsedData.ac1.dob || ''
+          firstName: data.ac1.firstName || '',
+          lastName: data.ac1.lastName || '',
+          dob: data.ac1.dob || ''
         })
       }
-      if (parsedData.ac2) {
+      if (data.ac2) {
         bench.push({
           role: 'Assistant Coach 2',
-          firstName: parsedData.ac2.firstName || '',
-          lastName: parsedData.ac2.lastName || '',
-          dob: parsedData.ac2.dob || ''
+          firstName: data.ac2.firstName || '',
+          lastName: data.ac2.lastName || '',
+          dob: data.ac2.dob || ''
         })
       }
 
-      // Store as pending roster
-      const pendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
-      await db.matches.update(matchId, {
-        [pendingField]: {
-          players,
-          bench,
-          uploadedAt: new Date().toISOString()
-        }
-      })
-
-      setUploadSuccess(true)
+      setParsedData({ players, bench })
       setPdfFile(null)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
@@ -137,143 +297,89 @@ export default function UploadRosterApp() {
     }
   }
 
-  // If no matchId or team in URL, show input form
-  if (!matchId || !team) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '400px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px' }}>
-            Upload Roster
-          </h2>
-          <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '24px' }}>
-            Please access this page via the link provided in Match Setup.
-          </p>
-        </div>
-      </div>
-    )
+  // Handle player edit
+  const handlePlayerChange = (index, field, value) => {
+    if (!parsedData) return
+    const updatedPlayers = [...parsedData.players]
+    updatedPlayers[index] = { ...updatedPlayers[index], [field]: value }
+    setParsedData({ ...parsedData, players: updatedPlayers })
   }
 
-  // If match not found
-  if (matchId && !match) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '400px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px' }}>
-            Match Not Found
-          </h2>
-          <p style={{ fontSize: '14px', color: 'var(--muted)' }}>
-            The match with ID {matchId} does not exist.
-          </p>
-        </div>
-      </div>
-    )
+  // Handle bench official edit
+  const handleBenchChange = (index, field, value) => {
+    if (!parsedData) return
+    const updatedBench = [...parsedData.bench]
+    updatedBench[index] = { ...updatedBench[index], [field]: value }
+    setParsedData({ ...parsedData, bench: updatedBench })
   }
 
-  // If PIN not provided in URL, show PIN input
-  if (!pin || !isPinValid) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '400px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px' }}>
-            Enter Upload PIN
-          </h2>
-          <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <input
-              type="text"
-              value={enteredPin}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '').slice(0, 6)
-                setEnteredPin(val)
-                setPdfError('')
-              }}
-              placeholder="Enter 6-digit PIN"
-              style={{
-                padding: '12px',
-                fontSize: '18px',
-                fontFamily: 'monospace',
-                textAlign: 'center',
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '6px',
-                color: 'var(--text)'
-              }}
-              maxLength={6}
-            />
-            {pdfError && (
-              <p style={{ color: '#ef4444', fontSize: '14px', margin: 0 }}>
-                {pdfError}
-              </p>
-            )}
-            <button
-              type="submit"
-              style={{
-                padding: '12px 24px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              Submit
-            </button>
-          </form>
-        </div>
-      </div>
-    )
+  // Add player
+  const handleAddPlayer = () => {
+    if (!parsedData) return
+    const newPlayer = {
+      number: null,
+      firstName: '',
+      lastName: '',
+      dob: '',
+      libero: '',
+      isCaptain: false
+    }
+    setParsedData({ ...parsedData, players: [...parsedData.players, newPlayer] })
   }
 
-  // Main upload interface
+  // Delete player
+  const handleDeletePlayer = (index) => {
+    if (!parsedData) return
+    const updatedPlayers = parsedData.players.filter((_, i) => i !== index)
+    setParsedData({ ...parsedData, players: updatedPlayers })
+  }
+
+  // Add bench official
+  const handleAddBench = () => {
+    if (!parsedData) return
+    const newBench = {
+      role: 'Coach',
+      firstName: '',
+      lastName: '',
+      dob: ''
+    }
+    setParsedData({ ...parsedData, bench: [...parsedData.bench, newBench] })
+  }
+
+  // Delete bench official
+  const handleDeleteBench = (index) => {
+    if (!parsedData) return
+    const updatedBench = parsedData.bench.filter((_, i) => i !== index)
+    setParsedData({ ...parsedData, bench: updatedBench })
+  }
+
+  // Handle confirm
+  const handleConfirm = () => {
+    if (!parsedData || !matchId) return
+    setShowConfirmModal(true)
+  }
+
+  // Handle final confirmation - send to index.html
+  const handleFinalConfirm = () => {
+    if (!parsedData || !matchId) return
+    
+    // Store data in localStorage to pass to index.html
+    const rosterData = {
+      matchId,
+      team,
+      players: parsedData.players,
+      bench: parsedData.bench,
+      timestamp: new Date().toISOString()
+    }
+    
+    localStorage.setItem('pendingRosterUpload', JSON.stringify(rosterData))
+    
+    // Redirect to index.html
+    window.location.href = 'index.html?rosterUpload=true'
+  }
+
+  const isValid = match && matchId && uploadPin && (team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin) === uploadPin
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -283,102 +389,599 @@ export default function UploadRosterApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       <div style={{
-        maxWidth: '800px',
         margin: '0 auto',
         background: 'var(--bg-secondary)',
         borderRadius: '12px',
         padding: '40px'
       }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '8px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '32px', textAlign: 'center' }}>
           Upload Roster
         </h1>
-        <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '32px' }}>
-          Team: {team === 'home' ? (match?.homeTeamId ? 'Home' : 'N/A') : (match?.awayTeamId ? 'Away' : 'N/A')}
-        </p>
 
-        {uploadSuccess && (
-          <div style={{
-            padding: '16px',
-            background: 'rgba(34, 197, 94, 0.2)',
-            border: '1px solid #22c55e',
-            borderRadius: '8px',
-            marginBottom: '24px',
-            color: '#22c55e'
-          }}>
-            ✓ Roster uploaded successfully! Please confirm the import in Match Setup.
+        {/* Input Form */}
+        {!parsedData && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+              marginBottom: '32px',
+              alignItems: 'center',        // Center horizontally
+              maxWidth: '100%',
+            }}
+          >
+            <div style={{maxWidth: '100%' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                Game Number
+              </label>
+              <input
+                type="text"
+                value={gameNumber}
+                onChange={(e) => {
+                  setGameNumber(e.target.value)
+                }}
+                placeholder="Enter game number"
+                style={{
+                  width: 'auto',
+                  padding: '12px',
+                  fontSize: '16px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: matchStatusCheck === 'invalid' 
+                    ? '1px solid #ef4444' 
+                    : matchStatusCheck === 'valid' 
+                    ? '1px solid #10b981' 
+                    : '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  color: 'var(--text)',
+                  textAlign: 'center',
+                }}
+              />
+              {matchStatusCheck === 'checking' && (
+                <p style={{ color: 'var(--accent)', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
+                  Checking match...
+                </p>
+              )}
+              {matchStatusCheck === 'valid' && (
+                <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
+                  ✓ Match found and ready for roster upload
+                </p>
+              )}
+            </div>
+
+            <div style={{ width: 320, maxWidth: '100%' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                Team
+              </label>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeam('home')
+                    setValidationError('')
+                    setUploadPin('')
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: team === 'home' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
+                    color: team === 'home' ? '#000' : 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    width: 'auto',
+                  }}
+                >
+                  Home {homeTeam?.name && `(${homeTeam.name})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeam('away')
+                    setValidationError('')
+                    setUploadPin('')
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: team === 'away' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
+                    color: team === 'away' ? '#000' : 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    width: 'auto',
+                  }}
+                >
+                  Away {awayTeam?.name && `(${awayTeam.name})`}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ maxWidth: '100%' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                Upload PIN
+              </label>
+              <input
+                type="text"
+                value={uploadPin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6)
+                  setUploadPin(val)
+                  setValidationError('')
+                }}
+                placeholder="Enter 6-digit upload PIN"
+                style={{
+                  width: 'auto',
+                  padding: '12px',
+                  fontSize: '18px',
+                  fontFamily: 'monospace',
+                  textAlign: 'center',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  color: 'var(--text)'
+                }}
+                maxLength={6}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                const valid = await validateInputs()
+                if (!valid) {
+                  // Error already set by validateInputs
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                fontSize: '16px',
+                fontWeight: 600,
+                background: 'var(--accent)',
+                color: '#000',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                minWidth: 140,
+                alignSelf: 'center'
+              }}
+            >
+              Validate
+            </button>
+
+            {validationError && (
+              <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', width: 320, maxWidth: '100%' }}>
+                {validationError}
+              </p>
+            )}
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={pdfLoading}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: 'var(--text)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              cursor: pdfLoading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Choose PDF File
-          </button>
-
-          {pdfFile && (
-            <>
-              <div style={{
-                padding: '12px',
-                background: 'rgba(255, 255, 255, 0.05)',
+        {/* Upload Section */}
+        {isValid && !parsedData && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '32px', alignItems: 'center' }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={pdfLoading}
+              style={{
+                padding: '12px 24px',
+                fontSize: '16px',
+                fontWeight: 600,
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: 'var(--text)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: '6px',
-                fontSize: '14px'
+                cursor: pdfLoading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Choose PDF File
+            </button>
+
+            {pdfFile && (
+              <>
+                <div style={{
+                  padding: '12px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  textAlign: 'center'
+                }}>
+                  Selected: {pdfFile.name}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUpload}
+                  disabled={pdfLoading}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: pdfLoading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {pdfLoading ? 'Uploading...' : 'Upload & Parse PDF'}
+                </button>
+              </>
+            )}
+
+            {pdfLoading && (
+              <p style={{ fontSize: '14px', color: 'var(--accent)', margin: 0, textAlign: 'center' }}>
+                Parsing PDF and uploading data...
+              </p>
+            )}
+
+            {pdfError && (
+              <p style={{ fontSize: '14px', color: '#ef4444', margin: 0, textAlign: 'center' }}>
+                {pdfError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Editable Roster */}
+        {parsedData && (
+          <div style={{ marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>Players</h2>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '80px 180px 180px 140px 100px 150px',
+              gap: '20px',
+              alignItems: 'center',
+              fontWeight: 600,
+              color: 'var(--accent)',
+              marginBottom: '12px',
+              fontSize: '15px',
+              letterSpacing: '0.01em'
+            }}>
+              <span style={{}}>Number</span>
+              <span style={{}}>Last name</span>
+              <span style={{}}>First name</span>
+              <span style={{}}>DoB</span>
+              <span style={{}}>Libero</span>
+              <span style={{}}>Captain</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+              {parsedData.players.map((player, index) => (
+                <div key={index} style={{
+                  padding: '16px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '8px',
+                  display: 'grid',
+                  gridTemplateColumns: '60px 180px 180px 140px 100px 100px 100px',
+                  gap: '20px',
+                  alignItems: 'center'
+                }}>
+                  <input
+                    type="number"
+                    value={player.number || ''}
+                    onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
+                    placeholder="#"
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '20px',
+                      textAlign: 'center'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={player.lastName}
+                    onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
+                    placeholder="Last Name"
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '120px'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={player.firstName}
+                    onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
+                    placeholder="First Name"
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '120px'
+                    }}
+                  />
+                  <input
+                    type="date"
+                    value={player.dob ? formatDateToISO(player.dob) : ''}
+                    onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '100px'
+                    }}
+                  />
+                  <select
+                    value={player.libero}
+                    onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',  // much darker background
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)'
+                    }}
+                  >
+                    <option value=""></option>
+                    <option value="libero1">Libero 1</option>
+                    <option value="libero2">Libero 2</option>
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      checked={player.isCaptain}
+                      onChange={(e) => handlePlayerChange(index, 'isCaptain', e.target.checked)}
+                    />
+                    <span style={{ fontSize: '14px' }}>Captain</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePlayer(index)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      background: '#ef4444',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={handleAddPlayer}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: 'var(--text)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                marginBottom: '24px'
+              }}
+            >
+              + Add Player
+            </button>
+
+            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>Bench Officials</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+              <div style={{ 
+                 display: 'grid',
+                 gridTemplateColumns: '200px 200px 200px 200px',
+                 gap: '20px',
+                 alignItems: 'center',
+                 fontWeight: 600,
+                 color: 'var(--accent)',
+                 marginBottom: '12px',
+                 fontSize: '15px',
+                 letterSpacing: '0.01em'
               }}>
-                Selected: {pdfFile.name}
+                <span>Function</span>
+                <span>Last name</span>
+                <span>First name</span>
+                <span>DOB</span>
               </div>
+              {parsedData.bench.map((official, index) => (
+                <div key={index} style={{
+                  padding: '16px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '8px',
+                  display: 'grid',
+                  gridTemplateColumns: 'auto auto auto auto auto auto',
+                  gap: '12px',
+                  alignItems: 'center'
+                }}>
+                  <select
+                    value={official.role}
+                    onChange={(e) => handleBenchChange(index, 'role', e.target.value)}
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '150px'
+                    }}
+                  >
+                    <option value="Coach">Coach</option>
+                    <option value="Assistant Coach 1">Assistant Coach 1</option>
+                    <option value="Assistant Coach 2">Assistant Coach 2</option>
+                    <option value="Physiotherapist">Physiotherapist</option>
+                    <option value="Medic">Medic</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={official.firstName}
+                    onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
+                    placeholder="First Name"
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '150px'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={official.lastName}
+                    onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
+                    placeholder="Last Name"
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '150px'
+                    }}
+                  />
+                  <input
+                    type="date"
+                    value={official.dob ? formatDateToISO(official.dob) : ''}
+                    onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: '150px'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBench(index)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      background: '#ef4444',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={handleAddBench}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: 'var(--text)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                marginBottom: '24px'
+              }}
+            >
+              + Add Bench Official
+            </button>
+
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
               <button
                 type="button"
-                onClick={handleUpload}
-                disabled={pdfLoading || !isPinValid}
+                onClick={handleConfirm}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '16px',
-                  fontWeight: 600,
+                  padding: '14px 32px',
+                  fontSize: '18px',
+                  fontWeight: 700,
                   background: 'var(--accent)',
                   color: '#000',
                   border: 'none',
-                  borderRadius: '6px',
-                  cursor: pdfLoading || !isPinValid ? 'not-allowed' : 'pointer'
+                  borderRadius: '8px',
+                  cursor: 'pointer'
                 }}
               >
-                {pdfLoading ? 'Uploading...' : 'Upload & Parse PDF'}
+                Confirm
               </button>
-            </>
-          )}
+            </div>
+          </div>
+        )}
 
-          {pdfLoading && (
-            <p style={{ fontSize: '14px', color: 'var(--accent)', margin: 0 }}>
-              Parsing PDF and uploading data...
-            </p>
-          )}
-
-          {pdfError && (
-            <p style={{ fontSize: '14px', color: '#ef4444', margin: 0 }}>
-              {pdfError}
-            </p>
-          )}
-        </div>
+        {/* Confirmation Modal */}
+        {showConfirmModal && (
+          <Modal
+            title="Confirm Roster Upload"
+            open={true}
+            onClose={() => setShowConfirmModal(false)}
+            width={400}
+          >
+            <div style={{ padding: '24px' }}>
+              <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
+                Upload this roster?
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  style={{
+                    padding: '12px 32px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  No
+                </button>
+                <button
+                  onClick={handleFinalConfirm}
+                  style={{
+                    padding: '12px 32px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Yes
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
       </div>
     </div>
   )
 }
-

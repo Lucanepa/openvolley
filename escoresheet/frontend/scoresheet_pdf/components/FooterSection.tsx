@@ -145,12 +145,12 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
                         {overflowSanctions.length > 0 && (
                             <>
                                 {remarks.trim() && <div className="mb-1"></div>}
-                                <div className="font-bold mb-1 text-[9px]">Sanctions (overflow):</div>
-                                {overflowSanctions.map((sanction, index) => (
-                                    <div key={index} className="text-[9px] leading-tight">
-                                        {formatSanction(sanction)}
-                                    </div>
-                                ))}
+                        <div className="font-bold mb-1 text-[9px]">Sanctions (overflow):</div>
+                        {overflowSanctions.map((sanction, index) => (
+                            <div key={index} className="text-[9px] leading-tight">
+                                {formatSanction(sanction)}
+                            </div>
+                        ))}
                             </>
                         )}
                     </div>
