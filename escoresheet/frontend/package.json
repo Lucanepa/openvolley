@@ -55,6 +55,7 @@
     "directories": {
       "output": "dist-electron"
     },
+    "npmRebuild": false,
     "files": [
       "dist/**/*",
       "electron/**/*",

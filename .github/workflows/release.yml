@@ -27,6 +27,13 @@ jobs:
         working-directory: escoresheet/frontend
         run: npm ci
       
+      - name: Remove canvas native dependency (not needed for html2canvas in Electron)
+        working-directory: escoresheet/frontend
+        run: |
+          if (Test-Path "node_modules\canvas") {
+            Remove-Item -Recurse -Force "node_modules\canvas"
+          }
+      
       - name: Build Electron app (Windows)
         working-directory: escoresheet/frontend
         env:
@@ -59,6 +66,13 @@ jobs:
         working-directory: escoresheet/frontend
         run: npm ci
       
+      - name: Remove canvas native dependency (not needed for html2canvas in Electron)
+        working-directory: escoresheet/frontend
+        run: |
+          if [ -d "node_modules/canvas" ]; then
+            rm -rf node_modules/canvas
+          fi
+      
       - name: Build Electron app (macOS) [WIP]
         working-directory: escoresheet/frontend
         env:
@@ -88,9 +102,28 @@ jobs:
           cache: 'npm'
           cache-dependency-path: escoresheet/frontend/package-lock.json
       
+      - name: Install system dependencies for canvas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libjpeg-dev \
+            libgif-dev \
+            librsvg2-dev \
+            libpixman-1-dev
+      
       - name: Install dependencies
         working-directory: escoresheet/frontend
         run: npm ci
+      
+      - name: Remove canvas native dependency (not needed for html2canvas in Electron)
+        working-directory: escoresheet/frontend
+        run: |
+          if [ -d "node_modules/canvas" ]; then
+            rm -rf node_modules/canvas
+          fi
       
       - name: Build Electron app (Linux) [WIP]
         working-directory: escoresheet/frontend
