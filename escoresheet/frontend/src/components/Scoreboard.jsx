@@ -2081,8 +2081,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Reset dismissed flag and start countdown
       countdownDismissedRef.current = false
       setBetweenSetsCountdown({ countdown: 180, started: true })
+      
       // If set 4 just ended, show modal to choose sides and service for set 5
       if (setIndex === 4) {
+        // Close the set end time modal first
         setSetEndTimeModal(null)
         
         // Determine current positions at end of set 4 (set 2, 3, 4 have teams switched)
@@ -2098,14 +2100,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const set4ServingTeamLabel = set4ServingTeamKey === teamAKey ? 'A' : 'B'
         
         // Use existing values if set, otherwise use current positions
-        setSet5SelectedLeftTeam(data.match?.set5LeftTeam || set4LeftTeamLabel)
-        setSet5SelectedFirstServe(data.match?.set5FirstServe || set4ServingTeamLabel)
-        setSet5SideServiceModal({ 
-          setIndex: setIndex + 1,
-          set4LeftTeamLabel,
-          set4RightTeamLabel,
-          set4ServingTeamLabel
-        })
+        const selectedLeftTeam = data.match?.set5LeftTeam || set4LeftTeamLabel
+        const selectedFirstServe = data.match?.set5FirstServe || set4ServingTeamLabel
+        
+        // Use setTimeout to ensure setEndTimeModal closes before showing set5 modal
+        setTimeout(() => {
+          setSet5SelectedLeftTeam(selectedLeftTeam)
+          setSet5SelectedFirstServe(selectedFirstServe)
+          setSet5SideServiceModal({ 
+            setIndex: setIndex + 1,
+            set4LeftTeamLabel,
+            set4RightTeamLabel,
+            set4ServingTeamLabel
+          })
+        }, 100)
         return
       }
       
@@ -5428,7 +5436,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Check if captain is on court and request captain on court if needed
   const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
-    if (!manageCaptainOnCourt || !refereeConnectionEnabled || !isAnyRefereeConnected) return
+    // Check both prop and localStorage
+    const manageCaptainOnCourtEnabled = manageCaptainOnCourt || localStorage.getItem('manageCaptainOnCourt') === 'true'
+    if (!manageCaptainOnCourtEnabled || !refereeConnectionEnabled || !isAnyRefereeConnected) return
     
     const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
     const teamLineupState = getTeamLineupState(teamKey)
