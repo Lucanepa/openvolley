@@ -21,7 +21,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const remarksTextareaRef = useRef(null)
   const [showRosters, setShowRosters] = useState(false)
   const [showSanctions, setShowSanctions] = useState(false)
-  const [optionsModal, setOptionsModal] = useState(false)
+  const [menuModal, setMenuModal] = useState(false)
+  const [scoreboardOptionsModal, setScoreboardOptionsModal] = useState(false)
+  const [scoreboardGuideModal, setScoreboardGuideModal] = useState(false)
   const [editPinModal, setEditPinModal] = useState(false)
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
@@ -5978,8 +5980,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </button>
           <button 
             className="secondary" 
-            onClick={() => setOptionsModal(true)}
+            onClick={() => setMenuModal(true)}
             style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
+          >
+            Menu
+          </button>
+          <button 
+            className="secondary" 
+            onClick={() => setScoreboardOptionsModal(true)}
+            style={{ background: '#8b5cf6', color: '#fff', fontWeight: 600 }}
           >
             Options
           </button>
@@ -9169,12 +9178,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       </div>
 
 
-      {/* Options Modal */}
-      {optionsModal && (
+      {/* Menu Modal */}
+      {menuModal && (
         <Modal
-          title="Options"
+          title="Menu"
           open={true}
-          onClose={() => setOptionsModal(false)}
+          onClose={() => setMenuModal(false)}
           width={400}
         >
           <div style={{ padding: '20px' }}>
@@ -9197,7 +9206,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}
               onClick={() => {
                 setShowLogs(true)
-                setOptionsModal(false)
+                setMenuModal(false)
               }}>
                 Show Action Log
               </div>
@@ -9219,7 +9228,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}
               onClick={() => {
                 setShowSanctions(true)
-                setOptionsModal(false)
+                setMenuModal(false)
               }}>
                 Show Sanctions and Results
               </div>
@@ -9241,7 +9250,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}
               onClick={() => {
                 setShowManualPanel(true)
-                setOptionsModal(false)
+                setMenuModal(false)
               }}>
                 Manual Changes
               </div>
@@ -9263,7 +9272,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}
               onClick={() => {
                 setShowRemarks(true)
-                setOptionsModal(false)
+                setMenuModal(false)
               }}>
                 Open Remarks Recording
               </div>
@@ -9285,7 +9294,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}
               onClick={() => {
                 setShowRosters(true)
-                setOptionsModal(false)
+                setMenuModal(false)
               }}>
                 Show Rosters
               </div>
@@ -9308,7 +9317,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 }}
                 onClick={() => {
                   onOpenMatchSetup()
-                  setOptionsModal(false)
+                  setMenuModal(false)
                 }}>
                   Show Match Setup
                 </div>

@@ -5,6 +5,7 @@ import MatchSetup from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
 import MatchEnd from './components/MatchEnd'
 import Modal from './components/Modal'
+import GuideModal from './components/GuideModal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import mikasaVolleyball from './mikasa_v200w.png'
 import favicon from './favicon.png'
@@ -78,6 +79,7 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [homeCardModal, setHomeCardModal] = useState(null) // 'official' | 'test' | null
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
+  const [homeGuideModal, setHomeGuideModal] = useState(false)
   const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
     // Load from localStorage
     const saved = localStorage.getItem('manageCaptainOnCourt')
@@ -2177,6 +2179,39 @@ export default function App() {
               </div>
             </div>
             
+            <div style={{ marginBottom: '24px' }}>
+              <button
+                onClick={() => {
+                  setHomeOptionsModal(false)
+                  setHomeGuideModal(true)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                }}
+              >
+                <span style={{ fontSize: '20px' }}>?</span>
+                <span>Show Guide</span>
+              </button>
+            </div>
+            
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button
                 onClick={() => setHomeOptionsModal(false)}
@@ -2197,6 +2232,12 @@ export default function App() {
           </div>
         </Modal>
       )}
+
+      {/* Home Guide Modal */}
+      <GuideModal
+        open={homeGuideModal}
+        onClose={() => setHomeGuideModal(false)}
+      />
 
       </div>
     </div>
