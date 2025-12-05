@@ -182,14 +182,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     bench: benchAway.filter(m => m.firstName || m.lastName || m.dob).length
   }
 
-  // Signatures and lock
+  // Signatures
   const [homeCoachSignature, setHomeCoachSignature] = useState(null)
   const [homeCaptainSignature, setHomeCaptainSignature] = useState(null)
   const [awayCoachSignature, setAwayCoachSignature] = useState(null)
   const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
   const [savedSignatures, setSavedSignatures] = useState({ homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null })
-  const isHomeLocked = !!(homeCoachSignature && homeCaptainSignature)
-  const isAwayLocked = !!(awayCoachSignature && awayCaptainSignature)
   
   // Check if coin toss was previously confirmed (all signatures match saved ones)
   const isCoinTossConfirmed = useMemo(() => {
@@ -199,44 +197,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
            awayCoachSignature === savedSignatures.awayCoach &&
            awayCaptainSignature === savedSignatures.awayCaptain
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
-
-  async function unlockTeam(side) {
-    
-    const password = prompt('Enter 1st Referee password to unlock:')
-    
-    if (password === null) {
-      return
-    }
-    
-    
-    if (password === '1234') {
-      
-      if (side === 'home') {
-        setHomeCoachSignature(null)
-        setHomeCaptainSignature(null)
-        // Update database if matchId exists
-        if (matchId) {
-          await db.matches.update(matchId, {
-            homeCoachSignature: null,
-            homeCaptainSignature: null
-          })
-        }
-      } else if (side === 'away') { 
-        setAwayCoachSignature(null)
-        setAwayCaptainSignature(null)
-        // Update database if matchId exists
-        if (matchId) {
-          await db.matches.update(matchId, {
-            awayCoachSignature: null,
-            awayCaptainSignature: null
-          })
-        }
-      }
-      alert('Team unlocked successfully!')
-    } else {
-      alert('Wrong password')
-    }
-  }
 
   // Load match data if matchId is provided
   const match = useLiveQuery(async () => {
@@ -1803,13 +1763,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        {isHomeLocked && (
-          <div className="panel" style={{ marginTop:8 }}>
-            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
-              unlockTeam('home')
-            }}>Unlock</button></p>
-          </div>
-        )}
         <h1>Roster</h1>
         {homeRoster.length < 14 && (
           <div style={{ 
@@ -1818,16 +1771,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)',
             marginBottom: '8px',
-            opacity: isHomeLocked ? 0.5 : 1
           }}>
             <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
             <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
               
-              <input disabled={isHomeLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
-              <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
-              <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-              <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-              <select disabled={isHomeLocked} className="w-90" value={homeLibero} onChange={e => {
+              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
+              <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
+              <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
+              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <select className="w-90" value={homeLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                 if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
@@ -1843,8 +1795,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <option value="libero2">Libero 2</option>
                 )}
               </select>
-              <label className="inline"><input disabled={isHomeLocked} type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
-              <button disabled={isHomeLocked} type="button" className="secondary" onClick={() => {
+              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
+              <button type="button" className="secondary" onClick={() => {
                 if (!homeLast || !homeFirst) return
                 const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
                 setHomeRoster(list => {
@@ -1888,7 +1840,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 type="button"
                 className="secondary"
                 onClick={() => homeFileInputRef.current?.click()}
-                disabled={isHomeLocked || homePdfLoading}
+                disabled={homePdfLoading}
                 style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
               >
                 Upload Einsatzliste PDF (DE / FR / IT)
@@ -1902,7 +1854,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     type="button"
                     className="secondary"
                     onClick={handleHomeImportClick}
-                    disabled={isHomeLocked || homePdfLoading}
+                    disabled={homePdfLoading}
                     style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
                   >
                     {homePdfLoading ? 'Importing...' : 'Import PDF'}
@@ -2105,7 +2057,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           {homeRoster.map((p, i) => (
             <div key={`h-${i}`} className="row" style={{ alignItems: 'center' }}>
               <input 
-                disabled={isHomeLocked} 
                 className="w-num" 
                 placeholder="#" 
                 type="number" 
@@ -2127,7 +2078,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <input 
-                disabled={isHomeLocked} 
                 className="w-name capitalize" 
                 placeholder="Last Name" 
                 value={p.lastName || ''} 
@@ -2138,7 +2088,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <input 
-                disabled={isHomeLocked} 
                 className="w-name capitalize" 
                 placeholder="First Name" 
                 value={p.firstName || ''} 
@@ -2149,7 +2098,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <input 
-                disabled={isHomeLocked} 
                 className="w-dob" 
                 placeholder="Date of birth (dd/mm/yyyy)" 
                 type="date" 
@@ -2161,7 +2109,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <select 
-                disabled={isHomeLocked} 
                 className="w-90" 
                 value={p.libero || ''} 
                 onChange={async e => {
@@ -2194,7 +2141,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               </select>
               <label className="inline">
                 <input 
-                  disabled={isHomeLocked} 
                   type="radio" 
                   name="homeCaptain" 
                   checked={p.isCaptain || false} 
@@ -2223,7 +2169,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           const originalIdx = benchHome.findIndex(b => b === m)
           return (
             <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
-              <select disabled={isHomeLocked} className="w-220" value={m.role || 'Coach'} onChange={e=>{
+              <select className="w-220" value={m.role || 'Coach'} onChange={e=>{
                 const newRole = e.target.value || 'Coach'
                 // Check if this role is already taken by another official
                 const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
@@ -2246,42 +2192,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                                   )
                                 })}
               </select>
-              <input disabled={isHomeLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
-              <input disabled={isHomeLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
-              <input disabled={isHomeLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
-              {!isHomeLocked && (
-                <button type="button" className="secondary" onClick={() => {
-                  const updated = benchHome.filter((_, idx) => idx !== originalIdx)
-                  setBenchHome(updated)
-                  // Trigger save immediately
-                  setTimeout(() => saveDraft(true), 100)
-                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  Remove
-                </button>
-              )}
+              <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
+              <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
+              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              <button type="button" className="secondary" onClick={() => {
+                const updated = benchHome.filter((_, idx) => idx !== originalIdx)
+                setBenchHome(updated)
+                // Trigger save immediately
+                setTimeout(() => saveDraft(true), 100)
+              }} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                Remove
+              </button>
             </div>
           )
         })}
-        {!isHomeLocked && (
-          <div className="row" style={{ marginTop: 8 }}>
-            <button 
-              type="button" 
-              className="secondary" 
-              disabled={benchHome.length >= 5}
-              onClick={() => {
-                // Find the first available role
-                const takenRoles = new Set(benchHome.map(b => b.role))
-                const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
-                if (availableRole) {
-                  setBenchHome([...benchHome, initBench(availableRole.value)])
-                }
-              }} 
+        <div className="row" style={{ marginTop: 8 }}>
+          <button 
+            type="button" 
+            className="secondary" 
+            disabled={benchHome.length >= 5}
+            onClick={() => {
+              // Find the first available role
+              const takenRoles = new Set(benchHome.map(b => b.role))
+              const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+              if (availableRole) {
+                setBenchHome([...benchHome, initBench(availableRole.value)])
+              }
+            }} 
               style={{ padding: '4px 8px', fontSize: '12px' }}
             >
               Add Bench Official
             </button>
-          </div>
-        )}
+        </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             // Save home team data to database if matchId exists
@@ -2371,13 +2313,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        {isAwayLocked && (
-          <div className="panel" style={{ marginTop:8 }}>
-            <p className="text-sm">Locked (signed by Coach and Captain). <button className="secondary" onClick={()=>{
-              unlockTeam('away')
-            }}>Unlock</button></p>
-          </div>
-        )}
         <h1>Roster</h1>
              
         {awayRoster.length < 14 && (
@@ -2387,15 +2322,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)',
             marginBottom: '8px',
-            opacity: isAwayLocked ? 0.5 : 1
           }}>
             <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
             <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <input disabled={isAwayLocked} className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
-              <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
-              <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-              <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-              <select disabled={isAwayLocked} className="w-120" value={awayLibero} onChange={e => {
+              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
+              <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
+              <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
+              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <select className="w-120" value={awayLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                 if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
@@ -2411,8 +2345,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 <option value="libero2">libero 2</option>
                 )}
               </select>
-              <label className="inline"><input disabled={isAwayLocked} type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
-              <button disabled={isAwayLocked} type="button" className="secondary" onClick={() => {
+              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
+              <button type="button" className="secondary" onClick={() => {
                 if (!awayLast || !awayFirst) return
                 const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
                 setAwayRoster(list => {
@@ -2456,7 +2390,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 type="button"
                 className="secondary"
                 onClick={() => awayFileInputRef.current?.click()}
-                disabled={isAwayLocked || awayPdfLoading}
+                disabled={awayPdfLoading}
                 style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
               >
                 Upload Einsatzliste PDF (DE / FR / IT)
@@ -2470,7 +2404,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     type="button"
                     className="secondary"
                     onClick={handleAwayImportClick}
-                    disabled={isAwayLocked || awayPdfLoading}
+                    disabled={awayPdfLoading}
                     style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
                   >
                     {awayPdfLoading ? 'Importing...' : 'Import PDF'}
@@ -2674,7 +2608,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           {awayRoster.map((p, i) => (
             <div key={`a-${i}`} className="row" style={{ alignItems: 'center' }}>
               <input 
-                disabled={isAwayLocked} 
                 className="w-num" 
                 placeholder="#" 
                 type="number" 
@@ -2696,7 +2629,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <input 
-                disabled={isAwayLocked} 
                 className="w-name capitalize" 
                 placeholder="Last Name" 
                 value={p.lastName || ''} 
@@ -2707,7 +2639,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <input 
-                disabled={isAwayLocked} 
                 className="w-name capitalize" 
                 placeholder="First Name" 
                 value={p.firstName || ''} 
@@ -2718,7 +2649,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <input 
-                disabled={isAwayLocked} 
                 className="w-dob" 
                 placeholder="Date of birth (dd/mm/yyyy)" 
                 type="date" 
@@ -2730,7 +2660,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 }} 
               />
               <select 
-                disabled={isAwayLocked} 
                 className="w-90" 
                 value={p.libero || ''} 
                 onChange={async e => {
@@ -2763,7 +2692,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               </select>
               <label className="inline">
                 <input 
-                  disabled={isAwayLocked} 
                   type="radio" 
                   name="awayCaptain" 
                   checked={p.isCaptain || false} 
@@ -2792,7 +2720,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           const originalIdx = benchAway.findIndex(b => b === m)
           return (
             <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
-              <select disabled={isAwayLocked} className="w-220" value={m.role || 'Coach'} onChange={e=>{
+              <select className="w-220" value={m.role || 'Coach'} onChange={e=>{
                 const newRole = e.target.value || 'Coach'
                 // Check if this role is already taken by another official
                 const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
@@ -2815,42 +2743,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                                   )
                                 })}
               </select>
-              <input disabled={isAwayLocked} className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
-              <input disabled={isAwayLocked} className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
-              <input disabled={isAwayLocked} className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
-              {!isAwayLocked && (
-                <button type="button" className="secondary" onClick={() => {
-                  const updated = benchAway.filter((_, idx) => idx !== originalIdx)
-                  setBenchAway(updated)
-                  // Trigger save immediately
-                  setTimeout(() => saveDraft(true), 100)
-                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  Remove
-                </button>
-              )}
+              <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
+              <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
+              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              <button type="button" className="secondary" onClick={() => {
+                const updated = benchAway.filter((_, idx) => idx !== originalIdx)
+                setBenchAway(updated)
+                // Trigger save immediately
+                setTimeout(() => saveDraft(true), 100)
+              }} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                Remove
+              </button>
             </div>
           )
         })}
-        {!isAwayLocked && (
-          <div className="row" style={{ marginTop: 8 }}>
-            <button 
-              type="button" 
-              className="secondary" 
-              disabled={benchAway.length >= 5}
-              onClick={() => {
-                // Find the first available role
-                const takenRoles = new Set(benchAway.map(b => b.role))
-                const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
-                if (availableRole) {
-                  setBenchAway([...benchAway, initBench(availableRole.value)])
-                }
-              }} 
+        <div className="row" style={{ marginTop: 8 }}>
+          <button 
+            type="button" 
+            className="secondary" 
+            disabled={benchAway.length >= 5}
+            onClick={() => {
+              // Find the first available role
+              const takenRoles = new Set(benchAway.map(b => b.role))
+              const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+              if (availableRole) {
+                setBenchAway([...benchAway, initBench(availableRole.value)])
+              }
+            }} 
               style={{ padding: '4px 8px', fontSize: '12px' }}
             >
               Add Bench Official
             </button>
-          </div>
-        )}
+        </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             // Save away team data to database if matchId exists

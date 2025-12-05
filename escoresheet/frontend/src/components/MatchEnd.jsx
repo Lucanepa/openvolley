@@ -1,12 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { Results, Sanctions, Remarks } from '../../scoresheet_pdf/components/FooterSection'
+import jsPDF from 'jspdf'
+import { generateScoresheetPDF } from '../utils/generateScoresheetPDF'
 
 export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
   const [openSignature, setOpenSignature] = useState(null) // 'home-captain', 'away-captain', 'ref1', 'ref2', 'scorer', 'asst-scorer'
+  const [isApproved, setIsApproved] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const scoresheetIframeRef = useRef(null)
 
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
@@ -532,99 +537,304 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
           </div>
         </div>
       </div>
-      {/* Action Button */}
-      <button
-        onClick={async () => {
-          try {
-            // Gather all match data needed for the scoresheet
-            const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index');
-            const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq');
-            
-            // Create a data package to pass to the scoresheet
-            const scoresheetData = {
-              match,
-              homeTeam,
-              awayTeam,
-              homePlayers,
-              awayPlayers,
-              sets: allSets,
-              events: allEvents,
-              sanctions: [] // TODO: Extract sanctions from events
-            };
-            
-            // Store data in sessionStorage to pass to new window
-            sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData));
-            
-            // Calculate optimal window size for A3 scoresheet (410mm x 287mm)
-            // At 96 DPI: ~1549px x 1084px, but add padding and controls
-            const scoresheetWidth = 410; // mm
-            const scoresheetHeight = 287; // mm
-            const mmToPx = 3.779527559; // 1mm = 3.779527559px at 96 DPI
-            const windowWidth = Math.max(1600, Math.min(screen.width - 100, scoresheetWidth * mmToPx + 200));
-            const windowHeight = Math.max(1200, Math.min(screen.height - 100, scoresheetHeight * mmToPx + 200));
-            
-            // Open scoresheet in new window with calculated size
-            const scoresheetWindow = window.open(
-              '/scoresheet.html', 
-              '_blank', 
-              `width=${Math.round(windowWidth)},height=${Math.round(windowHeight)},scrollbars=yes,resizable=yes`
-            );
-            
-            if (!scoresheetWindow) {
-              alert('Please allow popups to view the scoresheet');
-              return;
-            }
-            
-            // Wait for window to load, then adjust zoom if needed
-            const adjustZoom = () => {
+
+      {/* Approval Section */}
+      {!isApproved && (
+        <div style={{
+          background: 'var(--bg-secondary)',
+          borderRadius: '12px',
+          padding: '24px',
+          marginBottom: '24px'
+        }}>
+          <h2 style={{ 
+            fontSize: '20px', 
+            fontWeight: 700, 
+            marginBottom: '20px',
+            textAlign: 'center'
+          }}>
+            Approval
+          </h2>
+          
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px',
+            marginBottom: '24px'
+          }}>
+            <SignatureBox 
+              role="home-captain" 
+              label={`${homeTeam?.name || 'Home'} Captain ${homeCaptain ? `(#${homeCaptain.number})` : ''}`}
+            />
+            <SignatureBox 
+              role="away-captain" 
+              label={`${awayTeam?.name || 'Away'} Captain ${awayCaptain ? `(#${awayCaptain.number})` : ''}`}
+            />
+            {match.asstScorerSignature !== undefined && (
+              <SignatureBox role="asst-scorer" label="ASS SCORER" />
+            )}
+            <SignatureBox role="scorer" label="SCORER" />
+            {match.ref2Signature !== undefined && (
+              <SignatureBox role="ref2" label="2nd REF" />
+            )}
+            <SignatureBox role="ref1" label="1st REF" />
+          </div>
+
+          <button
+            onClick={async () => {
+              setIsSaving(true)
               try {
-                if (scoresheetWindow.closed) return;
+                // Check if all required signatures are present
+                const requiredSignatures = [
+                  match.homeCaptainSignature,
+                  match.awayCaptainSignature,
+                  match.scorerSignature,
+                  match.ref1Signature
+                ]
                 
-                // Try to set zoom to fit content (if browser supports it)
-                const targetWidth = scoresheetWidth * mmToPx;
-                const availableWidth = windowWidth - 200; // Account for padding/scrollbars
-                const scale = Math.min(1, availableWidth / targetWidth);
+                const hasAllRequired = requiredSignatures.every(sig => sig !== null && sig !== undefined)
                 
-                // Some browsers support document.body.style.zoom
-                if (scoresheetWindow.document && scoresheetWindow.document.body) {
-                  scoresheetWindow.document.body.style.zoom = scale;
+                if (!hasAllRequired) {
+                  alert('Please sign all required fields before approving.')
+                  setIsSaving(false)
+                  return
+                }
+
+                // Save to Supabase if official match
+                if (!match.test) {
+                  await db.sync_queue.add({
+                    resource: 'match',
+                    action: 'update',
+                    payload: {
+                      id: String(matchId),
+                      status: 'final',
+                      approved: true,
+                      approvedAt: new Date().toISOString()
+                    },
+                    ts: new Date().toISOString(),
+                    status: 'queued'
+                  })
+                }
+
+                // Gather all match data
+                const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+                const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+                const allReferees = await db.referees.toArray()
+                const allScorers = await db.scorers.toArray()
+
+                // Prepare scoresheet data
+                const scoresheetData = {
+                  match,
+                  homeTeam,
+                  awayTeam,
+                  homePlayers,
+                  awayPlayers,
+                  sets: allSets,
+                  events: allEvents
                 }
                 
-                // Also try using CSS transform as fallback
-                if (scoresheetWindow.document && scoresheetWindow.document.documentElement) {
-                  scoresheetWindow.document.documentElement.style.transform = `scale(${scale})`;
-                  scoresheetWindow.document.documentElement.style.transformOrigin = 'top left';
+                // Store in sessionStorage for scoresheet page
+                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                
+                // Open scoresheet in new window to use existing save PDF logic
+                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1600,height=1200')
+                
+                if (!scoresheetWindow) {
+                  throw new Error('Could not open scoresheet window. Please allow popups.')
                 }
-              } catch (e) {
-                // Cross-origin or other restrictions - that's okay
-                // Will rely on window size and user can manually zoom
+
+                // Wait for window to load and React to render
+                await new Promise((resolve, reject) => {
+                  const checkLoaded = setInterval(() => {
+                    try {
+                      if (scoresheetWindow.closed) {
+                        clearInterval(checkLoaded)
+                        reject(new Error('Scoresheet window was closed'))
+                        return
+                      }
+                      if (scoresheetWindow.document.readyState === 'complete') {
+                        // Check if React has rendered by looking for the container
+                        const root = scoresheetWindow.document.querySelector('#root')
+                        if (root && root.children.length > 0) {
+                          clearInterval(checkLoaded)
+                          // Wait a bit more for full rendering
+                          setTimeout(resolve, 2000)
+                        }
+                      }
+                    } catch (e) {
+                      // Cross-origin - wait a bit and try
+                      setTimeout(() => {
+                        clearInterval(checkLoaded)
+                        resolve()
+                      }, 5000)
+                    }
+                  }, 100)
+                  
+                  // Timeout after 10 seconds
+                  setTimeout(() => {
+                    clearInterval(checkLoaded)
+                    resolve()
+                  }, 10000)
+                })
+
+                // Use the existing captureScreenshot function from the scoresheet page
+                try {
+                  // Find and click the Save button which triggers the existing captureScreenshot function
+                  const saveButton = Array.from(scoresheetWindow.document.querySelectorAll('button')).find(
+                    btn => btn.textContent?.trim() === 'Save' || btn.textContent?.includes('Save')
+                  )
+                  
+                  if (saveButton) {
+                    // Click the Save button to trigger the existing captureScreenshot function
+                    // This will use the Screen Capture API and save as PDF
+                    saveButton.click()
+                    // Wait for the PDF download to be triggered
+                    await new Promise(resolve => setTimeout(resolve, 3000))
+                  } else {
+                    // Fallback: use generateScoresheetPDF if Save button not found
+                    await generateScoresheetPDF({
+                      match,
+                      homeTeam,
+                      awayTeam,
+                      homePlayers,
+                      awayPlayers,
+                      sets: allSets,
+                      events: allEvents,
+                      referees: allReferees,
+                      scorers: allScorers
+                    })
+                  }
+                  
+                  // Also save as JPG using html2canvas
+                  try {
+                    const html2canvas = (await import('html2canvas')).default
+                    const scoresheetDoc = scoresheetWindow.document
+                    const scoresheetElement = scoresheetDoc.querySelector('#root') || scoresheetDoc.body
+                    
+                    const canvas = await html2canvas(scoresheetElement, {
+                      scale: 2,
+                      useCORS: true,
+                      logging: false,
+                      backgroundColor: '#ffffff'
+                    })
+
+                    // Save as JPG
+                    const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.95)
+                    const jpgLink = document.createElement('a')
+                    const matchDate = match.scheduledAt 
+                      ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
+                      : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
+                    const matchNum = match?.gameNumber || match?.externalId || match?.game_n?.toString() || 'match'
+                    const homeShort = match?.homeShortName || homeTeam?.name || 'Home'
+                    const awayShort = match?.awayShortName || awayTeam?.name || 'Away'
+                    const sanitize = (str) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20)
+                    const date = match.scheduledAt 
+                      ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
+                      : new Date().toISOString().slice(0, 10).replace(/-/g, '')
+                    const filename = `${matchNum}_${sanitize(homeShort)}_${sanitize(awayShort)}_${date}.jpg`
+                    jpgLink.download = filename
+                    jpgLink.href = jpgDataUrl
+                    jpgLink.click()
+                  } catch (jpgError) {
+                    console.warn('Could not save JPG screenshot:', jpgError)
+                    // Continue - PDF was saved using existing function
+                  }
+
+                  // Close the scoresheet window after a delay to allow downloads
+                  setTimeout(() => {
+                    if (!scoresheetWindow.closed) {
+                      scoresheetWindow.close()
+                    }
+                  }, 2000)
+                } catch (screenshotError) {
+                  console.error('Error using scoresheet save function:', screenshotError)
+                  // Fallback to generateScoresheetPDF
+                  await generateScoresheetPDF({
+                    match,
+                    homeTeam,
+                    awayTeam,
+                    homePlayers,
+                    awayPlayers,
+                    sets: allSets,
+                    events: allEvents,
+                    referees: allReferees,
+                    scorers: allScorers
+                  })
+                  if (scoresheetWindow && !scoresheetWindow.closed) {
+                    scoresheetWindow.close()
+                  }
+                }
+
+                // Save database data in readable format
+                const exportData = {
+                  match: {
+                    ...match,
+                    homeTeam,
+                    awayTeam
+                  },
+                  homePlayers,
+                  awayPlayers,
+                  sets: allSets,
+                  events: allEvents,
+                  exportedAt: new Date().toISOString()
+                }
+
+                const dataStr = JSON.stringify(exportData, null, 2)
+                const dataBlob = new Blob([dataStr], { type: 'application/json' })
+                const dataLink = document.createElement('a')
+                const dataFilename = `MatchData_${(homeTeam?.name || 'Home').replace(/[^a-zA-Z0-9]/g, '_')}_vs_${(awayTeam?.name || 'Away').replace(/[^a-zA-Z0-9]/g, '_')}_${matchDate}.json`
+                dataLink.download = dataFilename
+                dataLink.href = URL.createObjectURL(dataBlob)
+                dataLink.click()
+
+                // Mark as approved
+                await db.matches.update(matchId, { approved: true, approvedAt: new Date().toISOString() })
+                setIsApproved(true)
+              } catch (error) {
+                console.error('Error approving match:', error)
+                alert('Error approving match: ' + error.message)
+              } finally {
+                setIsSaving(false)
               }
-            };
-            
-            // Try multiple times as the window loads
-            setTimeout(adjustZoom, 100);
-            setTimeout(adjustZoom, 500);
-            setTimeout(adjustZoom, 1000);
-          } catch (error) {
-            console.error('Error opening scoresheet:', error);
-            alert('Error opening scoresheet: ' + error.message);
-          }
-        }}
-        style={{
-          width: '100%',
-          padding: '16px',
-          fontSize: '16px',
-          fontWeight: 600,
-          background: 'var(--accent)',
-          color: '#000',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          marginBottom: '20px'
-        }}
-      >
-        Show Scoresheet
-      </button>
+            }}
+            disabled={isSaving}
+            style={{
+              width: '100%',
+              padding: '16px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: isSaving ? 'rgba(255,255,255,0.3)' : 'var(--accent)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: isSaving ? 'not-allowed' : 'pointer',
+              opacity: isSaving ? 0.6 : 1
+            }}
+          >
+            {isSaving ? 'Saving...' : 'Confirm and Approve'}
+          </button>
+        </div>
+      )}
+
+      {/* Done Button - shown after approval */}
+      {isApproved && (
+        <button
+          onClick={onGoHome}
+          style={{
+            width: '100%',
+            padding: '16px',
+            fontSize: '16px',
+            fontWeight: 600,
+            background: 'var(--accent)',
+            color: '#000',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            marginBottom: '20px'
+          }}
+        >
+          Done
+        </button>
+      )}
 
       {/* Signature Modal */}
       {openSignature && (
