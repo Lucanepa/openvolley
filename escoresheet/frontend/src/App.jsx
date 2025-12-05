@@ -2217,43 +2217,23 @@ export default function App() {
               <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>Download Desktop App</h3>
               {(() => {
                 const githubRepo = import.meta.env.VITE_GITHUB_REPO || 'lucacanepa/openvolley'
-                const baseUrl = `https://github.com/${githubRepo}/releases/latest/download`
                 const releasesUrl = `https://github.com/${githubRepo}/releases/latest`
                 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <a
-                      href={`${baseUrl}/Openvolley-eScoresheet-Setup-x64.exe`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px 16px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        borderRadius: '8px',
-                        textDecoration: 'none',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      }}
-                    >
-                      <span style={{ fontSize: '20px' }}>🪟</span>
-                      <span>Windows (64-bit)</span>
-                      <span style={{ marginLeft: 'auto', fontSize: '14px', opacity: 0.7 }}>→</span>
-                    </a>
+                    <div style={{ 
+                      padding: '12px 16px',
+                      fontSize: '14px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
+                      color: 'var(--muted)',
+                      textAlign: 'center'
+                    }}>
+                      Build installers and upload to GitHub Releases to enable downloads.
+                    </div>
                     
                     <a
-                      href={`${baseUrl}/Openvolley-eScoresheet-x64.dmg`}
+                      href={releasesUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -2268,7 +2248,8 @@ export default function App() {
                         border: '1px solid rgba(255, 255, 255, 0.2)',
                         borderRadius: '8px',
                         textDecoration: 'none',
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s',
+                        justifyContent: 'center'
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
@@ -2277,55 +2258,21 @@ export default function App() {
                         e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
                       }}
                     >
-                      <span style={{ fontSize: '20px' }}>🍎</span>
-                      <span>macOS (Intel & Apple Silicon)</span>
-                      <span style={{ marginLeft: 'auto', fontSize: '14px', opacity: 0.7 }}>→</span>
-                    </a>
-                    
-                    <a
-                      href={`${baseUrl}/Openvolley-eScoresheet-x64.AppImage`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px 16px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        borderRadius: '8px',
-                        textDecoration: 'none',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      }}
-                    >
-                      <span style={{ fontSize: '20px' }}>🐧</span>
-                      <span>Linux (AppImage)</span>
-                      <span style={{ marginLeft: 'auto', fontSize: '14px', opacity: 0.7 }}>→</span>
+                      <span>📦 View Releases & Downloads</span>
+                      <span style={{ fontSize: '14px', opacity: 0.7 }}>→</span>
                     </a>
                     
                     <div style={{ 
                       marginTop: '8px', 
                       fontSize: '12px', 
                       color: 'var(--muted)',
-                      textAlign: 'center'
+                      padding: '8px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '6px'
                     }}>
-                      <a
-                        href={releasesUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'var(--muted)', textDecoration: 'underline' }}
-                      >
-                        View all downloads
-                      </a>
+                      <strong>To build installers:</strong><br />
+                      Run <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px' }}>npm run electron:build:win</code> (or mac/linux)<br />
+                      Then upload files from <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px' }}>dist-electron/</code> to a GitHub Release
                     </div>
                   </div>
                 )

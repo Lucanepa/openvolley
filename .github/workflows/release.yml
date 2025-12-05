@@ -1,0 +1,82 @@
+name: Build and Release Desktop Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.1.0)'
+        required: true
+        type: string
+  release:
+    types: [created]
+
+jobs:
+  build-all:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+      
+      - name: Build web app
+        working-directory: escoresheet/frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
+          export VITE_BASE_PATH="$BASE_PATH"
+          cross-env ELECTRON=true npm run build
+      
+      - name: Build Electron app
+        working-directory: escoresheet/frontend
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            npm run electron:build:win
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            npm run electron:build:mac
+          else
+            npm run electron:build:linux
+          fi
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ runner.os }}-build
+          path: escoresheet/frontend/dist-electron/*
+          retention-days: 30
+      
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        if: matrix.os == 'ubuntu-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            escoresheet/frontend/dist-electron/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
