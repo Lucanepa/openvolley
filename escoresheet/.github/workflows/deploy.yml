@@ -15,6 +15,9 @@ jobs:
       id-token: write
     env:
       PAGES_CNAME: app.yourdomain.org   # <-- edit or set as a repo secret
+      # These secrets must be set in GitHub: Settings → Secrets and variables → Actions
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +27,8 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          # Bump version before building
+          npm run version:bump || true
           # Determine base path: use '/' when CNAME set, else '/<repo-name>/'
           if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
           export VITE_BASE_PATH="$BASE_PATH"
