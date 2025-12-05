@@ -7,16 +7,13 @@ on:
         description: 'Version tag (e.g., v0.1.0)'
         required: true
         type: string
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  build-all:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-    
+  build-windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       
@@ -30,53 +27,133 @@ jobs:
         working-directory: escoresheet/frontend
         run: npm ci
       
-      - name: Build web app
+      - name: Build Electron app (Windows)
         working-directory: escoresheet/frontend
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: |
-          if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
-          export VITE_BASE_PATH="$BASE_PATH"
-          cross-env ELECTRON=true npm run build
+          ELECTRON: 'true'
+        run: npm run electron:build:win
       
-      - name: Build Electron app
-        working-directory: escoresheet/frontend
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            npm run electron:build:win
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            npm run electron:build:mac
-          else
-            npm run electron:build:linux
-          fi
-      
-      - name: Upload artifacts
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ runner.os }}-build
-          path: escoresheet/frontend/dist-electron/*
+          name: windows-build
+          path: |
+            escoresheet/frontend/dist-electron/*.exe
+            escoresheet/frontend/dist-electron/*.exe.blockmap
           retention-days: 30
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+      
+      - name: Build Electron app (macOS) [WIP]
+        working-directory: escoresheet/frontend
+        env:
+          ELECTRON: 'true'
+        run: npm run electron:build:mac
+      
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            escoresheet/frontend/dist-electron/*.dmg
+            escoresheet/frontend/dist-electron/*.dmg.blockmap
+            escoresheet/frontend/dist-electron/*.zip
+          retention-days: 30
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+      
+      - name: Build Electron app (Linux) [WIP]
+        working-directory: escoresheet/frontend
+        env:
+          ELECTRON: 'true'
+        run: npm run electron:build:linux
+      
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            escoresheet/frontend/dist-electron/*.AppImage
+            escoresheet/frontend/dist-electron/*.deb
+            escoresheet/frontend/dist-electron/*.rpm
+          retention-days: 30
+
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Display artifacts
+        run: ls -R artifacts/
       
       - name: Get version
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" == "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-          else
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
       
       - name: Create Release
-        if: matrix.os == 'ubuntu-latest'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
-          name: Release ${{ steps.get_version.outputs.version }}
+          name: Openvolley eScoresheet ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
+          body: |
+            ## Downloads
+            
+            ### Windows ✅
+            - **Installer**: `Openvolley eScoresheet Setup X.X.X.exe` - Recommended for most users
+            - **Portable**: `Openvolley eScoresheet X.X.X.exe` - No installation required
+            
+            ### macOS 🚧 (WIP)
+            - **DMG**: `Openvolley eScoresheet-X.X.X.dmg` - Drag to Applications
+            - **ZIP**: `Openvolley eScoresheet-X.X.X-mac.zip` - Extract and run
+            
+            ### Linux 🚧 (WIP)
+            - **AppImage**: `Openvolley eScoresheet-X.X.X.AppImage` - Make executable and run
+            - **DEB**: For Debian/Ubuntu
+            - **RPM**: For Fedora/RHEL
+            
+            ---
+            *Note: macOS and Linux builds are work in progress and may require additional testing.*
           files: |
-            escoresheet/frontend/dist-electron/*
+            artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
