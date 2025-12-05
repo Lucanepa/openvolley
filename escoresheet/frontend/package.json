@@ -3,15 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.js",
+  "description": "Openvolley eScoresheet - Offline-first volleyball match scoring application",
+  "author": "Luca Canepa <luca.canepa@gmail.com>",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
-    "electron:build": "cross-env ELECTRON=true npm run build && electron-builder",
-    "electron:build:win": "cross-env ELECTRON=true npm run build && electron-builder --win",
-    "electron:build:mac": "cross-env ELECTRON=true npm run build && electron-builder --mac",
-    "electron:build:linux": "cross-env ELECTRON=true npm run build && electron-builder --linux",
+    "electron:clean": "node -e \"require('fs').rmSync('dist-electron', {recursive: true, force: true})\" || exit 0",
+    "electron:build": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder",
+    "electron:build:win": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --win",
+    "electron:build:win:pwsh": "npm run electron:clean && $env:ELECTRON='true'; npm run build; electron-builder --win",
+    "electron:build:mac": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --mac",
+    "electron:build:linux": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --linux",
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
@@ -37,6 +42,8 @@
     "electron-builder": "^24.9.1",
     "concurrently": "^8.2.2",
     "wait-on": "^7.2.0",
+    "cross-env": "^7.0.3",
+    "rimraf": "^5.0.5",
     "@capacitor/core": "^5.5.1",
     "@capacitor/cli": "^5.5.1",
     "@capacitor/android": "^5.5.1",
@@ -51,7 +58,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "node_modules/**/*"
+      "!electron/README.md",
+      "package.json"
     ],
     "win": {
       "target": [
