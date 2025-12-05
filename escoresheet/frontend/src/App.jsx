@@ -77,7 +77,6 @@ export default function App() {
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [homeCardModal, setHomeCardModal] = useState(null) // 'official' | 'test' | null
-  const [rosterUploadModal, setRosterUploadModal] = useState(null) // { matchId, team, players, bench }
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
 
