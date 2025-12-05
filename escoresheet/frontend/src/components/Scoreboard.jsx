@@ -34,6 +34,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
   const [setEndModal, setSetEndModal] = useState(null) // { set, homePoints, awayPoints } | null
   const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
@@ -477,12 +478,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Start between-sets countdown when we detect we're between sets
   useEffect(() => {
-    if (isBetweenSets && !betweenSetsCountdown) {
+    if (isBetweenSets && !betweenSetsCountdown && !countdownDismissedRef.current) {
       setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
+      countdownDismissedRef.current = false // Reset when starting new countdown
     } else if (!isBetweenSets && betweenSetsCountdown) {
       setBetweenSetsCountdown(null)
+      countdownDismissedRef.current = false // Reset when no longer between sets
     }
-    // Don't restart countdown if it has finished - let it stay finished
+    // Don't restart countdown if it has finished or was manually dismissed
   }, [isBetweenSets, betweenSetsCountdown])
 
   // Handle between-sets countdown timer
@@ -490,7 +493,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!betweenSetsCountdown || !betweenSetsCountdown.started || betweenSetsCountdown.finished) return
 
     if (betweenSetsCountdown.countdown <= 0) {
-      setBetweenSetsCountdown({ ...betweenSetsCountdown, finished: true, started: false })
+      // When countdown reaches 0, clear it completely so rally controls appear
+      setBetweenSetsCountdown(null)
       return
     }
 
@@ -499,7 +503,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         if (!prev || !prev.started || prev.finished) return prev
         const newCountdown = prev.countdown - 1
         if (newCountdown <= 0) {
-          return { ...prev, finished: true, started: false }
+          // When countdown reaches 0, clear it completely so rally controls appear
+          return null
         }
         return { ...prev, countdown: newCountdown }
       })
@@ -525,8 +530,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setBetweenSetsCountdown(null)
   }, [])
 
-  const beginSet = useCallback(() => {
+  const endSetInterval = useCallback(() => {
+    // Clear countdown and mark as dismissed so it doesn't restart
     setBetweenSetsCountdown(null)
+    countdownDismissedRef.current = true
     // The set will start when user clicks "Start set" button
   }, [])
 
@@ -2070,6 +2077,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       if (onFinishSet) onFinishSet(data.set)
     } else {
+      // Start countdown immediately when set ends (not match end)
+      // Reset dismissed flag and start countdown
+      countdownDismissedRef.current = false
+      setBetweenSetsCountdown({ countdown: 180, started: true })
       // If set 4 just ended, show modal to choose sides and service for set 5
       if (setIndex === 4) {
         setSetEndTimeModal(null)
@@ -8392,10 +8403,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   </div>
                   <button
                     className="secondary"
-                    onClick={beginSet}
+                    onClick={endSetInterval}
                     style={{ width: 'auto' }}
                   >
-                    Begin set
+                    End set interval
                   </button>
                 </>
               ) : (
@@ -13889,35 +13900,65 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamIsLeft = (liberoReentryModal.team === 'home' && leftIsHome) || (liberoReentryModal.team === 'away' && !leftIsHome)
         
         let modalStyle = {}
-        // Find the player in position VI for this team
-        const courtPlayers = document.querySelectorAll('.court-player')
-        let positionVIElement = null
         
-        for (const playerEl of courtPlayers) {
-          const positionEl = playerEl.querySelector('.court-player-position')
-          if (positionEl && positionEl.textContent.trim() === 'VI') {
-            const rect = playerEl.getBoundingClientRect()
-            const isLeftSide = rect.left < window.innerWidth / 2
-            
-            // Check if this player belongs to the correct team
-            if ((teamIsLeft && isLeftSide) || (!teamIsLeft && !isLeftSide)) {
-              positionVIElement = playerEl
-              break
+        if (teamIsLeft) {
+          // For left team: anchor to "Libero out" button
+          const allButtons = document.querySelectorAll('button')
+          let liberoOutButton = null
+          for (const btn of allButtons) {
+            if (btn.textContent?.trim() === 'Libero out') {
+              // Check if it's on the left side
+              const rect = btn.getBoundingClientRect()
+              if (rect.left < window.innerWidth / 2) {
+                liberoOutButton = btn
+                break
+              }
+            }
+          }
+          
+          if (liberoOutButton) {
+            const rect = liberoOutButton.getBoundingClientRect()
+            modalStyle = {
+              position: 'fixed',
+              left: `${rect.left + rect.width / 2}px`,
+              top: `${rect.bottom + 8}px`,
+              transform: 'translateX(-50%)',
+              zIndex: 10000
+            }
+          }
+        } else {
+          // For right team: anchor to player in position II
+          const courtPlayers = document.querySelectorAll('.court-player')
+          let positionIIElement = null
+          
+          for (const playerEl of courtPlayers) {
+            const positionEl = playerEl.querySelector('.court-player-position')
+            if (positionEl && positionEl.textContent.trim() === 'II') {
+              const rect = playerEl.getBoundingClientRect()
+              const isRightSide = rect.left >= window.innerWidth / 2
+              
+              // Check if this player belongs to the right team
+              if (isRightSide) {
+                positionIIElement = playerEl
+                break
+              }
+            }
+          }
+          
+          if (positionIIElement) {
+            const rect = positionIIElement.getBoundingClientRect()
+            modalStyle = {
+              position: 'fixed',
+              left: `${rect.left + rect.width / 2}px`,
+              top: `${rect.top + rect.height / 2}px`,
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10000
             }
           }
         }
         
-        if (positionVIElement) {
-          const rect = positionVIElement.getBoundingClientRect()
-          modalStyle = {
-            position: 'fixed',
-            left: `${rect.left + rect.width / 2}px`,
-            top: `${rect.top + rect.height / 2}px`,
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10000
-          }
-        } else {
-          // Fallback: center on court
+        // Fallback if anchor element not found
+        if (!modalStyle.position) {
           const courtCenter = window.innerWidth / 2
           const court = document.querySelector('.court')
           const courtTop = court ? court.getBoundingClientRect().top : 100
@@ -15158,35 +15199,65 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamIsLeft = (liberoRotationModal.team === 'home' && leftIsHome) || (liberoRotationModal.team === 'away' && !leftIsHome)
         
         let modalStyle = {}
-        // Find the player in position VI for this team
-        const courtPlayers = document.querySelectorAll('.court-player')
-        let positionVIElement = null
         
-        for (const playerEl of courtPlayers) {
-          const positionEl = playerEl.querySelector('.court-player-position')
-          if (positionEl && positionEl.textContent.trim() === 'VI') {
-            const rect = playerEl.getBoundingClientRect()
-            const isLeftSide = rect.left < window.innerWidth / 2
-            
-            // Check if this player belongs to the correct team
-            if ((teamIsLeft && isLeftSide) || (!teamIsLeft && !isLeftSide)) {
-              positionVIElement = playerEl
-              break
+        if (teamIsLeft) {
+          // For left team: anchor to "Libero out" button
+          const allButtons = document.querySelectorAll('button')
+          let liberoOutButton = null
+          for (const btn of allButtons) {
+            if (btn.textContent?.trim() === 'Libero out') {
+              // Check if it's on the left side
+              const rect = btn.getBoundingClientRect()
+              if (rect.left < window.innerWidth / 2) {
+                liberoOutButton = btn
+                break
+              }
+            }
+          }
+          
+          if (liberoOutButton) {
+            const rect = liberoOutButton.getBoundingClientRect()
+            modalStyle = {
+              position: 'fixed',
+              left: `${rect.left + rect.width / 2}px`,
+              top: `${rect.bottom + 8}px`,
+              transform: 'translateX(-50%)',
+              zIndex: 10000
+            }
+          }
+        } else {
+          // For right team: anchor to player in position II
+          const courtPlayers = document.querySelectorAll('.court-player')
+          let positionIIElement = null
+          
+          for (const playerEl of courtPlayers) {
+            const positionEl = playerEl.querySelector('.court-player-position')
+            if (positionEl && positionEl.textContent.trim() === 'II') {
+              const rect = playerEl.getBoundingClientRect()
+              const isRightSide = rect.left >= window.innerWidth / 2
+              
+              // Check if this player belongs to the right team
+              if (isRightSide) {
+                positionIIElement = playerEl
+                break
+              }
+            }
+          }
+          
+          if (positionIIElement) {
+            const rect = positionIIElement.getBoundingClientRect()
+            modalStyle = {
+              position: 'fixed',
+              left: `${rect.left + rect.width / 2}px`,
+              top: `${rect.top + rect.height / 2}px`,
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10000
             }
           }
         }
         
-        if (positionVIElement) {
-          const rect = positionVIElement.getBoundingClientRect()
-          modalStyle = {
-            position: 'fixed',
-            left: `${rect.left + rect.width / 2}px`,
-            top: `${rect.top + rect.height / 2}px`,
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10000
-          }
-        } else {
-          // Fallback: center on court
+        // Fallback if anchor element not found
+        if (!modalStyle.position) {
           const courtCenter = window.innerWidth / 2
           const court = document.querySelector('.court')
           const courtTop = court ? court.getBoundingClientRect().top : 100
@@ -15679,33 +15750,49 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 }}>
                   {pos}
                 </div>
-                {/* Input square */}
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  min="1"
-                  max="99"
-                  value={lineup[idx]}
-                  onChange={e => {
-                    const val = e.target.value.replace(/[^0-9]/g, '')
-                    if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                      handleInputChange(idx, val)
-                    }
-                  }}
-                  style={{
-                    width: '60px',
-                    height: '60px',
-                    padding: '0',
-                    fontSize: '18px',
-                    fontWeight: 700,
-                    textAlign: 'center',
-                    background: 'var(--bg-secondary)',
-                    border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
-                    borderTop: 'none',
-                    borderRadius: '0 0 8px 8px',
-                    color: 'var(--text)'
-                  }}
-                />
+                {/* Input square with captain indicator (circled number) */}
+                <div style={{ position: 'relative', width: '60px' }}>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    min="1"
+                    max="99"
+                    value={lineup[idx]}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9]/g, '')
+                      if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
+                        handleInputChange(idx, val)
+                      }
+                    }}
+                    style={{
+                      width: '60px',
+                      height: '60px',
+                      padding: '0',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      background: 'var(--bg-secondary)',
+                      border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                      borderTop: 'none',
+                      borderRadius: '0 0 8px 8px',
+                      color: 'var(--text)'
+                    }}
+                  />
+                  {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      border: '2px solid var(--accent)',
+                      pointerEvents: 'none',
+                      zIndex: 1
+                    }} />
+                  )}
+                </div>
                 <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
                   {errors[idx] || ''}
                 </div>
@@ -15743,33 +15830,49 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 }}>
                   {pos}
                 </div>
-                {/* Input square */}
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  min="1"
-                  max="99"
-                  value={lineup[idx]}
-                  onChange={e => {
-                    const val = e.target.value.replace(/[^0-9]/g, '')
-                    if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                      handleInputChange(idx, val)
-                    }
-                  }}
-                  style={{
-                    width: '60px',
-                    height: '60px',
-                    padding: '0',
-                    fontSize: '18px',
-                    fontWeight: 700,
-                    textAlign: 'center',
-                    background: 'var(--bg-secondary)',
-                    border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
-                    borderTop: 'none',
-                    borderRadius: '0 0 8px 8px',
-                    color: 'var(--text)'
-                  }}
-                />
+                {/* Input square with captain indicator (circled number) */}
+                <div style={{ position: 'relative', width: '60px' }}>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    min="1"
+                    max="99"
+                    value={lineup[idx]}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9]/g, '')
+                      if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
+                        handleInputChange(idx, val)
+                      }
+                    }}
+                    style={{
+                      width: '60px',
+                      height: '60px',
+                      padding: '0',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      background: 'var(--bg-secondary)',
+                      border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                      borderTop: 'none',
+                      borderRadius: '0 0 8px 8px',
+                      color: 'var(--text)'
+                    }}
+                  />
+                  {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      border: '2px solid var(--accent)',
+                      pointerEvents: 'none',
+                      zIndex: 1
+                    }} />
+                  )}
+                </div>
                 <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
                   {errors[idx] || ''}
                 </div>
