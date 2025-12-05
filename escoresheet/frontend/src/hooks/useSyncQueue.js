@@ -12,13 +12,10 @@ export function useSyncQueue() {
 
   // Check Supabase connection
   const checkSupabaseConnection = useCallback(async () => {
-    console.log('🔍 Checking Supabase connection...')
     if (!supabase) {
-      console.warn('⚠️ Supabase client is null')
       setSyncStatus('online_no_supabase')
       return false
     }
-    console.log('✅ Supabase client exists, testing connection...')
 
     try {
       setSyncStatus('connecting')
@@ -29,33 +26,24 @@ export function useSyncQueue() {
         // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
         if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
           // Table doesn't exist - this is expected if tables aren't set up yet
-          console.warn('Supabase table "events" does not exist. Please run the SQL scripts from SUPABASE_SETUP.md')
           setSyncStatus('online_no_supabase')
           return false
         }
         // Check if using secret key instead of anon key
         if (error.message?.includes('secret API key') || error.message?.includes('Forbidden use of secret')) {
-          console.error('❌ SECURITY ERROR: You are using the SECRET API key instead of the ANON key!')
-          console.error('Please use the "anon/public" key from Supabase Settings → API, NOT the "service_role" key!')
           setSyncStatus('error')
           return false
         }
         // Check for 401 Unauthorized (RLS or auth issues)
         if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-          console.error('Supabase authentication error (401). Check:')
-          console.error('1. Are you using the correct anon/public key?')
-          console.error('2. Are Row Level Security (RLS) policies set up correctly?')
-          console.error('3. See SUPABASE_SETUP.md for RLS policy setup')
           setSyncStatus('error')
           return false
         }
-        console.error('Supabase connection error:', error)
         setSyncStatus('error')
         return false
       }
       return true
     } catch (err) {
-      console.error('Supabase connection exception:', err)
       // Network errors might mean we're actually offline
       if (err.message?.includes('fetch') || err.message?.includes('network')) {
         setSyncStatus('offline')
@@ -99,13 +87,12 @@ export function useSyncQueue() {
                 .from('matches')
                 .select('id')
                 .eq('external_id', eventPayload.match_id)
-                .single()
+                .maybeSingle()
               eventPayload.match_id = matchData?.id || null
             }
             
             const { error } = await supabase.from('events').insert(eventPayload)
             if (error) {
-              console.error('Error syncing event:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
               hasError = true
             } else {
@@ -119,7 +106,7 @@ export function useSyncQueue() {
                 .from('teams')
                 .select('id')
                 .eq('external_id', matchPayload.home_team_id)
-                .single()
+                .maybeSingle()
               matchPayload.home_team_id = homeTeamData?.id || null
             }
             if (matchPayload.away_team_id && typeof matchPayload.away_team_id === 'string') {
@@ -127,7 +114,7 @@ export function useSyncQueue() {
                 .from('teams')
                 .select('id')
                 .eq('external_id', matchPayload.away_team_id)
-                .single()
+                .maybeSingle()
               matchPayload.away_team_id = awayTeamData?.id || null
             }
             
@@ -136,7 +123,6 @@ export function useSyncQueue() {
               .from('matches')
               .upsert(matchPayload, { onConflict: 'external_id' })
             if (error) {
-              console.error('Error syncing match:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
               hasError = true
             } else {
@@ -148,7 +134,6 @@ export function useSyncQueue() {
               .from('teams')
               .upsert(job.payload, { onConflict: 'external_id' })
             if (error) {
-              console.error('Error syncing team:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
               hasError = true
             } else {
@@ -159,19 +144,14 @@ export function useSyncQueue() {
             let playerPayload = { ...job.payload }
             if (playerPayload.team_id && typeof playerPayload.team_id === 'string') {
               // Look up the Supabase team ID using external_id
-              const { data: teamData, error: teamError } = await supabase
+              const { data: teamData } = await supabase
                 .from('teams')
                 .select('id')
                 .eq('external_id', playerPayload.team_id)
-                .single()
+                .maybeSingle()
               
-              if (teamError || !teamData) {
-                console.error('Error finding team for player:', teamError)
-                // If team not found, set team_id to null (or skip this player)
-                playerPayload.team_id = null
-              } else {
-                playerPayload.team_id = teamData.id
-              }
+              // If team not found, set team_id to null
+              playerPayload.team_id = teamData?.id || null
             }
             
             // Use upsert to handle existing players (e.g., test match recreations)
@@ -179,7 +159,6 @@ export function useSyncQueue() {
               .from('players')
               .upsert(playerPayload, { onConflict: 'external_id' })
             if (error) {
-              console.error('Error syncing player:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
               hasError = true
             } else {
@@ -193,7 +172,7 @@ export function useSyncQueue() {
                 .from('matches')
                 .select('id')
                 .eq('external_id', setPayload.match_id)
-                .single()
+                .maybeSingle()
               setPayload.match_id = matchData?.id || null
             }
             
@@ -202,7 +181,6 @@ export function useSyncQueue() {
               .from('sets')
               .upsert(setPayload, { onConflict: 'external_id' })
             if (error) {
-              console.error('Error syncing set:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
               hasError = true
             } else {
@@ -212,7 +190,6 @@ export function useSyncQueue() {
             const { id, ...updateData } = job.payload
             const { error } = await supabase.from('matches').update(updateData).eq('external_id', id)
             if (error) {
-              console.error('Error updating match:', error)
               await db.sync_queue.update(job.id, { status: 'error' })
               hasError = true
             } else {
@@ -236,7 +213,6 @@ export function useSyncQueue() {
                   await db.referees.update(externalId, { synced: true })
                 }
               } else {
-                console.error('Error syncing referee:', error)
                 await db.sync_queue.update(job.id, { status: 'error' })
                 hasError = true
               }
@@ -266,7 +242,6 @@ export function useSyncQueue() {
                   await db.scorers.update(externalId, { synced: true })
                 }
               } else {
-                console.error('Error syncing scorer:', error)
                 await db.sync_queue.update(job.id, { status: 'error' })
                 hasError = true
               }
@@ -280,7 +255,6 @@ export function useSyncQueue() {
             }
           }
         } catch (err) {
-          console.error('Error processing sync job:', err)
           await db.sync_queue.update(job.id, { status: 'error' })
           hasError = true
         }
