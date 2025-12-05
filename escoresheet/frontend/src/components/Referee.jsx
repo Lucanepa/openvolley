@@ -12,6 +12,7 @@ export default function Referee({ matchId, onExit }) {
   const [activeSubstitution, setActiveSubstitution] = useState(null) // { team: 'home'|'away', playerOut, playerIn, eventId: number, countdown: 5 }
   const [processedSubstitutions, setProcessedSubstitutions] = useState(new Set()) // Track which substitution events we've already shown
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away', playersOnCourt: number[], lineup: object } | null
   const [processedCaptainRequests, setProcessedCaptainRequests] = useState(new Set()) // Track which requests we've processed
   
@@ -502,28 +503,64 @@ export default function Referee({ matchId, onExit }) {
 
   // Initialize between sets countdown
   useEffect(() => {
-    if (isBetweenSets && !betweenSetsCountdown) {
+    if (isBetweenSets && !betweenSetsCountdown && !countdownDismissedRef.current) {
       setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
+      countdownDismissedRef.current = false // Reset when starting new countdown
     } else if (!isBetweenSets && betweenSetsCountdown) {
       setBetweenSetsCountdown(null)
+      countdownDismissedRef.current = false // Reset when no longer between sets
     }
+    // Don't restart countdown if it has finished or was manually dismissed
   }, [isBetweenSets, betweenSetsCountdown])
+  
+  // Monitor for set_end events to start countdown immediately
+  useEffect(() => {
+    if (!data?.events || !data?.sets) return
+    
+    // Find the most recent set_end event
+    const setEndEvents = data.events.filter(e => e.type === 'set_end')
+    if (setEndEvents.length === 0) return
+    
+    const latestSetEnd = setEndEvents[setEndEvents.length - 1]
+    const setEndTime = new Date(latestSetEnd.ts).getTime()
+    const now = Date.now()
+    const timeSinceSetEnd = (now - setEndTime) / 1000 // in seconds
+    
+    // Only start countdown if set ended recently (within last 5 minutes)
+    if (timeSinceSetEnd > 300) return
+    
+    // Check if this set_end was already processed
+    const setIndex = latestSetEnd.setIndex
+    const processedKey = `set-end-${setIndex}`
+    
+    // Check if we're between sets and countdown hasn't started
+    if (isBetweenSets && !betweenSetsCountdown && !countdownDismissedRef.current) {
+      // Calculate remaining time (3 minutes from set end)
+      const remainingTime = Math.max(0, Math.ceil(180 - timeSinceSetEnd))
+      if (remainingTime > 0) {
+        countdownDismissedRef.current = false
+        setBetweenSetsCountdown({ countdown: remainingTime, started: true })
+      }
+    }
+  }, [data?.events, data?.sets, isBetweenSets, betweenSetsCountdown])
 
   // Countdown timer for between sets
   useEffect(() => {
     if (!betweenSetsCountdown || !betweenSetsCountdown.started || betweenSetsCountdown.finished) return
 
     if (betweenSetsCountdown.countdown <= 0) {
-      setBetweenSetsCountdown({ ...betweenSetsCountdown, finished: true, started: false })
+      // When countdown reaches 0, clear it completely
+      setBetweenSetsCountdown(null)
       return
     }
 
     const timer = setInterval(() => {
       setBetweenSetsCountdown(prev => {
-        if (!prev || !prev.started) return prev
+        if (!prev || !prev.started || prev.finished) return prev
         const newCountdown = prev.countdown - 1
         if (newCountdown <= 0) {
-          return { ...prev, finished: true, started: false }
+          // When countdown reaches 0, clear it completely
+          return null
         }
         return { ...prev, countdown: newCountdown }
       })
