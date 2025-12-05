@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "version:bump": "node scripts/bump-version.js",
+    "precommit": "npm run version:bump"
   },
   "dependencies": {
     "dexie": "^4.0.8",
