@@ -22,11 +22,37 @@ export default function RefereeApp() {
     return await db.matches.get(matchId)
   }, [matchId])
 
+  // Auto-connect on mount if we have stored credentials
+  useEffect(() => {
+    const storedMatchId = localStorage.getItem('refereeMatchId')
+    const storedPin = localStorage.getItem('refereePin')
+    
+    if (storedMatchId && storedPin && availableMatches) {
+      const match = availableMatches.find(m => m.id === Number(storedMatchId))
+      
+      // Check if match exists, is not final, PIN matches, and connection is enabled
+      if (match && 
+          match.status !== 'final' && 
+          String(match.refereePin).trim() === String(storedPin).trim() &&
+          match.refereeConnectionEnabled !== false) {
+        setMatchId(Number(storedMatchId))
+        setPinInput(storedPin)
+        return
+      } else {
+        // Clear invalid stored credentials
+        localStorage.removeItem('refereeMatchId')
+        localStorage.removeItem('refereePin')
+      }
+    }
+  }, [availableMatches])
+
   // Disconnect if connection is disabled
   useEffect(() => {
     if (currentMatch && currentMatch.refereeConnectionEnabled === false) {
       setMatchId(null)
       setPinInput('')
+      localStorage.removeItem('refereeMatchId')
+      localStorage.removeItem('refereePin')
       setError('Connection has been disabled. Please enable the connection in the scoreboard and reconnect.')
     }
   }, [currentMatch])
@@ -77,14 +103,55 @@ export default function RefereeApp() {
 
     if (match) {
       setMatchId(match.id)
+      // Store matchId and PIN in localStorage for persistence
+      localStorage.setItem('refereeMatchId', String(match.id))
+      localStorage.setItem('refereePin', pinInput)
     } else {
       setError('Invalid PIN code. Please check and try again.')
       setPinInput('')
+      // Clear stored credentials on invalid PIN
+      localStorage.removeItem('refereeMatchId')
+      localStorage.removeItem('refereePin')
     }
   }
 
+  const handleExit = () => {
+    setMatchId(null)
+    setPinInput('')
+    // Optionally clear stored credentials on manual exit
+    // localStorage.removeItem('refereeMatchId')
+    // localStorage.removeItem('refereePin')
+  }
+
+  // Monitor match status and PIN changes - clear credentials if match becomes final or PIN changes
+  useEffect(() => {
+    if (matchId && currentMatch) {
+      const storedPin = localStorage.getItem('refereePin')
+      const currentPin = String(currentMatch.refereePin || '').trim()
+      
+      // Check if PIN changed
+      if (storedPin && currentPin && storedPin !== currentPin) {
+        localStorage.removeItem('refereeMatchId')
+        localStorage.removeItem('refereePin')
+        setMatchId(null)
+        setPinInput('')
+        setError('PIN has changed. Please enter the new PIN.')
+        return
+      }
+      
+      // Check if match ended
+      if (currentMatch.status === 'final') {
+        localStorage.removeItem('refereeMatchId')
+        localStorage.removeItem('refereePin')
+        setMatchId(null)
+        setPinInput('')
+        setError('Match has ended.')
+      }
+    }
+  }, [matchId, currentMatch])
+
   if (matchId) {
-    return <Referee matchId={matchId} onExit={() => setMatchId(null)} />
+    return <Referee matchId={matchId} onExit={handleExit} />
   }
 
   return (
