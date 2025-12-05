@@ -170,6 +170,30 @@ export default function UploadRosterApp() {
     return () => clearTimeout(timeoutId)
   }, [gameNumber])
 
+  // Auto-validate PIN when it changes
+  useEffect(() => {
+    if (!match || !uploadPin || uploadPin.length !== 6) {
+      if (uploadPin && uploadPin.length === 6 && match) {
+        const correctPin = team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin
+        if (correctPin && uploadPin !== correctPin) {
+          setValidationError('Invalid upload PIN')
+        } else if (correctPin && uploadPin === correctPin) {
+          setValidationError('')
+        }
+      } else {
+        setValidationError('')
+      }
+      return
+    }
+
+    const correctPin = team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin
+    if (correctPin && uploadPin === correctPin) {
+      setValidationError('')
+    } else if (correctPin) {
+      setValidationError('Invalid upload PIN')
+    }
+  }, [uploadPin, match, team])
+
   // Load teams when match is found
   useEffect(() => {
     if (!match) {
@@ -359,23 +383,43 @@ export default function UploadRosterApp() {
     setShowConfirmModal(true)
   }
 
-  // Handle final confirmation - send to index.html
-  const handleFinalConfirm = () => {
+  // Handle final confirmation - store in match and clear form
+  const handleFinalConfirm = async () => {
     if (!parsedData || !matchId) return
     
-    // Store data in localStorage to pass to index.html
-    const rosterData = {
-      matchId,
-      team,
-      players: parsedData.players,
-      bench: parsedData.bench,
-      timestamp: new Date().toISOString()
+    try {
+      // Store pending roster in match
+      const pendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+      await db.matches.update(matchId, {
+        [pendingField]: {
+          players: parsedData.players,
+          bench: parsedData.bench,
+          timestamp: new Date().toISOString()
+        }
+      })
+      
+      // Clear all form data
+      setGameNumber('')
+      setTeam('home')
+      setUploadPin('')
+      setMatch(null)
+      setMatchId(null)
+      setHomeTeam(null)
+      setAwayTeam(null)
+      setValidationError('')
+      setPdfFile(null)
+      setPdfError('')
+      setParsedData(null)
+      setMatchStatusCheck(null)
+      setShowConfirmModal(false)
+      
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    } catch (error) {
+      console.error('Error saving pending roster:', error)
+      setValidationError('Failed to save roster. Please try again.')
     }
-    
-    localStorage.setItem('pendingRosterUpload', JSON.stringify(rosterData))
-    
-    // Redirect to index.html
-    window.location.href = 'index.html?rosterUpload=true'
   }
 
   const isValid = match && matchId && uploadPin && (team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin) === uploadPin
@@ -386,13 +430,15 @@ export default function UploadRosterApp() {
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
       padding: '20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      width: 'auto'
     }}>
       <div style={{
         margin: '0 auto',
         background: 'var(--bg-secondary)',
         borderRadius: '12px',
-        padding: '40px'
+        padding: '40px',
+      width: 'auto'
       }}>
         <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '32px', textAlign: 'center' }}>
           Upload Roster
@@ -408,6 +454,7 @@ export default function UploadRosterApp() {
               marginBottom: '32px',
               alignItems: 'center',        // Center horizontally
               maxWidth: '100%',
+      width: 'auto'
             }}
           >
             <div style={{maxWidth: '100%' }}>
@@ -500,7 +547,7 @@ export default function UploadRosterApp() {
               </div>
             </div>
 
-            <div style={{ maxWidth: '100%' }}>
+            <div style={{ width: 320, maxWidth: '100%' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
                 Upload PIN
               </label>
@@ -510,47 +557,31 @@ export default function UploadRosterApp() {
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '').slice(0, 6)
                   setUploadPin(val)
-                  setValidationError('')
                 }}
                 placeholder="Enter 6-digit upload PIN"
                 style={{
-                  width: 'auto',
+                  width: '100%',
                   padding: '12px',
                   fontSize: '18px',
                   fontFamily: 'monospace',
                   textAlign: 'center',
                   background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: isValid 
+                    ? '1px solid #10b981' 
+                    : validationError && uploadPin.length === 6
+                    ? '1px solid #ef4444'
+                    : '1px solid rgba(255, 255, 255, 0.2)',
                   borderRadius: '6px',
                   color: 'var(--text)'
                 }}
                 maxLength={6}
               />
+              {isValid && (
+                <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
+                  ✓ PIN verified
+                </p>
+              )}
             </div>
-
-            <button
-              type="button"
-              onClick={async () => {
-                const valid = await validateInputs()
-                if (!valid) {
-                  // Error already set by validateInputs
-                }
-              }}
-              style={{
-                padding: '12px 24px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                minWidth: 140,
-                alignSelf: 'center'
-              }}
-            >
-              Validate
-            </button>
 
             {validationError && (
               <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', width: 320, maxWidth: '100%' }}>
@@ -635,26 +666,9 @@ export default function UploadRosterApp() {
 
         {/* Editable Roster */}
         {parsedData && (
-          <div style={{ marginBottom: '32px' }}>
+          <div style={{ marginBottom: '32px', maxWidth: '60%', margin: '0 auto' }}>
             <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>Players</h2>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '80px 180px 180px 140px 100px 150px',
-              gap: '20px',
-              alignItems: 'center',
-              fontWeight: 600,
-              color: 'var(--accent)',
-              marginBottom: '12px',
-              fontSize: '15px',
-              letterSpacing: '0.01em'
-            }}>
-              <span style={{}}>Number</span>
-              <span style={{}}>Last name</span>
-              <span style={{}}>First name</span>
-              <span style={{}}>DoB</span>
-              <span style={{}}>Libero</span>
-              <span style={{}}>Captain</span>
-            </div>
+            
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
               {parsedData.players.map((player, index) => (
                 <div key={index} style={{
@@ -662,7 +676,7 @@ export default function UploadRosterApp() {
                   background: 'rgba(255, 255, 255, 0.05)',
                   borderRadius: '8px',
                   display: 'grid',
-                  gridTemplateColumns: '60px 180px 180px 140px 100px 100px 100px',
+                  gridTemplateColumns: 'auto auto auto auto auto auto auto',
                   gap: '20px',
                   alignItems: 'center'
                 }}>
@@ -694,7 +708,7 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '120px'
+                      width: 'auto'
                     }}
                   />
                   <input
@@ -709,7 +723,7 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '120px'
+                      width: 'auto'
                     }}
                   />
                   <input
@@ -723,7 +737,7 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '100px'
+                      width: 'auto'
                     }}
                   />
                   <select
@@ -788,30 +802,15 @@ export default function UploadRosterApp() {
 
             <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>Bench Officials</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-              <div style={{ 
-                 display: 'grid',
-                 gridTemplateColumns: '200px 200px 200px 200px',
-                 gap: '20px',
-                 alignItems: 'center',
-                 fontWeight: 600,
-                 color: 'var(--accent)',
-                 marginBottom: '12px',
-                 fontSize: '15px',
-                 letterSpacing: '0.01em'
-              }}>
-                <span>Function</span>
-                <span>Last name</span>
-                <span>First name</span>
-                <span>DOB</span>
-              </div>
+
               {parsedData.bench.map((official, index) => (
                 <div key={index} style={{
                   padding: '16px',
                   background: 'rgba(255, 255, 255, 0.05)',
                   borderRadius: '8px',
                   display: 'grid',
-                  gridTemplateColumns: 'auto auto auto auto auto auto',
-                  gap: '12px',
+                  gridTemplateColumns: 'auto auto auto auto auto',
+                  gap: '20px',
                   alignItems: 'center'
                 }}>
                   <select
@@ -824,7 +823,7 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '150px'
+                      width: 'auto'
                     }}
                   >
                     <option value="Coach">Coach</option>
@@ -833,21 +832,6 @@ export default function UploadRosterApp() {
                     <option value="Physiotherapist">Physiotherapist</option>
                     <option value="Medic">Medic</option>
                   </select>
-                  <input
-                    type="text"
-                    value={official.firstName}
-                    onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
-                    placeholder="First Name"
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '150px'
-                    }}
-                  />
                   <input
                     type="text"
                     value={official.lastName}
@@ -860,7 +844,22 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '150px'
+                      width: 'auto'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={official.firstName}
+                    onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
+                    placeholder="First Name"
+                    style={{
+                      padding: '8px',
+                      fontSize: '14px',
+                      background: 'rgba(26, 26, 46, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      width: 'auto'
                     }}
                   />
                   <input
@@ -874,7 +873,7 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '150px'
+                      width: 'auto'
                     }}
                   />
                   <button
