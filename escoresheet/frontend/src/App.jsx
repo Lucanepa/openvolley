@@ -326,86 +326,18 @@ export default function App() {
 
   // Check for pending roster upload on mount
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const rosterUploadParam = params.get('rosterUpload')
-    if (rosterUploadParam === 'true') {
-      const pendingData = localStorage.getItem('pendingRosterUpload')
-      if (pendingData) {
-        try {
-          const data = JSON.parse(pendingData)
-          setRosterUploadModal(data)
-          // Clear from localStorage
-          localStorage.removeItem('pendingRosterUpload')
-          // Clean URL
-          window.history.replaceState({}, '', 'index.html')
-        } catch (error) {
-          console.error('Error parsing pending roster data:', error)
-        }
-      }
+    if (!currentMatch) return
+
+    // Check if there are pending rosters
+    const hasPendingHomeRoster = currentMatch.pendingHomeRoster !== null && currentMatch.pendingHomeRoster !== undefined
+    const hasPendingAwayRoster = currentMatch.pendingAwayRoster !== null && currentMatch.pendingAwayRoster !== undefined
+
+    // If there are pending rosters and we're not already in match setup, open it
+    if ((hasPendingHomeRoster || hasPendingAwayRoster) && !showMatchSetup) {
+      setMatchId(currentMatch.id)
+      setShowMatchSetup(true)
     }
-  }, [])
-
-  // Handle roster upload confirmation
-  const handleConfirmRosterUpload = async () => {
-    if (!rosterUploadModal) return
-    
-    try {
-      const { matchId: targetMatchId, team, players, bench } = rosterUploadModal
-      const match = await db.matches.get(targetMatchId)
-      if (!match) {
-        setAlertModal('Match not found')
-        setRosterUploadModal(null)
-        return
-      }
-
-      const teamId = team === 'home' ? match.homeTeamId : match.awayTeamId
-      if (!teamId) {
-        setAlertModal('Team not found for this match')
-        setRosterUploadModal(null)
-        return
-      }
-
-      // Delete existing players for this team
-      const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
-      for (const player of existingPlayers) {
-        await db.players.delete(player.id)
-      }
-
-      // Add new players
-      for (const player of players) {
-        await db.players.add({
-          teamId,
-          number: player.number,
-          firstName: player.firstName,
-          lastName: player.lastName,
-          name: `${player.firstName} ${player.lastName}`.trim(),
-          dob: player.dob,
-          libero: player.libero || '',
-          isCaptain: player.isCaptain || false
-        })
-      }
-
-      // Update bench officials
-      const benchField = team === 'home' ? 'bench_home' : 'bench_away'
-      await db.matches.update(targetMatchId, {
-        [benchField]: bench
-      })
-
-      setAlertModal('Roster uploaded successfully!')
-      setRosterUploadModal(null)
-      
-      // If we're viewing this match, refresh
-      if (matchId === targetMatchId) {
-        // Force refresh by updating matchId
-        setMatchId(null)
-        setTimeout(() => setMatchId(targetMatchId), 100)
-      }
-    } catch (error) {
-      console.error('Error confirming roster upload:', error)
-      setAlertModal(`Failed to upload roster: ${error.message}`)
-      setRosterUploadModal(null)
-    }
-  }
+  }, [currentMatch, matchId, showMatchSetup])
 
   // Update document title based on match type
   useEffect(() => {
@@ -1792,12 +1724,9 @@ export default function App() {
     }
   }
 
-
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
-      
-      
-    <div className="container">
+      <div className="container">
 
       {!matchId && matchStatus && (
         <div className="match-status-banner">
@@ -2173,63 +2102,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Roster Upload Confirmation Modal */}
-      {rosterUploadModal && (
-        <Modal
-          title="Confirm Roster Upload"
-          open={true}
-          onClose={() => setRosterUploadModal(null)}
-          width={600}
-        >
-          <div style={{ padding: '24px' }}>
-            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-              A roster has been uploaded for the {rosterUploadModal.team === 'home' ? 'Home' : 'Away'} team.
-            </p>
-            <div style={{ marginBottom: '16px' }}>
-              <p style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>Players: {rosterUploadModal.players?.length || 0}</p>
-              <p style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>Bench Officials: {rosterUploadModal.bench?.length || 0}</p>
-            </div>
-            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-              This will replace the existing roster for this team. Continue?
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={() => setRosterUploadModal(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmRosterUpload}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Confirm & Save
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
+      </div>
     </div>
   )
 }
-
-

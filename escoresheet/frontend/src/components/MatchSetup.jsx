@@ -2014,59 +2014,89 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 </div>
               </div>
               {match?.pendingHomeRoster && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={async () => {
-                    if (!matchId || !match?.pendingHomeRoster) return
-                    const pending = match.pendingHomeRoster
-                    const importedPlayers = pending.players || []
-                    const importedBench = pending.bench || []
-                    
-                    // Update state
-                    setHomeRoster(importedPlayers)
-                    setBenchHome(importedBench)
-                    
-                    // Save to database immediately
-                    if (match.homeTeamId) {
-                      // Delete existing players
-                      const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
-                      for (const ep of existingPlayers) {
-                        await db.players.delete(ep.id)
-                      }
-                      
-                      // Add imported players
-                      if (importedPlayers.length) {
-                        await db.players.bulkAdd(
-                          importedPlayers.map(p => ({
-                            teamId: match.homeTeamId,
-                            number: p.number,
-                            name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-                            lastName: p.lastName || '',
-                            firstName: p.firstName || '',
-                            dob: p.dob || null,
-                            libero: p.libero || '',
-                            isCaptain: !!p.isCaptain,
-                            role: null,
-                            createdAt: new Date().toISOString()
-                          }))
-                        )
-                      }
-                      
-                      // Update match with bench officials
-                      await db.matches.update(matchId, {
-                        bench_home: importedBench,
-                        pendingHomeRoster: null
-                      })
-                    } else {
-                      // If no teamId yet, just clear pending
-                      await db.matches.update(matchId, { pendingHomeRoster: null })
-                    }
-                  }}
-                  style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', width: '100%' }}
-                >
-                  Confirm Import
-                </button>
+                <div style={{
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  background: 'rgba(15, 23, 42, 0.2)',
+                  marginTop: '12px'
+                }}>
+                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Roster uploaded</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px' }}>
+                      Players: {match.pendingHomeRoster.players?.length || 0}
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      Bench Officials: {match.pendingHomeRoster.bench?.length || 0}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={async () => {
+                        if (!matchId || !match?.pendingHomeRoster) return
+                        const pending = match.pendingHomeRoster
+                        const importedPlayers = pending.players || []
+                        const importedBench = pending.bench || []
+                        
+                        // Update state
+                        setHomeRoster(importedPlayers)
+                        setBenchHome(importedBench)
+                        
+                        // Save to database immediately
+                        if (match.homeTeamId) {
+                          // Delete existing players
+                          const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
+                          for (const ep of existingPlayers) {
+                            await db.players.delete(ep.id)
+                          }
+                          
+                          // Add imported players
+                          if (importedPlayers.length) {
+                            await db.players.bulkAdd(
+                              importedPlayers.map(p => ({
+                                teamId: match.homeTeamId,
+                                number: p.number,
+                                name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+                                lastName: p.lastName || '',
+                                firstName: p.firstName || '',
+                                dob: p.dob || null,
+                                libero: p.libero || '',
+                                isCaptain: !!p.isCaptain,
+                                role: null,
+                                createdAt: new Date().toISOString()
+                              }))
+                            )
+                          }
+                          
+                          // Update match with bench officials
+                          await db.matches.update(matchId, {
+                            bench_home: importedBench,
+                            pendingHomeRoster: null
+                          })
+                        } else {
+                          // If no teamId yet, just clear pending
+                          await db.matches.update(matchId, { pendingHomeRoster: null })
+                        }
+                      }}
+                      style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={async () => {
+                        if (!matchId) return
+                        await db.matches.update(matchId, { pendingHomeRoster: null })
+                      }}
+                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -2552,59 +2582,89 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 </div>
               </div>
               {match?.pendingAwayRoster && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={async () => {
-                    if (!matchId || !match?.pendingAwayRoster) return
-                    const pending = match.pendingAwayRoster
-                    const importedPlayers = pending.players || []
-                    const importedBench = pending.bench || []
-                    
-                    // Update state
-                    setAwayRoster(importedPlayers)
-                    setBenchAway(importedBench)
-                    
-                    // Save to database immediately
-                    if (match.awayTeamId) {
-                      // Delete existing players
-                      const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
-                      for (const ep of existingPlayers) {
-                        await db.players.delete(ep.id)
-                      }
-                      
-                      // Add imported players
-                      if (importedPlayers.length) {
-                        await db.players.bulkAdd(
-                          importedPlayers.map(p => ({
-                            teamId: match.awayTeamId,
-                            number: p.number,
-                            name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-                            lastName: p.lastName || '',
-                            firstName: p.firstName || '',
-                            dob: p.dob || null,
-                            libero: p.libero || '',
-                            isCaptain: !!p.isCaptain,
-                            role: null,
-                            createdAt: new Date().toISOString()
-                          }))
-                        )
-                      }
-                      
-                      // Update match with bench officials
-                      await db.matches.update(matchId, {
-                        bench_away: importedBench,
-                        pendingAwayRoster: null
-                      })
-                    } else {
-                      // If no teamId yet, just clear pending
-                      await db.matches.update(matchId, { pendingAwayRoster: null })
-                    }
-                  }}
-                  style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', width: '100%' }}
-                >
-                  Confirm Import
-                </button>
+                <div style={{
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  background: 'rgba(15, 23, 42, 0.2)',
+                  marginTop: '12px'
+                }}>
+                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Roster uploaded</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px' }}>
+                      Players: {match.pendingAwayRoster.players?.length || 0}
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      Bench Officials: {match.pendingAwayRoster.bench?.length || 0}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={async () => {
+                        if (!matchId || !match?.pendingAwayRoster) return
+                        const pending = match.pendingAwayRoster
+                        const importedPlayers = pending.players || []
+                        const importedBench = pending.bench || []
+                        
+                        // Update state
+                        setAwayRoster(importedPlayers)
+                        setBenchAway(importedBench)
+                        
+                        // Save to database immediately
+                        if (match.awayTeamId) {
+                          // Delete existing players
+                          const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
+                          for (const ep of existingPlayers) {
+                            await db.players.delete(ep.id)
+                          }
+                          
+                          // Add imported players
+                          if (importedPlayers.length) {
+                            await db.players.bulkAdd(
+                              importedPlayers.map(p => ({
+                                teamId: match.awayTeamId,
+                                number: p.number,
+                                name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+                                lastName: p.lastName || '',
+                                firstName: p.firstName || '',
+                                dob: p.dob || null,
+                                libero: p.libero || '',
+                                isCaptain: !!p.isCaptain,
+                                role: null,
+                                createdAt: new Date().toISOString()
+                              }))
+                            )
+                          }
+                          
+                          // Update match with bench officials
+                          await db.matches.update(matchId, {
+                            bench_away: importedBench,
+                            pendingAwayRoster: null
+                          })
+                        } else {
+                          // If no teamId yet, just clear pending
+                          await db.matches.update(matchId, { pendingAwayRoster: null })
+                        }
+                      }}
+                      style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={async () => {
+                        if (!matchId) return
+                        await db.matches.update(matchId, { pendingAwayRoster: null })
+                      }}
+                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
