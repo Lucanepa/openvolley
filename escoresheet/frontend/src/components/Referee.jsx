@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { ConnectionManager } from '../utils/connectionManager'
+import Modal from './Modal'
 
 export default function Referee({ matchId, onExit }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
@@ -11,6 +12,8 @@ export default function Referee({ matchId, onExit }) {
   const [activeSubstitution, setActiveSubstitution] = useState(null) // { team: 'home'|'away', playerOut, playerIn, eventId: number, countdown: 5 }
   const [processedSubstitutions, setProcessedSubstitutions] = useState(new Set()) // Track which substitution events we've already shown
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away', playersOnCourt: number[], lineup: object } | null
+  const [processedCaptainRequests, setProcessedCaptainRequests] = useState(new Set()) // Track which requests we've processed
   
   // Connection state
   const [connectionModal, setConnectionModal] = useState(null) // 'bluetooth' | 'lan' | 'internet' | null
@@ -594,6 +597,78 @@ export default function Referee({ matchId, onExit }) {
 
   // For 1st referee, reverse the sides (they see from opposite end)
   const leftIsHome = refereeView === '1st' ? !leftIsHomeFor2ndRef : leftIsHomeFor2ndRef
+  
+  // Monitor for captain on court requests
+  useEffect(() => {
+    if (!data?.match) return
+    
+    const homeRequest = data.match.homeCaptainOnCourtRequest
+    const awayRequest = data.match.awayCaptainOnCourtRequest
+    
+    // Check if manageCaptainOnCourt is enabled (stored in localStorage)
+    const manageCaptainOnCourt = localStorage.getItem('manageCaptainOnCourt') === 'true'
+    if (!manageCaptainOnCourt) return
+    
+    // Process home team request
+    if (homeRequest && homeRequest.timestamp) {
+      const requestKey = `home-${homeRequest.timestamp}`
+      if (!processedCaptainRequests.has(requestKey)) {
+        setCaptainOnCourtModal({
+          team: 'home',
+          playersOnCourt: homeRequest.playersOnCourt || [],
+          lineup: homeRequest.lineup || {},
+          timestamp: homeRequest.timestamp
+        })
+        setProcessedCaptainRequests(prev => new Set([...prev, requestKey]))
+      }
+    }
+    
+    // Process away team request
+    if (awayRequest && awayRequest.timestamp) {
+      const requestKey = `away-${awayRequest.timestamp}`
+      if (!processedCaptainRequests.has(requestKey)) {
+        setCaptainOnCourtModal({
+          team: 'away',
+          playersOnCourt: awayRequest.playersOnCourt || [],
+          lineup: awayRequest.lineup || {},
+          timestamp: awayRequest.timestamp
+        })
+        setProcessedCaptainRequests(prev => new Set([...prev, requestKey]))
+      }
+    }
+  }, [data?.match?.homeCaptainOnCourtRequest, data?.match?.awayCaptainOnCourtRequest, processedCaptainRequests])
+  
+  // Handle captain on court selection
+  const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
+    if (!captainOnCourtModal || !matchId) return
+    
+    const { team } = captainOnCourtModal
+    const field = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const requestField = team === 'home' ? 'homeCaptainOnCourtRequest' : 'awayCaptainOnCourtRequest'
+    
+    // Save the selected captain on court
+    await db.matches.update(matchId, {
+      [field]: playerNumber,
+      [requestField]: null // Clear the request
+    })
+    
+    setCaptainOnCourtModal(null)
+  }, [captainOnCourtModal, matchId])
+  
+  // Handle cancel (no captain selected)
+  const handleCancelCaptainOnCourt = useCallback(async () => {
+    if (!captainOnCourtModal || !matchId) return
+    
+    const { team } = captainOnCourtModal
+    const requestField = team === 'home' ? 'homeCaptainOnCourtRequest' : 'awayCaptainOnCourtRequest'
+    
+    // Clear the request
+    await db.matches.update(matchId, {
+      [requestField]: null
+    })
+    
+    setCaptainOnCourtModal(null)
+  }, [captainOnCourtModal, matchId])
   
   const leftTeam = leftIsHome ? 'home' : 'away'
   const rightTeam = leftIsHome ? 'away' : 'home'
@@ -2903,6 +2978,110 @@ export default function Referee({ matchId, onExit }) {
             ) : null}
           </div>
         </div>
+      )}
+
+      {/* Captain on Court Modal */}
+      {captainOnCourtModal && (
+        <Modal
+          title={`Select Captain on Court - Team ${captainOnCourtModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}`}
+          open={true}
+          onClose={handleCancelCaptainOnCourt}
+          width={600}
+        >
+          <div style={{ padding: '24px' }}>
+            <p style={{ marginBottom: '20px', fontSize: '16px' }}>
+              The team captain is not on court. Please select which player is acting as captain on court:
+            </p>
+            
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(3, 1fr)', 
+              gap: '12px',
+              marginBottom: '24px'
+            }}>
+              {(() => {
+                const teamPlayers = captainOnCourtModal.team === 'home' 
+                  ? (data?.homePlayers || []) 
+                  : (data?.awayPlayers || [])
+                const playersOnCourt = captainOnCourtModal.playersOnCourt || []
+                const lineup = captainOnCourtModal.lineup || {}
+                
+                // Get players currently on court (including liberos)
+                const playersOnCourtList = []
+                const positionOrder = ['I', 'II', 'III', 'IV', 'V', 'VI']
+                
+                positionOrder.forEach(pos => {
+                  const playerNumber = lineup[pos]
+                  if (playerNumber) {
+                    const player = teamPlayers.find(p => String(p.number) === String(playerNumber))
+                    if (player) {
+                      playersOnCourtList.push({
+                        number: player.number,
+                        name: player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim(),
+                        position: pos,
+                        isLibero: !!(player.libero && player.libero !== ''),
+                        isTeamCaptain: !!(player.isCaptain || player.captain)
+                      })
+                    }
+                  }
+                })
+                
+                return playersOnCourtList.map((player) => (
+                  <button
+                    key={player.number}
+                    onClick={() => handleSelectCaptainOnCourt(player.number)}
+                    style={{
+                      padding: '16px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '2px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      textAlign: 'center'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                    }}
+                  >
+                    <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>
+                      #{player.number}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      {player.name || 'Player'}
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                      Position {player.position}
+                      {player.isLibero && ' (Libero)'}
+                    </div>
+                  </button>
+                ))
+              })()}
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleCancelCaptainOnCourt}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel (No Captain)
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
     </div>
