@@ -420,4 +420,4 @@ All exports are automatically downloaded when you approve a match.
 
 ---
 
-*Last updated: Version 0.1.0*
+*Last updated: Version 1.0.0*
