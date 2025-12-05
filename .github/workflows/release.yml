@@ -31,6 +31,8 @@ jobs:
         working-directory: escoresheet/frontend
         env:
           ELECTRON: 'true'
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run electron:build:win
       
       - name: Upload Windows artifacts
@@ -61,6 +63,8 @@ jobs:
         working-directory: escoresheet/frontend
         env:
           ELECTRON: 'true'
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run electron:build:mac
       
       - name: Upload macOS artifacts
@@ -92,6 +96,8 @@ jobs:
         working-directory: escoresheet/frontend
         env:
           ELECTRON: 'true'
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run electron:build:linux
       
       - name: Upload Linux artifacts
@@ -116,7 +122,9 @@ jobs:
           path: artifacts
       
       - name: Display artifacts
-        run: ls -R artifacts/
+        run: |
+          echo "Artifact structure:"
+          find artifacts -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" | head -20
       
       - name: Get version
         id: get_version
@@ -154,6 +162,13 @@ jobs:
             ---
             *Note: macOS and Linux builds are work in progress and may require additional testing.*
           files: |
-            artifacts/**/*
+            artifacts/**/*.exe
+            artifacts/**/*.exe.blockmap
+            artifacts/**/*.dmg
+            artifacts/**/*.dmg.blockmap
+            artifacts/**/*.zip
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
