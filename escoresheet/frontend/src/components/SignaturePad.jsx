@@ -3,6 +3,7 @@ import Modal from './Modal'
 
 export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) {
   const canvasRef = useRef(null)
+  const isDrawingRef = useRef(false)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
 
@@ -11,8 +12,12 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
       setHasSignature(false)
       return
     }
+    
+    let cleanup = null
+    let timerId = null
+    
     // Wait for modal to render before sizing canvas
-    const timer = setTimeout(() => {
+    timerId = setTimeout(() => {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')
@@ -35,9 +40,59 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
       // Clear canvas (transparent background)
       ctx.clearRect(0, 0, rect.width, rect.height)
       setHasSignature(false)
+      
+      // Add touch event listeners with passive: false to allow preventDefault
+      const getPointForTouch = (e) => {
+        const rect = canvas.getBoundingClientRect()
+        if (e.touches && e.touches.length > 0) {
+          return {
+            x: e.touches[0].clientX - rect.left,
+            y: e.touches[0].clientY - rect.top
+          }
+        }
+        return {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        }
+      }
+      
+      const touchStartHandler = (e) => {
+        e.preventDefault()
+        isDrawingRef.current = true
+        setIsDrawing(true)
+        const point = getPointForTouch(e)
+        ctx.beginPath()
+        ctx.moveTo(point.x, point.y)
+      }
+      const touchMoveHandler = (e) => {
+        if (!isDrawingRef.current) return
+        e.preventDefault()
+        const point = getPointForTouch(e)
+        ctx.lineTo(point.x, point.y)
+        ctx.stroke()
+        setHasSignature(true)
+      }
+      const touchEndHandler = (e) => {
+        e.preventDefault()
+        isDrawingRef.current = false
+        setIsDrawing(false)
+      }
+      
+      canvas.addEventListener('touchstart', touchStartHandler, { passive: false })
+      canvas.addEventListener('touchmove', touchMoveHandler, { passive: false })
+      canvas.addEventListener('touchend', touchEndHandler, { passive: false })
+      
+      cleanup = () => {
+        canvas.removeEventListener('touchstart', touchStartHandler)
+        canvas.removeEventListener('touchmove', touchMoveHandler)
+        canvas.removeEventListener('touchend', touchEndHandler)
+      }
     }, 100)
     
-    return () => clearTimeout(timer)
+    return () => {
+      if (timerId) clearTimeout(timerId)
+      if (cleanup) cleanup()
+    }
   }, [open])
 
   function getPoint(e) {
@@ -57,6 +112,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
 
   function startDrawing(e) {
     e.preventDefault()
+    isDrawingRef.current = true
     setIsDrawing(true)
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -66,7 +122,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
   }
 
   function draw(e) {
-    if (!isDrawing) return
+    if (!isDrawingRef.current) return
     e.preventDefault()
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -78,6 +134,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
 
   function stopDrawing(e) {
     e.preventDefault()
+    isDrawingRef.current = false
     setIsDrawing(false)
   }
 
@@ -122,9 +179,6 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
             onMouseMove={draw}
             onMouseUp={stopDrawing}
             onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
           />
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

@@ -44,7 +44,11 @@ export default defineConfig({
       }
     })
   ],
-  server: { port: 5173 },
+  server: { 
+    port: 5173,
+    host: '0.0.0.0', // Bind to all interfaces (IPv4 and IPv6)
+    strictPort: false
+  },
   build: {
     // Use safer build options to avoid eval in production
     minify: 'esbuild',
