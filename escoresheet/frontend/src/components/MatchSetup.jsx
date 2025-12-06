@@ -273,16 +273,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         setBenchHome(resolvedHomeBench)
         setBenchAway(resolvedAwayBench)
         
-        // Update input widths when teams are loaded - set default width based on content
+        // Update input widths when teams are loaded - use the actual loaded team names
         setTimeout(() => {
           if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-            const currentValue = home || 'Home team name'
+            const currentValue = homeTeam?.name || home || 'Home team name'
             homeTeamMeasureRef.current.textContent = currentValue
             const measuredWidth = homeTeamMeasureRef.current.offsetWidth
             homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
           }
           if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-            const currentValue = away || 'Away team name'
+            const currentValue = awayTeam?.name || away || 'Away team name'
             awayTeamMeasureRef.current.textContent = currentValue
             const measuredWidth = awayTeamMeasureRef.current.offsetWidth
             awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
@@ -307,8 +307,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
-        if (match.homeShortName) setHomeShortName(match.homeShortName)
-        if (match.awayShortName) setAwayShortName(match.awayShortName)
+        // Only load short names if they exist - they should only be set if user explicitly entered them
+        // The placeholder will show a suggestion, but won't auto-fill a value
+        if (match.homeShortName && match.homeShortName.trim()) {
+          setHomeShortName(match.homeShortName)
+        }
+        if (match.awayShortName && match.awayShortName.trim()) {
+          setAwayShortName(match.awayShortName)
+        }
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
         
@@ -911,6 +917,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       return () => clearTimeout(timeoutId)
     }
   }, [currentView, home, away])
+  
+  // Update input widths when home/away values change (e.g., when loaded from match)
+  useEffect(() => {
+    if (currentView === 'main') {
+      const timeoutId = setTimeout(() => {
+        if (homeTeamMeasureRef.current && homeTeamInputRef.current && home) {
+          homeTeamMeasureRef.current.textContent = home
+          const measuredWidth = homeTeamMeasureRef.current.offsetWidth
+          homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+        }
+        if (awayTeamMeasureRef.current && awayTeamInputRef.current && away) {
+          awayTeamMeasureRef.current.textContent = away
+          const measuredWidth = awayTeamMeasureRef.current.offsetWidth
+          awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
+        }
+      }, 100)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [home, away, currentView])
 
   // Helper function to generate smart short name placeholder
   function generateShortNamePlaceholder(teamName) {
@@ -4626,7 +4651,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       placeholder="Home team name"
                       style={{
                         minWidth: '80px',
-                        width: '100%',
+                        width: 'auto',
                         padding: '8px 12px',
                         borderRadius: 8,
                         border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -4762,7 +4787,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       placeholder="Away team name"
                       style={{
                         minWidth: '80px',
-                        width: '100%',
+                        width: 'auto',
                         padding: '8px 12px',
                         borderRadius: 8,
                         border: '1px solid rgba(255, 255, 255, 0.2)',

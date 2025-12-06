@@ -376,11 +376,31 @@ const requestHandler = (req, res) => {
   if (urlPath === '/api/match/list' && req.method === 'GET') {
     const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {
       const match = matchData.match || matchData
+      // matchData structure: { match, homeTeam, awayTeam, ... }
+      // So we need to access matchData.homeTeam, not match.homeTeam
+      const homeTeamName = matchData.homeTeam?.name || match.homeTeamName || match.homeTeam?.name || 'Home'
+      const awayTeamName = matchData.awayTeam?.name || match.awayTeamName || match.awayTeam?.name || 'Away'
+      
+      // Format scheduled date/time
+      let dateTime = 'TBD'
+      if (match.scheduledAt) {
+        try {
+          const scheduledDate = new Date(match.scheduledAt)
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+          dateTime = `${dateStr} ${timeStr}`
+        } catch (e) {
+          dateTime = 'TBD'
+        }
+      }
+      
       return {
         id: Number(matchId),
         gameNumber: match.gameNumber || match.game_n || matchId,
-        homeTeam: match.homeTeam?.name || match.homeTeamName || 'Home',
-        awayTeam: match.awayTeam?.name || match.awayTeamName || 'Away',
+        homeTeam: homeTeamName,
+        awayTeam: awayTeamName,
+        scheduledAt: match.scheduledAt,
+        dateTime,
         status: match.status,
         refereePin: match.refereePin,
         refereeConnectionEnabled: match.refereeConnectionEnabled !== false
