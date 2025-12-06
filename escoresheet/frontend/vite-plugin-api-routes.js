@@ -50,6 +50,7 @@ export function vitePluginApiRoutes(options = {}) {
     name: 'vite-plugin-api-routes',
     enforce: 'pre', // Run before other plugins
     configureServer(server) {
+      console.log('[API Plugin] Configuring server...')
       viteServer = server
       const protocol = server.config.server.https ? 'https' : 'http'
       const hostname = '0.0.0.0'
@@ -79,8 +80,37 @@ export function vitePluginApiRoutes(options = {}) {
             
             if (message.type === 'sync-match-data') {
               // Store full match data from main scoresheet
-              const { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = message
+              // Handle both formats: { matchId, match, ... } and { matchId, matchData: { match, ... } }
+              let matchId = message.matchId
+              let match = message.match
+              let homeTeam = message.homeTeam
+              let awayTeam = message.awayTeam
+              let homePlayers = message.homePlayers
+              let awayPlayers = message.awayPlayers
+              let sets = message.sets
+              let events = message.events
+              
+              // If data is nested in matchData, extract it
+              if (message.matchData) {
+                match = message.matchData.match || match
+                homeTeam = message.matchData.homeTeam || homeTeam
+                awayTeam = message.matchData.awayTeam || awayTeam
+                homePlayers = message.matchData.homePlayers || homePlayers
+                awayPlayers = message.matchData.awayPlayers || awayPlayers
+                sets = message.matchData.sets || sets
+                events = message.matchData.events || events
+              }
+              
               if (matchId && match) {
+                console.log(`[WebSocket] ✅ Storing match data:`)
+                console.log(`  - matchId: ${matchId}`)
+                console.log(`  - gameNumber: ${match.gameNumber || match.game_n || 'N/A'}`)
+                console.log(`  - refereePin: ${match.refereePin ? String(match.refereePin).substring(0, 2) + '****' : 'none'}`)
+                console.log(`  - refereeConnectionEnabled: ${match.refereeConnectionEnabled}`)
+                console.log(`  - status: ${match.status}`)
+                console.log(`  - homeTeam: ${homeTeam?.name || 'N/A'}`)
+                console.log(`  - awayTeam: ${awayTeam?.name || 'N/A'}`)
+                console.log(`  - Total matches in store now: ${matchDataStore.size + 1}`)
                 matchDataStore.set(String(matchId), {
                   match,
                   homeTeam,
@@ -103,6 +133,14 @@ export function vitePluginApiRoutes(options = {}) {
                       }))
                     }
                   })
+                }
+              } else {
+                console.log(`[WebSocket] ⚠️ sync-match-data missing required fields:`)
+                console.log(`  - matchId: ${matchId} (${!!matchId})`)
+                console.log(`  - match: ${!!match}`)
+                console.log(`  - message keys:`, Object.keys(message))
+                if (message.matchData) {
+                  console.log(`  - matchData keys:`, Object.keys(message.matchData))
                 }
               }
             } else if (message.type === 'subscribe-match') {
@@ -210,13 +248,23 @@ export function vitePluginApiRoutes(options = {}) {
       console.log(`📡 API routes enabled for dev server`)
 
       // Add API middleware - must be added before Vite's default middleware
-      server.middlewares.use('/api', (req, res, next) => {
+      // Use a function to ensure it's called for every request
+      const apiMiddleware = (req, res, next) => {
+        // Early return if not an API request (shouldn't happen due to .use('/api'), but just in case)
+        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/')) {
+          return next()
+        }
         // Vite's connect middleware strips the prefix when using .use('/api', ...)
         // So /api/match/validate-pin becomes req.url = '/match/validate-pin'
         const urlPath = req.url.split('?')[0]
         
-        // Debug logging
+        // Debug logging - log ALL /api requests
         console.log(`[API Plugin] ${req.method} ${urlPath} (req.url: ${req.url}, originalUrl: ${req.originalUrl || 'N/A'})`)
+        
+        // Ensure we handle the response properly
+        if (res.headersSent) {
+          return next()
+        }
         
         // CORS headers
         res.setHeader('Access-Control-Allow-Origin', '*')
@@ -288,6 +336,55 @@ export function vitePluginApiRoutes(options = {}) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ success: false, error: 'Not the registered instance' }))
           }
+          return
+        }
+        
+        // List available matches (for game number dropdown) - check this BEFORE other /match/ routes
+        if (urlPath === '/match/list' && req.method === 'GET') {
+          console.log('[API Plugin] Handling /match/list request')
+          console.log(`[API Plugin] matchDataStore size: ${matchDataStore.size}`)
+          if (matchDataStore.size > 0) {
+            console.log(`[API Plugin] Match IDs in store:`, Array.from(matchDataStore.keys()))
+          }
+          const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {
+            const match = matchData.match || matchData
+            // matchData structure: { match, homeTeam, awayTeam, ... }
+            // So we need to access matchData.homeTeam, not match.homeTeam
+            const homeTeamName = matchData.homeTeam?.name || match.homeTeamName || match.homeTeam?.name || 'Home'
+            const awayTeamName = matchData.awayTeam?.name || match.awayTeamName || match.awayTeam?.name || 'Away'
+            
+            // Format scheduled date/time
+            let dateTime = 'TBD'
+            if (match.scheduledAt) {
+              try {
+                const scheduledDate = new Date(match.scheduledAt)
+                const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+                dateTime = `${dateStr} ${timeStr}`
+              } catch (e) {
+                dateTime = 'TBD'
+              }
+            }
+            
+            return {
+              id: Number(matchId),
+              gameNumber: match.gameNumber || match.game_n || matchId,
+              homeTeam: homeTeamName,
+              awayTeam: awayTeamName,
+              scheduledAt: match.scheduledAt,
+              dateTime,
+              status: match.status,
+              refereePin: match.refereePin,
+              refereeConnectionEnabled: match.refereeConnectionEnabled !== false
+            }
+          }).filter(m => m.refereeConnectionEnabled && m.status !== 'final')
+          
+          console.log(`[API Plugin] Returning ${matches.length} available matches`)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ 
+            success: true, 
+            matches 
+          }))
           return
         }
         
@@ -538,33 +635,16 @@ export function vitePluginApiRoutes(options = {}) {
           return
         }
         
-        // List available matches (for game number dropdown)
-        if (urlPath === '/match/list' && req.method === 'GET') {
-          const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {
-            const match = matchData.match || matchData
-            return {
-              id: Number(matchId),
-              gameNumber: match.gameNumber || match.game_n || matchId,
-              homeTeam: match.homeTeam?.name || match.homeTeamName || 'Home',
-              awayTeam: match.awayTeam?.name || match.awayTeamName || 'Away',
-              status: match.status,
-              refereePin: match.refereePin,
-              refereeConnectionEnabled: match.refereeConnectionEnabled !== false
-            }
-          }).filter(m => m.refereeConnectionEnabled && m.status !== 'final')
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ 
-            success: true, 
-            matches 
-          }))
-          return
-        }
-        
         // If no route matched, continue to next middleware
         console.log(`[API Plugin] No route matched for ${req.method} ${urlPath}, calling next()`)
         next()
-      })
+      }
+      
+      // Register the middleware - use unshift to add it first
+      // This ensures it runs before Vite's default handlers
+      const middlewares = server.middlewares.stack || []
+      server.middlewares.use('/api', apiMiddleware)
+      console.log(`[API Plugin] Middleware registered. Total middleware stack: ${middlewares.length + 1}`)
     },
     
     closeBundle() {

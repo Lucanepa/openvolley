@@ -87,6 +87,30 @@ export default function App() {
   })
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
+  const [serverStatus, setServerStatus] = useState(null)
+
+  // Fetch server status periodically
+  useEffect(() => {
+    const fetchServerStatus = async () => {
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
+        const hostname = window.location.hostname
+        const port = window.location.port || (protocol === 'https' ? '443' : '5173')
+        const response = await fetch(`${protocol}://${hostname}:${port}/api/server/status`)
+        if (response.ok) {
+          const status = await response.json()
+          setServerStatus(status)
+        }
+      } catch (err) {
+        // Server might not be running, that's okay
+        console.log('[App] Server status not available:', err.message)
+      }
+    }
+    
+    fetchServerStatus()
+    const interval = setInterval(fetchServerStatus, 10000) // Check every 10 seconds
+    return () => clearInterval(interval)
+  }, [])
 
   const activeMatch = useLiveQuery(async () => {
     try {
@@ -365,6 +389,412 @@ export default function App() {
       document.title = `Openvolley eScoresheet - ${gameNumber}`
     }
   }, [currentMatch])
+
+  // Connect to WebSocket server and sync match data (works from any view)
+  // Use refs to prevent unnecessary reconnections
+  const wsRef = useRef(null)
+  const syncIntervalRef = useRef(null)
+  const reconnectTimeoutRef = useRef(null)
+  const currentMatchIdRef = useRef(null)
+  const currentMatchRef = useRef(null)
+  const isIntentionallyClosedRef = useRef(false)
+
+  // Update currentMatch ref whenever it changes
+  useEffect(() => {
+    currentMatchRef.current = currentMatch
+  }, [currentMatch])
+
+  useEffect(() => {
+    const activeMatchId = matchId || currentMatch?.id
+    if (!activeMatchId || !currentMatch) {
+      console.log('[App WebSocket] No active match, skipping WebSocket connection')
+      // Clean up if we had a connection for a different match
+      if (wsRef.current) {
+        isIntentionallyClosedRef.current = true
+        wsRef.current.close()
+        wsRef.current = null
+      }
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      currentMatchIdRef.current = null
+      return
+    }
+
+    // Only reconnect if matchId actually changed
+    if (currentMatchIdRef.current === activeMatchId && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log('[App WebSocket] Already connected for matchId:', activeMatchId)
+      return
+    }
+
+    // If matchId changed, close old connection
+    if (currentMatchIdRef.current !== activeMatchId && wsRef.current) {
+      console.log('[App WebSocket] Match ID changed, closing old connection')
+      isIntentionallyClosedRef.current = true
+      wsRef.current.close()
+      wsRef.current = null
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+    }
+
+    console.log('[App WebSocket] Setting up WebSocket for matchId:', activeMatchId)
+    currentMatchIdRef.current = activeMatchId
+    isIntentionallyClosedRef.current = false
+
+    const connectWebSocket = async () => {
+      // Don't reconnect if intentionally closed or matchId changed
+      if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) {
+        return
+      }
+
+      // Close existing connection if any
+      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        wsRef.current.close()
+      }
+
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        let wsPort = 8080
+        if (serverStatus?.wsPort) {
+          wsPort = serverStatus.wsPort
+        }
+        const wsUrl = `${protocol}://${hostname}:${wsPort}`
+
+        console.log('[App WebSocket] Attempting to connect to:', wsUrl)
+        wsRef.current = new WebSocket(wsUrl)
+
+        wsRef.current.onopen = () => {
+          // Verify we're still on the same match
+          if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) {
+            wsRef.current?.close()
+            return
+          }
+          console.log('[App WebSocket] ✅ Connected to server at', wsUrl)
+          syncMatchData()
+          syncIntervalRef.current = setInterval(syncMatchData, 5000)
+        }
+
+        wsRef.current.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data)
+            
+            if (message.type === 'pin-validation-request') {
+              handlePinValidationRequest(message)
+            } else if (message.type === 'match-data-request') {
+              handleMatchDataRequest(message)
+            } else if (message.type === 'game-number-request') {
+              handleGameNumberRequest(message)
+            } else if (message.type === 'match-update-request') {
+              handleMatchUpdateRequest(message)
+            }
+          } catch (err) {
+            console.error('[App WebSocket] Error parsing message:', err)
+          }
+        }
+
+        wsRef.current.onerror = (error) => {
+          // Only log if not intentionally closed
+          if (!isIntentionallyClosedRef.current && currentMatchIdRef.current === activeMatchId) {
+            console.error('[App WebSocket] ❌ Error connecting:', error)
+          }
+        }
+
+        wsRef.current.onclose = (event) => {
+          // Don't reconnect if intentionally closed or matchId changed
+          if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) {
+            console.log('[App WebSocket] Connection closed (intentional or match changed)')
+            return
+          }
+
+          // Don't reconnect on normal closure
+          if (event.code === 1000) {
+            console.log('[App WebSocket] Connection closed normally')
+            return
+          }
+
+          if (syncIntervalRef.current) {
+            clearInterval(syncIntervalRef.current)
+            syncIntervalRef.current = null
+          }
+
+          console.log('[App WebSocket] ⚠️ Disconnected, will reconnect in 5 seconds...')
+          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000)
+        }
+      } catch (err) {
+        console.error('[App WebSocket] Connection error:', err)
+        if (!isIntentionallyClosedRef.current && currentMatchIdRef.current === activeMatchId) {
+          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000)
+        }
+      }
+    }
+
+    const syncMatchData = async () => {
+      // Use current values from refs
+      const ws = wsRef.current
+      const currentActiveMatchId = currentMatchIdRef.current
+      const currentMatchData = currentMatchRef.current // Use ref to get latest value
+
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData || currentActiveMatchId !== (matchId || currentMatchData?.id)) {
+        return
+      }
+
+      try {
+        // Load full match data
+        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
+          currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
+          currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
+          db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
+          db.events.where('matchId').equals(currentActiveMatchId).toArray(),
+          currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
+          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
+        ])
+
+        const fullMatch = {
+          ...currentMatchData,
+          id: currentMatchData.id
+        }
+        
+        const syncPayload = {
+          type: 'sync-match-data',
+          matchId: currentActiveMatchId,
+          match: fullMatch,
+          homeTeam,
+          awayTeam,
+          homePlayers,
+          awayPlayers,
+          sets,
+          events
+        }
+        
+        console.log('[App WebSocket] 📤 Syncing match data:', {
+          matchId: currentActiveMatchId,
+          gameNumber: fullMatch.gameNumber || fullMatch.game_n,
+          refereePin: fullMatch.refereePin ? `${String(fullMatch.refereePin).substring(0, 2)}****` : 'none',
+          refereeConnectionEnabled: fullMatch.refereeConnectionEnabled,
+          status: fullMatch.status
+        })
+        
+        ws.send(JSON.stringify(syncPayload))
+        console.log('[App WebSocket] ✅ Match data sent successfully')
+      } catch (err) {
+        console.error('[App WebSocket] Error syncing match data:', err)
+      }
+    }
+
+    const handlePinValidationRequest = async (request) => {
+      const ws = wsRef.current
+      const currentActiveMatchId = currentMatchIdRef.current
+      const currentMatchData = currentMatchRef.current // Use ref to get latest value
+
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+
+      try {
+        const { pin, pinType, requestId } = request
+        const pinStr = String(pin).trim()
+
+        let matchPin = null
+        let connectionEnabled = false
+
+        if (pinType === 'referee') {
+          matchPin = currentMatchData.refereePin
+          connectionEnabled = currentMatchData.refereeConnectionEnabled !== false
+        } else if (pinType === 'homeTeam') {
+          matchPin = currentMatchData.homeTeamPin
+          connectionEnabled = currentMatchData.homeTeamConnectionEnabled !== false
+        } else if (pinType === 'awayTeam') {
+          matchPin = currentMatchData.awayTeamPin
+          connectionEnabled = currentMatchData.awayTeamConnectionEnabled !== false
+        }
+
+        if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && currentMatchData.status !== 'final') {
+          // Load full data for response
+          const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
+            currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
+            currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
+            db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
+            db.events.where('matchId').equals(currentActiveMatchId).toArray(),
+            currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
+            currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
+          ])
+
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: true,
+            match: currentMatchData,
+            fullData: {
+              match: currentMatchData,
+              homeTeam,
+              awayTeam,
+              homePlayers,
+              awayPlayers,
+              sets,
+              events
+            }
+          }))
+        } else {
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: false,
+            error: connectionEnabled === false ? 'Connection is disabled' : 'Invalid PIN code'
+          }))
+        }
+      } catch (err) {
+        console.error('[App WebSocket] Error handling PIN validation:', err)
+      }
+    }
+
+    const handleMatchDataRequest = async (request) => {
+      const ws = wsRef.current
+      const currentActiveMatchId = currentMatchIdRef.current
+      const currentMatchData = currentMatchRef.current // Use ref to get latest value
+
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+
+      try {
+        const { requestId, matchId: requestedMatchId } = request
+        
+        if (String(requestedMatchId) !== String(currentActiveMatchId)) {
+          ws.send(JSON.stringify({
+            type: 'match-data-response',
+            requestId,
+            success: false,
+            error: 'Match ID mismatch'
+          }))
+          return
+        }
+
+        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
+          currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
+          currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
+          db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
+          db.events.where('matchId').equals(currentActiveMatchId).toArray(),
+          currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
+          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
+        ])
+
+        ws.send(JSON.stringify({
+          type: 'match-data-response',
+          requestId,
+          matchId: currentActiveMatchId,
+          success: true,
+          matchData: {
+            match: currentMatchData,
+            homeTeam,
+            awayTeam,
+            homePlayers,
+            awayPlayers,
+            sets,
+            events
+          }
+        }))
+      } catch (err) {
+        console.error('[App WebSocket] Error handling match data request:', err)
+      }
+    }
+
+    const handleGameNumberRequest = async (request) => {
+      const ws = wsRef.current
+      const currentActiveMatchId = currentMatchIdRef.current
+      const currentMatchData = currentMatchRef.current // Use ref to get latest value
+
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+
+      try {
+        const { requestId, gameNumber } = request
+        const gameNumStr = String(gameNumber).trim()
+        const matchGameNumber = String(currentMatchData.gameNumber || '')
+        const matchGameN = String(currentMatchData.game_n || '')
+        const matchIdStr = String(currentMatchData.id || '')
+        
+        if (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr) {
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId,
+            success: true,
+            match: currentMatchData,
+            matchId: currentActiveMatchId
+          }))
+        } else {
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId,
+            success: false,
+            error: 'Match not found'
+          }))
+        }
+      } catch (err) {
+        console.error('[App WebSocket] Error handling game number request:', err)
+      }
+    }
+
+    const handleMatchUpdateRequest = async (request) => {
+      const ws = wsRef.current
+      const currentActiveMatchId = currentMatchIdRef.current
+      const currentMatchData = currentMatchRef.current // Use ref to get latest value
+
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+
+      try {
+        const { requestId, matchId: requestedMatchId, updates } = request
+        
+        if (String(requestedMatchId) !== String(currentActiveMatchId)) {
+          ws.send(JSON.stringify({
+            type: 'match-update-response',
+            requestId,
+            success: false,
+            error: 'Match ID mismatch'
+          }))
+          return
+        }
+
+        await db.matches.update(currentActiveMatchId, updates)
+        const updatedMatch = await db.matches.get(currentActiveMatchId)
+        
+        ws.send(JSON.stringify({
+          type: 'match-update-response',
+          requestId,
+          success: true,
+          matchData: {
+            match: updatedMatch
+          }
+        }))
+      } catch (err) {
+        console.error('[App WebSocket] Error handling match update request:', err)
+      }
+    }
+
+    connectWebSocket()
+
+    return () => {
+      isIntentionallyClosedRef.current = true
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      if (wsRef.current) {
+        wsRef.current.close(1000, 'Component unmounting')
+        wsRef.current = null
+      }
+    }
+  }, [matchId, currentMatch?.id, serverStatus?.wsPort]) // Only depend on matchId and wsPort, not the full objects
 
   async function finishSet(cur) {
     const matchRecord = await db.matches.get(cur.matchId)
@@ -1447,7 +1877,6 @@ export default function App() {
         gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
         scheduledAt,
         refereePin: generateRefereePin(),
-        matchPin: '1234567', // Test match PIN is always 1234567
         bench_home: TEST_HOME_BENCH,
         bench_away: TEST_AWAY_BENCH,
         officials,
@@ -1553,15 +1982,7 @@ export default function App() {
                                    existing.coinTossServeB !== null && 
                                    existing.coinTossServeB !== undefined
       
-      // Only check PIN if coin toss is not confirmed
-      if (!isCoinTossConfirmed) {
-      // Check test match PIN (always 1234567)
-      const enteredPin = prompt('Enter PIN code to open test match:\n(for test match psw is 1234567)')
-      if (!enteredPin || enteredPin.trim() !== '1234567') {
-        setAlertModal('Invalid PIN code. Test match PIN is 1234567.')
-        return
-        }
-      }
+      // PIN check removed - no longer required
       
       // Check match state to determine where to continue
       const isMatchSetupComplete = existing.homeCoachSignature && 
@@ -1651,20 +2072,8 @@ export default function App() {
         const sessionCheck = await checkMatchSession(targetMatchId)
         
         if (sessionCheck.locked && !sessionCheck.isCurrentSession) {
-          // Match is locked by another session - require game PIN
-          if (!match.gamePin) {
-            // No game PIN set - allow access (backward compatibility)
-            await lockMatchSession(targetMatchId)
-          } else {
-            // Require game PIN to take over
-            const enteredPin = prompt('This match is open in another session. Enter Game PIN to open it here:')
-            if (!enteredPin || !(await verifyGamePin(targetMatchId, enteredPin.trim()))) {
-              setAlertModal('Invalid Game PIN. Access denied.')
-          return
-        }
-            // PIN verified - take over the session
-            await lockMatchSession(targetMatchId)
-          }
+          // Match is locked by another session - just take over (no PIN required)
+          await lockMatchSession(targetMatchId)
         } else if (!sessionCheck.locked) {
           // Match is not locked - lock it for this session
           await lockMatchSession(targetMatchId)
@@ -1672,7 +2081,9 @@ export default function App() {
         // If isCurrentSession is true, we already own it - no need to lock again
       }
       
-      // Check match PIN code (only if coin toss not confirmed)
+      // PIN check removed - no longer required
+      
+      // Check if coin toss is confirmed (for navigation logic)
       const isCoinTossConfirmed = match.coinTossTeamA !== null && 
                                    match.coinTossTeamA !== undefined &&
                                    match.coinTossTeamB !== null && 
@@ -1681,23 +2092,6 @@ export default function App() {
                                    match.coinTossServeA !== undefined &&
                                    match.coinTossServeB !== null && 
                                    match.coinTossServeB !== undefined
-      
-      // Only check matchPin if coin toss is not confirmed (for backward compatibility)
-      if (!isCoinTossConfirmed) {
-        const isTestMatch = match.test === true
-        const expectedPin = isTestMatch ? '1234567' : match.matchPin
-        
-        if (expectedPin) {
-          const promptMessage = isTestMatch 
-            ? 'Enter PIN code to open this match (test match):\n(for test match psw is 1234567)'
-            : 'Enter PIN code to open this match:'
-          const enteredPin = prompt(promptMessage)
-          if (!enteredPin || enteredPin.trim() !== expectedPin) {
-            setAlertModal('Invalid PIN code. Access denied.')
-            return
-          }
-        }
-      }
       
       // If coin toss is confirmed and match is live, allow test matches to go to scoreboard
       // (This handles the case when coin toss is just confirmed)

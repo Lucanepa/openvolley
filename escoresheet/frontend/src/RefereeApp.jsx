@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { validatePin, listAvailableMatches } from './utils/serverDataSync'
 import Referee from './components/Referee'
+import Modal from './components/Modal'
 import refereeIcon from './ref.png'
 export default function RefereeApp() {
   const [pinInput, setPinInput] = useState('')
@@ -11,6 +12,7 @@ export default function RefereeApp() {
   const [availableMatches, setAvailableMatches] = useState([])
   const [selectedGameNumber, setSelectedGameNumber] = useState('')
   const [loadingMatches, setLoadingMatches] = useState(false)
+  const [showGameModal, setShowGameModal] = useState(false)
 
   // Load available matches on mount and periodically
   useEffect(() => {
@@ -61,17 +63,11 @@ export default function RefereeApp() {
     }
   }, [])
   
-  // When game number is selected, auto-fill PIN if available
-  useEffect(() => {
-    if (selectedGameNumber && availableMatches.length > 0) {
-      const selectedMatch = availableMatches.find(m => 
-        String(m.gameNumber) === String(selectedGameNumber)
-      )
-      if (selectedMatch && selectedMatch.refereePin) {
-        setPinInput(selectedMatch.refereePin)
-      }
-    }
-  }, [selectedGameNumber, availableMatches])
+  const handleSelectGame = (gameNumber) => {
+    setSelectedGameNumber(gameNumber)
+    // DO NOT auto-fill PIN - it's a security check that must be entered manually
+    setShowGameModal(false)
+  }
 
   // Monitor match connection status
   useEffect(() => {
@@ -176,15 +172,9 @@ export default function RefereeApp() {
           fontWeight: 700, 
           marginBottom: '12px' 
         }}>
-          Referee View
+          Referee <br />
+          Dashboard
         </h1>
-        <p style={{ 
-          fontSize: '14px', 
-          color: 'var(--muted)', 
-          marginBottom: '32px' 
-        }}>
-          Select a game number or enter the 6-digit match PIN
-        </p>
 
         <form onSubmit={handlePinSubmit} style={{
           display: 'flex',
@@ -202,11 +192,11 @@ export default function RefereeApp() {
                 marginBottom: '8px',
                 fontWeight: 600
               }}>
-                Game Number {availableMatches.length > 0 && `(${availableMatches.length} available)`}
+                Select game {availableMatches.length > 0 && `(${availableMatches.length} available)`}
               </label>
-              <select
-                value={selectedGameNumber}
-                onChange={(e) => setSelectedGameNumber(e.target.value)}
+              <button
+                type="button"
+                onClick={() => setShowGameModal(true)}
                 disabled={isLoading}
                 style={{
                   width: '100%',
@@ -217,26 +207,50 @@ export default function RefereeApp() {
                   borderRadius: '8px',
                   color: 'var(--text)',
                   cursor: isLoading ? 'not-allowed' : 'pointer',
-                  opacity: isLoading ? 0.6 : 1
+                  opacity: isLoading ? 0.6 : 1,
+                  fontWeight: 600
                 }}
               >
-                <option value="">Select a game...</option>
-                {availableMatches.map((m) => (
-                  <option key={m.id} value={m.gameNumber}>
-                    Game #{m.gameNumber} - {m.homeTeam} vs {m.awayTeam}
-                  </option>
-                ))}
-              </select>
-              {selectedGameNumber && (
-                <div style={{
-                  fontSize: '11px',
-                  color: 'var(--muted)',
-                  marginTop: '4px',
-                  textAlign: 'center'
-                }}>
-                  PIN will be auto-filled when selected
-                </div>
-              )}
+                Select game
+              </button>
+              
+              {selectedGameNumber && (() => {
+                const selected = availableMatches.find(m => String(m.gameNumber) === String(selectedGameNumber))
+                if (!selected) return null
+                
+                return (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '12px',
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '8px',
+                    textAlign: 'left'
+                  }}>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      marginBottom: '6px',
+                      color: 'var(--text)'
+                    }}>
+                      Game #{selected.gameNumber}
+                    </div>
+                    <div style={{
+                      fontSize: '14px',
+                      color: 'var(--text)',
+                      marginBottom: '4px'
+                    }}>
+                      {selected.homeTeam} <span style={{ color: 'var(--muted)', margin: '0 4px' }}>vs</span> {selected.awayTeam}
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'var(--muted)'
+                    }}>
+                      {selected.dateTime || 'TBD'}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
           
@@ -248,7 +262,7 @@ export default function RefereeApp() {
               marginBottom: '8px',
               fontWeight: 600
             }}>
-              Match PIN
+              Connection PIN
             </label>
             <input
             type="text"
@@ -333,6 +347,89 @@ export default function RefereeApp() {
           </button>
         </form>
       </div>
+      
+      <Modal
+        title="Select Game"
+        open={showGameModal}
+        onClose={() => setShowGameModal(false)}
+        width={600}
+      >
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          maxHeight: '70vh',
+          overflowY: 'auto'
+        }}>
+          {loadingMatches ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
+              Loading games...
+            </div>
+          ) : availableMatches.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
+              No available games. Make sure the main scoresheet is running and has an active match with referee connection enabled.
+            </div>
+          ) : (
+            availableMatches.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => handleSelectGame(m.gameNumber)}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: selectedGameNumber === String(m.gameNumber) 
+                    ? 'rgba(59, 130, 246, 0.2)' 
+                    : 'rgba(255, 255, 255, 0.05)',
+                  border: selectedGameNumber === String(m.gameNumber)
+                    ? '2px solid rgba(59, 130, 246, 0.5)'
+                    : '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  color: 'var(--text)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedGameNumber !== String(m.gameNumber)) {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedGameNumber !== String(m.gameNumber)) {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                  }
+                }}
+              >
+                <div style={{
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  marginBottom: '4px'
+                }}>
+                  Game #{m.gameNumber}
+                </div>
+                <div style={{
+                  fontSize: '16px',
+                  color: 'var(--text)',
+                  marginBottom: '4px'
+                }}>
+                  {m.homeTeam} <span style={{ color: 'var(--muted)', margin: '0 8px' }}>vs</span> {m.awayTeam}
+                </div>
+                <div style={{
+                  fontSize: '14px',
+                  color: 'var(--muted)'
+                }}>
+                  {m.dateTime || 'TBD'}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </Modal>
+      
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }

@@ -102,7 +102,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Connect to WebSocket server and sync match data
   useEffect(() => {
-    if (!matchId || !data?.match) return
+    // Add a very visible console log that will definitely show up
+    console.log('🔵 [WebSocket] useEffect triggered')
+    console.log('🔵 [WebSocket] matchId:', matchId)
+    console.log('🔵 [WebSocket] data:', data)
+    console.log('🔵 [WebSocket] data?.match:', data?.match)
+    console.log('🔵 [WebSocket] data?.match?.id:', data?.match?.id)
+    console.log('🔵 [WebSocket] data?.match?.refereePin:', data?.match?.refereePin)
+    
+    if (!matchId) {
+      console.warn('⚠️ [WebSocket] ⏸️ Skipping - no matchId')
+      return
+    }
+    
+    if (!data) {
+      console.warn('⚠️ [WebSocket] ⏸️ Skipping - data is null/undefined (still loading?)')
+      return
+    }
+    
+    if (!data.match) {
+      console.warn('⚠️ [WebSocket] ⏸️ Skipping - data.match is null/undefined')
+      return
+    }
+    
+    console.log('✅ [WebSocket] All conditions met, proceeding with connection...')
 
     let ws = null
     let syncInterval = null
@@ -126,10 +149,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         const wsUrl = `${protocol}://${hostname}:${wsPort}`
 
+        console.log('[WebSocket] Attempting to connect to:', wsUrl)
         ws = new WebSocket(wsUrl)
 
         ws.onopen = () => {
-          console.log('[WebSocket] Connected to server')
+          console.log('[WebSocket] ✅ Connected to server at', wsUrl)
+          console.log('[WebSocket] Match ID:', matchId, 'Has match data:', !!data?.match)
           // Send initial match data sync
           syncMatchData()
           // Set up periodic sync (every 5 seconds)
@@ -161,11 +186,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
 
         ws.onerror = (error) => {
-          console.error('[WebSocket] Error:', error)
+          console.error('[WebSocket] ❌ Error connecting:', error)
+          console.error('[WebSocket] Failed URL:', wsUrl)
         }
 
-        ws.onclose = () => {
-          console.log('[WebSocket] Disconnected, will reconnect in 5 seconds')
+        ws.onclose = (event) => {
+          console.log('[WebSocket] ⚠️ Disconnected (code:', event.code, 'reason:', event.reason || 'none', ')')
+          console.log('[WebSocket] Will reconnect in 5 seconds...')
           if (syncInterval) clearInterval(syncInterval)
           // Reconnect after 5 seconds
           reconnectTimeout = setTimeout(connectWebSocket, 5000)
@@ -176,45 +203,62 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     const syncMatchData = async () => {
-      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) {
+        console.log('[WebSocket] Cannot sync: ws=', !!ws, 'readyState=', ws?.readyState, 'match=', !!data?.match)
+        return
+      }
 
       try {
+        // Prepare full match object with all fields
+        const fullMatch = {
+          id: data.match.id,
+          refereePin: data.match.refereePin,
+          homeTeamPin: data.match.homeTeamPin,
+          awayTeamPin: data.match.awayTeamPin,
+          homeTeamUploadPin: data.match.homeTeamUploadPin,
+          awayTeamUploadPin: data.match.awayTeamUploadPin,
+          refereeConnectionEnabled: data.match.refereeConnectionEnabled,
+          homeTeamConnectionEnabled: data.match.homeTeamConnectionEnabled,
+          awayTeamConnectionEnabled: data.match.awayTeamConnectionEnabled,
+          status: data.match.status,
+          homeTeamId: data.match.homeTeamId,
+          awayTeamId: data.match.awayTeamId,
+          gameNumber: data.match.gameNumber,
+          game_n: data.match.game_n,
+          createdAt: data.match.createdAt,
+          updatedAt: data.match.updatedAt,
+          coinTossTeamA: data.match.coinTossTeamA,
+          coinTossTeamB: data.match.coinTossTeamB,
+          firstServe: data.match.firstServe,
+          pendingHomeRoster: data.match.pendingHomeRoster,
+          pendingAwayRoster: data.match.pendingAwayRoster,
+          // Include all other match fields
+          ...data.match
+        }
+        
         // Sync full match data to server (match, teams, players, sets, events)
-        ws.send(JSON.stringify({
+        const syncPayload = {
           type: 'sync-match-data',
           matchId: matchId,
-          matchData: {
-            match: {
-              id: data.match.id,
-              refereePin: data.match.refereePin,
-              homeTeamPin: data.match.homeTeamPin,
-              awayTeamPin: data.match.awayTeamPin,
-              homeTeamUploadPin: data.match.homeTeamUploadPin,
-              awayTeamUploadPin: data.match.awayTeamUploadPin,
-              refereeConnectionEnabled: data.match.refereeConnectionEnabled,
-              homeTeamConnectionEnabled: data.match.homeTeamConnectionEnabled,
-              awayTeamConnectionEnabled: data.match.awayTeamConnectionEnabled,
-              status: data.match.status,
-              homeTeamId: data.match.homeTeamId,
-              awayTeamId: data.match.awayTeamId,
-              gameNumber: data.match.gameNumber,
-              game_n: data.match.game_n,
-              createdAt: data.match.createdAt,
-              updatedAt: data.match.updatedAt,
-              coinTossTeamA: data.match.coinTossTeamA,
-              coinTossTeamB: data.match.coinTossTeamB,
-              firstServe: data.match.firstServe,
-              pendingHomeRoster: data.match.pendingHomeRoster,
-              pendingAwayRoster: data.match.pendingAwayRoster
-            },
-            homeTeam: data.homeTeam,
-            awayTeam: data.awayTeam,
-            homePlayers: data.homePlayers || [],
-            awayPlayers: data.awayPlayers || [],
-            sets: data.sets || [],
-            events: data.events || []
-          }
-        }))
+          match: fullMatch,
+          homeTeam: data.homeTeam,
+          awayTeam: data.awayTeam,
+          homePlayers: data.homePlayers || [],
+          awayPlayers: data.awayPlayers || [],
+          sets: data.sets || [],
+          events: data.events || []
+        }
+        
+        console.log('[WebSocket] Syncing match data:', {
+          matchId,
+          hasMatch: !!fullMatch,
+          hasRefereePin: !!fullMatch.refereePin,
+          refereeConnectionEnabled: fullMatch.refereeConnectionEnabled,
+          status: fullMatch.status,
+          gameNumber: fullMatch.gameNumber || fullMatch.game_n
+        })
+        
+        ws.send(JSON.stringify(syncPayload))
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
       }
@@ -441,6 +485,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     connectWebSocket()
 
     return () => {
+      console.log('🔴 [WebSocket] Cleanup - closing connection')
       if (syncInterval) clearInterval(syncInterval)
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
       if (ws) {
@@ -448,6 +493,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
   }, [matchId, data?.match, serverStatus])
+  
+  // Add a separate useEffect to log when data changes
+  useEffect(() => {
+    console.log('🟢 [Scoreboard] Data changed:', {
+      hasData: !!data,
+      hasMatch: !!data?.match,
+      matchId: data?.match?.id,
+      refereePin: data?.match?.refereePin ? '***' : 'none',
+      gameNumber: data?.match?.gameNumber || data?.match?.game_n
+    })
+  }, [data])
 
 
   const data = useLiveQuery(async () => {
