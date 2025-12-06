@@ -1,7 +1,7 @@
 export const TEST_TEAM_SEED_DATA = [
   {
     seedKey: 'test-team-alpha',
-    name: 'Volley Zürich Test',
+    name: 'VBC Zürich',
     color: '#3b82f6',
     players: [
       { number: 1, firstName: 'Luca', lastName: 'Keller', dob: '05/01/1998', libero: '', isCaptain: false },
@@ -20,7 +20,7 @@ export const TEST_TEAM_SEED_DATA = [
   },
   {
     seedKey: 'test-team-bravo',
-    name: 'Volley Basel Test',
+    name: 'Volleyball Uni St. Gallen',
     color: '#ef4444',
     players: [
       { number: 13, firstName: 'Tom', lastName: 'Weber', dob: '11/01/1998', libero: '', isCaptain: false },

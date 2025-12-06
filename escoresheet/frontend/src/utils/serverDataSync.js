@@ -106,18 +106,34 @@ export function subscribeToMatchData(matchId, onUpdate) {
   const wsUrl = getWebSocketUrl()
   let ws = null
   let reconnectTimeout = null
+  let isIntentionallyClosed = false
+  let reconnectAttempts = 0
+  const maxReconnectDelay = 10000 // Max 10 seconds
 
   const connect = () => {
+    // Don't reconnect if intentionally closed
+    if (isIntentionallyClosed) return
+
     try {
+      // Close existing connection if any
+      if (ws && ws.readyState !== WebSocket.CLOSED) {
+        ws.close()
+      }
+
       ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
+        reconnectAttempts = 0 // Reset on successful connection
         console.log('[ServerDataSync] WebSocket connected')
         // Request match data subscription
-        ws.send(JSON.stringify({
-          type: 'subscribe-match',
-          matchId: String(matchId)
-        }))
+        try {
+          ws.send(JSON.stringify({
+            type: 'subscribe-match',
+            matchId: String(matchId)
+          }))
+        } catch (err) {
+          console.error('[ServerDataSync] Error sending subscription:', err)
+        }
       }
 
       ws.onmessage = (event) => {
@@ -137,16 +153,37 @@ export function subscribeToMatchData(matchId, onUpdate) {
       }
 
       ws.onerror = (error) => {
-        console.error('[ServerDataSync] WebSocket error:', error)
+        // Only log if it's not a connection error (which is expected during initial connection)
+        // Connection errors are usually handled by onclose
+        if (ws.readyState === WebSocket.CONNECTING) {
+          // This is expected during initial connection attempts, don't log as error
+          return
+        }
+        console.warn('[ServerDataSync] WebSocket error (will attempt reconnect):', error)
       }
 
-      ws.onclose = () => {
-        console.log('[ServerDataSync] WebSocket disconnected, reconnecting in 3 seconds...')
-        reconnectTimeout = setTimeout(connect, 3000)
+      ws.onclose = (event) => {
+        // Don't reconnect if intentionally closed
+        if (isIntentionallyClosed) return
+
+        // Don't reconnect on normal closure (code 1000)
+        if (event.code === 1000) {
+          console.log('[ServerDataSync] WebSocket closed normally')
+          return
+        }
+
+        // Exponential backoff for reconnection
+        reconnectAttempts++
+        const delay = Math.min(3000 * reconnectAttempts, maxReconnectDelay)
+        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay/1000} seconds... (attempt ${reconnectAttempts})`)
+        reconnectTimeout = setTimeout(connect, delay)
       }
     } catch (err) {
       console.error('[ServerDataSync] Connection error:', err)
-      reconnectTimeout = setTimeout(connect, 3000)
+      // Exponential backoff for reconnection
+      reconnectAttempts++
+      const delay = Math.min(3000 * reconnectAttempts, maxReconnectDelay)
+      reconnectTimeout = setTimeout(connect, delay)
     }
   }
 
@@ -154,8 +191,15 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
   // Return unsubscribe function
   return () => {
-    if (reconnectTimeout) clearTimeout(reconnectTimeout)
-    if (ws) ws.close()
+    isIntentionallyClosed = true
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout)
+      reconnectTimeout = null
+    }
+    if (ws) {
+      ws.close(1000, 'Unsubscribing') // Normal closure
+      ws = null
+    }
   }
 }
 
