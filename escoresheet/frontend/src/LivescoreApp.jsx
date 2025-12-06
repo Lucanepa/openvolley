@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from './db/db'
+import { findMatchByGameNumber, getMatchData, subscribeToMatchData } from './utils/serverDataSync'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Helper function to determine if a color is bright
@@ -34,48 +33,105 @@ export default function LivescoreApp() {
   }, [])
 
   // Handle game number input submission
-  const handleGameIdSubmit = (e) => {
+  const handleGameIdSubmit = async (e) => {
     e.preventDefault()
     setError('')
     
-    const id = parseInt(gameIdInput.trim())
-    if (isNaN(id) || id <= 0) {
-      setError('Please enter a valid game number')
+    const gameNum = gameIdInput.trim()
+    if (!gameNum) {
+      setError('Please enter a game number')
       return
     }
     
-    setGameId(id)
+    try {
+      // Try to find match by game number from server
+      const foundMatch = await findMatchByGameNumber(gameNum)
+      if (foundMatch) {
+        setGameId(foundMatch.id)
+        setGameIdInput(String(foundMatch.id))
+      } else {
+        // Try as direct match ID
+        const id = parseInt(gameNum)
+        if (!isNaN(id) && id > 0) {
+          setGameId(id)
+        } else {
+          setError('Match not found with this game number')
+        }
+      }
+    } catch (err) {
+      console.error('Error finding match:', err)
+      setError('Failed to find match. Make sure the main scoresheet is running.')
+    }
   }
 
-  // Load match data
-  const match = useLiveQuery(async () => {
-    if (!gameId) return null
-    return await db.matches.get(gameId)
+  // Load match data from server
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [dataError, setDataError] = useState('')
+
+  useEffect(() => {
+    if (!gameId) {
+      setData(null)
+      return
+    }
+
+    setLoading(true)
+    setDataError('')
+
+    // Fetch initial match data
+    const fetchData = async () => {
+      try {
+        const result = await getMatchData(gameId)
+        if (result.success) {
+          const matchData = result
+          const currentSet = (matchData.sets || []).find(s => !s.finished) || 
+                           (matchData.sets || []).sort((a, b) => b.index - a.index)[0]
+          
+          setData({
+            match: matchData.match,
+            homeTeam: matchData.homeTeam,
+            awayTeam: matchData.awayTeam,
+            homePlayers: matchData.homePlayers || [],
+            awayPlayers: matchData.awayPlayers || [],
+            sets: matchData.sets || [],
+            events: matchData.events || [],
+            set: currentSet
+          })
+        } else {
+          setDataError('Failed to load match data')
+        }
+      } catch (err) {
+        console.error('Error fetching match data:', err)
+        setDataError('Failed to load match data. Make sure the main scoresheet is running.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+
+    // Subscribe to match data updates
+    const unsubscribe = subscribeToMatchData(gameId, (updatedData) => {
+      const currentSet = (updatedData.sets || []).find(s => !s.finished) || 
+                        (updatedData.sets || []).sort((a, b) => b.index - a.index)[0]
+      
+      setData({
+        match: updatedData.match,
+        homeTeam: updatedData.homeTeam,
+        awayTeam: updatedData.awayTeam,
+        homePlayers: updatedData.homePlayers || [],
+        awayPlayers: updatedData.awayPlayers || [],
+        sets: updatedData.sets || [],
+        events: updatedData.events || [],
+        set: currentSet
+      })
+    })
+
+    return () => {
+      unsubscribe()
+    }
   }, [gameId])
 
-  // Load all related data
-  const data = useLiveQuery(async () => {
-    if (!gameId || !match) return null
-
-    const homeTeam = await db.teams.get(match.homeTeamId)
-    const awayTeam = await db.teams.get(match.awayTeamId)
-    const homePlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
-    const awayPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
-    const sets = await db.sets.where('matchId').equals(gameId).toArray()
-    const events = await db.events.where('matchId').equals(gameId).toArray()
-    const currentSet = sets.find(s => !s.finished) || sets.sort((a, b) => b.index - a.index)[0]
-
-    return {
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      sets,
-      events,
-      set: currentSet
-    }
-  }, [gameId, match])
 
   // Determine which team is A and which is B based on coin toss
   const teamAKey = useMemo(() => {
@@ -270,16 +326,18 @@ export default function LivescoreApp() {
 
   // Check if game exists and is in progress
   useEffect(() => {
-    if (gameId && match) {
-      if (match.status === 'final') {
+    if (gameId && data?.match) {
+      if (data.match.status === 'final') {
         setError('Game not in progress or not existing')
       } else {
         setError('')
       }
-    } else if (gameId && !match) {
+    } else if (gameId && dataError) {
+      setError(dataError)
+    } else if (gameId && !data && !loading) {
       setError('Game not in progress or not existing')
     }
-  }, [gameId, match])
+  }, [gameId, data, dataError, loading])
 
   // Show input form if no gameId is set
   if (!gameId) {
@@ -395,7 +453,7 @@ export default function LivescoreApp() {
   }
 
   // Show error if game doesn't exist or is not in progress
-  if (error || !match || match.status === 'final') {
+  if (error || !data?.match || data.match.status === 'final') {
     return (
       <div style={{
         minHeight: '100vh',

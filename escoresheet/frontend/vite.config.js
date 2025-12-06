@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
+import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -13,6 +14,27 @@ const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 
 const appVersion = packageJson.version
 
 const isElectron = process.env.ELECTRON === 'true'
+
+// HTTPS configuration for dev server
+const useHttps = process.env.VITE_HTTPS === 'true' || process.env.HTTPS === 'true'
+let httpsConfig = false
+
+if (useHttps) {
+  const certPath = resolve(__dirname, 'localhost.pem')
+  const keyPath = resolve(__dirname, 'localhost-key.pem')
+  
+  if (existsSync(certPath) && existsSync(keyPath)) {
+    httpsConfig = {
+      cert: readFileSync(certPath),
+      key: readFileSync(keyPath)
+    }
+    console.log('🔒 Using HTTPS with custom certificates')
+  } else {
+    // Vite will generate self-signed cert automatically
+    httpsConfig = true
+    console.log('🔒 Using HTTPS with auto-generated self-signed certificate')
+  }
+}
 
 export default defineConfig({
   // Set base from env for GitHub Pages project site deployments.
@@ -42,12 +64,17 @@ export default defineConfig({
           { src: 'favicon.png', sizes: '512x512', type: 'image/png' }
         ]
       }
-    })
+    }),
+    // Add API routes for dev server (same as production server.js)
+    vitePluginApiRoutes({ wsPort: process.env.WS_PORT || 8080 })
   ],
   server: { 
     port: 5173,
     host: '0.0.0.0', // Bind to all interfaces (IPv4 and IPv6)
-    strictPort: false
+    strictPort: false,
+    https: httpsConfig
+    // API routes are now handled by vite-plugin-api-routes plugin
+    // WebSocket server runs on port 8080 (or WS_PORT env var)
   },
   build: {
     // Use safer build options to avoid eval in production

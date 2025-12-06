@@ -23,8 +23,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showRosters, setShowRosters] = useState(false)
   const [showSanctions, setShowSanctions] = useState(false)
   const [menuModal, setMenuModal] = useState(false)
-  const [scoreboardOptionsModal, setScoreboardOptionsModal] = useState(false)
+  const [showOptionsInMenu, setShowOptionsInMenu] = useState(false)
   const [scoreboardGuideModal, setScoreboardGuideModal] = useState(false)
+  const [serverRunning, setServerRunning] = useState(false)
+  const [serverStatus, setServerStatus] = useState(null)
+  const [serverLoading, setServerLoading] = useState(false)
   const [editPinModal, setEditPinModal] = useState(false)
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
@@ -96,6 +99,355 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     return () => clearInterval(interval)
   }, [matchId])
+
+  // Connect to WebSocket server and sync match data
+  useEffect(() => {
+    if (!matchId || !data?.match) return
+
+    let ws = null
+    let syncInterval = null
+    let reconnectTimeout = null
+
+    const connectWebSocket = () => {
+      try {
+        // Detect WebSocket URL from current location
+        // WS port is typically 8080 (or from server status if available)
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        // Try to get WS port from server status, otherwise default to 8080
+        let wsPort = 8080
+        // Check if we have server status (from Electron or previous API call)
+        const currentServerStatus = serverStatus
+        if (currentServerStatus?.wsPort) {
+          wsPort = currentServerStatus.wsPort
+        } else {
+          // Default to 8080 for WebSocket
+          wsPort = 8080
+        }
+        const wsUrl = `${protocol}://${hostname}:${wsPort}`
+
+        ws = new WebSocket(wsUrl)
+
+        ws.onopen = () => {
+          console.log('[WebSocket] Connected to server')
+          // Send initial match data sync
+          syncMatchData()
+          // Set up periodic sync (every 5 seconds)
+          syncInterval = setInterval(syncMatchData, 5000)
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data)
+            
+            if (message.type === 'pin-validation-request') {
+              // Respond to PIN validation request
+              handlePinValidationRequest(message)
+            } else if (message.type === 'match-data-request') {
+              // Respond to match data request
+              handleMatchDataRequest(message)
+            } else if (message.type === 'game-number-request') {
+              // Respond to game number request
+              handleGameNumberRequest(message)
+            } else if (message.type === 'match-update-request') {
+              // Respond to match update request
+              handleMatchUpdateRequest(message)
+            } else if (message.type === 'pong') {
+              // Heartbeat response
+            }
+          } catch (err) {
+            console.error('[WebSocket] Error parsing message:', err)
+          }
+        }
+
+        ws.onerror = (error) => {
+          console.error('[WebSocket] Error:', error)
+        }
+
+        ws.onclose = () => {
+          console.log('[WebSocket] Disconnected, will reconnect in 5 seconds')
+          if (syncInterval) clearInterval(syncInterval)
+          // Reconnect after 5 seconds
+          reconnectTimeout = setTimeout(connectWebSocket, 5000)
+        }
+      } catch (err) {
+        console.error('[WebSocket] Connection error:', err)
+      }
+    }
+
+    const syncMatchData = async () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+
+      try {
+        // Sync full match data to server (match, teams, players, sets, events)
+        ws.send(JSON.stringify({
+          type: 'sync-match-data',
+          matchId: matchId,
+          matchData: {
+            match: {
+              id: data.match.id,
+              refereePin: data.match.refereePin,
+              homeTeamPin: data.match.homeTeamPin,
+              awayTeamPin: data.match.awayTeamPin,
+              homeTeamUploadPin: data.match.homeTeamUploadPin,
+              awayTeamUploadPin: data.match.awayTeamUploadPin,
+              refereeConnectionEnabled: data.match.refereeConnectionEnabled,
+              homeTeamConnectionEnabled: data.match.homeTeamConnectionEnabled,
+              awayTeamConnectionEnabled: data.match.awayTeamConnectionEnabled,
+              status: data.match.status,
+              homeTeamId: data.match.homeTeamId,
+              awayTeamId: data.match.awayTeamId,
+              gameNumber: data.match.gameNumber,
+              game_n: data.match.game_n,
+              createdAt: data.match.createdAt,
+              updatedAt: data.match.updatedAt,
+              coinTossTeamA: data.match.coinTossTeamA,
+              coinTossTeamB: data.match.coinTossTeamB,
+              firstServe: data.match.firstServe,
+              pendingHomeRoster: data.match.pendingHomeRoster,
+              pendingAwayRoster: data.match.pendingAwayRoster
+            },
+            homeTeam: data.homeTeam,
+            awayTeam: data.awayTeam,
+            homePlayers: data.homePlayers || [],
+            awayPlayers: data.awayPlayers || [],
+            sets: data.sets || [],
+            events: data.events || []
+          }
+        }))
+      } catch (err) {
+        console.error('[WebSocket] Error syncing match data:', err)
+      }
+    }
+
+    const handlePinValidationRequest = async (request) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+      try {
+        const { pin, pinType, requestId } = request
+        const pinStr = String(pin).trim()
+
+        // Check if PIN matches
+        let matchPin = null
+        let connectionEnabled = false
+
+        if (pinType === 'referee') {
+          matchPin = data.match.refereePin
+          connectionEnabled = data.match.refereeConnectionEnabled !== false
+        } else if (pinType === 'homeTeam') {
+          matchPin = data.match.homeTeamPin
+          connectionEnabled = data.match.homeTeamConnectionEnabled !== false
+        } else if (pinType === 'awayTeam') {
+          matchPin = data.match.awayTeamPin
+          connectionEnabled = data.match.awayTeamConnectionEnabled !== false
+        }
+
+        if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && data.match.status !== 'final') {
+          // Send match data with full data
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: true,
+            match: {
+              id: data.match.id,
+              refereePin: data.match.refereePin,
+              homeTeamPin: data.match.homeTeamPin,
+              awayTeamPin: data.match.awayTeamPin,
+              homeTeamUploadPin: data.match.homeTeamUploadPin,
+              awayTeamUploadPin: data.match.awayTeamUploadPin,
+              refereeConnectionEnabled: data.match.refereeConnectionEnabled,
+              homeTeamConnectionEnabled: data.match.homeTeamConnectionEnabled,
+              awayTeamConnectionEnabled: data.match.awayTeamConnectionEnabled,
+              status: data.match.status,
+              homeTeamId: data.match.homeTeamId,
+              awayTeamId: data.match.awayTeamId,
+              gameNumber: data.match.gameNumber,
+              game_n: data.match.game_n,
+              createdAt: data.match.createdAt,
+              updatedAt: data.match.updatedAt
+            },
+            fullData: {
+              match: data.match,
+              homeTeam: data.homeTeam,
+              awayTeam: data.awayTeam,
+              homePlayers: data.homePlayers || [],
+              awayPlayers: data.awayPlayers || [],
+              sets: data.sets || [],
+              events: data.events || []
+            }
+          }))
+        } else {
+          // PIN doesn't match or connection disabled
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: false,
+            error: connectionEnabled === false 
+              ? 'Connection is disabled for this match'
+              : 'Invalid PIN code'
+          }))
+        }
+      } catch (err) {
+        console.error('[WebSocket] Error handling PIN validation:', err)
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId: request.requestId,
+            success: false,
+            error: 'Error validating PIN'
+          }))
+        }
+      }
+    }
+
+    const handleMatchDataRequest = async (request) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+
+      try {
+        const { requestId, matchId: requestedMatchId } = request
+        
+        if (String(requestedMatchId) !== String(matchId)) {
+          ws.send(JSON.stringify({
+            type: 'match-data-response',
+            requestId,
+            matchId: requestedMatchId,
+            success: false,
+            error: 'Match ID mismatch'
+          }))
+          return
+        }
+
+        ws.send(JSON.stringify({
+          type: 'match-data-response',
+          requestId,
+          matchId: matchId,
+          success: true,
+          data: {
+            match: data.match,
+            homeTeam: data.homeTeam,
+            awayTeam: data.awayTeam,
+            homePlayers: data.homePlayers || [],
+            awayPlayers: data.awayPlayers || [],
+            sets: data.sets || [],
+            events: data.events || []
+          }
+        }))
+      } catch (err) {
+        console.error('[WebSocket] Error handling match data request:', err)
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'match-data-response',
+            requestId: request.requestId,
+            matchId: request.matchId,
+            success: false,
+            error: 'Error fetching match data'
+          }))
+        }
+      }
+    }
+
+    const handleGameNumberRequest = async (request) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+
+      try {
+        const { requestId, gameNumber } = request
+        const gameNumStr = String(gameNumber).trim()
+        
+        const matchGameNumber = String(data.match.gameNumber || '')
+        const matchGameN = String(data.match.game_n || '')
+        const matchIdStr = String(data.match.id || '')
+        
+        if (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr) {
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId,
+            success: true,
+            match: data.match,
+            matchId: matchId
+          }))
+        } else {
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId,
+            success: false,
+            error: 'Match not found with this game number'
+          }))
+        }
+      } catch (err) {
+        console.error('[WebSocket] Error handling game number request:', err)
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId: request.requestId,
+            success: false,
+            error: 'Error finding match'
+          }))
+        }
+      }
+    }
+
+    const handleMatchUpdateRequest = async (request) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+
+      try {
+        const { requestId, matchId: requestedMatchId, updates } = request
+        
+        if (String(requestedMatchId) !== String(matchId)) {
+          ws.send(JSON.stringify({
+            type: 'match-update-response',
+            requestId,
+            matchId: requestedMatchId,
+            success: false,
+            error: 'Match ID mismatch'
+          }))
+          return
+        }
+
+        // Update match in local database
+        await db.matches.update(matchId, updates)
+        
+        // Send success response with updated data
+        const updatedMatch = await db.matches.get(matchId)
+        ws.send(JSON.stringify({
+          type: 'match-update-response',
+          requestId,
+          matchId: matchId,
+          success: true,
+          data: {
+            match: updatedMatch,
+            homeTeam: data.homeTeam,
+            awayTeam: data.awayTeam,
+            homePlayers: data.homePlayers || [],
+            awayPlayers: data.awayPlayers || [],
+            sets: data.sets || [],
+            events: data.events || []
+          }
+        }))
+      } catch (err) {
+        console.error('[WebSocket] Error handling match update request:', err)
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'match-update-response',
+            requestId: request.requestId,
+            matchId: request.matchId,
+            success: false,
+            error: 'Error updating match'
+          }))
+        }
+      }
+    }
+
+    // Connect to WebSocket
+    connectWebSocket()
+
+    return () => {
+      if (syncInterval) clearInterval(syncInterval)
+      if (reconnectTimeout) clearTimeout(reconnectTimeout)
+      if (ws) {
+        ws.close()
+      }
+    }
+  }, [matchId, data?.match, serverStatus])
 
 
   const data = useLiveQuery(async () => {
@@ -240,6 +592,74 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [showRemarks, data?.match?.remarks])
 
+  // Server management - Only check in Electron
+  useEffect(() => {
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
+    
+    // Only check server status in Electron mode
+    if (!isElectron) {
+      return
+    }
+    
+    const checkServerStatus = async () => {
+      try {
+        const status = await window.electronAPI.server.getStatus()
+        setServerStatus(status)
+        setServerRunning(status.running)
+      } catch (err) {
+        setServerRunning(false)
+      }
+    }
+    
+    checkServerStatus()
+    const interval = setInterval(checkServerStatus, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleStartServer = async () => {
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
+    
+    if (!isElectron) {
+      // In browser/PWA - show instructions instead of error
+      // The server status will be checked automatically, so we just need to show instructions
+      return
+    }
+    
+    setServerLoading(true)
+    try {
+      const result = await window.electronAPI.server.start({ https: true })
+      if (result.success) {
+        setServerStatus(result.status)
+        setServerRunning(true)
+      } else {
+        alert(`Failed to start server: ${result.error}`)
+      }
+    } catch (error) {
+      alert(`Error starting server: ${error.message}`)
+    } finally {
+      setServerLoading(false)
+    }
+  }
+
+  const handleStopServer = async () => {
+    setServerLoading(true)
+    try {
+      const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
+      
+      if (isElectron) {
+        const result = await window.electronAPI.server.stop()
+        if (result.success) {
+          setServerRunning(false)
+          setServerStatus(null)
+        }
+      }
+    } catch (error) {
+      alert(`Error stopping server: ${error.message}`)
+    } finally {
+      setServerLoading(false)
+    }
+  }
+
   // Determine which team is A and which is B based on coin toss
   const teamAKey = useMemo(() => {
     if (!data?.match) return 'home'
@@ -252,7 +672,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [data?.match])
 
   const leftIsHome = useMemo(() => {
-    if (!data?.set) return true
+    // Before coin toss, default to home left, away right
+    const isBeforeCoinToss = !data?.match?.coinTossTeamA || !data?.match?.coinTossTeamB
+    if (isBeforeCoinToss || !data?.set) return true
     
     const setIndex = data.set.index
     
@@ -1396,9 +1818,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const leftServeTeamKey = leftIsHome ? 'home' : 'away'
   const rightServeTeamKey = leftIsHome ? 'away' : 'home'
+  
+  // Before coin toss or before set starts, show serve on left (home) as placeholder
+  const isBeforeCoinToss = !data?.match?.coinTossTeamA || !data?.match?.coinTossTeamB
+  const hasNoSet = !data?.set
+  
   const currentServeTeam = data?.set ? getCurrentServe() : null
-  const leftServing = data?.set ? currentServeTeam === leftServeTeamKey : false
-  const rightServing = data?.set ? currentServeTeam === rightServeTeamKey : false
+  
+  // Show serve on left as placeholder before coin toss or before set starts
+  const leftServing = (isBeforeCoinToss || hasNoSet) 
+    ? true // Placeholder: serve on left (home) before coin toss
+    : (data?.set ? currentServeTeam === leftServeTeamKey : false)
+  const rightServing = (isBeforeCoinToss || hasNoSet) 
+    ? false 
+    : (data?.set ? currentServeTeam === rightServeTeamKey : false)
 
   const serveBallBaseStyle = useMemo(
     () => ({
@@ -6009,13 +6442,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </button>
           <button 
             className="secondary" 
-            onClick={() => setScoreboardOptionsModal(true)}
-            style={{ background: '#8b5cf6', color: '#fff', fontWeight: 600 }}
-          >
-            Options
-          </button>
-          <button 
-            className="secondary" 
             onClick={async () => {
               try {
                 const match = data?.match
@@ -8248,38 +8674,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     2nd Ref: {ref2Name}
                   </span>
                 </div>
-                {showCallRefereeButton && refereeConnectionEnabled && (
-                  <button
-                    onClick={callReferee}
-                    style={{
-                      padding: '12px 24px',
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      background: '#ef4444',
-                      border: '2px solid #dc2626',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#dc2626'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#ef4444'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span style={{ fontSize: '20px' }}>🔔</span>
-                    Call Referee
-                  </button>
-                )}
               </div>
             )
           })()}
@@ -9406,20 +9800,219 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}>
                 📥 Download Game Data (JSON)
               </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                marginTop: '8px',
+                borderTop: '1px solid rgba(255,255,255,0.1)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowOptionsInMenu(true)
+              }}>
+                ⚙️ Options
+              </div>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Scoreboard Options Modal */}
-      {scoreboardOptionsModal && (
+      {/* Options in Menu Modal */}
+      {showOptionsInMenu && (
         <Modal
           title="Options"
           open={true}
-          onClose={() => setScoreboardOptionsModal(false)}
-          width={500}
+          onClose={() => setShowOptionsInMenu(false)}
+          width={600}
         >
-          <div style={{ padding: '24px' }}>
+          <div style={{ padding: '24px', maxHeight: '80vh', overflowY: 'auto' }}>
+            {/* Server Management Section - Only show in Electron */}
+            {typeof window !== 'undefined' && window.electronAPI?.server && (
+            <div style={{ marginBottom: '32px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Live Server</h3>
+              {serverRunning && serverStatus ? (
+                <div>
+                  <div style={{ 
+                    background: 'rgba(16, 185, 129, 0.1)', 
+                    border: '1px solid rgba(16, 185, 129, 0.3)', 
+                    borderRadius: '8px', 
+                    padding: '12px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ color: '#10b981', fontWeight: 600 }}>●</span>
+                      <span style={{ fontWeight: 600 }}>Server Running</span>
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginLeft: '24px' }}>
+                      <div>Hostname: <span style={{ fontFamily: 'monospace' }}>{serverStatus.hostname || 'escoresheet.local'}</span></div>
+                      <div>IP Address: <span style={{ fontFamily: 'monospace' }}>{serverStatus.localIP}</span></div>
+                      <div>Protocol: <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span></div>
+                    </div>
+                  </div>
+                  <div style={{ 
+                    background: 'rgba(15, 23, 42, 0.5)', 
+                    padding: '12px', 
+                    borderRadius: '8px', 
+                    marginBottom: '12px',
+                    fontSize: '12px'
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Connection URLs:</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontFamily: 'monospace', fontSize: '11px' }}>
+                      <div style={{ wordBreak: 'break-all' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.6)' }}>Main: </span>
+                        {serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}
+                      </div>
+                      <div style={{ wordBreak: 'break-all' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.6)' }}>Referee: </span>
+                        {serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee.html`}
+                      </div>
+                      <div style={{ wordBreak: 'break-all' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.6)' }}>Bench: </span>
+                        {serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench.html`}
+                      </div>
+                      <div style={{ wordBreak: 'break-all' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket: </span>
+                        {serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}
+                      </div>
+                    </div>
+                  </div>
+                  {typeof window !== 'undefined' && window.electronAPI?.server && (
+                    <button
+                      onClick={handleStopServer}
+                      disabled={serverLoading}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: '#ef4444',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: serverLoading ? 'not-allowed' : 'pointer',
+                        opacity: serverLoading ? 0.6 : 1,
+                        width: '100%'
+                      }}
+                    >
+                      {serverLoading ? 'Stopping...' : 'Stop Server'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div style={{ 
+                    background: 'rgba(239, 68, 68, 0.1)', 
+                    border: '1px solid rgba(239, 68, 68, 0.3)', 
+                    borderRadius: '8px', 
+                    padding: '12px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>●</span>
+                      <span>Server Not Running</span>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
+                    Start the live server to allow referee, bench, and livescore apps to connect.
+                  </p>
+                  {typeof window !== 'undefined' && window.electronAPI?.server ? (
+                    <button
+                      onClick={handleStartServer}
+                      disabled={serverLoading}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: '#22c55e',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: serverLoading ? 'not-allowed' : 'pointer',
+                        opacity: serverLoading ? 0.6 : 1,
+                        width: '100%'
+                      }}
+                    >
+                      {serverLoading ? 'Starting...' : 'Start Server'}
+                    </button>
+                  ) : (
+                    <div>
+                      <div style={{ 
+                        background: 'rgba(255, 255, 255, 0.05)', 
+                        padding: '12px', 
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        color: 'rgba(255,255,255,0.7)',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ marginBottom: '8px', fontWeight: 600 }}>To start the server from browser/PWA:</div>
+                        <div style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.6' }}>
+                          1. Open terminal in the frontend directory<br/>
+                          2. Run: <span style={{ color: '#22c55e', fontWeight: 600 }}>npm run start:prod</span><br/>
+                          3. Or use the Electron desktop app for automatic server management
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const command = 'npm run start:prod'
+                            await navigator.clipboard.writeText(command)
+                            alert('Command copied to clipboard!')
+                          } catch (err) {
+                            // Fallback if clipboard API not available
+                            const textArea = document.createElement('textarea')
+                            textArea.value = 'npm run start:prod'
+                            textArea.style.position = 'fixed'
+                            textArea.style.opacity = '0'
+                            document.body.appendChild(textArea)
+                            textArea.select()
+                            try {
+                              document.execCommand('copy')
+                              alert('Command copied to clipboard!')
+                            } catch (e) {
+                              alert('Please copy manually: npm run start:prod')
+                            }
+                            document.body.removeChild(textArea)
+                          }
+                        }}
+                        style={{
+                          padding: '10px 20px',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          background: 'rgba(34, 197, 94, 0.2)',
+                          color: '#22c55e',
+                          border: '1px solid rgba(34, 197, 94, 0.3)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(34, 197, 94, 0.3)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
+                        }}
+                      >
+                        📋 Copy Start Command
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Other Options */}
             <div style={{ marginBottom: '24px' }}>
               <label style={{ 
                 display: 'flex', 
@@ -9449,7 +10042,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <div style={{ 
                 marginTop: '8px', 
                 fontSize: '14px', 
-                color: 'var(--muted)',
+                color: 'rgba(255,255,255,0.6)',
                 paddingLeft: '32px'
               }}>
                 When enabled and referee app is connected, referees can designate a captain on court when the team captain is not playing.
@@ -9459,7 +10052,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <div style={{ marginBottom: '24px' }}>
               <button
                 onClick={() => {
-                  setScoreboardOptionsModal(false)
+                  setShowOptionsInMenu(false)
                   setScoreboardGuideModal(true)
                 }}
                 style={{
@@ -9491,7 +10084,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button
-                onClick={() => setScoreboardOptionsModal(false)}
+                onClick={() => setShowOptionsInMenu(false)}
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',

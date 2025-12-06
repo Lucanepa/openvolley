@@ -1,117 +1,125 @@
 import { useState, useEffect } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from './db/db'
+import { validatePin, listAvailableMatches } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import refereeIcon from './ref.png'
 export default function RefereeApp() {
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
+  const [match, setMatch] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [availableMatches, setAvailableMatches] = useState([])
+  const [selectedGameNumber, setSelectedGameNumber] = useState('')
+  const [loadingMatches, setLoadingMatches] = useState(false)
 
-  // Get all non-final matches
-  const availableMatches = useLiveQuery(async () => {
-    const matches = await db.matches
-      .filter(m => m.status !== 'final')
-      .toArray()
-    return matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  // Load available matches on mount and periodically
+  useEffect(() => {
+    const loadMatches = async () => {
+      setLoadingMatches(true)
+      try {
+        const result = await listAvailableMatches()
+        if (result.success && result.matches) {
+          setAvailableMatches(result.matches)
+        }
+      } catch (err) {
+        console.error('Error loading matches:', err)
+      } finally {
+        setLoadingMatches(false)
+      }
+    }
+    
+    loadMatches()
+    const interval = setInterval(loadMatches, 5000) // Refresh every 5 seconds
+    
+    return () => clearInterval(interval)
   }, [])
-
-  // Monitor the current match's connection status
-  const currentMatch = useLiveQuery(async () => {
-    if (!matchId) return null
-    return await db.matches.get(matchId)
-  }, [matchId])
 
   // Auto-connect on mount if we have stored credentials
   useEffect(() => {
     const storedMatchId = localStorage.getItem('refereeMatchId')
     const storedPin = localStorage.getItem('refereePin')
     
-    if (storedMatchId && storedPin && availableMatches) {
-      const match = availableMatches.find(m => m.id === Number(storedMatchId))
-      
-      // Check if match exists, is not final, PIN matches, and connection is enabled
-      if (match && 
-          match.status !== 'final' && 
-          String(match.refereePin).trim() === String(storedPin).trim() &&
-          match.refereeConnectionEnabled !== false) {
-        setMatchId(Number(storedMatchId))
-        setPinInput(storedPin)
-        return
-      } else {
-        // Clear invalid stored credentials
-        localStorage.removeItem('refereeMatchId')
-        localStorage.removeItem('refereePin')
+    if (storedMatchId && storedPin) {
+      // Validate stored PIN with server
+      validatePin(storedPin, 'referee')
+        .then(result => {
+          if (result.success && result.match && String(result.match.id) === String(storedMatchId)) {
+            setMatchId(Number(storedMatchId))
+            setMatch(result.match)
+            setPinInput(storedPin)
+          } else {
+            // Clear invalid stored credentials
+            localStorage.removeItem('refereeMatchId')
+            localStorage.removeItem('refereePin')
+          }
+        })
+        .catch(() => {
+          // Clear invalid stored credentials
+          localStorage.removeItem('refereeMatchId')
+          localStorage.removeItem('refereePin')
+        })
+    }
+  }, [])
+  
+  // When game number is selected, auto-fill PIN if available
+  useEffect(() => {
+    if (selectedGameNumber && availableMatches.length > 0) {
+      const selectedMatch = availableMatches.find(m => 
+        String(m.gameNumber) === String(selectedGameNumber)
+      )
+      if (selectedMatch && selectedMatch.refereePin) {
+        setPinInput(selectedMatch.refereePin)
       }
     }
-  }, [availableMatches])
+  }, [selectedGameNumber, availableMatches])
 
-  // Disconnect if connection is disabled
+  // Monitor match connection status
   useEffect(() => {
-    if (currentMatch && currentMatch.refereeConnectionEnabled === false) {
+    if (match && match.refereeConnectionEnabled === false) {
       setMatchId(null)
+      setMatch(null)
       setPinInput('')
       localStorage.removeItem('refereeMatchId')
       localStorage.removeItem('refereePin')
       setError('Connection has been disabled. Please enable the connection in the scoreboard and reconnect.')
     }
-  }, [currentMatch])
+  }, [match])
 
   const handlePinSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setIsLoading(true)
 
     if (!pinInput || pinInput.length !== 6) {
       setError('Please enter a 6-digit PIN code')
+      setIsLoading(false)
       return
     }
 
-    // First, check if PIN matches any match (even if disabled)
-    const matchWithPin = availableMatches?.find(m => {
-      const storedPin = m.refereePin
-      if (!storedPin) {
-        return false
-      }
-      const storedPinStr = String(storedPin).trim()
-      const inputPinStr = String(pinInput).trim()
-      return storedPinStr === inputPinStr
-    })
-
-    // If PIN matches but connection is disabled, show specific error
-    if (matchWithPin && matchWithPin.refereeConnectionEnabled === false) {
-      setError('Connection is disabled for this match. Please enable the connection in the scoreboard.')
-      setPinInput('')
-      return
-    }
-
-    // Find match with matching PIN and enabled connection
-    const match = availableMatches?.find(m => {
-      // Check if referee connection is enabled for this match
-      if (m.refereeConnectionEnabled === false) {
-        return false
-      }
+    try {
+      // Validate PIN with server (no local IndexedDB)
+      const result = await validatePin(pinInput.trim(), 'referee')
       
-      const storedPin = m.refereePin
-      if (!storedPin) {
-        return false
+      if (result.success && result.match) {
+        setMatchId(result.match.id)
+        setMatch(result.match)
+        // Store matchId and PIN in localStorage for persistence
+        localStorage.setItem('refereeMatchId', String(result.match.id))
+        localStorage.setItem('refereePin', pinInput)
+      } else {
+        setError('Invalid PIN code. Please check and try again.')
+        setPinInput('')
+        localStorage.removeItem('refereeMatchId')
+        localStorage.removeItem('refereePin')
       }
-      
-      const storedPinStr = String(storedPin).trim()
-      const inputPinStr = String(pinInput).trim()
-      return storedPinStr === inputPinStr
-    })
-
-    if (match) {
-      setMatchId(match.id)
-      // Store matchId and PIN in localStorage for persistence
-      localStorage.setItem('refereeMatchId', String(match.id))
-      localStorage.setItem('refereePin', pinInput)
-    } else {
-      setError('Invalid PIN code. Please check and try again.')
+    } catch (err) {
+      console.error('Error validating PIN:', err)
+      setError(err.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
       setPinInput('')
-      // Clear stored credentials on invalid PIN
       localStorage.removeItem('refereeMatchId')
       localStorage.removeItem('refereePin')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -123,32 +131,17 @@ export default function RefereeApp() {
     // localStorage.removeItem('refereePin')
   }
 
-  // Monitor match status and PIN changes - clear credentials if match becomes final or PIN changes
+  // Monitor match status - clear credentials if match becomes final
   useEffect(() => {
-    if (matchId && currentMatch) {
-      const storedPin = localStorage.getItem('refereePin')
-      const currentPin = String(currentMatch.refereePin || '').trim()
-      
-      // Check if PIN changed
-      if (storedPin && currentPin && storedPin !== currentPin) {
-        localStorage.removeItem('refereeMatchId')
-        localStorage.removeItem('refereePin')
-        setMatchId(null)
-        setPinInput('')
-        setError('PIN has changed. Please enter the new PIN.')
-        return
-      }
-      
-      // Check if match ended
-      if (currentMatch.status === 'final') {
-        localStorage.removeItem('refereeMatchId')
-        localStorage.removeItem('refereePin')
-        setMatchId(null)
-        setPinInput('')
-        setError('Match has ended.')
-      }
+    if (match && match.status === 'final') {
+      localStorage.removeItem('refereeMatchId')
+      localStorage.removeItem('refereePin')
+      setMatchId(null)
+      setMatch(null)
+      setPinInput('')
+      setError('Match has ended.')
     }
-  }, [matchId, currentMatch])
+  }, [match])
 
   if (matchId) {
     return <Referee matchId={matchId} onExit={handleExit} />
@@ -190,15 +183,74 @@ export default function RefereeApp() {
           color: 'var(--muted)', 
           marginBottom: '32px' 
         }}>
-          Enter the 6-digit match PIN to access the referee view
+          Select a game number or enter the 6-digit match PIN
         </p>
 
         <form onSubmit={handlePinSubmit} style={{
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center'
+          alignItems: 'center',
+          gap: '16px',
+          width: '100%'
         }}>
-          <input
+          {availableMatches.length > 0 && (
+            <div style={{ width: '80%', maxWidth: '280px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '12px',
+                color: 'var(--muted)',
+                marginBottom: '8px',
+                fontWeight: 600
+              }}>
+                Game Number {availableMatches.length > 0 && `(${availableMatches.length} available)`}
+              </label>
+              <select
+                value={selectedGameNumber}
+                onChange={(e) => setSelectedGameNumber(e.target.value)}
+                disabled={isLoading}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '16px',
+                  background: 'var(--bg)',
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px',
+                  color: 'var(--text)',
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  opacity: isLoading ? 0.6 : 1
+                }}
+              >
+                <option value="">Select a game...</option>
+                {availableMatches.map((m) => (
+                  <option key={m.id} value={m.gameNumber}>
+                    Game #{m.gameNumber} - {m.homeTeam} vs {m.awayTeam}
+                  </option>
+                ))}
+              </select>
+              {selectedGameNumber && (
+                <div style={{
+                  fontSize: '11px',
+                  color: 'var(--muted)',
+                  marginTop: '4px',
+                  textAlign: 'center'
+                }}>
+                  PIN will be auto-filled when selected
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div style={{ width: '80%', maxWidth: '280px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '12px',
+              color: 'var(--muted)',
+              marginBottom: '8px',
+              fontWeight: 600
+            }}>
+              Match PIN
+            </label>
+            <input
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
@@ -206,6 +258,7 @@ export default function RefereeApp() {
             onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
             placeholder="000000"
             maxLength={6}
+            disabled={isLoading}
             style={{
               width: '80%',
               maxWidth: '280px',
@@ -218,9 +271,11 @@ export default function RefereeApp() {
               border: error ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
               borderRadius: '8px',
               color: 'var(--text)',
-              marginBottom: '16px'
+              opacity: isLoading ? 0.6 : 1,
+              cursor: isLoading ? 'not-allowed' : 'text'
             }}
           />
+          </div>
           
           {error && (
             <div style={{
@@ -240,39 +295,49 @@ export default function RefereeApp() {
 
           <button
             type="submit"
+            disabled={isLoading}
             style={{
               width: '50%',
               maxWidth: '200px',
               padding: '16px',
               fontSize: '16px',
               fontWeight: 600,
-              background: 'var(--accent)',
-              color: '#000',
+              background: isLoading ? 'rgba(255,255,255,0.3)' : 'var(--accent)',
+              color: isLoading ? '#fff' : '#000',
               border: 'none',
               borderRadius: '8px',
-              cursor: 'pointer'
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              opacity: isLoading ? 0.7 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
             }}
           >
-            Enter
+            {isLoading ? (
+              <>
+                <span style={{
+                  display: 'inline-block',
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  borderTopColor: '#fff',
+                  borderRadius: '50%',
+                  animation: 'spin 0.6s linear infinite'
+                }}></span>
+                Connecting...
+              </>
+            ) : (
+              'Enter'
+            )}
           </button>
         </form>
-
-        {availableMatches && availableMatches.length > 0 && (
-          <div style={{ 
-            marginTop: '32px', 
-            paddingTop: '32px', 
-            borderTop: '1px solid rgba(255,255,255,0.1)'
-          }}>
-            <p style={{ 
-              fontSize: '12px', 
-              color: 'var(--muted)', 
-              marginBottom: '12px' 
-            }}>
-              Active Matches: {availableMatches.length}
-            </p>
-          </div>
-        )}
       </div>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }

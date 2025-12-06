@@ -9,8 +9,14 @@
   "homepage": "https://github.com/lucacanepa/openvolley",
   "scripts": {
     "dev": "vite",
+    "dev:https": "cross-env VITE_HTTPS=true vite",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "node server.js",
+    "start:prod": "npm run build && node server.js",
+    "start:https": "cross-env HTTPS=true node server.js",
+    "start:prod:https": "npm run build && cross-env HTTPS=true node server.js",
+    "generate-certs": "node generate-certs.js",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
     "electron:clean": "node -e \"const fs=require('fs'); try{fs.rmSync('dist-electron',{recursive:true,force:true})}catch(e){console.log('Clean failed, continuing...')}\"",
     "electron:build": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder",
@@ -33,7 +39,8 @@
     "dexie-react-hooks": "^1.1.7",
     "pdfjs-dist": "^3.11.174",
     "pdf-lib": "^1.17.1",
-    "html2canvas": "^1.4.1"
+    "html2canvas": "^1.4.1",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "vite": "^5.4.11",

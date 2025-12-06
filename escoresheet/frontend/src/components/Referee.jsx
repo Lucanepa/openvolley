@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { getMatchData, subscribeToMatchData, updateMatchData } from '../utils/serverDataSync'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import Modal from './Modal'
@@ -30,25 +29,31 @@ export default function Referee({ matchId, onExit }) {
   useEffect(() => {
     // Check if referee connection is enabled before starting heartbeat
     const checkAndStartHeartbeat = async () => {
-      const match = await db.matches.get(matchId)
-      if (match?.refereeConnectionEnabled === false) return null
-      
-      const updateHeartbeat = async () => {
-        try {
-          const heartbeatData = refereeView === '1st' 
-            ? { lastReferee1Heartbeat: new Date().toISOString() }
-            : { lastReferee2Heartbeat: new Date().toISOString() }
-          await db.matches.update(matchId, heartbeatData)
-        } catch (error) {
-          console.error('Failed to update referee heartbeat:', error)
+      try {
+        const matchData = await getMatchData(matchId)
+        if (!matchData.success || !matchData.match) return null
+        if (matchData.match.refereeConnectionEnabled === false) return null
+        
+        const updateHeartbeat = async () => {
+          try {
+            const heartbeatData = refereeView === '1st' 
+              ? { lastReferee1Heartbeat: new Date().toISOString() }
+              : { lastReferee2Heartbeat: new Date().toISOString() }
+            await updateMatchData(matchId, heartbeatData)
+          } catch (error) {
+            console.error('Failed to update referee heartbeat:', error)
+          }
         }
+        
+        // Initial heartbeat
+        updateHeartbeat()
+        
+        // Update heartbeat every 5 seconds
+        return setInterval(updateHeartbeat, 5000)
+      } catch (error) {
+        console.error('Failed to check connection status:', error)
+        return null
       }
-      
-      // Initial heartbeat
-      updateHeartbeat()
-      
-      // Update heartbeat every 5 seconds
-      return setInterval(updateHeartbeat, 5000)
     }
     
     let interval = null
@@ -60,7 +65,7 @@ export default function Referee({ matchId, onExit }) {
       const clearData = refereeView === '1st'
         ? { lastReferee1Heartbeat: null }
         : { lastReferee2Heartbeat: null }
-      db.matches.update(matchId, clearData)
+      updateMatchData(matchId, clearData)
         .catch(err => console.error('Failed to clear heartbeat:', err))
     }
   }, [matchId, refereeView])
@@ -176,45 +181,60 @@ export default function Referee({ matchId, onExit }) {
     }
   }, [connectionType, connectionStatus])
 
-  const data = useLiveQuery(async () => {
-    const match = await db.matches.get(matchId)
-    if (!match) return null
+  // Load match data from server
+  const [data, setData] = useState(null)
 
-    const [homeTeam, awayTeam] = await Promise.all([
-      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
-    ])
+  useEffect(() => {
+    if (!matchId) {
+      setData(null)
+      return
+    }
 
-    const [homePlayers, awayPlayers] = await Promise.all([
-      match?.homeTeamId
-        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
-        : [],
-      match?.awayTeamId
-        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
-        : []
-    ])
+    // Fetch initial match data
+    const fetchData = async () => {
+      try {
+        const result = await getMatchData(matchId)
+        if (result.success) {
+          const sets = (result.sets || []).sort((a, b) => a.index - b.index)
+          const currentSet = sets.find(s => !s.finished) || null
+          
+          setData({
+            match: result.match,
+            homeTeam: result.homeTeam,
+            awayTeam: result.awayTeam,
+            homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+            awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+            sets,
+            currentSet,
+            events: result.events || []
+          })
+        }
+      } catch (err) {
+        console.error('Error fetching match data:', err)
+      }
+    }
 
-    const sets = await db.sets
-      .where('matchId')
-      .equals(matchId)
-      .sortBy('index')
+    fetchData()
 
-    const currentSet = sets.find(s => !s.finished) || null
+    // Subscribe to match data updates
+    const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
+      const sets = (updatedData.sets || []).sort((a, b) => a.index - b.index)
+      const currentSet = sets.find(s => !s.finished) || null
+      
+      setData({
+        match: updatedData.match,
+        homeTeam: updatedData.homeTeam,
+        awayTeam: updatedData.awayTeam,
+        homePlayers: (updatedData.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        awayPlayers: (updatedData.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        sets,
+        currentSet,
+        events: updatedData.events || []
+      })
+    })
 
-    const events = await db.events
-      .where('matchId')
-      .equals(matchId)
-      .toArray()
-
-    return {
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      sets,
-      currentSet,
-      events
+    return () => {
+      unsubscribe()
     }
   }, [matchId])
 
@@ -684,7 +704,7 @@ export default function Referee({ matchId, onExit }) {
     const requestField = team === 'home' ? 'homeCaptainOnCourtRequest' : 'awayCaptainOnCourtRequest'
     
     // Save the selected captain on court
-    await db.matches.update(matchId, {
+    await updateMatchData(matchId, {
       [field]: playerNumber,
       [requestField]: null // Clear the request
     })
@@ -700,7 +720,7 @@ export default function Referee({ matchId, onExit }) {
     const requestField = team === 'home' ? 'homeCaptainOnCourtRequest' : 'awayCaptainOnCourtRequest'
     
     // Clear the request
-    await db.matches.update(matchId, {
+    await updateMatchData(matchId, {
       [requestField]: null
     })
     
@@ -1272,7 +1292,7 @@ export default function Referee({ matchId, onExit }) {
 
   const dismissRefereeCall = async () => {
     try {
-      await db.matches.update(matchId, {
+      await updateMatchData(matchId, {
         refereeCallActive: false
       })
     } catch (error) {

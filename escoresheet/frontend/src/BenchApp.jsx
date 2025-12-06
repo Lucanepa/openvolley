@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from './db/db'
+import { validatePin } from './utils/serverDataSync'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -11,69 +10,25 @@ export default function BenchApp() {
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
   const [view, setView] = useState(null) // 'roster' or 'match'
-
-  // Get all non-final matches
-  const availableMatches = useLiveQuery(async () => {
-    const matches = await db.matches
-      .filter(m => m.status !== 'final')
-      .toArray()
-    return matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-  }, [])
-
-  // Monitor the current match's connection status
-  const currentMatch = useLiveQuery(async () => {
-    if (!matchId) return null
-    return await db.matches.get(matchId)
-  }, [matchId])
+  const [match, setMatch] = useState(null)
 
   // Disconnect if connection is disabled
   useEffect(() => {
-    if (currentMatch && selectedTeam) {
+    if (match && selectedTeam) {
       const connectionEnabled = selectedTeam === 'home' 
-        ? currentMatch.homeTeamConnectionEnabled !== false
-        : currentMatch.awayTeamConnectionEnabled !== false
+        ? match.homeTeamConnectionEnabled !== false
+        : match.awayTeamConnectionEnabled !== false
       
       if (connectionEnabled === false) {
         setMatchId(null)
+        setMatch(null)
         setView(null)
         setSelectedTeam(null)
         setPinInput('')
         setError('Connection has been disabled. Please enable the connection in the scoreboard and reconnect.')
       }
     }
-  }, [currentMatch, selectedTeam])
-
-  // Generate missing PINs for matches (outside of liveQuery to avoid read-only error)
-  useEffect(() => {
-    if (!availableMatches) return
-
-    const generatePinCode = () => {
-      const chars = '0123456789'
-      let pin = ''
-      for (let i = 0; i < 6; i++) {
-        pin += chars.charAt(Math.floor(Math.random() * chars.length))
-      }
-      return pin
-    }
-
-    // Generate missing PINs
-    const generateMissingPins = async () => {
-      for (const match of availableMatches) {
-        const updates = {}
-        if (!match.homeTeamPin) {
-          updates.homeTeamPin = generatePinCode()
-        }
-        if (!match.awayTeamPin) {
-          updates.awayTeamPin = generatePinCode()
-        }
-        if (Object.keys(updates).length > 0) {
-          await db.matches.update(match.id, updates)
-        }
-      }
-    }
-
-    generateMissingPins().catch(console.error)
-  }, [availableMatches])
+  }, [match, selectedTeam])
 
   const handleTeamSelect = (team) => {
     setSelectedTeam(team)
@@ -90,58 +45,26 @@ export default function BenchApp() {
       return
     }
 
-    // First, check if PIN matches any match (even if disabled)
-    const pinField = selectedTeam === 'home' ? 'homeTeamPin' : 'awayTeamPin'
-    const matchWithPin = availableMatches?.find(m => {
-      const storedPin = m[pinField]
-      if (!storedPin) {
-        return false
-      }
-      const storedPinStr = String(storedPin).trim()
-      const inputPinStr = String(pinInput).trim()
-      return storedPinStr === inputPinStr
-    })
-
-    // If PIN matches but connection is disabled, show specific error
-    const connectionEnabled = selectedTeam === 'home'
-      ? matchWithPin?.homeTeamConnectionEnabled !== false
-      : matchWithPin?.awayTeamConnectionEnabled !== false
-    
-    if (matchWithPin && connectionEnabled === false) {
-      setError('Connection is disabled for this match. Please enable the connection in the scoreboard.')
-      setPinInput('')
+    if (!selectedTeam) {
+      setError('Please select a team first')
       return
     }
 
-    // Find match with matching team PIN and enabled connection
-    const match = availableMatches?.find(m => {
-      const storedPin = m[pinField]
+    try {
+      // Validate PIN with server (no local IndexedDB)
+      const pinType = selectedTeam === 'home' ? 'homeTeam' : 'awayTeam'
+      const result = await validatePin(pinInput.trim(), pinType)
       
-      // Check if team connection is enabled for this match
-      const teamConnectionEnabled = selectedTeam === 'home'
-        ? m.homeTeamConnectionEnabled !== false
-        : m.awayTeamConnectionEnabled !== false
-      
-      if (teamConnectionEnabled === false) {
-        return false
+      if (result.success && result.match) {
+        setMatchId(result.match.id)
+        setMatch(result.match)
+      } else {
+        setError('Invalid PIN code. Please check and try again.')
+        setPinInput('')
       }
-      
-      // Ensure both are strings for comparison
-      if (!storedPin) {
-        return false
-      }
-      
-      const storedPinStr = String(storedPin).trim()
-      const inputPinStr = String(pinInput).trim()
-      const matchResult = storedPinStr === inputPinStr
-      
-      return matchResult
-    })
-
-    if (match) {
-      setMatchId(match.id)
-    } else {
-      setError('Invalid PIN code. Please check and try again.')
+    } catch (err) {
+      console.error('Error validating PIN:', err)
+      setError(err.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
       setPinInput('')
     }
   }
@@ -162,25 +85,18 @@ export default function BenchApp() {
     }
   }
 
-  // Get team names - MUST be before any early returns
+  // Get team names from match data
   const [homeTeamName, setHomeTeamName] = useState('Home Team')
   const [awayTeamName, setAwayTeamName] = useState('Away Team')
 
   useEffect(() => {
-    if (availableMatches && availableMatches.length > 0) {
-      const match = availableMatches[0]
-      if (match.homeTeamId) {
-        db.teams.get(match.homeTeamId).then(team => {
-          if (team) setHomeTeamName(team.name)
-        })
-      }
-      if (match.awayTeamId) {
-        db.teams.get(match.awayTeamId).then(team => {
-          if (team) setAwayTeamName(team.name)
-        })
-      }
+    if (match) {
+      // Team names will come from server data when we fetch full match data
+      // For now, use placeholders - will be updated when components fetch full data
+      setHomeTeamName('Home Team')
+      setAwayTeamName('Away Team')
     }
-  }, [availableMatches])
+  }, [match])
 
   // If view is selected, show the appropriate component
   if (matchId && view) {

@@ -62,23 +62,6 @@ export default function UploadRosterApp() {
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const fileInputRef = useRef(null)
 
-  // Find match by game number
-  const findMatchByGameNumber = async (gameNum) => {
-    try {
-      // Try to find by gameNumber or game_n
-      const matches = await db.matches.toArray()
-      const found = matches.find(m => 
-        m.gameNumber === gameNum || 
-        m.game_n === Number(gameNum) || 
-        String(m.game_n) === gameNum ||
-        String(m.gameNumber) === gameNum
-      )
-      return found
-    } catch (error) {
-      console.error('Error finding match:', error)
-      return null
-    }
-  }
 
   // Check if match exists and is in setup (not started or finished)
   const checkMatchStatus = async (gameNum) => {
@@ -93,19 +76,29 @@ export default function UploadRosterApp() {
     setMatchStatusCheck('checking')
     
     try {
+      // Find match from server
       const foundMatch = await findMatchByGameNumber(gameNum.trim())
       
       if (!foundMatch) {
         setMatchStatusCheck('invalid')
         setMatch(null)
         setMatchId(null)
-        setValidationError('Match not found with this game number')
+        setValidationError('Match not found with this game number. Make sure the main scoresheet is running.')
         return
       }
 
-      // Check if match has started (has events or active sets)
-      const sets = await db.sets.where('matchId').equals(foundMatch.id).toArray()
-      const events = await db.events.where('matchId').equals(foundMatch.id).toArray()
+      // Get full match data to check sets and events
+      const matchData = await getMatchData(foundMatch.id)
+      if (!matchData.success) {
+        setMatchStatusCheck('invalid')
+        setMatch(null)
+        setMatchId(null)
+        setValidationError('Failed to load match data')
+        return
+      }
+
+      const sets = matchData.sets || []
+      const events = matchData.events || []
       
       // Check if match is finished
       const isFinished = foundMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished))
@@ -144,13 +137,18 @@ export default function UploadRosterApp() {
       setMatchStatusCheck('valid')
       setMatch(foundMatch)
       setMatchId(foundMatch.id)
+      
+      // Set teams from match data
+      if (matchData.homeTeam) setHomeTeam(matchData.homeTeam)
+      if (matchData.awayTeam) setAwayTeam(matchData.awayTeam)
+      
       setValidationError('')
     } catch (error) {
       console.error('Error checking match status:', error)
       setMatchStatusCheck('invalid')
       setMatch(null)
       setMatchId(null)
-      setValidationError('Error checking match status')
+      setValidationError('Error checking match status. Make sure the main scoresheet is running.')
     }
   }
 
@@ -194,26 +192,7 @@ export default function UploadRosterApp() {
     }
   }, [uploadPin, match, team])
 
-  // Load teams when match is found
-  useEffect(() => {
-    if (!match) {
-      setHomeTeam(null)
-      setAwayTeam(null)
-      return
-    }
-
-    const loadTeams = async () => {
-      if (match.homeTeamId) {
-        const home = await db.teams.get(match.homeTeamId)
-        setHomeTeam(home)
-      }
-      if (match.awayTeamId) {
-        const away = await db.teams.get(match.awayTeamId)
-        setAwayTeam(away)
-      }
-    }
-    loadTeams()
-  }, [match])
+  // Load teams when match is found (already loaded in checkMatchStatus)
 
   // Validate inputs
   const validateInputs = async () => {
@@ -224,27 +203,32 @@ export default function UploadRosterApp() {
       return false
     }
 
-    const foundMatch = await findMatchByGameNumber(gameNumber.trim())
-    if (!foundMatch) {
-      setValidationError('Match not found with this game number')
+    try {
+      const foundMatch = await findMatchByGameNumber(gameNumber.trim())
+      if (!foundMatch) {
+        setValidationError('Match not found with this game number')
+        return false
+      }
+
+      setMatch(foundMatch)
+      setMatchId(foundMatch.id)
+
+      const correctPin = team === 'home' ? foundMatch.homeTeamUploadPin : foundMatch.awayTeamUploadPin
+      if (!uploadPin.trim()) {
+        setValidationError('Please enter an upload PIN')
+        return false
+      }
+
+      if (!correctPin || uploadPin.trim() !== correctPin) {
+        setValidationError('Invalid upload PIN')
+        return false
+      }
+
+      return true
+    } catch (error) {
+      setValidationError('Error validating inputs. Make sure the main scoresheet is running.')
       return false
     }
-
-    setMatch(foundMatch)
-    setMatchId(foundMatch.id)
-
-    const correctPin = team === 'home' ? foundMatch.homeTeamUploadPin : foundMatch.awayTeamUploadPin
-    if (!uploadPin.trim()) {
-      setValidationError('Please enter an upload PIN')
-      return false
-    }
-
-    if (!correctPin || uploadPin.trim() !== correctPin) {
-      setValidationError('Invalid upload PIN')
-      return false
-    }
-
-    return true
   }
 
   // Handle file selection
@@ -388,9 +372,9 @@ export default function UploadRosterApp() {
     if (!parsedData || !matchId) return
     
     try {
-      // Store pending roster in match
+      // Store pending roster in match via server
       const pendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
-      await db.matches.update(matchId, {
+      await updateMatchData(matchId, {
         [pendingField]: {
           players: parsedData.players,
           bench: parsedData.bench,

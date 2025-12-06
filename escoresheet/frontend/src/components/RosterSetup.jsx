@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { getMatchData, subscribeToMatchData } from '../utils/serverDataSync'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 
 export default function RosterSetup({ matchId, team, onBack }) {
@@ -11,21 +10,68 @@ export default function RosterSetup({ matchId, team, onBack }) {
   const [pdfFile, setPdfFile] = useState(null)
   const fileInputRef = useRef(null)
 
-  const match = useLiveQuery(async () => {
-    if (!matchId) return null
-    return await db.matches.get(matchId)
-  }, [matchId])
+  const [match, setMatch] = useState(null)
 
-  const teamId = team === 'home' ? match?.homeTeamId : match?.awayTeamId
-
-  // Load existing roster
+  // Load match data from server
   useEffect(() => {
-    if (!teamId) return
+    if (!matchId) {
+      setMatch(null)
+      return
+    }
 
-    async function loadRoster() {
+    const fetchData = async () => {
       try {
-        const teamPlayers = await db.players.where('teamId').equals(teamId).sortBy('number')
-        setPlayers(teamPlayers.map(p => ({
+        const result = await getMatchData(matchId)
+        if (result.success) {
+          setMatch(result.match)
+          
+          // Load players and bench officials
+          const teamId = team === 'home' ? result.match.homeTeamId : result.match.awayTeamId
+          const teamPlayers = team === 'home' 
+            ? (result.homePlayers || [])
+            : (result.awayPlayers || [])
+          
+          setPlayers(teamPlayers
+            .sort((a, b) => (a.number || 0) - (b.number || 0))
+            .map(p => ({
+              id: p.id,
+              number: p.number,
+              firstName: p.firstName || '',
+              lastName: p.lastName || p.name || '',
+              dob: p.dob || '',
+              libero: p.libero || '',
+              isCaptain: p.isCaptain || false
+            })))
+
+          const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
+          if (result.match[benchKey]) {
+            setBenchOfficials(result.match[benchKey].map(b => ({
+              role: b.role || '',
+              firstName: b.firstName || b.first_name || '',
+              lastName: b.lastName || b.last_name || '',
+              dob: b.dob || b.date_of_birth || b.dateOfBirth || ''
+            })))
+          }
+        }
+      } catch (err) {
+        console.error('Error loading roster:', err)
+        setError('Failed to load roster. Make sure the main scoresheet is running.')
+      }
+    }
+
+    fetchData()
+
+    // Subscribe to updates
+    const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
+      setMatch(updatedData.match)
+      
+      const teamPlayers = team === 'home' 
+        ? (updatedData.homePlayers || [])
+        : (updatedData.awayPlayers || [])
+      
+      setPlayers(teamPlayers
+        .sort((a, b) => (a.number || 0) - (b.number || 0))
+        .map(p => ({
           id: p.id,
           number: p.number,
           firstName: p.firstName || '',
@@ -35,23 +81,21 @@ export default function RosterSetup({ matchId, team, onBack }) {
           isCaptain: p.isCaptain || false
         })))
 
-        const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
-        if (match?.[benchKey]) {
-          setBenchOfficials(match[benchKey].map(b => ({
-            role: b.role || '',
-            firstName: b.firstName || b.first_name || '',
-            lastName: b.lastName || b.last_name || '',
-            dob: b.dob || b.date_of_birth || b.dateOfBirth || ''
-          })))
-        }
-      } catch (err) {
-        console.error('Error loading roster:', err)
-        setError('Failed to load roster')
+      const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
+      if (updatedData.match[benchKey]) {
+        setBenchOfficials(updatedData.match[benchKey].map(b => ({
+          role: b.role || '',
+          firstName: b.firstName || b.first_name || '',
+          lastName: b.lastName || b.last_name || '',
+          dob: b.dob || b.date_of_birth || b.dateOfBirth || ''
+        })))
       }
-    }
+    })
 
-    loadRoster()
-  }, [teamId, match, team])
+    return () => {
+      unsubscribe()
+    }
+  }, [matchId, team])
 
   const handleAddPlayer = () => {
     const newNumber = players.length > 0 
