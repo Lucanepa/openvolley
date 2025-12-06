@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Menu } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('path')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+const serverManager = require('./serverManager')
 
 let mainWindow
 
@@ -184,8 +185,36 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit()
+    // Stop server when app closes
+    serverManager.stopServer().then(() => {
+      app.quit()
+    }).catch(() => {
+      app.quit()
+    })
   }
+})
+
+// IPC handlers for server management
+ipcMain.handle('server:start', async (event, options) => {
+  try {
+    const status = await serverManager.startServer(options)
+    return { success: true, status }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('server:stop', async () => {
+  try {
+    const result = await serverManager.stopServer()
+    return { success: true, ...result }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('server:status', async () => {
+  return serverManager.getServerStatus()
 })
 
 // Security: Prevent new window creation

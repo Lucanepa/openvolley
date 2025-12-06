@@ -145,6 +145,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const homeTeamMeasureRef = useRef(null)
   const awayTeamMeasureRef = useRef(null)
 
+  // Server state
+  const [serverRunning, setServerRunning] = useState(false)
+  const [serverStatus, setServerStatus] = useState(null)
+  const [serverLoading, setServerLoading] = useState(false)
+  const [instanceId] = useState(() => `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
+
   // Cities in Kanton Zürich
   const citiesZurich = [
     'Zürich', 'Winterthur', 'Uster', 'Dübendorf', 'Dietikon', 'Wetzikon', 'Horgen', 
@@ -332,24 +338,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         const existingPins = []
         if (!match.refereePin) {
           const refPin = generatePinCode(existingPins)
-          updates.refereePin = refPin
-          existingPins.push(refPin)
+          updates.refereePin = String(refPin).trim() // Ensure string
+          existingPins.push(String(refPin).trim())
         } else {
-          existingPins.push(match.refereePin)
+          existingPins.push(String(match.refereePin).trim())
         }
         if (!match.homeTeamPin) {
           const homePin = generatePinCode(existingPins)
-          updates.homeTeamPin = homePin
-          existingPins.push(homePin)
+          updates.homeTeamPin = String(homePin).trim() // Ensure string
+          existingPins.push(String(homePin).trim())
         } else {
-          existingPins.push(match.homeTeamPin)
+          existingPins.push(String(match.homeTeamPin).trim())
         }
         if (!match.awayTeamPin) {
           const awayPin = generatePinCode(existingPins)
-          updates.awayTeamPin = awayPin
-          existingPins.push(awayPin)
+          updates.awayTeamPin = String(awayPin).trim() // Ensure string
+          existingPins.push(String(awayPin).trim())
         } else {
-          existingPins.push(match.awayTeamPin)
+          existingPins.push(String(match.awayTeamPin).trim())
         }
         if (!match.homeTeamUploadPin) {
           const homeUploadPin = generatePinCode(existingPins)
@@ -511,6 +517,134 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       setCurrentView('coin-toss')
     }
   }, [showCoinToss, matchId, home, away])
+
+  // Server management - Only check in Electron
+  useEffect(() => {
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
+    
+    // Only check server status in Electron mode
+    if (!isElectron) {
+      return
+    }
+    
+    const checkServerStatus = async () => {
+      try {
+        const status = await window.electronAPI.server.getStatus()
+        setServerStatus(status)
+        setServerRunning(status.running)
+      } catch (err) {
+        setServerRunning(false)
+      }
+    }
+    
+    checkServerStatus()
+    const interval = setInterval(checkServerStatus, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleStartServer = async () => {
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
+    
+    if (!isElectron) {
+      // In browser/PWA - show instructions via copy button
+      try {
+        const command = 'npm run start:prod'
+        await navigator.clipboard.writeText(command)
+        setNoticeModal({ message: 'Command copied to clipboard! Run "npm run start:prod" in the frontend directory terminal.' })
+      } catch (err) {
+        // Fallback if clipboard API not available
+        const textArea = document.createElement('textarea')
+        textArea.value = 'npm run start:prod'
+        textArea.style.position = 'fixed'
+        textArea.style.opacity = '0'
+        document.body.appendChild(textArea)
+        textArea.select()
+        try {
+          document.execCommand('copy')
+          setNoticeModal({ message: 'Command copied to clipboard! Run "npm run start:prod" in the frontend directory terminal.' })
+        } catch (e) {
+          setNoticeModal({ message: 'Please run manually in terminal: npm run start:prod' })
+        }
+        document.body.removeChild(textArea)
+      }
+      return
+    }
+    
+    setServerLoading(true)
+    try {
+      const result = await window.electronAPI.server.start({ https: true })
+      if (result.success) {
+        setServerStatus(result.status)
+        setServerRunning(true)
+        // Register as main instance
+        await registerAsMainInstance()
+      } else {
+        setNoticeModal({ message: `Failed to start server: ${result.error}` })
+      }
+    } catch (error) {
+      setNoticeModal({ message: `Error starting server: ${error.message}` })
+    } finally {
+      setServerLoading(false)
+    }
+  }
+
+  const handleStopServer = async () => {
+    setServerLoading(true)
+    try {
+      const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
+      
+      if (isElectron) {
+        const result = await window.electronAPI.server.stop()
+        if (result.success) {
+          setServerRunning(false)
+          setServerStatus(null)
+        }
+      }
+    } catch (error) {
+      setNoticeModal({ message: `Error stopping server: ${error.message}` })
+    } finally {
+      setServerLoading(false)
+    }
+  }
+
+  const registerAsMainInstance = async () => {
+    if (!serverStatus) return
+    
+    try {
+      const protocol = serverStatus.protocol || 'https'
+      const host = serverStatus.localIP || serverStatus.hostname || 'escoresheet.local'
+      const port = serverStatus.port || 5173
+      const url = `${protocol}://${host}:${port}/api/server/register-main`
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-Instance-ID': instanceId,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        if (!result.success) {
+          console.warn('Failed to register as main instance:', result.error)
+        } else {
+          console.log('Registered as main instance:', instanceId)
+        }
+      } else {
+        console.warn('Failed to register as main instance: HTTP', response.status)
+      }
+    } catch (error) {
+      console.error('Error registering as main instance:', error)
+    }
+  }
+
+  // Register as main instance when match starts
+  useEffect(() => {
+    if (serverRunning && serverStatus && matchId) {
+      registerAsMainInstance()
+    }
+  }, [serverRunning, serverStatus, matchId, instanceId])
 
   // Load saved draft data on mount (only if no matchId)
   useEffect(() => {
@@ -1005,9 +1139,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         const homePin = generatePinCode([refPin])
         const awayPin = generatePinCode([refPin, homePin])
         return {
-          refereePin: refPin,
-          homeTeamPin: homePin,
-          awayTeamPin: awayPin
+          refereePin: String(refPin).trim(), // Ensure string
+          homeTeamPin: String(homePin).trim(), // Ensure string
+          awayTeamPin: String(awayPin).trim() // Ensure string
         }
       })(),
       matchPin: matchPin.trim(),
@@ -1722,8 +1856,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           )}
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div>
-            <h4 style={{ marginTop:0 }}>1st Referee</h4>
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '16px',
+            background: 'rgba(15, 23, 42, 0.2)'
+          }}>
+            <h4 style={{ 
+              marginTop: 0, 
+              marginBottom: '12px',
+              padding: '8px 12px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 600
+            }}>1st Referee</h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
@@ -1732,8 +1879,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
           </div>
 
-          <div>
-            <h4 style={{ marginTop:0 }}>2nd Referee</h4>
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '16px',
+            background: 'rgba(15, 23, 42, 0.2)'
+          }}>
+            <h4 style={{ 
+              marginTop: 0, 
+              marginBottom: '12px',
+              padding: '8px 12px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 600
+            }}>2nd Referee</h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
@@ -1742,8 +1902,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
           </div>
 
-          <div>
-            <h4 style={{ marginTop:0 }}>Scorer</h4>
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '16px',
+            background: 'rgba(15, 23, 42, 0.2)'
+          }}>
+            <h4 style={{ 
+              marginTop: 0, 
+              marginBottom: '12px',
+              padding: '8px 12px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 600
+            }}>Scorer</h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
@@ -1752,8 +1925,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
           </div>
 
-          <div>
-            <h4 style={{ marginTop:0 }}>Assistant Scorer</h4>
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '16px',
+            background: 'rgba(15, 23, 42, 0.2)'
+          }}>
+            <h4 style={{ 
+              marginTop: 0, 
+              marginBottom: '12px',
+              padding: '8px 12px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 600
+            }}>Assistant Scorer</h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
@@ -4099,11 +4285,52 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
   }
 
+  // Helper function to generate unique PIN
+  const generateUniquePin = async () => {
+    const generatePinCode = (existingPins = []) => {
+      const chars = '0123456789'
+      let pin = ''
+      let attempts = 0
+      const maxAttempts = 100
+      
+      do {
+        pin = ''
+        for (let i = 0; i < 6; i++) {
+          pin += chars.charAt(Math.floor(Math.random() * chars.length))
+        }
+        attempts++
+        if (attempts >= maxAttempts) break
+      } while (existingPins.includes(pin))
+      
+      return pin
+    }
+    
+    // Get all existing PINs to ensure uniqueness
+    const allMatches = await db.matches.toArray()
+    const existingPins = allMatches
+      .map(m => [m.refereePin, m.homeTeamPin, m.awayTeamPin, m.homeTeamUploadPin, m.awayTeamUploadPin])
+      .flat()
+      .filter(Boolean)
+    
+    return generatePinCode(existingPins)
+  }
+
   const handleRefereeConnectionToggle = async (enabled) => {
     if (!matchId) return
     setRefereeConnectionEnabled(enabled)
     try {
-      await db.matches.update(matchId, { refereeConnectionEnabled: enabled })
+      const match = await db.matches.get(matchId)
+      if (!match) return
+      
+      const updates = { refereeConnectionEnabled: enabled }
+      
+      // If enabling connection and PIN doesn't exist, generate one
+      if (enabled && !match.refereePin) {
+        const newPin = await generateUniquePin()
+        updates.refereePin = String(newPin).trim() // Ensure it's a string
+      }
+      
+      await db.matches.update(matchId, updates)
     } catch (error) {
       console.error('Failed to update referee connection setting:', error)
     }
@@ -4113,7 +4340,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     if (!matchId) return
     setHomeTeamConnectionEnabled(enabled)
     try {
-      await db.matches.update(matchId, { homeTeamConnectionEnabled: enabled })
+      const match = await db.matches.get(matchId)
+      if (!match) return
+      
+      const updates = { homeTeamConnectionEnabled: enabled }
+      
+      // If enabling connection and PIN doesn't exist, generate one
+      if (enabled && !match.homeTeamPin) {
+        const newPin = await generateUniquePin()
+        updates.homeTeamPin = String(newPin).trim() // Ensure it's a string
+      }
+      
+      await db.matches.update(matchId, updates)
     } catch (error) {
       console.error('Failed to update home team connection setting:', error)
     }
@@ -4123,7 +4361,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     if (!matchId) return
     setAwayTeamConnectionEnabled(enabled)
     try {
-      await db.matches.update(matchId, { awayTeamConnectionEnabled: enabled })
+      const match = await db.matches.get(matchId)
+      if (!match) return
+      
+      const updates = { awayTeamConnectionEnabled: enabled }
+      
+      // If enabling connection and PIN doesn't exist, generate one
+      if (enabled && !match.awayTeamPin) {
+        const newPin = await generateUniquePin()
+        updates.awayTeamPin = String(newPin).trim() // Ensure it's a string
+      }
+      
+      await db.matches.update(matchId, updates)
     } catch (error) {
       console.error('Failed to update away team connection setting:', error)
     }
@@ -4218,11 +4467,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const handleEditPin = (type) => {
     let currentPin = ''
     if (type === 'referee') {
-      currentPin = match?.refereePin || ''
+      currentPin = String(match?.refereePin || '').trim()
     } else if (type === 'benchHome') {
-      currentPin = match?.homeTeamPin || ''
+      currentPin = String(match?.homeTeamPin || '').trim()
     } else if (type === 'benchAway') {
-      currentPin = match?.awayTeamPin || ''
+      currentPin = String(match?.awayTeamPin || '').trim()
     }
     setNewPin(currentPin)
     setPinError('')
@@ -4244,13 +4493,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     }
     
     try {
+      // Ensure PIN is saved as a string (trimmed)
+      const pinValue = String(newPin).trim()
       let updateField = {}
       if (editPinType === 'referee') {
-        updateField = { refereePin: newPin }
+        updateField = { refereePin: pinValue }
       } else if (editPinType === 'benchHome') {
-        updateField = { homeTeamPin: newPin }
+        updateField = { homeTeamPin: pinValue }
       } else if (editPinType === 'benchAway') {
-        updateField = { awayTeamPin: newPin }
+        updateField = { awayTeamPin: pinValue }
       }
       await db.matches.update(matchId, updateField)
       setEditPinModal(false)
@@ -4602,6 +4853,104 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('away')}>Edit</button></div>
         </div>
+        {typeof window !== 'undefined' && window.electronAPI?.server && (
+        <div className="card" style={{ order: 5 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <StatusBadge ready={serverRunning} />
+                <h3 style={{ margin: 0 }}>Live Server</h3>
+              </div>
+            </div>
+            {serverRunning && serverStatus ? (
+              <div style={{ marginTop: 12 }}>
+                <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', rowGap: 8, marginBottom: 12 }}>
+                  <span>Status:</span>
+                  <span style={{ color: '#10b981', fontWeight: 600 }}>● Running</span>
+                  <span>Hostname:</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>{serverStatus.hostname || 'escoresheet.local'}</span>
+                  <span>IP Address:</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>{serverStatus.localIP}</span>
+                  <span>Protocol:</span>
+                  <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span>
+                </div>
+                <div style={{ 
+                  background: 'rgba(15, 23, 42, 0.5)', 
+                  padding: '12px', 
+                  borderRadius: '8px', 
+                  marginTop: '12px',
+                  fontSize: '12px'
+                }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Connection URLs:</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'monospace', fontSize: '11px' }}>
+                    <div>
+                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>Main:</div>
+                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>Referee:</div>
+                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee.html`}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>Bench:</div>
+                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench.html`}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket:</div>
+                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12 }}>
+                <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)', marginBottom: 12 }}>
+                  Start the live server to allow referee, bench, and livescore apps to connect.
+                </p>
+                {typeof window !== 'undefined' && !window.electronAPI?.server && (
+                  <div style={{ 
+                    background: 'rgba(255, 255, 255, 0.05)', 
+                    padding: '12px', 
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    color: 'rgba(255,255,255,0.7)',
+                    marginTop: '12px'
+                  }}>
+                    <div style={{ marginBottom: '8px', fontWeight: 600 }}>To start from browser/PWA:</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: '1.6' }}>
+                      Run: <span style={{ color: '#22c55e', fontWeight: 600 }}>npm run start:prod</span> in terminal
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="actions">
+            {serverRunning ? (
+              typeof window !== 'undefined' && window.electronAPI?.server ? (
+                <button 
+                  className="secondary" 
+                  onClick={handleStopServer}
+                  disabled={serverLoading}
+                >
+                  {serverLoading ? 'Stopping...' : 'Stop Server'}
+                </button>
+              ) : null
+            ) : (
+              <button 
+                className="primary" 
+                onClick={handleStartServer}
+                disabled={serverLoading}
+              >
+                {typeof window !== 'undefined' && window.electronAPI?.server 
+                  ? (serverLoading ? 'Starting...' : 'Start Server')
+                  : '📋 Copy Start Command'
+                }
+              </button>
+            )}
+          </div>
+        </div>
+        )}
       </div>
 
       <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center' }}>

@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { getMatchData, subscribeToMatchData, updateMatchData } from '../utils/serverDataSync'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 export default function MatchEntry({ matchId, team, onBack }) {
@@ -52,56 +51,75 @@ export default function MatchEntry({ matchId, team, onBack }) {
       const heartbeatField = team === 'home' 
         ? 'lastHomeTeamHeartbeat' 
         : 'lastAwayTeamHeartbeat'
-      db.matches.update(matchId, { [heartbeatField]: null })
+      updateMatchData(matchId, { [heartbeatField]: null })
         .catch(err => console.error('Failed to clear heartbeat:', err))
     }
   }, [matchId, team])
 
-  // Load match data
-  const data = useLiveQuery(async () => {
-    if (!matchId) return null
+  // Load match data from server
+  const [data, setData] = useState(null)
 
-    const match = await db.matches.get(matchId)
-    if (!match) return null
+  useEffect(() => {
+    if (!matchId) {
+      setData(null)
+      return
+    }
 
-    const [homeTeam, awayTeam] = await Promise.all([
-      match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-      match.awayTeamId ? db.teams.get(match.awayTeamId) : null
-    ])
+    // Fetch initial match data
+    const fetchData = async () => {
+      try {
+        const result = await getMatchData(matchId)
+        if (result.success) {
+          const allSets = (result.sets || []).sort((a, b) => a.index - b.index)
+          const currentSet = allSets.find(s => !s.finished) || null
+          const events = (result.events || []).sort((a, b) => {
+            const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+            const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+            return aTime - bTime
+          })
+          
+          setData({
+            match: result.match,
+            homeTeam: result.homeTeam,
+            awayTeam: result.awayTeam,
+            set: currentSet,
+            allSets,
+            events,
+            homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+            awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0))
+          })
+        }
+      } catch (err) {
+        console.error('Error fetching match data:', err)
+      }
+    }
 
-    const currentSet = await db.sets
-      .where('matchId')
-      .equals(matchId)
-      .filter(s => !s.finished)
-      .sortBy('index')
-      .then(sets => sets[0] || null)
+    fetchData()
 
-    const allSets = await db.sets
-      .where('matchId')
-      .equals(matchId)
-      .sortBy('index')
+    // Subscribe to match data updates
+    const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
+      const allSets = (updatedData.sets || []).sort((a, b) => a.index - b.index)
+      const currentSet = allSets.find(s => !s.finished) || null
+      const events = (updatedData.events || []).sort((a, b) => {
+        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+        return aTime - bTime
+      })
+      
+      setData({
+        match: updatedData.match,
+        homeTeam: updatedData.homeTeam,
+        awayTeam: updatedData.awayTeam,
+        set: currentSet,
+        allSets,
+        events,
+        homePlayers: (updatedData.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        awayPlayers: (updatedData.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0))
+      })
+    })
 
-    const events = await db.events
-      .where('matchId')
-      .equals(matchId)
-      .sortBy('ts')
-
-    const homePlayers = match.homeTeamId
-      ? await db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
-      : []
-    const awayPlayers = match.awayTeamId
-      ? await db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
-      : []
-
-    return {
-      match,
-      homeTeam,
-      awayTeam,
-      set: currentSet,
-      allSets,
-      events,
-      homePlayers,
-      awayPlayers
+    return () => {
+      unsubscribe()
     }
   }, [matchId])
 
