@@ -15,5 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     node: process.versions.node,
     chrome: process.versions.chrome,
     electron: process.versions.electron
+  },
+  // Server management APIs
+  server: {
+    start: (options) => ipcRenderer.invoke('server:start', options),
+    stop: () => ipcRenderer.invoke('server:stop'),
+    getStatus: () => ipcRenderer.invoke('server:status')
   }
 })

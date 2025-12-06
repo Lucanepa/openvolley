@@ -32,3 +32,10 @@ android
 # Electron
 electron/dist
 electron/out
+
+# SSL Certificates (self-signed for development)
+localhost.pem
+localhost-key.pem
+*.pem
+*.key
+*.crt
