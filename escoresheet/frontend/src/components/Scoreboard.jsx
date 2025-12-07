@@ -650,7 +650,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     previousMatchIdRef.current = matchId
-    
+
     // Connect to WebSocket
     connectWebSocket()
 

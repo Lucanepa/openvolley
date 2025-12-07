@@ -716,23 +716,23 @@ wss.on('connection', (ws, req) => {
             // ALWAYS overwrite - scoreboard data is authoritative
             matchDataStore.set(String(data.matchId), matchData)
             console.log(`[WebSocket] Synced full match data for match ${data.matchId} (overwrote existing)`)
-            
-            // Broadcast update to subscribed clients
-            const subscribers = matchSubscriptions.get(String(data.matchId))
-            if (subscribers) {
-              subscribers.forEach(client => {
-                if (client !== ws && client.readyState === 1) {
-                  try {
-                    client.send(JSON.stringify({
-                      type: 'match-data-update',
-                      matchId: String(data.matchId),
+          
+          // Broadcast update to subscribed clients
+          const subscribers = matchSubscriptions.get(String(data.matchId))
+          if (subscribers) {
+            subscribers.forEach(client => {
+              if (client !== ws && client.readyState === 1) {
+                try {
+                  client.send(JSON.stringify({
+                    type: 'match-data-update',
+                    matchId: String(data.matchId),
                       data: matchData
-                    }))
-                  } catch (err) {
-                    console.error('[WebSocket] Error sending update to subscriber:', err)
-                  }
+                  }))
+                } catch (err) {
+                  console.error('[WebSocket] Error sending update to subscriber:', err)
                 }
-              })
+              }
+            })
             }
           }
         }

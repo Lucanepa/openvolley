@@ -187,7 +187,7 @@ export default function RefereeApp() {
     setConnectionStatuses(statuses)
     setConnectionDebugInfo(debugInfo)
   }
-  
+
   // Load available matches on mount and periodically
   useEffect(() => {
     const loadMatches = async () => {
@@ -633,21 +633,21 @@ export default function RefereeApp() {
       {/* Main content */}
       <div style={{
         flex: '1 1 auto',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px',
         overflowY: 'auto'
-      }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
+    }}>
+      <div style={{
+        background: 'var(--bg-secondary)',
+        borderRadius: '12px',
+        padding: '40px',
           maxWidth: 'min(400px, calc(100vw - 40px))',
-          width: '100%',
+        width: '100%',
           textAlign: 'center',
           boxSizing: 'border-box'
-        }}>
+      }}>
         <img 
           src={refereeIcon} 
           alt="Referee Icon" 
@@ -663,16 +663,16 @@ export default function RefereeApp() {
         </h1>
 
         {availableMatches.length > 0 ? (
-          <form onSubmit={handlePinSubmit} style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '16px',
+        <form onSubmit={handlePinSubmit} style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px',
             width: '100%',
             maxWidth: '100%',
             boxSizing: 'border-box'
-          }}>
-            {availableMatches.length > 0 && (
+        }}>
+          {availableMatches.length > 0 && (
             <div style={{ width: '80%', maxWidth: '280px', boxSizing: 'border-box' }}>
               <label style={{
                 display: 'block',
