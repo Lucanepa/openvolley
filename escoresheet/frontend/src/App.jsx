@@ -361,16 +361,27 @@ export default function App() {
       debugInfo.db = { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }
     }
     
-    // Check Supabase status (based on syncStatus)
-    if (syncStatus === 'synced' || syncStatus === 'syncing') {
-      statuses.supabase = 'connected'
-      debugInfo.supabase = { status: 'connected', message: 'Supabase is connected and syncing' }
-    } else if (syncStatus === 'online_no_supabase') {
+    // Check Supabase status (based on syncStatus and canUseSupabase)
+    // First check if Supabase is configured at all
+    if (!canUseSupabase) {
       statuses.supabase = 'not_configured'
+      const envUrl = import.meta.env.VITE_SUPABASE_URL
+      const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       debugInfo.supabase = { 
         status: 'not_configured', 
         message: 'Supabase is not configured',
-        details: 'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables to enable Supabase sync'
+        details: `Environment variables missing: ${!envUrl ? 'VITE_SUPABASE_URL' : ''}${!envUrl && !envKey ? ' and ' : ''}${!envKey ? 'VITE_SUPABASE_ANON_KEY' : ''}. Set these in your .env file to enable Supabase sync.`
+      }
+    } else if (syncStatus === 'synced' || syncStatus === 'syncing') {
+      statuses.supabase = 'connected'
+      debugInfo.supabase = { status: 'connected', message: 'Supabase is connected and syncing' }
+    } else if (syncStatus === 'online_no_supabase') {
+      // This shouldn't happen if canUseSupabase is true, but handle it anyway
+      statuses.supabase = 'not_configured'
+      debugInfo.supabase = { 
+        status: 'not_configured', 
+        message: 'Supabase client not initialized',
+        details: 'Supabase environment variables may be set but client failed to initialize. Check your .env file.'
       }
     } else if (syncStatus === 'connecting') {
       statuses.supabase = 'connecting'
