@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import Modal from './Modal'
 import GuideModal from './GuideModal'
+import ConnectionStatus from './ConnectionStatus'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -75,6 +76,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    api: 'unknown',
+    server: 'unknown',
+    websocket: 'unknown',
+    scoreboard: 'unknown',
+    match: 'unknown',
+    db: 'unknown'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -688,6 +699,148 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
   }, [matchId, serverStatus])
+
+  // Check connection statuses
+  const checkConnectionStatuses = useCallback(async () => {
+    const statuses = {
+      api: 'unknown',
+      server: 'unknown',
+      websocket: 'unknown',
+      scoreboard: 'unknown',
+      match: 'unknown',
+      db: 'unknown'
+    }
+    const debugInfo = {}
+    
+    // Check API/Server connection
+    try {
+      const response = await fetch('/api/match/list')
+      if (response.ok) {
+        statuses.api = 'connected'
+        statuses.server = 'connected'
+        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
+        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
+      } else {
+        statuses.api = 'disconnected'
+        statuses.server = 'disconnected'
+        debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
+        debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
+      }
+    } catch (err) {
+      statuses.api = 'disconnected'
+      statuses.server = 'disconnected'
+      debugInfo.api = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to API'}` }
+      debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
+    }
+    
+    // Check WebSocket connection
+    if (wsRef.current) {
+      const ws = wsRef.current
+      if (ws.readyState === WebSocket.OPEN) {
+        statuses.websocket = 'connected'
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        statuses.websocket = 'connecting'
+      } else {
+        statuses.websocket = 'disconnected'
+      }
+    } else {
+      // Test if WebSocket server is available
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        const wsPort = serverStatus?.wsPort || 8080
+        const wsUrl = `${protocol}://${hostname}:${wsPort}`
+        
+        const wsTest = new WebSocket(wsUrl)
+        let resolved = false
+        
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            if (!resolved) {
+              resolved = true
+              try {
+                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                  wsTest.close()
+                }
+              } catch (e) {
+                // Ignore errors when closing
+              }
+              statuses.websocket = 'disconnected'
+              resolve()
+            }
+          }, 2000)
+          
+          wsTest.onopen = () => {
+            if (!resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              try {
+                wsTest.close()
+              } catch (e) {
+                // Ignore errors when closing
+              }
+              statuses.websocket = 'connected'
+              resolve()
+            }
+          }
+          
+          wsTest.onerror = () => {
+            if (!resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              try {
+                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                  wsTest.close()
+                }
+              } catch (e) {
+                // Ignore errors when closing
+              }
+              statuses.websocket = 'disconnected'
+              resolve()
+            }
+          }
+          
+          wsTest.onclose = () => {
+            if (!resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              statuses.websocket = 'disconnected'
+              resolve()
+            }
+          }
+        })
+      } catch (err) {
+        statuses.websocket = 'disconnected'
+      }
+    }
+    
+    // Check Scoreboard connection (same as server for now)
+    statuses.scoreboard = statuses.server
+    
+    // Check Match status
+    if (data?.match) {
+      statuses.match = data.match.status === 'live' ? 'live' : data.match.status === 'scheduled' ? 'scheduled' : data.match.status === 'final' ? 'final' : 'unknown'
+    } else {
+      statuses.match = 'no_match'
+    }
+    
+    // Check DB (IndexedDB) - always available in browser
+    try {
+      await db.matches.count()
+      statuses.db = 'connected'
+    } catch (err) {
+      statuses.db = 'disconnected'
+    }
+    
+    setConnectionStatuses(statuses)
+  }, [data?.match, serverStatus])
+
+  // Periodically check connection statuses
+  useEffect(() => {
+    checkConnectionStatuses()
+    const interval = setInterval(checkConnectionStatuses, 5000) // Check every 5 seconds
+    return () => clearInterval(interval)
+  }, [checkConnectionStatuses])
 
   const ensuringSetRef = useRef(false)
 
@@ -6795,7 +6948,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <div className="toolbar-center">
          Openvolley - eScoresheet
         </div>
-        <div className="toolbar-actions">
+        <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Connection Status Indicator */}
+          <ConnectionStatus
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            position="right"
+            size="normal"
+          />
+          
           {refereeConnectionEnabled && isAnyRefereeConnected && (
             <button 
               onClick={callReferee}
