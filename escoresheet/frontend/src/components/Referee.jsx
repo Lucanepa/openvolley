@@ -190,11 +190,13 @@ export default function Referee({ matchId, onExit }) {
       return
     }
 
+    let isMounted = true
+
     // Fetch initial match data
     const fetchData = async () => {
       try {
         const result = await getMatchData(matchId)
-        if (result.success) {
+        if (result.success && isMounted) {
           const sets = (result.sets || []).sort((a, b) => a.index - b.index)
           const currentSet = sets.find(s => !s.finished) || null
           
@@ -210,7 +212,9 @@ export default function Referee({ matchId, onExit }) {
           })
         }
       } catch (err) {
-        console.error('Error fetching match data:', err)
+        if (isMounted) {
+          console.error('Error fetching match data:', err)
+        }
       }
     }
 
@@ -218,6 +222,8 @@ export default function Referee({ matchId, onExit }) {
 
     // Subscribe to match data updates
     const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
+      if (!isMounted) return
+      
       const sets = (updatedData.sets || []).sort((a, b) => a.index - b.index)
       const currentSet = sets.find(s => !s.finished) || null
       
@@ -234,6 +240,7 @@ export default function Referee({ matchId, onExit }) {
     })
 
     return () => {
+      isMounted = false
       unsubscribe()
     }
   }, [matchId])
@@ -1897,42 +1904,28 @@ export default function Referee({ matchId, onExit }) {
       )}
 
       {/* Court */}
-      {(!leftLineup || Object.keys(leftLineup).length === 0) && (!rightLineup || Object.keys(rightLineup).length === 0) ? (
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '8px',
-          padding: '40px',
-          textAlign: 'center',
-          color: 'var(--muted)',
-          fontSize: '14px',
-          marginBottom: '12px'
-        }}>
-          Waiting for lineups to be set...
-        </div>
-      ) : (
-        <div style={{ marginBottom: '4px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          {/* Court */}
-          <div style={{ width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
-            <div className="court" style={{ minHeight: '240px', maxHeight: '280px', height: '260px', flex: '0 0 auto', width: '100%', maxWidth: '600px' }}>
-          <div className="court-attack-line court-attack-left" />
-          <div className="court-attack-line court-attack-right" />
-          
-          <div className="court-side court-side-left">
-            <div className="court-team court-team-left">
-              <div className="court-row court-row-front">
-                <PlayerCircle number={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.IV} teamLiberoCount={leftLiberoCount} />
-                <PlayerCircle number={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.III} teamLiberoCount={leftLiberoCount} />
-                <PlayerCircle number={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.II} teamLiberoCount={leftLiberoCount} />
-              </div>
-              <div className="court-row court-row-back">
-                <PlayerCircle number={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.V} teamLiberoCount={leftLiberoCount} />
-                <PlayerCircle number={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.VI} teamLiberoCount={leftLiberoCount} />
-                <PlayerCircle number={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.I} teamLiberoCount={leftLiberoCount} />
+      <div style={{ marginBottom: '4px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
+          <div className="court" style={{ minHeight: '240px', maxHeight: '280px', height: '260px', flex: '0 0 auto', width: '100%', maxWidth: '600px' }}>
+            <div className="court-attack-line court-attack-left" />
+            <div className="court-attack-line court-attack-right" />
+            
+            <div className="court-side court-side-left">
+              <div className="court-team court-team-left">
+                <div className="court-row court-row-front">
+                  <PlayerCircle number={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.IV} teamLiberoCount={leftLiberoCount} />
+                  <PlayerCircle number={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.III} teamLiberoCount={leftLiberoCount} />
+                  <PlayerCircle number={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.II} teamLiberoCount={leftLiberoCount} />
+                </div>
+                <div className="court-row court-row-back">
+                  <PlayerCircle number={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.V} teamLiberoCount={leftLiberoCount} />
+                  <PlayerCircle number={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.VI} teamLiberoCount={leftLiberoCount} />
+                  <PlayerCircle number={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} liberoSubInfo={leftLiberoSubs?.I} teamLiberoCount={leftLiberoCount} />
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div className="court-net" />
+            
+            <div className="court-net" />
           
           <div className="court-side court-side-right">
             <div className="court-team court-team-right">
@@ -1949,9 +1942,9 @@ export default function Referee({ matchId, onExit }) {
             </div>
           </div>
         </div>
-        </div>
+      </div>
 
-          {/* TO and SUB beneath court - Centered horizontally on whole page */}
+      {/* TO and SUB beneath court - Centered horizontally on whole page */}
       <div style={{
             display: 'flex',
             justifyContent: 'center',
@@ -2362,9 +2355,8 @@ export default function Referee({ matchId, onExit }) {
               }}>{rightStats.substitutions}</div>
             </div>
           </div>
-              </div>
-                      </div>
-      )}
+        </div>
+      </div>
 
       {/* Court Switch Waiting Modal */}
       {data?.match && data.currentSet?.index === 5 && 
