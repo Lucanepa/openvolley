@@ -33,6 +33,8 @@ export default function ConnectionStatus({
   const getStatusColor = (status) => {
     if (status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing') {
       return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? 'Syncing' : 'Connected' }
+    } else if (status === 'awaiting_match') {
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Awaiting new match' }
     } else if (status === 'attention') {
       return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: 'Attention' }
     } else if (status === 'disconnected' || status === 'no_match' || status === 'error' || status === 'offline') {
@@ -58,10 +60,30 @@ export default function ConnectionStatus({
 
   const getOverallStatus = () => {
     // Check all connection statuses
-    const statuses = Object.values(connectionStatuses)
+    const statuses = Object.entries(connectionStatuses)
+    
+    // Check if only match is disconnected
+    const matchStatus = connectionStatuses.match
+    const otherStatuses = statuses.filter(([key]) => key !== 'match')
+    
+    const onlyMatchDisconnected = (
+      (matchStatus === 'no_match' || matchStatus === 'disconnected' || matchStatus === 'unknown') &&
+      otherStatuses.every(([, status]) => {
+        return status === 'connected' || 
+               status === 'live' || 
+               status === 'scheduled' || 
+               status === 'synced' || 
+               status === 'syncing' ||
+               status === 'not_applicable' // Not applicable is considered OK
+      })
+    )
+    
+    if (onlyMatchDisconnected) {
+      return 'awaiting_match'
+    }
     
     // If any status is not connected/ok, show attention
-    const allConnected = statuses.every(status => {
+    const allConnected = statuses.every(([, status]) => {
       return status === 'connected' || 
              status === 'live' || 
              status === 'scheduled' || 
@@ -145,7 +167,11 @@ export default function ConnectionStatus({
           borderRadius: '50%',
           background: statusInfo.dot
         }}></span>
-        <span>{overallStatus === 'connected' ? 'Connected' : 'Attention'}</span>
+        <span>
+          {overallStatus === 'connected' ? 'Connected' : 
+           overallStatus === 'awaiting_match' ? 'Awaiting new match' : 
+           'Attention'}
+        </span>
         <span style={{ fontSize: `${parseInt(currentSize.fontSize) - 2}px`, marginLeft: '4px' }}>
           {showConnectionMenu ? '▲' : '▼'}
         </span>
