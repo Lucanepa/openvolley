@@ -3,6 +3,7 @@ import { validatePin, listAvailableMatches } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import refereeIcon from './ref.png'
+import { db } from './db/db'
 export default function RefereeApp() {
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
@@ -13,6 +14,8 @@ export default function RefereeApp() {
   const [selectedGameNumber, setSelectedGameNumber] = useState('')
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [showGameModal, setShowGameModal] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [serverConnected, setServerConnected] = useState(false)
 
   // Load available matches on mount and periodically
   useEffect(() => {
@@ -22,9 +25,13 @@ export default function RefereeApp() {
         const result = await listAvailableMatches()
         if (result.success && result.matches) {
           setAvailableMatches(result.matches)
+          setServerConnected(true)
+        } else {
+          setServerConnected(false)
         }
       } catch (err) {
         console.error('Error loading matches:', err)
+        setServerConnected(false)
       } finally {
         setLoadingMatches(false)
       }
@@ -34,6 +41,52 @@ export default function RefereeApp() {
     const interval = setInterval(loadMatches, 5000) // Refresh every 5 seconds
     
     return () => clearInterval(interval)
+  }, [])
+  
+  // Fullscreen functionality
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+        setIsFullscreen(true)
+      } else {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error)
+      // Fallback: try alternative fullscreen methods
+      const doc = document.documentElement
+      if (doc.webkitRequestFullscreen) {
+        doc.webkitRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.msRequestFullscreen) {
+        doc.msRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.mozRequestFullScreen) {
+        doc.mozRequestFullScreen()
+        setIsFullscreen(true)
+      }
+    }
+  }
+  
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('msfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+    }
   }, [])
 
   // Auto-connect on mount if we have stored credentials
@@ -119,12 +172,20 @@ export default function RefereeApp() {
     }
   }
 
-  const handleExit = () => {
+  const handleExit = (reason) => {
     setMatchId(null)
+    setMatch(null)
     setPinInput('')
-    // Optionally clear stored credentials on manual exit
-    // localStorage.removeItem('refereeMatchId')
-    // localStorage.removeItem('refereePin')
+    // Clear stored credentials on exit (including auto-reset after failures)
+    localStorage.removeItem('refereeMatchId')
+    localStorage.removeItem('refereePin')
+    
+    // Set appropriate error message based on reason
+    if (reason === 'heartbeat_failure') {
+      setError('Connection lost after multiple failed attempts. Please reconnect with a new PIN.')
+    } else {
+      setError('')
+    }
   }
 
   // Monitor match status - clear credentials if match becomes final
@@ -139,6 +200,120 @@ export default function RefereeApp() {
     }
   }, [match])
 
+  // Debug function to check games in progress
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.debugCheckGamesInProgress = async () => {
+        try {
+          console.log('🔍 Checking games from two sources:')
+          console.log('   1. Local IndexedDB (what debug function sees)')
+          console.log('   2. Server API (what Referee Dashboard sees)')
+          console.log('')
+          
+          // 1. Check local IndexedDB
+          const allMatches = await db.matches.toArray()
+          const inProgressMatches = allMatches.filter(m => 
+            m.status === 'live' || m.status === 'scheduled'
+          )
+          
+          console.log(`📦 Local IndexedDB: ${inProgressMatches.length} match(es)`)
+          
+          // 2. Check server API (what Referee Dashboard actually uses)
+          let serverMatches = []
+          try {
+            const serverResult = await listAvailableMatches()
+            if (serverResult.success && serverResult.matches) {
+              serverMatches = serverResult.matches
+            }
+          } catch (err) {
+            console.warn('⚠️ Could not fetch from server API:', err.message)
+          }
+          
+          console.log(`🌐 Server API: ${serverMatches.length} match(es) available in Referee Dashboard`)
+          console.log('')
+          
+          if (serverMatches.length > 0 && inProgressMatches.length === 0) {
+            console.log('⚠️ DISCREPANCY DETECTED!')
+            console.log('   Server has matches but local DB does not.')
+            console.log('   This means matches exist in server memory but not synced to local DB.')
+            console.log('')
+          }
+          
+          // Show server matches (what actually appears in dropdown)
+          if (serverMatches.length > 0) {
+            console.log('📋 Matches available in Referee Dashboard dropdown:')
+            console.table(serverMatches.map(m => ({
+              id: m.id,
+              gameNumber: m.gameNumber,
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              status: m.status,
+              dateTime: m.dateTime,
+              refereeConnectionEnabled: m.refereeConnectionEnabled
+            })))
+            
+            serverMatches.forEach((m, idx) => {
+              console.log(`\n🎮 Server Match ${idx + 1}:`)
+              console.log(`   ID: ${m.id}`)
+              console.log(`   Game #: ${m.gameNumber}`)
+              console.log(`   Teams: ${m.homeTeam} vs ${m.awayTeam}`)
+              console.log(`   Status: ${m.status}`)
+              console.log(`   Date/Time: ${m.dateTime}`)
+              console.log(`   Referee Connection: ${m.refereeConnectionEnabled ? '✅ Enabled' : '❌ Disabled'}`)
+            })
+          }
+          
+          // Show local DB matches with details
+          if (inProgressMatches.length > 0) {
+            const matchesWithDetails = await Promise.all(
+              inProgressMatches.map(async (match) => {
+                const homeTeam = match.homeTeamId ? await db.teams.get(match.homeTeamId) : null
+                const awayTeam = match.awayTeamId ? await db.teams.get(match.awayTeamId) : null
+                const sets = await db.sets.where('matchId').equals(match.id).toArray()
+                const currentSet = sets.find(s => !s.finished) || sets[sets.length - 1]
+                const eventCount = await db.events.where('matchId').equals(match.id).count()
+                
+                return {
+                  id: match.id,
+                  gameNumber: match.gameNumber || match.externalId || 'N/A',
+                  homeTeam: homeTeam?.name || 'Unknown',
+                  awayTeam: awayTeam?.name || 'Unknown',
+                  status: match.status,
+                  isLive: match.status === 'live',
+                  currentSet: currentSet ? {
+                    index: currentSet.index,
+                    homePoints: currentSet.homePoints,
+                    awayPoints: currentSet.awayPoints
+                  } : null,
+                  totalSets: sets.length,
+                  eventCount: eventCount,
+                  refereeConnectionEnabled: match.refereeConnectionEnabled !== false
+                }
+              })
+            )
+            
+            console.log('\n📦 Local IndexedDB matches:')
+            console.table(matchesWithDetails)
+          }
+          
+          return { 
+            localDB: { matches: inProgressMatches, count: inProgressMatches.length },
+            serverAPI: { matches: serverMatches, count: serverMatches.length }
+          }
+        } catch (error) {
+          console.error('❌ Error checking games in progress:', error)
+          return { localDB: { matches: [], count: 0 }, serverAPI: { matches: [], count: 0 }, error: error.message }
+        }
+      }
+    }
+    
+    return () => {
+      if (typeof window !== 'undefined' && window.debugCheckGamesInProgress) {
+        delete window.debugCheckGamesInProgress
+      }
+    }
+  }, [])
+
   if (matchId) {
     return <Referee matchId={matchId} onExit={handleExit} />
   }
@@ -146,21 +321,27 @@ export default function RefereeApp() {
   return (
     <div style={{
       minHeight: '100vh',
+      width: '100%',
+      maxWidth: '100vw',
+      overflowX: 'hidden',
+      overflowY: 'auto',
       background: 'linear-gradient(135deg,rgb(82, 82, 113) 0%,rgb(62, 22, 27) 100%)',
       color: '#fff',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      boxSizing: 'border-box'
     }}>
       <div style={{
         background: 'var(--bg-secondary)',
         borderRadius: '12px',
         padding: '40px',
-        maxWidth: '400px',
+        maxWidth: 'min(400px, calc(100vw - 40px))',
         width: '100%',
-        textAlign: 'center'
+        textAlign: 'center',
+        boxSizing: 'border-box'
       }}>
         <img 
           src={refereeIcon} 
@@ -181,10 +362,12 @@ export default function RefereeApp() {
           flexDirection: 'column',
           alignItems: 'center',
           gap: '16px',
-          width: '100%'
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box'
         }}>
           {availableMatches.length > 0 && (
-            <div style={{ width: '80%', maxWidth: '280px' }}>
+            <div style={{ width: '80%', maxWidth: '280px', boxSizing: 'border-box' }}>
               <label style={{
                 display: 'block',
                 fontSize: '12px',
@@ -254,7 +437,7 @@ export default function RefereeApp() {
             </div>
           )}
           
-          <div style={{ width: '80%', maxWidth: '280px' }}>
+          <div style={{ width: '80%', maxWidth: '280px', boxSizing: 'border-box' }}>
             <label style={{
               display: 'block',
               fontSize: '12px',
@@ -274,8 +457,8 @@ export default function RefereeApp() {
             maxLength={6}
             disabled={isLoading}
             style={{
-              width: '80%',
-              maxWidth: '280px',
+              width: '100%',
+              maxWidth: '100%',
               padding: '16px',
               fontSize: '24px',
               fontWeight: 700,
@@ -286,7 +469,8 @@ export default function RefereeApp() {
               borderRadius: '8px',
               color: 'var(--text)',
               opacity: isLoading ? 0.6 : 1,
-              cursor: isLoading ? 'not-allowed' : 'text'
+              cursor: isLoading ? 'not-allowed' : 'text',
+              boxSizing: 'border-box'
             }}
           />
           </div>

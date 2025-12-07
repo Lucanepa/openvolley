@@ -50,7 +50,6 @@ export function vitePluginApiRoutes(options = {}) {
     name: 'vite-plugin-api-routes',
     enforce: 'pre', // Run before other plugins
     configureServer(server) {
-      console.log('[API Plugin] Configuring server...')
       viteServer = server
       const protocol = server.config.server.https ? 'https' : 'http'
       const hostname = '0.0.0.0'
@@ -62,9 +61,6 @@ export function vitePluginApiRoutes(options = {}) {
       })
 
       wss.on('connection', (ws, req) => {
-        const clientIp = req.socket.remoteAddress
-        console.log(`[WebSocket] New client connected from ${clientIp}`)
-        
         wsClients.add(ws)
         
         ws.send(JSON.stringify({ 
@@ -80,6 +76,7 @@ export function vitePluginApiRoutes(options = {}) {
             
             if (message.type === 'sync-match-data') {
               // Store full match data from main scoresheet
+              // SCOREBOARD IS SOURCE OF TRUTH - This ALWAYS overwrites existing data
               // Handle both formats: { matchId, match, ... } and { matchId, matchData: { match, ... } }
               let matchId = message.matchId
               let match = message.match
@@ -102,15 +99,7 @@ export function vitePluginApiRoutes(options = {}) {
               }
               
               if (matchId && match) {
-                console.log(`[WebSocket] ✅ Storing match data:`)
-                console.log(`  - matchId: ${matchId}`)
-                console.log(`  - gameNumber: ${match.gameNumber || match.game_n || 'N/A'}`)
-                console.log(`  - refereePin: ${match.refereePin ? String(match.refereePin).substring(0, 2) + '****' : 'none'}`)
-                console.log(`  - refereeConnectionEnabled: ${match.refereeConnectionEnabled}`)
-                console.log(`  - status: ${match.status}`)
-                console.log(`  - homeTeam: ${homeTeam?.name || 'N/A'}`)
-                console.log(`  - awayTeam: ${awayTeam?.name || 'N/A'}`)
-                console.log(`  - Total matches in store now: ${matchDataStore.size + 1}`)
+                // ALWAYS overwrite - scoreboard data is authoritative
                 matchDataStore.set(String(matchId), {
                   match,
                   homeTeam,
@@ -134,15 +123,68 @@ export function vitePluginApiRoutes(options = {}) {
                     }
                   })
                 }
-              } else {
-                console.log(`[WebSocket] ⚠️ sync-match-data missing required fields:`)
-                console.log(`  - matchId: ${matchId} (${!!matchId})`)
-                console.log(`  - match: ${!!match}`)
-                console.log(`  - message keys:`, Object.keys(message))
-                if (message.matchData) {
-                  console.log(`  - matchData keys:`, Object.keys(message.matchData))
+              }
+            } else if (message.type === 'delete-match') {
+              // Main scoresheet is deleting a match - remove from server store
+              const matchId = String(message.matchId)
+              if (matchDataStore.has(matchId)) {
+                matchDataStore.delete(matchId)
+                
+                // Remove subscriptions for this match
+                matchSubscriptions.delete(matchId)
+                
+                // Notify subscribed clients that match was deleted
+                const subscribers = matchSubscriptions.get(matchId)
+                if (subscribers) {
+                  subscribers.forEach(client => {
+                    if (client.readyState === 1) {
+                      try {
+                        client.send(JSON.stringify({
+                          type: 'match-deleted',
+                          matchId: matchId
+                        }))
+                      } catch (err) {
+                        console.error('[WebSocket] Error notifying subscriber of match deletion:', err)
+                      }
+                    }
+                  })
                 }
               }
+            } else if (message.type === 'clear-all-matches') {
+              // Scoreboard is clearing all matches (source of truth - no active match)
+              // Optionally keep one match if keepMatchId is specified
+              const keepMatchId = message.keepMatchId ? String(message.keepMatchId) : null
+              
+              const matchesToDelete = []
+              for (const [storedMatchId] of matchDataStore.entries()) {
+                if (!keepMatchId || storedMatchId !== keepMatchId) {
+                  matchesToDelete.push(storedMatchId)
+                }
+              }
+              
+              matchesToDelete.forEach(matchIdToDelete => {
+                matchDataStore.delete(matchIdToDelete)
+                matchSubscriptions.delete(matchIdToDelete)
+                
+                // Notify subscribed clients
+                const subscribers = matchSubscriptions.get(matchIdToDelete)
+                if (subscribers) {
+                  subscribers.forEach(client => {
+                    if (client.readyState === 1) {
+                      try {
+                        client.send(JSON.stringify({
+                          type: 'match-deleted',
+                          matchId: matchIdToDelete
+                        }))
+                      } catch (err) {
+                        console.error('[WebSocket] Error notifying subscriber of match deletion:', err)
+                      }
+                    }
+                  })
+                }
+              })
+              
+              console.log(`[WebSocket] Cleared ${matchesToDelete.length} match(es) from server store${keepMatchId ? ` (kept match ${keepMatchId})` : ''}`)
             } else if (message.type === 'subscribe-match') {
               const { matchId } = message
               if (!matchSubscriptions.has(String(matchId))) {
@@ -231,7 +273,6 @@ export function vitePluginApiRoutes(options = {}) {
         })
         
         ws.on('close', () => {
-          console.log(`[WebSocket] Client disconnected`)
           wsClients.delete(ws)
           matchSubscriptions.forEach((subscribers) => {
             subscribers.delete(ws)
@@ -257,9 +298,6 @@ export function vitePluginApiRoutes(options = {}) {
         // Vite's connect middleware strips the prefix when using .use('/api', ...)
         // So /api/match/validate-pin becomes req.url = '/match/validate-pin'
         const urlPath = req.url.split('?')[0]
-        
-        // Debug logging - log ALL /api requests
-        console.log(`[API Plugin] ${req.method} ${urlPath} (req.url: ${req.url}, originalUrl: ${req.originalUrl || 'N/A'})`)
         
         // Ensure we handle the response properly
         if (res.headersSent) {
@@ -341,11 +379,6 @@ export function vitePluginApiRoutes(options = {}) {
         
         // List available matches (for game number dropdown) - check this BEFORE other /match/ routes
         if (urlPath === '/match/list' && req.method === 'GET') {
-          console.log('[API Plugin] Handling /match/list request')
-          console.log(`[API Plugin] matchDataStore size: ${matchDataStore.size}`)
-          if (matchDataStore.size > 0) {
-            console.log(`[API Plugin] Match IDs in store:`, Array.from(matchDataStore.keys()))
-          }
           const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {
             const match = matchData.match || matchData
             // matchData structure: { match, homeTeam, awayTeam, ... }
@@ -377,13 +410,31 @@ export function vitePluginApiRoutes(options = {}) {
               refereePin: match.refereePin,
               refereeConnectionEnabled: match.refereeConnectionEnabled !== false
             }
-          }).filter(m => m.refereeConnectionEnabled && m.status !== 'final')
+          }).filter(m => {
+            // Only show matches that are:
+            // 1. Referee connection enabled
+            // 2. Not final (status !== 'final')
+            // 3. Status is 'scheduled' or 'live' (open/in progress)
+            return m.refereeConnectionEnabled && 
+                   m.status !== 'final' && 
+                   (m.status === 'scheduled' || m.status === 'live')
+          })
           
-          console.log(`[API Plugin] Returning ${matches.length} available matches`)
+          // Sort by scheduledAt (most recent first) and take only the first one
+          // This ensures only 1 match is shown at a time
+          matches.sort((a, b) => {
+            const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0
+            const dateB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0
+            return dateB - dateA // Most recent first
+          })
+          
+          // Only return the most recent open/in-progress match
+          const activeMatch = matches.length > 0 ? [matches[0]] : []
+          
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ 
             success: true, 
-            matches 
+            matches: activeMatch 
           }))
           return
         }
@@ -636,15 +687,12 @@ export function vitePluginApiRoutes(options = {}) {
         }
         
         // If no route matched, continue to next middleware
-        console.log(`[API Plugin] No route matched for ${req.method} ${urlPath}, calling next()`)
         next()
       }
       
       // Register the middleware - use unshift to add it first
       // This ensures it runs before Vite's default handlers
-      const middlewares = server.middlewares.stack || []
       server.middlewares.use('/api', apiMiddleware)
-      console.log(`[API Plugin] Middleware registered. Total middleware stack: ${middlewares.length + 1}`)
     },
     
     closeBundle() {

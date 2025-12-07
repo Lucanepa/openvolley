@@ -49,23 +49,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   // Officials
   const [ref1First, setRef1First] = useState('')
   const [ref1Last, setRef1Last] = useState('')
-  const [ref1Country, setRef1Country] = useState('CH')
-  const [ref1Dob, setRef1Dob] = useState('')
+  const [ref1Country, setRef1Country] = useState('CHE')
+  const [ref1Dob, setRef1Dob] = useState('01.01.1900')
 
   const [ref2First, setRef2First] = useState('')
   const [ref2Last, setRef2Last] = useState('')
-  const [ref2Country, setRef2Country] = useState('CH')
-  const [ref2Dob, setRef2Dob] = useState('')
+  const [ref2Country, setRef2Country] = useState('CHE')
+  const [ref2Dob, setRef2Dob] = useState('01.01.1900')
 
   const [scorerFirst, setScorerFirst] = useState('')
   const [scorerLast, setScorerLast] = useState('')
-  const [scorerCountry, setScorerCountry] = useState('CH')
-  const [scorerDob, setScorerDob] = useState('')
+  const [scorerCountry, setScorerCountry] = useState('CHE')
+  const [scorerDob, setScorerDob] = useState('01.01.1900')
 
   const [asstFirst, setAsstFirst] = useState('')
   const [asstLast, setAsstLast] = useState('')
-  const [asstCountry, setAsstCountry] = useState('CH')
-  const [asstDob, setAsstDob] = useState('')
+  const [asstCountry, setAsstCountry] = useState('CHE')
+  const [asstDob, setAsstDob] = useState('01.01.1900')
 
   // Bench
   const BENCH_ROLES = [
@@ -138,7 +138,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [homePdfError, setHomePdfError] = useState('')
   const [awayPdfError, setAwayPdfError] = useState('')
   const homeFileInputRef = useRef(null)
-  const awayFileInputRef = useRef(null)
+  
+  // Referee JSON import state
+  const [refereeJsonLoading, setRefereeJsonLoading] = useState(false)
+  const [refereeJsonError, setRefereeJsonError] = useState('')
   const rosterLoadedRef = useRef(false) // Track if roster has been loaded to prevent overwriting user edits
   const homeTeamInputRef = useRef(null)
   const awayTeamInputRef = useRef(null)
@@ -424,29 +427,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           if (ref1) {
             setRef1First(ref1.firstName || '')
             setRef1Last(ref1.lastName || '')
-            setRef1Country(ref1.country || 'CH')
-            setRef1Dob(ref1.dob || '')
+            setRef1Country(ref1.country || 'CHE')
+            setRef1Dob(ref1.dob || '01.01.1900')
           }
           const ref2 = match.officials.find(o => o.role === '2nd referee')
           if (ref2) {
             setRef2First(ref2.firstName || '')
             setRef2Last(ref2.lastName || '')
-            setRef2Country(ref2.country || 'CH')
-            setRef2Dob(ref2.dob || '')
+            setRef2Country(ref2.country || 'CHE')
+            setRef2Dob(ref2.dob || '01.01.1900')
           }
           const scorer = match.officials.find(o => o.role === 'scorer')
           if (scorer) {
             setScorerFirst(scorer.firstName || '')
             setScorerLast(scorer.lastName || '')
-            setScorerCountry(scorer.country || 'CH')
-            setScorerDob(scorer.dob || '')
+            setScorerCountry(scorer.country || 'CHE')
+            setScorerDob(scorer.dob || '01.01.1900')
           }
           const asst = match.officials.find(o => o.role === 'assistant scorer')
           if (asst) {
             setAsstFirst(asst.firstName || '')
             setAsstLast(asst.lastName || '')
-            setAsstCountry(asst.country || 'CH')
-            setAsstDob(asst.dob || '')
+            setAsstCountry(asst.country || 'CHE')
+            setAsstDob(asst.dob || '01.01.1900')
           }
         }
         
@@ -1338,7 +1341,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     const firstServeTeam = serveA ? teamA : teamB
     
     // Update match with signatures and rosters
-    await db.transaction('rw', db.matches, db.players, db.sync_queue, async () => {
+    await db.transaction('rw', db.matches, db.players, db.sync_queue, db.events, async () => {
     // Update match with signatures, first serve, and coin toss result
     const updateResult = await db.matches.update(targetMatchId, {
       homeCoachSignature,
@@ -1351,6 +1354,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       coinTossServeA: serveA, // true or false
       coinTossServeB: serveB // true or false
       })
+    
+    // Check if coin toss event already exists
+    const existingCoinTossEvent = await db.events
+      .where('matchId').equals(targetMatchId)
+      .and(e => e.type === 'coin_toss')
+      .first()
+    
+    // Create coin_toss event with seq=1 if it doesn't exist
+    if (!existingCoinTossEvent) {
+      await db.events.add({
+        matchId: targetMatchId,
+        setIndex: 1, // Coin toss is before set 1
+        type: 'coin_toss',
+        payload: {
+          teamA: teamA,
+          teamB: teamB,
+          serveA: serveA,
+          serveB: serveB,
+          firstServe: firstServeTeam
+        },
+        ts: new Date().toISOString(),
+        seq: 1 // Coin toss always gets seq=1
+      })
+    }
     
     // Add match update to sync queue (only sync fields that exist in Supabase)
     const updatedMatch = await db.matches.get(targetMatchId)
@@ -1534,6 +1561,51 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       await handleAwayPdfUpload(awayPdfFile)
     } else {
       setAwayPdfError('Please select a PDF file first')
+    }
+  }
+
+  // Load and import referees from JSON
+  const handleRefereeJsonImport = async () => {
+    setRefereeJsonLoading(true)
+    setRefereeJsonError('')
+
+    try {
+      const response = await fetch('/referees_svrz.json')
+      if (!response.ok) {
+        throw new Error(`Failed to load referees JSON: ${response.statusText}`)
+      }
+
+      const referees = await response.json()
+      
+      if (!Array.isArray(referees) || referees.length === 0) {
+        throw new Error('JSON file appears to be empty or invalid')
+      }
+
+      // Import first referee from first entry
+      const firstReferee = referees[0]
+      if (firstReferee && firstReferee.lastname && firstReferee.firstname) {
+        setRef1Last(firstReferee.lastname.trim())
+        setRef1First(firstReferee.firstname.trim())
+        setRef1Country('CHE')
+        setRef1Dob('01.01.1900')
+      }
+
+      // Import second referee from second entry if available
+      if (referees.length > 1) {
+        const secondReferee = referees[1]
+        if (secondReferee && secondReferee.lastname && secondReferee.firstname) {
+          setRef2Last(secondReferee.lastname.trim())
+          setRef2First(secondReferee.firstname.trim())
+          setRef2Country('CHE')
+          setRef2Dob('01.01.1900')
+        }
+      }
+
+      setRefereeJsonLoading(false)
+    } catch (error) {
+      console.error('Error loading referee JSON:', error)
+      setRefereeJsonError(`Failed to load referees: ${error.message}`)
+      setRefereeJsonLoading(false)
     }
   }
 
@@ -1880,6 +1952,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div style={{ width: 80 }}></div>
           )}
         </div>
+        
+        {/* Referee JSON Import Section */}
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '16px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          marginBottom: '16px'
+        }}>
+          <h4 style={{ 
+            marginTop: 0, 
+            marginBottom: '12px',
+            padding: '8px 12px',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '6px',
+            fontSize: '16px',
+            fontWeight: 600
+          }}>Import Referees from JSON</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={handleRefereeJsonImport}
+              disabled={refereeJsonLoading}
+              style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
+            >
+              {refereeJsonLoading ? 'Loading...' : 'Load Referees from referees_svrz.json'}
+            </button>
+            {refereeJsonError && (
+              <span style={{ color: '#ef4444', fontSize: '12px' }}>
+                {refereeJsonError}
+              </span>
+            )}
+          </div>
+        </div>
+        
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',

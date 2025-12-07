@@ -12,8 +12,6 @@ export default function Referee({ matchId, onExit }) {
   const [processedSubstitutions, setProcessedSubstitutions] = useState(new Set()) // Track which substitution events we've already shown
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
-  const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away', playersOnCourt: number[], lineup: object } | null
-  const [processedCaptainRequests, setProcessedCaptainRequests] = useState(new Set()) // Track which requests we've processed
   
   // Connection state
   const [connectionModal, setConnectionModal] = useState(null) // 'bluetooth' | 'lan' | 'internet' | null
@@ -25,8 +23,41 @@ export default function Referee({ matchId, onExit }) {
   const [internetURL, setInternetURL] = useState('')
   const connectionManagerRef = useRef(null)
   
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  
+  // Track consecutive heartbeat failures
+  const heartbeatFailureCountRef = useRef(0)
+  const MAX_FAILURES = 5
+
+  // Load match data from server (defined early so heartbeat can use it)
+  const [data, setData] = useState(null)
+
+  // Helper function to update match data state
+  const updateMatchDataState = useCallback((result) => {
+    if (result && result.success) {
+      const sets = (result.sets || []).sort((a, b) => a.index - b.index)
+      const currentSet = sets.find(s => !s.finished) || null
+      
+      setData({
+        match: result.match,
+        homeTeam: result.homeTeam,
+        awayTeam: result.awayTeam,
+        homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        sets,
+        currentSet,
+        events: result.events || []
+      })
+    }
+  }, [])
+
   // Send heartbeat to indicate referee is connected (only if connection is enabled)
+  // Also fetches and updates match data every heartbeat to keep state current
   useEffect(() => {
+    // Reset failure count when matchId or refereeView changes
+    heartbeatFailureCountRef.current = 0
+    
     // Check if referee connection is enabled before starting heartbeat
     const checkAndStartHeartbeat = async () => {
       try {
@@ -34,22 +65,48 @@ export default function Referee({ matchId, onExit }) {
         if (!matchData.success || !matchData.match) return null
         if (matchData.match.refereeConnectionEnabled === false) return null
         
+        // Update initial state
+        updateMatchDataState(matchData)
+        
         const updateHeartbeat = async () => {
           try {
+            // First, fetch latest match data to keep state current
+            const latestData = await getMatchData(matchId)
+            if (latestData.success) {
+              updateMatchDataState(latestData)
+            }
+            
+            // Then send heartbeat
             const heartbeatData = refereeView === '1st' 
               ? { lastReferee1Heartbeat: new Date().toISOString() }
               : { lastReferee2Heartbeat: new Date().toISOString() }
             await updateMatchData(matchId, heartbeatData)
+            // Reset failure count on success
+            heartbeatFailureCountRef.current = 0
           } catch (error) {
             console.error('Failed to update referee heartbeat:', error)
+            heartbeatFailureCountRef.current++
+            
+            // After 5 consecutive failures, reset connection
+            if (heartbeatFailureCountRef.current >= MAX_FAILURES) {
+              console.error(`[Referee] ${MAX_FAILURES} consecutive heartbeat failures. Resetting connection.`)
+              // Clear stored credentials
+              localStorage.removeItem('refereeMatchId')
+              localStorage.removeItem('refereePin')
+              // Close WebSocket connection if exists
+              // Call onExit to reset the app state with reason
+              if (onExit) {
+                onExit('heartbeat_failure')
+              }
+            }
           }
         }
         
         // Initial heartbeat
         updateHeartbeat()
         
-        // Update heartbeat every 5 seconds
-        return setInterval(updateHeartbeat, 5000)
+        // Update heartbeat every 1 second (was 5 seconds)
+        return setInterval(updateHeartbeat, 1000)
       } catch (error) {
         console.error('Failed to check connection status:', error)
         return null
@@ -68,7 +125,7 @@ export default function Referee({ matchId, onExit }) {
       updateMatchData(matchId, clearData)
         .catch(err => console.error('Failed to clear heartbeat:', err))
     }
-  }, [matchId, refereeView])
+  }, [matchId, refereeView, onExit, updateMatchDataState])
 
   // Initialize connection manager
   useEffect(() => {
@@ -181,9 +238,6 @@ export default function Referee({ matchId, onExit }) {
     }
   }, [connectionType, connectionStatus])
 
-  // Load match data from server
-  const [data, setData] = useState(null)
-
   useEffect(() => {
     if (!matchId) {
       setData(null)
@@ -192,7 +246,7 @@ export default function Referee({ matchId, onExit }) {
 
     let isMounted = true
 
-    // Fetch initial match data
+    // Fetch initial match data (heartbeat will keep it updated every second)
     const fetchData = async () => {
       try {
         const result = await getMatchData(matchId)
@@ -220,23 +274,26 @@ export default function Referee({ matchId, onExit }) {
 
     fetchData()
 
-    // Subscribe to match data updates
+    // Subscribe to match data updates via WebSocket (as backup, heartbeat is primary)
     const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
       if (!isMounted) return
       
-      const sets = (updatedData.sets || []).sort((a, b) => a.index - b.index)
-      const currentSet = sets.find(s => !s.finished) || null
-      
-      setData({
-        match: updatedData.match,
-        homeTeam: updatedData.homeTeam,
-        awayTeam: updatedData.awayTeam,
-        homePlayers: (updatedData.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
-        awayPlayers: (updatedData.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
-        sets,
-        currentSet,
-        events: updatedData.events || []
-      })
+      // Only update if we have valid data (heartbeat will be primary source)
+      if (updatedData && updatedData.match) {
+        const sets = (updatedData.sets || []).sort((a, b) => a.index - b.index)
+        const currentSet = sets.find(s => !s.finished) || null
+        
+        setData({
+          match: updatedData.match,
+          homeTeam: updatedData.homeTeam,
+          awayTeam: updatedData.awayTeam,
+          homePlayers: (updatedData.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+          awayPlayers: (updatedData.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+          sets,
+          currentSet,
+          events: updatedData.events || []
+        })
+      }
     })
 
     return () => {
@@ -662,77 +719,6 @@ export default function Referee({ matchId, onExit }) {
   // For 1st referee, reverse the sides (they see from opposite end)
   const leftIsHome = refereeView === '1st' ? !leftIsHomeFor2ndRef : leftIsHomeFor2ndRef
   
-  // Monitor for captain on court requests
-  useEffect(() => {
-    if (!data?.match) return
-    
-    const homeRequest = data.match.homeCaptainOnCourtRequest
-    const awayRequest = data.match.awayCaptainOnCourtRequest
-    
-    // Check if manageCaptainOnCourt is enabled (stored in localStorage)
-    const manageCaptainOnCourt = localStorage.getItem('manageCaptainOnCourt') === 'true'
-    if (!manageCaptainOnCourt) return
-    
-    // Process home team request
-    if (homeRequest && homeRequest.timestamp) {
-      const requestKey = `home-${homeRequest.timestamp}`
-      if (!processedCaptainRequests.has(requestKey)) {
-        setCaptainOnCourtModal({
-          team: 'home',
-          playersOnCourt: homeRequest.playersOnCourt || [],
-          lineup: homeRequest.lineup || {},
-          timestamp: homeRequest.timestamp
-        })
-        setProcessedCaptainRequests(prev => new Set([...prev, requestKey]))
-      }
-    }
-    
-    // Process away team request
-    if (awayRequest && awayRequest.timestamp) {
-      const requestKey = `away-${awayRequest.timestamp}`
-      if (!processedCaptainRequests.has(requestKey)) {
-        setCaptainOnCourtModal({
-          team: 'away',
-          playersOnCourt: awayRequest.playersOnCourt || [],
-          lineup: awayRequest.lineup || {},
-          timestamp: awayRequest.timestamp
-        })
-        setProcessedCaptainRequests(prev => new Set([...prev, requestKey]))
-      }
-    }
-  }, [data?.match?.homeCaptainOnCourtRequest, data?.match?.awayCaptainOnCourtRequest, processedCaptainRequests])
-  
-  // Handle captain on court selection
-  const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
-    if (!captainOnCourtModal || !matchId) return
-    
-    const { team } = captainOnCourtModal
-    const field = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    const requestField = team === 'home' ? 'homeCaptainOnCourtRequest' : 'awayCaptainOnCourtRequest'
-    
-    // Save the selected captain on court
-    await updateMatchData(matchId, {
-      [field]: playerNumber,
-      [requestField]: null // Clear the request
-    })
-    
-    setCaptainOnCourtModal(null)
-  }, [captainOnCourtModal, matchId])
-  
-  // Handle cancel (no captain selected)
-  const handleCancelCaptainOnCourt = useCallback(async () => {
-    if (!captainOnCourtModal || !matchId) return
-    
-    const { team } = captainOnCourtModal
-    const requestField = team === 'home' ? 'homeCaptainOnCourtRequest' : 'awayCaptainOnCourtRequest'
-    
-    // Clear the request
-    await updateMatchData(matchId, {
-      [requestField]: null
-    })
-    
-    setCaptainOnCourtModal(null)
-  }, [captainOnCourtModal, matchId])
   
   const leftTeam = leftIsHome ? 'home' : 'away'
   const rightTeam = leftIsHome ? 'away' : 'home'
@@ -882,6 +868,54 @@ export default function Referee({ matchId, onExit }) {
     const currentTime = new Date().getTime()
     return (currentTime - lastUpdate) < 30000 // 30 seconds threshold
   }, [data?.match?.updatedAt])
+
+  // Fullscreen handlers
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        // Enter fullscreen
+        await document.documentElement.requestFullscreen()
+        setIsFullscreen(true)
+      } else {
+        // Exit fullscreen
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error)
+      // Fallback: try alternative fullscreen methods
+      const doc = document.documentElement
+      if (doc.webkitRequestFullscreen) {
+        doc.webkitRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.msRequestFullscreen) {
+        doc.msRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.mozRequestFullScreen) {
+        doc.mozRequestFullScreen()
+        setIsFullscreen(true)
+      }
+    }
+  }, [])
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('msfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
 
   // Reset processed timeouts and substitutions when set changes
   useEffect(() => {
@@ -1125,10 +1159,10 @@ export default function Referee({ matchId, onExit }) {
           position: 'relative',
           background: isLibero ? '#FFF8E7' : undefined,
           color: isLibero ? '#000' : undefined,
-          width: '48px', // Maximum width
-          height: '48px',
-          fontSize: '25px', // Maximum font size
-          maxWidth: '80px'
+          width: '40px',
+          height: '40px',
+          fontSize: '20px',
+          maxWidth: '60px'
         }}
       >
         {/* Substituted player indicator (top-right) */}
@@ -1309,28 +1343,44 @@ export default function Referee({ matchId, onExit }) {
 
   return (
     <div style={{
-      minHeight: '60vh',
-      maxHeight: '100vh',
+      height: '100vh',
       overflow: 'hidden',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: '6px',
+      padding: '4px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       display: 'flex',
-      flexDirection: 'column'
+      flexDirection: 'column',
+      boxSizing: 'border-box'
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '4px',
-        gap: '6px',
+        marginBottom: '2px',
+        gap: '4px',
         flexShrink: 0,
         flexWrap: 'wrap',
-        minHeight: '28px'
+        minHeight: '24px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              padding: '4px 8px',
+              fontSize: '10px',
+              fontWeight: 600,
+              background: 'rgba(255,255,255,0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          >
+            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+          </button>
           <button
             onClick={onExit}
             style={{
@@ -1537,18 +1587,18 @@ export default function Referee({ matchId, onExit }) {
       {betweenSetsCountdown ? (
         <div style={{
           background: 'var(--bg-secondary)',
-          borderRadius: '6px',
-          padding: '16px',
-          marginBottom: '4px',
+          borderRadius: '4px',
+          padding: '8px',
+          marginBottom: '2px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          gap: '12px',
+          gap: '6px',
           flexShrink: 0
         }}>
           <div style={{
-            fontSize: '48px',
+            fontSize: '32px',
             fontWeight: 800,
             color: 'var(--accent)',
             lineHeight: 1
@@ -1574,14 +1624,14 @@ export default function Referee({ matchId, onExit }) {
       ) : (
       <div style={{
         background: 'var(--bg-secondary)',
-        borderRadius: '6px',
-        padding: '8px',
-        marginBottom: '4px',
+        borderRadius: '4px',
+        padding: '4px',
+        marginBottom: '2px',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         flexDirection: 'column',
-          gap: '8px',
+        gap: '4px',
         flexShrink: 0
       }}>
           {/* Sets Counter - Above (like livescore) - Centered horizontally on whole page */}
@@ -1590,14 +1640,14 @@ export default function Referee({ matchId, onExit }) {
           width: '100%',
           justifyContent: 'center',
           alignItems: 'center',
-            gap: '12px',
+            gap: '8px',
             position: 'relative'
         }}>
             {/* Left Set Score Box */}
             <div style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-                fontSize: '16px',
+              padding: '4px 8px',
+              borderRadius: '4px',
+                fontSize: '12px',
                 fontWeight: 700,
               background: 'rgba(255, 255, 255, 0.1)',
               border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -1617,13 +1667,13 @@ export default function Referee({ matchId, onExit }) {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '2px',
+              gap: '1px',
               position: 'absolute',
               left: '50%',
               transform: 'translateX(-50%)'
             }}>
               <span style={{
-                fontSize: '12px',
+                fontSize: '9px',
                 fontWeight: 600,
                 color: 'var(--muted)',
                 textTransform: 'uppercase',
@@ -1633,7 +1683,7 @@ export default function Referee({ matchId, onExit }) {
                 SET
             </span>
               <span style={{
-                fontSize: '20px',
+                fontSize: '16px',
                 fontWeight: 700,
                 color: 'var(--text)',
                 lineHeight: '1'
@@ -1644,9 +1694,9 @@ export default function Referee({ matchId, onExit }) {
             
             {/* Right Set Score Box */}
             <div style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '16px',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '12px',
               fontWeight: 700,
               background: 'rgba(255, 255, 255, 0.1)',
               border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -1656,7 +1706,7 @@ export default function Referee({ matchId, onExit }) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              marginLeft: '30px',
+              marginLeft: '20px',
             }}>
               {rightSetScore}
             </div>
@@ -1668,7 +1718,7 @@ export default function Referee({ matchId, onExit }) {
             alignItems: 'center', 
             justifyContent: 'center',
             width: '100%',
-            gap: '8px',
+            gap: '4px',
             position: 'relative'
           }}>
             {/* Left side: SERVE #, Label, Ball (reserved), Score */}
@@ -1685,30 +1735,30 @@ export default function Referee({ matchId, onExit }) {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '8px',
-                  marginRight: '30px' // Gap from team label
+                  gap: '4px',
+                  marginRight: '16px' // Gap from team label
                 }}>
                   <div style={{
-                    fontSize: '12px',
+                    fontSize: '7px',
                     fontWeight: 700,
                     color: 'var(--text)',
                     textTransform: 'uppercase',
-                    letterSpacing: '1px'
+                    letterSpacing: '0.3px'
                   }}>
                     SERVE
                   </div>
                   <div style={{
-                    fontSize: '24px',
+                    fontSize: '14px',
                     fontWeight: 700,
                     color: 'var(--accent)',
-                    width: '48px',
-                    height: '48px',
+                    width: '28px',
+                    height: '28px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     background: 'rgba(34, 197, 94, 0.1)',
-                    border: '3px solid var(--accent)',
-                    borderRadius: '12px'
+                    border: '2px solid var(--accent)',
+                    borderRadius: '6px'
                   }}>
                     {leftLineup.I}
                   </div>
@@ -1720,26 +1770,26 @@ export default function Referee({ matchId, onExit }) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '2px',
-                marginRight: '30px',
-                marginLeft: '30px',
+                gap: '1px',
+                marginRight: '16px',
+                marginLeft: '16px',
               }}>
             <span
               className="team-badge"
               style={{
                     background: leftColor,
                     color: isBrightColor(leftColor) ? '#000' : '#fff',
-                padding: '4px 10px',
-                borderRadius: '4px',
-                fontSize: '16px',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '12px',
                 fontWeight: 700,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                boxShadow: '0 1px 4px rgba(0, 0, 0, 0.3)'
               }}
             >
                   {leftLabel}
             </span>
                 <span style={{
-                  fontSize: '10px',
+                  fontSize: '8px',
                   color: 'var(--muted)',
                   fontWeight: 600
                 }}>
@@ -1749,8 +1799,8 @@ export default function Referee({ matchId, onExit }) {
 
               {/* Ball - reserved space */}
               <div style={{
-                width: '20px',
-                height: '20px',
+                width: '16px',
+                height: '16px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -1760,9 +1810,9 @@ export default function Referee({ matchId, onExit }) {
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '20px',
-                height: '20px',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+                width: '16px',
+                height: '16px',
+                filter: 'drop-shadow(0 1px 4px rgba(0, 0, 0, 0.35))'
               }}
             />
           )}
@@ -1770,7 +1820,7 @@ export default function Referee({ matchId, onExit }) {
               
               {/* Score */}
               <span style={{
-                fontSize: '56px',
+                fontSize: '36px',
             fontWeight: 800,
             color: 'var(--accent)',
                 lineHeight: 1
@@ -1781,10 +1831,10 @@ export default function Referee({ matchId, onExit }) {
 
             {/* Colon - Centered on net */}
             <div style={{
-              fontSize: '56px',
+              fontSize: '36px',
               fontWeight: 800,
               color: 'var(--muted)',
-              width: '16px',
+              width: '12px',
               textAlign: 'center',
               lineHeight: 1,
               flexShrink: 0
@@ -1802,7 +1852,7 @@ export default function Referee({ matchId, onExit }) {
             }}>
               {/* Score */}
               <span style={{
-                fontSize: '56px',
+                fontSize: '36px',
                 fontWeight: 800,
                 color: 'var(--accent)',
             lineHeight: 1
@@ -1812,8 +1862,8 @@ export default function Referee({ matchId, onExit }) {
               
               {/* Ball - reserved space */}
               <div style={{
-                width: '20px',
-                height: '20px',
+                width: '16px',
+                height: '16px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -1823,9 +1873,9 @@ export default function Referee({ matchId, onExit }) {
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '20px',
-                height: '20px',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+                width: '16px',
+                height: '16px',
+                filter: 'drop-shadow(0 1px 4px rgba(0, 0, 0, 0.35))'
               }}
             />
           )}
@@ -1845,17 +1895,17 @@ export default function Referee({ matchId, onExit }) {
                   style={{
                     background: rightColor,
                     color: isBrightColor(rightColor) ? '#000' : '#fff',
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    fontSize: '16px',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    fontSize: '12px',
                     fontWeight: 700,
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.3)'
                   }}
                 >
                   {rightLabel}
                 </span>
                 <span style={{
-                  fontSize: '10px',
+                  fontSize: '8px',
           color: 'var(--muted)',
                   fontWeight: 600
         }}>
@@ -1873,26 +1923,26 @@ export default function Referee({ matchId, onExit }) {
                   marginLeft: '16px' // Gap from team label
                 }}>
                   <div style={{
-                    fontSize: '12px',
+                    fontSize: '7px',
                     fontWeight: 700,
                     color: 'var(--text)',
                     textTransform: 'uppercase',
-                    letterSpacing: '1px'
+                    letterSpacing: '0.3px'
                   }}>
                     SERVE
       </div>
                   <div style={{
-                    fontSize: '24px',
+                    fontSize: '14px',
                     fontWeight: 700,
                     color: 'var(--accent)',
-                    width: '48px',
-                    height: '48px',
+                    width: '28px',
+                    height: '28px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     background: 'rgba(34, 197, 94, 0.1)',
-                    border: '3px solid var(--accent)',
-                    borderRadius: '12px'
+                    border: '2px solid var(--accent)',
+                    borderRadius: '6px'
                   }}>
                     {rightLineup.I}
                   </div>
@@ -1904,9 +1954,9 @@ export default function Referee({ matchId, onExit }) {
       )}
 
       {/* Court */}
-      <div style={{ marginBottom: '4px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <div style={{ width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
-          <div className="court" style={{ minHeight: '240px', maxHeight: '280px', height: '260px', flex: '0 0 auto', width: '100%', maxWidth: '600px' }}>
+      <div style={{ marginBottom: '2px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <div style={{ width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', maxHeight: '100%' }}>
+          <div className="court" style={{ width: '100%', maxWidth: '600px', aspectRatio: '6 / 3', maxHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div className="court-attack-line court-attack-left" />
             <div className="court-attack-line court-attack-right" />
             
@@ -1951,9 +2001,10 @@ export default function Referee({ matchId, onExit }) {
             alignItems: 'flex-start',
             width: '100%',
             maxWidth: '800px',
-            marginTop: '8px',
+            marginTop: '2px',
             flexShrink: 0,
-            gap: '16px'
+            gap: '8px',
+            paddingBottom: '2px'
       }}>
             {/* Left Column - Left Team TO/SUB */}
         <div style={{
@@ -1981,8 +2032,8 @@ export default function Referee({ matchId, onExit }) {
             >
                 <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>TO</div>
               {activeTimeout && activeTimeout.team === leftTeam ? (
-                <div style={{ 
-                    fontSize: '16px', 
+                <div style={{
+                    fontSize: '12px', 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
@@ -1991,7 +2042,7 @@ export default function Referee({ matchId, onExit }) {
                 </div>
               ) : (
                 <div style={{ 
-                  fontSize: '16px', 
+                  fontSize: '12px', 
                   fontWeight: 700,
                   color: leftStats.timeouts >= 2 ? '#ef4444' : 'inherit'
                 }}>
@@ -2005,32 +2056,32 @@ export default function Referee({ matchId, onExit }) {
                       stopTimeout()
                     }}
                     style={{
-                      marginTop: '4px',
-                      padding: '2px 6px',
-                      fontSize: '16px',
+                      marginTop: '2px',
+                      padding: '2px 4px',
+                      fontSize: '10px',
                       fontWeight: 600,
                       background: 'rgba(255,255,255,0.1)',
                       color: 'var(--text)',
                       border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '3px',
+                      borderRadius: '2px',
                       cursor: 'pointer'
                     }}
                   >
-                    Stop TO
+                    Stop
                   </button>
                 )}
             </div>
             <div style={{ 
               background: 'rgba(255, 255, 255, 0.05)', 
               borderRadius: '4px', 
-                padding: '6px 12px',
+                padding: '4px 8px',
               textAlign: 'center',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
-                minWidth: '60px'
+                minWidth: '50px'
             }}>
-                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>SUB</div>
+                <div style={{ fontSize: '7px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
               <div style={{ 
-                fontSize: '16px', 
+                fontSize: '12px', 
                 fontWeight: 700,
                 color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'inherit'
               }}>{leftStats.substitutions}</div>
@@ -2055,27 +2106,27 @@ export default function Referee({ matchId, onExit }) {
                   <div style={{ 
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '8px',
-                    padding: '8px',
-                    fontSize: '16px',
-                    minWidth: '400px'
+                    borderRadius: '6px',
+                    padding: '4px',
+                    fontSize: '10px',
+                    minWidth: '300px'
                   }}>
-                    <h4 style={{ margin: '0 0 6px', fontSize: '20px', fontWeight: 600, textAlign: 'center' }}>
+                    <h4 style={{ margin: '0 0 4px', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>
                       Results
                     </h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '16px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
                       <thead>
-                        <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>T</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>S</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>W</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>P</th>
-                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px', borderRight: '1px solid rgba(255,255,255,0.2)' }}>SET</th>
-                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>Dur</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>P</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>W</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>S</th>
-                          <th style={{ padding: '3px 1px', textAlign: 'center', fontWeight: 600, fontSize: '16px' }}>T</th>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>T</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>S</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>W</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>P</th>
+                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px', borderRight: '1px solid rgba(255,255,255,0.2)' }}>SET</th>
+                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>Dur</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>P</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>W</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>S</th>
+                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>T</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2132,14 +2183,14 @@ export default function Referee({ matchId, onExit }) {
                   <div style={{ 
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '8px',
-                    padding: '8px',
+                    borderRadius: '6px',
+                    padding: '4px',
                     fontSize: '8px'
                   }}>
-                    <h4 style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: 600, textAlign: 'center' }}>
+                    <h4 style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: 600, textAlign: 'center' }}>
                       Sanctions
                     </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px', maxHeight: '120px', overflowY: 'auto' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2px', maxHeight: '80px', overflowY: 'auto' }}>
                       {allSanctions.map((s, i) => {
                         const teamLabel = s.team === 'left' ? leftLabel : rightLabel
                         return (
@@ -2298,10 +2349,10 @@ export default function Referee({ matchId, onExit }) {
                   minWidth: '60px'
               }}
             >
-                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>TO</div>
+                <div style={{ fontSize: '7px', color: 'var(--muted)', marginBottom: '1px' }}>TO</div>
               {activeTimeout && activeTimeout.team === rightTeam ? (
                 <div style={{ 
-                    fontSize: '16px', 
+                    fontSize: '12px', 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
@@ -2310,7 +2361,7 @@ export default function Referee({ matchId, onExit }) {
                 </div>
               ) : (
                 <div style={{ 
-                  fontSize: '16px', 
+                  fontSize: '12px', 
                   fontWeight: 700,
                   color: rightStats.timeouts >= 2 ? '#ef4444' : 'inherit'
                 }}>
@@ -2324,32 +2375,32 @@ export default function Referee({ matchId, onExit }) {
                       stopTimeout()
                     }}
                     style={{
-                      marginTop: '4px',
-                      padding: '2px 6px',
-                      fontSize: '8px',
+                      marginTop: '2px',
+                      padding: '2px 4px',
+                      fontSize: '10px',
                       fontWeight: 600,
                       background: 'rgba(255,255,255,0.1)',
                       color: 'var(--text)',
                       border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '3px',
+                      borderRadius: '2px',
                       cursor: 'pointer'
                     }}
                   >
-                    Stop TO
+                    Stop
                   </button>
                 )}
             </div>
             <div style={{ 
               background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '4px', 
-                padding: '6px 12px',
+              borderRadius: '4px',
+              padding: '4px 8px',
               textAlign: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                minWidth: '60px'
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              minWidth: '50px'
             }}>
-                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>SUB</div>
+              <div style={{ fontSize: '7px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
               <div style={{ 
-                fontSize: '16px', 
+                fontSize: '12px', 
                 fontWeight: 700,
                 color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'inherit'
               }}>{rightStats.substitutions}</div>
@@ -3029,109 +3080,6 @@ export default function Referee({ matchId, onExit }) {
         </div>
       )}
 
-      {/* Captain on Court Modal */}
-      {captainOnCourtModal && (
-        <Modal
-          title={`Select Captain on Court - Team ${captainOnCourtModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}`}
-          open={true}
-          onClose={handleCancelCaptainOnCourt}
-          width={600}
-        >
-          <div style={{ padding: '24px' }}>
-            <p style={{ marginBottom: '20px', fontSize: '16px' }}>
-              The team captain is not on court. Please select which player is acting as captain on court:
-            </p>
-            
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(3, 1fr)', 
-              gap: '12px',
-              marginBottom: '24px'
-            }}>
-              {(() => {
-                const teamPlayers = captainOnCourtModal.team === 'home' 
-                  ? (data?.homePlayers || []) 
-                  : (data?.awayPlayers || [])
-                const playersOnCourt = captainOnCourtModal.playersOnCourt || []
-                const lineup = captainOnCourtModal.lineup || {}
-                
-                // Get players currently on court (including liberos)
-                const playersOnCourtList = []
-                const positionOrder = ['I', 'II', 'III', 'IV', 'V', 'VI']
-                
-                positionOrder.forEach(pos => {
-                  const playerNumber = lineup[pos]
-                  if (playerNumber) {
-                    const player = teamPlayers.find(p => String(p.number) === String(playerNumber))
-                    if (player) {
-                      playersOnCourtList.push({
-                        number: player.number,
-                        name: player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim(),
-                        position: pos,
-                        isLibero: !!(player.libero && player.libero !== ''),
-                        isTeamCaptain: !!(player.isCaptain || player.captain)
-                      })
-                    }
-                  }
-                })
-                
-                return playersOnCourtList.map((player) => (
-                  <button
-                    key={player.number}
-                    onClick={() => handleSelectCaptainOnCourt(player.number)}
-                    style={{
-                      padding: '16px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '2px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textAlign: 'center'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-                    }}
-                  >
-                    <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>
-                      #{player.number}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
-                      {player.name || 'Player'}
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                      Position {player.position}
-                      {player.isLibero && ' (Libero)'}
-                    </div>
-                  </button>
-                ))
-              })()}
-            </div>
-            
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleCancelCaptainOnCourt}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel (No Captain)
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
 
     </div>
   )
