@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { validatePin, listAvailableMatches } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
+import ConnectionStatus from './components/ConnectionStatus'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
 export default function RefereeApp() {
@@ -16,7 +17,177 @@ export default function RefereeApp() {
   const [showGameModal, setShowGameModal] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [serverConnected, setServerConnected] = useState(false)
+  const [showConnectionMenu, setShowConnectionMenu] = useState(false)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    api: 'unknown',
+    server: 'unknown',
+    websocket: 'unknown',
+    scoreboard: 'unknown',
+    match: 'unknown',
+    db: 'unknown'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
 
+  // Check connection statuses
+  const checkConnectionStatuses = async () => {
+    const statuses = {
+      api: 'unknown',
+      server: 'unknown',
+      websocket: 'unknown',
+      scoreboard: 'unknown',
+      match: 'unknown',
+      db: 'unknown'
+    }
+    const debugInfo = {}
+    
+    // Check API/Server connection
+    try {
+      const result = await listAvailableMatches()
+      if (result.success) {
+        statuses.api = 'connected'
+        statuses.server = 'connected'
+        setServerConnected(true)
+        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
+        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
+      } else {
+        statuses.api = 'disconnected'
+        statuses.server = 'disconnected'
+        setServerConnected(false)
+        debugInfo.api = { status: 'disconnected', message: `API request failed: ${result.error || 'Unknown error'}` }
+        debugInfo.server = { status: 'disconnected', message: `Server request failed: ${result.error || 'Unknown error'}` }
+      }
+    } catch (err) {
+      statuses.api = 'disconnected'
+      statuses.server = 'disconnected'
+      setServerConnected(false)
+      debugInfo.api = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to API'}` }
+      debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
+    }
+    
+    // Check WebSocket server availability
+    // Test if WebSocket server is reachable (even if not actively connected)
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const hostname = window.location.hostname
+      const wsPort = 8080 // Default WebSocket port
+      const wsUrl = `${protocol}://${hostname}:${wsPort}`
+      
+      // Try to connect to WebSocket server with a short timeout
+      const wsTest = new WebSocket(wsUrl)
+      let resolved = false
+      
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true
+            try {
+              if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                wsTest.close()
+              }
+            } catch (e) {
+              // Ignore errors when closing
+            }
+            statuses.websocket = 'disconnected'
+            debugInfo.websocket = { 
+              status: 'disconnected', 
+              message: `Connection timeout after 2 seconds. Server may not be running on port ${wsPort}.`,
+              details: `Attempted to connect to ${wsUrl}`
+            }
+            resolve()
+          }
+        }, 2000) // 2 second timeout
+        
+        wsTest.onopen = () => {
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            try {
+              wsTest.close()
+            } catch (e) {
+              // Ignore errors when closing
+            }
+            statuses.websocket = 'connected'
+            debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
+            resolve()
+          }
+        }
+        
+        wsTest.onerror = () => {
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            try {
+              if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                wsTest.close()
+              }
+            } catch (e) {
+              // Ignore errors when closing
+            }
+            statuses.websocket = 'disconnected'
+            debugInfo.websocket = { 
+              status: 'disconnected', 
+              message: `WebSocket connection error. Server may not be running or port ${wsPort} is blocked.`,
+              details: `Failed to connect to ${wsUrl}`
+            }
+            resolve() // Don't reject, just mark as disconnected
+          }
+        }
+        
+        wsTest.onclose = (event) => {
+          // If we haven't resolved yet and connection closed, mark as disconnected
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            statuses.websocket = 'disconnected'
+            if (!debugInfo.websocket) {
+              debugInfo.websocket = { 
+                status: 'disconnected', 
+                message: `Connection closed unexpectedly (code: ${event.code}).`,
+                details: `WebSocket server on port ${wsPort} may not be running`
+              }
+            }
+            resolve()
+          }
+        }
+      })
+    } catch (err) {
+      // If connection fails, mark as disconnected
+      statuses.websocket = 'disconnected'
+      debugInfo.websocket = { 
+        status: 'disconnected', 
+        message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
+        details: 'Check if WebSocket server is running'
+      }
+    }
+    
+    // Check Scoreboard connection (same as server for now)
+    statuses.scoreboard = statuses.server
+    debugInfo.scoreboard = debugInfo.server
+    
+    // Check Match status
+    if (matchId && match) {
+      statuses.match = match.status === 'live' ? 'live' : match.status === 'scheduled' ? 'scheduled' : 'final'
+      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match}` }
+    } else {
+      statuses.match = 'no_match'
+      debugInfo.match = { status: 'no_match', message: 'No match connected. Enter a PIN to connect to a match.' }
+    }
+    
+    // Check DB (IndexedDB) - always available in browser
+    try {
+      await db.matches.count()
+      statuses.db = 'connected'
+      debugInfo.db = { status: 'connected', message: 'IndexedDB is accessible' }
+    } catch (err) {
+      statuses.db = 'disconnected'
+      debugInfo.db = { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }
+    }
+    
+    setConnectionStatuses(statuses)
+    setConnectionDebugInfo(debugInfo)
+  }
+  
   // Load available matches on mount and periodically
   useEffect(() => {
     const loadMatches = async () => {
@@ -38,10 +209,14 @@ export default function RefereeApp() {
     }
     
     loadMatches()
-    const interval = setInterval(loadMatches, 5000) // Refresh every 5 seconds
+    checkConnectionStatuses()
+    const interval = setInterval(() => {
+      loadMatches()
+      checkConnectionStatuses()
+    }, 5000) // Refresh every 5 seconds
     
     return () => clearInterval(interval)
-  }, [])
+  }, [matchId, match])
   
   // Fullscreen functionality
   const toggleFullscreen = async () => {
@@ -314,6 +489,13 @@ export default function RefereeApp() {
     }
   }, [])
 
+  // Close connection menu when matchId changes
+  useEffect(() => {
+    if (matchId) {
+      setShowConnectionMenu(false)
+    }
+  }, [matchId])
+
   if (matchId) {
     return <Referee matchId={matchId} onExit={handleExit} />
   }
@@ -328,21 +510,144 @@ export default function RefereeApp() {
       background: 'linear-gradient(135deg,rgb(82, 82, 113) 0%,rgb(62, 22, 27) 100%)',
       color: '#fff',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px',
+      flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       boxSizing: 'border-box'
     }}>
+      {/* Header */}
+      <div 
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '12px 20px',
+          background: 'rgba(0, 0, 0, 0.2)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          flexShrink: 0,
+          gap: '16px'
+        }}
+        onClick={(e) => {
+          // Close connection menu and debug menu when clicking outside
+          if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
+            setShowConnectionMenu(false)
+          }
+          if (showDebugMenu && !e.target.closest('[data-debug-menu]')) {
+            setShowDebugMenu(null)
+          }
+        }}
+      >
+        {/* Left: Exit button (only show when NOT in home) */}
+        {matchId && (
+          <div style={{ flex: '0 0 auto', minWidth: '80px' }}>
+            <button
+              onClick={() => {
+                handleExit()
+              }}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              }}
+            >
+              ← Exit
+            </button>
+          </div>
+        )}
+        {!matchId && <div style={{ flex: '0 0 auto', minWidth: '80px' }}></div>}
+        
+        
+        {/* Spacer for right side to balance left side */}
+        <div style={{ flex: '0 0 auto', minWidth: '80px' }}></div>
+        
+        {/* Right: Status indicators and fullscreen button */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '12px',
+          flex: '0 0 auto',
+          position: 'relative',
+          minWidth: '80px',
+          justifyContent: 'flex-end'
+        }}>
+          {/* Connection Status Indicator */}
+          <ConnectionStatus
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            position="right"
+            size="normal"
+          />
+          
+          {/* Available matches indicator */}
+          {availableMatches.length > 0 && (
+            <div style={{
+              fontSize: '12px',
+              padding: '4px 8px',
+              background: 'rgba(59, 130, 246, 0.2)',
+              border: '1px solid rgba(59, 130, 246, 0.5)',
+              borderRadius: '4px',
+              fontWeight: 600
+            }}>
+              {availableMatches.length} {availableMatches.length === 1 ? 'game' : 'games'}
+            </div>
+          )}
+          
+          {/* Fullscreen button */}
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+            }}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          >
+            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+          </button>
+        </div>
+      </div>
+      
+      {/* Main content */}
       <div style={{
-        background: 'var(--bg-secondary)',
-        borderRadius: '12px',
-        padding: '40px',
-        maxWidth: 'min(400px, calc(100vw - 40px))',
-        width: '100%',
-        textAlign: 'center',
-        boxSizing: 'border-box'
+        flex: '1 1 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        overflowY: 'auto'
       }}>
+        <div style={{
+          background: 'var(--bg-secondary)',
+          borderRadius: '12px',
+          padding: '40px',
+          maxWidth: 'min(400px, calc(100vw - 40px))',
+          width: '100%',
+          textAlign: 'center',
+          boxSizing: 'border-box'
+        }}>
         <img 
           src={refereeIcon} 
           alt="Referee Icon" 
@@ -357,16 +662,17 @@ export default function RefereeApp() {
           Dashboard
         </h1>
 
-        <form onSubmit={handlePinSubmit} style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '16px',
-          width: '100%',
-          maxWidth: '100%',
-          boxSizing: 'border-box'
-        }}>
-          {availableMatches.length > 0 && (
+        {availableMatches.length > 0 ? (
+          <form onSubmit={handlePinSubmit} style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box'
+          }}>
+            {availableMatches.length > 0 && (
             <div style={{ width: '80%', maxWidth: '280px', boxSizing: 'border-box' }}>
               <label style={{
                 display: 'block',
@@ -530,6 +836,26 @@ export default function RefereeApp() {
             )}
           </button>
         </form>
+        ) : (
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            color: 'var(--text)'
+          }}>
+            <div style={{
+              fontSize: '20px',
+              fontWeight: 700,
+              marginBottom: '12px',
+              color: 'rgba(255, 255, 255, 0.9)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              padding: '12px'
+            }}>
+              AWAIT MATCH INITIALIZATION
+            </div>
+          </div>
+        )}
+      </div>
       </div>
       
       <Modal
