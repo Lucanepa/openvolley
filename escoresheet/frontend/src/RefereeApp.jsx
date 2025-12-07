@@ -146,7 +146,7 @@ export default function RefereeApp() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+      background: 'linear-gradient(135deg,rgb(82, 82, 113) 0%,rgb(62, 22, 27) 100%)',
       color: '#fff',
       display: 'flex',
       alignItems: 'center',
@@ -222,7 +222,7 @@ export default function RefereeApp() {
                   <div style={{
                     marginTop: '12px',
                     padding: '12px',
-                    background: 'rgba(59, 130, 246, 0.1)',
+                    background: 'rgba(59, 246, 78, 0.1)',
                     border: '1px solid rgba(59, 130, 246, 0.3)',
                     borderRadius: '8px',
                     textAlign: 'left'

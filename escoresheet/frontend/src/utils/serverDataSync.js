@@ -123,6 +123,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
       ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
+        // Skip if intentionally closed (cleanup ran before connection opened)
+        if (isIntentionallyClosed || !ws) return
+        
         reconnectAttempts = 0 // Reset on successful connection
         console.log('[ServerDataSync] WebSocket connected')
         // Request match data subscription
@@ -137,6 +140,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
       }
 
       ws.onmessage = (event) => {
+        // Skip if intentionally closed
+        if (isIntentionallyClosed) return
+        
         try {
           const message = JSON.parse(event.data)
           
@@ -153,6 +159,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
       }
 
       ws.onerror = (error) => {
+        // Skip if ws is null (cleanup already happened) or intentionally closed
+        if (!ws || isIntentionallyClosed) return
+        
         // Only log if it's not a connection error (which is expected during initial connection)
         // Connection errors are usually handled by onclose
         if (ws.readyState === WebSocket.CONNECTING) {
@@ -163,8 +172,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
       }
 
       ws.onclose = (event) => {
-        // Don't reconnect if intentionally closed
-        if (isIntentionallyClosed) return
+        // Don't reconnect if intentionally closed or ws is null
+        if (isIntentionallyClosed || !ws) return
 
         // Don't reconnect on normal closure (code 1000)
         if (event.code === 1000) {

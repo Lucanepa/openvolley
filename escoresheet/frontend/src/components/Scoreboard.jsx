@@ -100,6 +100,67 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return () => clearInterval(interval)
   }, [matchId])
 
+  const data = useLiveQuery(async () => {
+    const match = await db.matches.get(matchId)
+    if (!match) return null
+
+    const [homeTeam, awayTeam] = await Promise.all([
+      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
+    ])
+
+    const sets = await db.sets
+      .where('matchId')
+      .equals(matchId)
+      .sortBy('index')
+
+    const currentSet =
+      sets.find(s => !s.finished) ??
+      null
+
+    const [homePlayers, awayPlayers] = await Promise.all([
+      match?.homeTeamId
+        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
+        : [],
+      match?.awayTeamId
+        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
+        : []
+    ])
+
+    // Get all events for the match (keep logs across sets)
+    // Sort by seq if available, otherwise by ts
+    const eventsRaw = await db.events
+      .where('matchId')
+      .equals(matchId)
+      .toArray()
+    
+    const events = eventsRaw.sort((a, b) => {
+      // Sort by sequence number if available
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return aSeq - bSeq // Ascending
+      }
+      // Fallback to timestamp for legacy events
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return aTime - bTime
+    })
+
+    const result = {
+      set: currentSet,
+      match,
+      homeTeam,
+      awayTeam,
+      homePlayers,
+      awayPlayers,
+      events,
+      sets
+    }
+    
+    return result
+  }, [matchId])
+
   // Connect to WebSocket server and sync match data
   useEffect(() => {
     // Add a very visible console log that will definitely show up
@@ -492,80 +553,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         ws.close()
       }
     }
-  }, [matchId, data?.match, serverStatus])
-  
-  // Add a separate useEffect to log when data changes
-  useEffect(() => {
-    console.log('🟢 [Scoreboard] Data changed:', {
-      hasData: !!data,
-      hasMatch: !!data?.match,
-      matchId: data?.match?.id,
-      refereePin: data?.match?.refereePin ? '***' : 'none',
-      gameNumber: data?.match?.gameNumber || data?.match?.game_n
-    })
-  }, [data])
-
-
-  const data = useLiveQuery(async () => {
-    const match = await db.matches.get(matchId)
-    if (!match) return null
-
-    const [homeTeam, awayTeam] = await Promise.all([
-      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
-    ])
-
-    const sets = await db.sets
-      .where('matchId')
-      .equals(matchId)
-      .sortBy('index')
-
-    const currentSet =
-      sets.find(s => !s.finished) ??
-      null
-
-    const [homePlayers, awayPlayers] = await Promise.all([
-      match?.homeTeamId
-        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
-        : [],
-      match?.awayTeamId
-        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
-        : []
-    ])
-
-    // Get all events for the match (keep logs across sets)
-    // Sort by seq if available, otherwise by ts
-    const eventsRaw = await db.events
-      .where('matchId')
-      .equals(matchId)
-      .toArray()
-    
-    const events = eventsRaw.sort((a, b) => {
-      // Sort by sequence number if available
-      const aSeq = a.seq || 0
-      const bSeq = b.seq || 0
-      if (aSeq !== 0 || bSeq !== 0) {
-        return aSeq - bSeq // Ascending
-      }
-      // Fallback to timestamp for legacy events
-      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-      return aTime - bTime
-    })
-
-    const result = {
-      set: currentSet,
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      events,
-      sets
-    }
-    
-    return result
-  }, [matchId])
+  }, [matchId, serverStatus])
 
   const ensuringSetRef = useRef(false)
 
@@ -16399,7 +16387,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               }}>
                 {/* Position label rectangle */}
                 <div style={{
-                  width: '60px',
+                  width: '61px',
                   height: '24px',
                   background: 'rgba(255, 255, 255, 0.1)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -16428,7 +16416,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       }
                     }}
                     style={{
-                      width: '60px',
+                      width: '57px',
                       height: '60px',
                       padding: '0',
                       fontSize: '18px',
@@ -16479,7 +16467,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               >
                 {/* Position label rectangle */}
                 <div style={{
-                  width: '60px',
+                  width: '61px',
                   height: '24px',
                   background: 'rgba(255, 255, 255, 0.1)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -16508,7 +16496,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       }
                     }}
                     style={{
-                      width: '60px',
+                      width: '57px',
                       height: '60px',
                       padding: '0',
                       fontSize: '18px',
