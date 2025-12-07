@@ -1378,17 +1378,20 @@
     border-radius: 16px;
     padding: 32px;
     display: flex;
+    width: auto;
     flex-direction: column;
     gap: 8px;
   }
 
   .home-card--clickable {
     cursor: pointer;
+    width: auto;
     transition: all 0.2s ease;
   }
 
   .home-card--clickable:hover {
     background: rgba(255, 255, 255, 0.06);
+    width: auto;
     border-color: rgba(255, 255, 255, 0.12);
     transform: translateY(-2px);
   }
@@ -1396,12 +1399,14 @@
   .home-card h2 {
     margin: 0;
     font-size: 24px;
+    width: auto;
     font-weight: 700;
     text-align: center;
   }
 
   .home-card-description {
     margin: 0;
+    width: auto;
     font-size: 13px;
     color: var(--muted);
   }
@@ -1411,18 +1416,19 @@
     flex-direction: row;
     flex-wrap: wrap;
     gap: 12px;
+    width: auto;
     margin-top: 8px;
   }
 
   .home-card-actions button {
     flex: 1 1 calc(50% - 6px);
-    min-width: 140px;
     padding: 16px 24px;
     font-size: 16px;
     font-weight: 700;
     border-radius: 12px;
     min-height: 56px;
     display: flex;
+    width: auto;
     align-items: center;
     justify-content: center;
   }
@@ -1437,14 +1443,17 @@
     background: transparent !important;
     border: 2px solid #22c55e !important;
     color: #22c55e !important;
+    width: auto;
   }
 
   .test-button:hover:not(:disabled) {
     background: rgba(34, 197, 94, 0.1) !important;
+    width: auto;
   }
 
   .test-button--danger {
     border-color: #ef4444 !important;
+    width: auto;
     color: #ef4444 !important;
   }
 

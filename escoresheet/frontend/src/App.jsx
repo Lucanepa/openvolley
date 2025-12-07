@@ -2609,13 +2609,10 @@ export default function App() {
         gap: '16px',
         zIndex: 100
       }}>
-        {/* Left: App Title */}
-        <div style={{ flex: '0 0 auto', fontSize: '16px', fontWeight: 700 }}>
-          Openvolley eScoresheet
+        {/* Left: Version */}
+        <div style={{ flex: '0 0 auto', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+          Version {__APP_VERSION__ || '1.0.0'}
         </div>
-        
-        {/* Middle: Spacer */}
-        <div style={{ flex: '1 1 auto' }}></div>
         
         {/* Right: Connection Status and Fullscreen */}
         <div style={{ 
@@ -2693,52 +2690,24 @@ export default function App() {
         ) : !matchId ? (
           <div className="home-view">
             <div className="home-content">
-              <h1 className="home-title">Openvolley eScoresheet Indoor</h1>
+              <h1 className="home-title" style={{ whiteSpace: 'nowrap' }}>Openvolley eScoresheet Indoor</h1>
               <div className="home-logo" style={{ width: '200px' }}>
                 <img src={favicon} alt="Openvolley" style={{ width: '100%' }} />
               </div>
               
-              <div className="home-match-section">
-                <div className="home-card home-card--clickable" onClick={(e) => {
+              <div className="home-match-section" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div className="home-card home-card--clickable" style={{ flex: '1 1 0', minWidth: '280px', maxWidth: '400px' }} onClick={(e) => {
                   // Don't open modal if clicking on connection menu or debug menu
                   if (!e.target.closest('[data-connection-menu]') && !e.target.closest('[data-debug-menu]')) {
                     setHomeCardModal('official')
                   }
                 }}>
-                  <div className="home-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="home-card-header">
                     <h2>Official Match</h2>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleFullscreen()
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        color: '#fff',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      }}
-                      title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-                    >
-                      {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
-                    </button>
                   </div>
                 </div>
-              </div>
-              
-              <div className="home-match-section">
-                <div className="home-card home-card--test home-card--clickable" onClick={() => setHomeCardModal('test')}>
+                
+                <div className="home-card home-card--test home-card--clickable" style={{ flex: '1 1 0', minWidth: '280px', maxWidth: '400px' }} onClick={() => setHomeCardModal('test')}>
                   <div className="home-card-header">
                     <h2>Test Match</h2>
                   </div>
@@ -2761,13 +2730,6 @@ export default function App() {
                 >
                   Options
                 </button>
-              </div>
-              
-              
-              <div className="home-support">
-                Support: luca.canepa@gmail.com
-                
-              <p className="home-subtitle">Version {__APP_VERSION__ || '1.0.0'}</p>
               </div>
             </div>
           </div>
@@ -3079,40 +3041,70 @@ export default function App() {
         >
           <div style={{ padding: '24px' }}>
             <div style={{ marginBottom: '24px' }}>
-              <label style={{ 
+              <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
-                gap: '12px',
-                cursor: 'pointer',
-                fontSize: '16px'
+                justifyContent: 'space-between',
+                marginBottom: '8px'
               }}>
-                <input
-                  type="checkbox"
-                  checked={manageCaptainOnCourt}
-                  onChange={(e) => {
-                    const value = e.target.checked
-                    setManageCaptainOnCourt(value)
-                    localStorage.setItem('manageCaptainOnCourt', value.toString())
-                  }}
-                  style={{
-                    width: '20px',
-                    height: '20px',
+                <span style={{ fontSize: '16px', fontWeight: 500 }}>Manage Captain on Court</span>
+                <label style={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  width: '48px',
+                  height: '24px'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={manageCaptainOnCourt}
+                    onChange={(e) => {
+                      const value = e.target.checked
+                      setManageCaptainOnCourt(value)
+                      localStorage.setItem('manageCaptainOnCourt', value.toString())
+                    }}
+                    style={{
+                      opacity: 0,
+                      width: 0,
+                      height: 0
+                    }}
+                  />
+                  <span style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: manageCaptainOnCourt ? 'var(--accent)' : 'rgba(255, 255, 255, 0.2)',
+                    borderRadius: '24px',
+                    transition: 'background-color 0.2s',
                     cursor: 'pointer'
-                  }}
-                />
-                <span>Manage Captain on Court</span>
-              </label>
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      top: '2px',
+                      left: manageCaptainOnCourt ? '26px' : '2px',
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      backgroundColor: '#fff',
+                      transition: 'left 0.2s',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                    }} />
+                  </span>
+                </label>
+              </div>
               <div style={{ 
-                marginTop: '8px', 
                 fontSize: '14px', 
                 color: 'var(--muted)',
-                paddingLeft: '32px'
+                lineHeight: '1.5'
               }}>
-                When enabled and referee app is connected, referees can designate a captain on court when the team captain is not playing.
+                When enabled, the scorer on the scoreboard can designate a captain on court when the team captain is not playing.
               </div>
             </div>
             
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
               <button
                 onClick={() => {
                   setHomeOptionsModal(false)
@@ -3227,6 +3219,17 @@ export default function App() {
               >
                 Close
               </button>
+            </div>
+            
+            <div style={{ 
+              marginTop: '24px', 
+              paddingTop: '24px', 
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              textAlign: 'center',
+              fontSize: '12px',
+              color: 'var(--muted)'
+            }}>
+              Support: luca.canepa@gmail.com
             </div>
           </div>
         </Modal>
