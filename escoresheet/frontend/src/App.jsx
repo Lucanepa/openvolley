@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import MatchSetup from './components/MatchSetup'
@@ -6,6 +6,7 @@ import Scoreboard from './components/Scoreboard'
 import MatchEnd from './components/MatchEnd'
 import Modal from './components/Modal'
 import GuideModal from './components/GuideModal'
+import ConnectionStatus from './components/ConnectionStatus'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import mikasaVolleyball from './mikasa_v200w.png'
 import favicon from './favicon.png'
@@ -88,6 +89,19 @@ export default function App() {
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
   const [serverStatus, setServerStatus] = useState(null)
+  const [showConnectionMenu, setShowConnectionMenu] = useState(false)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    api: 'unknown',
+    server: 'unknown',
+    websocket: 'unknown',
+    scoreboard: 'unknown',
+    match: 'unknown',
+    db: 'unknown',
+    supabase: 'unknown'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Fetch server status periodically
   useEffect(() => {
@@ -150,6 +164,242 @@ export default function App() {
       return null
     }
   }, [])
+
+  // Fullscreen functionality
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+        setIsFullscreen(true)
+      } else {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error)
+      // Fallback: try alternative fullscreen methods
+      const doc = document.documentElement
+      if (doc.webkitRequestFullscreen) {
+        doc.webkitRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.msRequestFullscreen) {
+        doc.msRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.mozRequestFullScreen) {
+        doc.mozRequestFullScreen()
+        setIsFullscreen(true)
+      }
+    }
+  }, [])
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('msfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  // Check connection statuses
+  const checkConnectionStatuses = useCallback(async () => {
+    const statuses = {
+      api: 'unknown',
+      server: 'unknown',
+      websocket: 'unknown',
+      scoreboard: 'unknown',
+      match: 'unknown',
+      db: 'unknown',
+      supabase: 'unknown'
+    }
+    const debugInfo = {}
+    
+    // Check API/Server connection
+    try {
+      const response = await fetch('/api/match/list')
+      if (response.ok) {
+        statuses.api = 'connected'
+        statuses.server = 'connected'
+        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
+        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
+      } else {
+        statuses.api = 'disconnected'
+        statuses.server = 'disconnected'
+        debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
+        debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
+      }
+    } catch (err) {
+      statuses.api = 'disconnected'
+      statuses.server = 'disconnected'
+      debugInfo.api = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to API'}` }
+      debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
+    }
+    
+    // Check WebSocket server availability
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const hostname = window.location.hostname
+      const wsPort = serverStatus?.wsPort || 8080
+      const wsUrl = `${protocol}://${hostname}:${wsPort}`
+      
+      const wsTest = new WebSocket(wsUrl)
+      let resolved = false
+      let errorMessage = ''
+      
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true
+            try {
+              if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                wsTest.close()
+              }
+            } catch (e) {
+              // Ignore errors when closing
+            }
+            statuses.websocket = 'disconnected'
+            debugInfo.websocket = { 
+              status: 'disconnected', 
+              message: `Connection timeout after 2 seconds. Server may not be running on port ${wsPort}.`,
+              details: `Attempted to connect to ${wsUrl}`
+            }
+            resolve()
+          }
+        }, 2000)
+        
+        wsTest.onopen = () => {
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            try {
+              wsTest.close()
+            } catch (e) {
+              // Ignore errors when closing
+            }
+            statuses.websocket = 'connected'
+            debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
+            resolve()
+          }
+        }
+        
+        wsTest.onerror = (error) => {
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            try {
+              if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                wsTest.close()
+              }
+            } catch (e) {
+              // Ignore errors when closing
+            }
+            statuses.websocket = 'disconnected'
+            debugInfo.websocket = { 
+              status: 'disconnected', 
+              message: `WebSocket connection error. Server may not be running or port ${wsPort} is blocked.`,
+              details: `Failed to connect to ${wsUrl}`
+            }
+            resolve()
+          }
+        }
+        
+        wsTest.onclose = (event) => {
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            statuses.websocket = 'disconnected'
+            if (!debugInfo.websocket) {
+              debugInfo.websocket = { 
+                status: 'disconnected', 
+                message: `Connection closed unexpectedly (code: ${event.code}).`,
+                details: `WebSocket server on port ${wsPort} may not be running`
+              }
+            }
+            resolve()
+          }
+        }
+      })
+    } catch (err) {
+      statuses.websocket = 'disconnected'
+      debugInfo.websocket = { 
+        status: 'disconnected', 
+        message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
+        details: 'Check if WebSocket server is running'
+      }
+    }
+    
+    // Check Scoreboard connection (same as server for now)
+    statuses.scoreboard = statuses.server
+    debugInfo.scoreboard = debugInfo.server
+    
+    // Check Match status
+    if (currentOfficialMatch) {
+      statuses.match = currentOfficialMatch.status === 'live' ? 'live' : currentOfficialMatch.status === 'scheduled' ? 'scheduled' : currentOfficialMatch.status === 'final' ? 'final' : 'unknown'
+      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match}` }
+    } else {
+      statuses.match = 'no_match'
+      debugInfo.match = { status: 'no_match', message: 'No official match found. Create a new match to start.' }
+    }
+    
+    // Check DB (IndexedDB)
+    try {
+      await db.matches.count()
+      statuses.db = 'connected'
+      debugInfo.db = { status: 'connected', message: 'IndexedDB is accessible' }
+    } catch (err) {
+      statuses.db = 'disconnected'
+      debugInfo.db = { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }
+    }
+    
+    // Check Supabase status (based on syncStatus)
+    if (syncStatus === 'synced' || syncStatus === 'syncing') {
+      statuses.supabase = 'connected'
+      debugInfo.supabase = { status: 'connected', message: 'Supabase is connected and syncing' }
+    } else if (syncStatus === 'online_no_supabase') {
+      statuses.supabase = 'not_configured'
+      debugInfo.supabase = { 
+        status: 'not_configured', 
+        message: 'Supabase is not configured',
+        details: 'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables to enable Supabase sync'
+      }
+    } else if (syncStatus === 'connecting') {
+      statuses.supabase = 'connecting'
+      debugInfo.supabase = { status: 'connecting', message: 'Connecting to Supabase...' }
+    } else if (syncStatus === 'error') {
+      statuses.supabase = 'error'
+      debugInfo.supabase = { 
+        status: 'error', 
+        message: 'Supabase connection error',
+        details: 'Check your Supabase credentials and network connection'
+      }
+    } else if (syncStatus === 'offline') {
+      statuses.supabase = 'offline'
+      debugInfo.supabase = { status: 'offline', message: 'Device is offline or Supabase is unreachable' }
+    } else {
+      statuses.supabase = 'unknown'
+      debugInfo.supabase = { status: 'unknown', message: 'Supabase status unknown' }
+    }
+    
+    setConnectionStatuses(statuses)
+    setConnectionDebugInfo(debugInfo)
+  }, [currentOfficialMatch, syncStatus, serverStatus])
+
+  // Periodically check connection statuses
+  useEffect(() => {
+    checkConnectionStatuses()
+    const interval = setInterval(checkConnectionStatuses, 5000) // Check every 5 seconds
+    return () => clearInterval(interval)
+  }, [checkConnectionStatuses])
 
   const currentTestMatch = useLiveQuery(async () => {
     try {
@@ -2338,8 +2588,81 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh' }}>
-      <div className="container">
+    <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => {
+      // Close connection menu and debug menu when clicking outside
+      if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
+        setShowConnectionMenu(false)
+      }
+      if (showDebugMenu && !e.target.closest('[data-debug-menu]')) {
+        setShowDebugMenu(null)
+      }
+    }}>
+      {/* Global Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '12px 20px',
+        background: 'rgba(0, 0, 0, 0.2)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        flexShrink: 0,
+        gap: '16px',
+        zIndex: 100
+      }}>
+        {/* Left: App Title */}
+        <div style={{ flex: '0 0 auto', fontSize: '16px', fontWeight: 700 }}>
+          Openvolley eScoresheet
+        </div>
+        
+        {/* Middle: Spacer */}
+        <div style={{ flex: '1 1 auto' }}></div>
+        
+        {/* Right: Connection Status and Fullscreen */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '12px',
+          flex: '0 0 auto'
+        }}>
+          {/* Connection Status Indicator */}
+          <ConnectionStatus
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            position="right"
+            size="normal"
+          />
+          
+          {/* Fullscreen Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleFullscreen()
+            }}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+            }}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          >
+            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+          </button>
+        </div>
+      </div>
+
+      <div className="container" style={{ flex: '1 1 auto', overflow: 'auto' }}>
 
       {!matchId && matchStatus && (
         <div className="match-status-banner">
@@ -2376,23 +2699,40 @@ export default function App() {
               </div>
               
               <div className="home-match-section">
-                <div className="home-card home-card--clickable" onClick={() => setHomeCardModal('official')}>
-                  <div className="home-card-header">
+                <div className="home-card home-card--clickable" onClick={(e) => {
+                  // Don't open modal if clicking on connection menu or debug menu
+                  if (!e.target.closest('[data-connection-menu]') && !e.target.closest('[data-debug-menu]')) {
+                    setHomeCardModal('official')
+                  }
+                }}>
+                  <div className="home-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2>Official Match</h2>
-                  </div>
-                  <div className="connection-status-inline">
-                    <span className="connection-status-label">Connection:</span>
-                    <div className={`status-indicator status-${syncStatus}`}>
-                      <span className="status-dot" />
-                      <span>
-                        {syncStatus === 'offline' && 'Offline'}
-                        {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
-                        {syncStatus === 'connecting' && 'Connecting...'}
-                        {syncStatus === 'syncing' && 'Syncing...'}
-                        {syncStatus === 'synced' && 'Synced'}
-                        {syncStatus === 'error' && 'Sync Error'}
-                      </span>
-                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleFullscreen()
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: '#fff',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                      title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                    >
+                      {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2634,20 +2974,6 @@ export default function App() {
           width={500}
         >
           <div style={{ padding: '24px' }}>
-            <div className="connection-status-inline" style={{ marginBottom: '24px', justifyContent: 'center' }}>
-              <span className="connection-status-label">Connection:</span>
-              <div className={`status-indicator status-${syncStatus}`}>
-                <span className="status-dot" />
-                <span>
-                  {syncStatus === 'offline' && 'Offline'}
-                  {syncStatus === 'online_no_supabase' && 'Online (No Supabase)'}
-                  {syncStatus === 'connecting' && 'Connecting...'}
-                  {syncStatus === 'syncing' && 'Syncing...'}
-                  {syncStatus === 'synced' && 'Synced'}
-                  {syncStatus === 'error' && 'Sync Error'}
-                </span>
-              </div>
-            </div>
             {currentOfficialMatch?.gamePin && (
               <div style={{ 
                 marginBottom: '24px', 
