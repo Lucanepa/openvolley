@@ -33,6 +33,8 @@ export default function ConnectionStatus({
   const getStatusColor = (status) => {
     if (status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing') {
       return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? 'Syncing' : 'Connected' }
+    } else if (status === 'attention') {
+      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: 'Attention' }
     } else if (status === 'disconnected' || status === 'no_match' || status === 'error' || status === 'offline') {
       return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? 'Error' : status === 'offline' ? 'Offline' : 'Disconnected' }
     } else if (status === 'not_configured' || status === 'not_applicable') {
@@ -55,8 +57,24 @@ export default function ConnectionStatus({
   }
 
   const getOverallStatus = () => {
-    const serverStatus = connectionStatuses.server || 'unknown'
-    return serverStatus === 'connected' ? 'connected' : 'disconnected'
+    // Check all connection statuses
+    const statuses = Object.values(connectionStatuses)
+    
+    // If any status is not connected/ok, show attention
+    const allConnected = statuses.every(status => {
+      return status === 'connected' || 
+             status === 'live' || 
+             status === 'scheduled' || 
+             status === 'synced' || 
+             status === 'syncing' ||
+             status === 'not_applicable' // Not applicable is considered OK
+    })
+    
+    if (allConnected && statuses.length > 0) {
+      return 'connected'
+    } else {
+      return 'attention' // Use 'attention' instead of 'disconnected' for the overall status
+    }
   }
 
   const overallStatus = getOverallStatus()
@@ -127,7 +145,7 @@ export default function ConnectionStatus({
           borderRadius: '50%',
           background: statusInfo.dot
         }}></span>
-        <span>{overallStatus === 'connected' ? 'Connected' : 'Disconnected'}</span>
+        <span>{overallStatus === 'connected' ? 'Connected' : 'Attention'}</span>
         <span style={{ fontSize: `${parseInt(currentSize.fontSize) - 2}px`, marginLeft: '4px' }}>
           {showConnectionMenu ? '▲' : '▼'}
         </span>
@@ -146,7 +164,8 @@ export default function ConnectionStatus({
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '6px',
             padding: '8px',
-            minWidth: '200px',
+            width: 'auto',
+            minWidth: '220px',
             zIndex: 1000,
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
           }}
@@ -253,7 +272,14 @@ export default function ConnectionStatus({
                       Debug Information
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.9)' }}>
-                      <strong>Status:</strong> {debugInfo.status || status}
+                      <strong>Status:</strong> {(() => {
+                        const statusText = (debugInfo.status || status || '').toString()
+                        return statusText
+                          .replace(/_/g, ' ')
+                          .split(' ')
+                          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                          .join(' ')
+                      })()}
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.8)' }}>
                       <strong>Message:</strong> {debugInfo.message || 'No additional information'}
