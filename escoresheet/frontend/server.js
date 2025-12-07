@@ -405,7 +405,26 @@ const requestHandler = (req, res) => {
         refereePin: match.refereePin,
         refereeConnectionEnabled: match.refereeConnectionEnabled !== false
       }
-    }).filter(m => m.refereeConnectionEnabled && m.status !== 'final')
+    }).filter(m => {
+      // Only show matches that are:
+      // 1. Referee connection enabled
+      // 2. Not final (status !== 'final')
+      // 3. Status is 'scheduled' or 'live' (open/in progress)
+      return m.refereeConnectionEnabled && 
+             m.status !== 'final' && 
+             (m.status === 'scheduled' || m.status === 'live')
+    })
+    
+    // Sort by scheduledAt (most recent first) and take only the first one
+    // This ensures only 1 match is shown at a time
+    matches.sort((a, b) => {
+      const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0
+      const dateB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0
+      return dateB - dateA // Most recent first
+    })
+    
+    // Only return the most recent open/in-progress match
+    const activeMatch = matches.length > 0 ? [matches[0]] : []
     
     res.writeHead(200, { 
       'Content-Type': 'application/json',
@@ -413,7 +432,7 @@ const requestHandler = (req, res) => {
     })
     res.end(JSON.stringify({ 
       success: true, 
-      matches 
+      matches: activeMatch 
     }))
     return
   }
@@ -495,6 +514,8 @@ const requestHandler = (req, res) => {
         // Forward update request to main instance via WebSocket
         const requestId = `match-update-${Date.now()}-${Math.random()}`
         
+        console.log(`[API] Broadcasting match-update-request for match ${matchId}, requestId: ${requestId}, connected clients: ${wsClients.size}`)
+        
         broadcast({
           type: 'match-update-request',
           requestId,
@@ -503,6 +524,7 @@ const requestHandler = (req, res) => {
         })
         
         const timeout = setTimeout(() => {
+          console.warn(`[API] Match update request ${requestId} timed out after 5 seconds`)
           res.writeHead(500, { 
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*'
@@ -515,6 +537,7 @@ const requestHandler = (req, res) => {
         }, 5000)
         
         pendingPinRequests.set(requestId, { res, timeout, type: 'match-update' })
+        console.log(`[API] Waiting for response to requestId: ${requestId}`)
       } catch (err) {
         res.writeHead(400, { 
           'Content-Type': 'application/json',
@@ -668,28 +691,113 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }))
       } else if (data.type === 'sync-match-data') {
         // Main scoresheet is syncing full match data
-        if (data.matchId && data.matchData) {
-          matchDataStore.set(String(data.matchId), data.matchData)
-          console.log(`[WebSocket] Synced full match data for match ${data.matchId}`)
+        // SCOREBOARD IS SOURCE OF TRUTH - This ALWAYS overwrites existing data
+        // Handle both formats: { matchId, matchData: {...} } and { matchId, match, homeTeam, ... }
+        if (data.matchId) {
+          let matchData
           
-          // Broadcast update to subscribed clients
-          const subscribers = matchSubscriptions.get(String(data.matchId))
+          if (data.matchData) {
+            // Format 1: Nested in matchData
+            matchData = data.matchData
+          } else if (data.match) {
+            // Format 2: Flat structure (from Scoreboard component)
+            matchData = {
+              match: data.match,
+              homeTeam: data.homeTeam,
+              awayTeam: data.awayTeam,
+              homePlayers: data.homePlayers || [],
+              awayPlayers: data.awayPlayers || [],
+              sets: data.sets || [],
+              events: data.events || []
+            }
+          }
+          
+          if (matchData) {
+            // ALWAYS overwrite - scoreboard data is authoritative
+            matchDataStore.set(String(data.matchId), matchData)
+            console.log(`[WebSocket] Synced full match data for match ${data.matchId} (overwrote existing)`)
+            
+            // Broadcast update to subscribed clients
+            const subscribers = matchSubscriptions.get(String(data.matchId))
+            if (subscribers) {
+              subscribers.forEach(client => {
+                if (client !== ws && client.readyState === 1) {
+                  try {
+                    client.send(JSON.stringify({
+                      type: 'match-data-update',
+                      matchId: String(data.matchId),
+                      data: matchData
+                    }))
+                  } catch (err) {
+                    console.error('[WebSocket] Error sending update to subscriber:', err)
+                  }
+                }
+              })
+            }
+          }
+        }
+      } else if (data.type === 'delete-match') {
+        // Main scoresheet is deleting a match - remove from server store
+        const matchId = String(data.matchId)
+        if (matchDataStore.has(matchId)) {
+          matchDataStore.delete(matchId)
+          console.log(`[WebSocket] Deleted match ${matchId} from server store`)
+          
+          // Remove subscriptions for this match
+          matchSubscriptions.delete(matchId)
+          
+          // Notify subscribed clients that match was deleted
+          const subscribers = matchSubscriptions.get(matchId)
           if (subscribers) {
             subscribers.forEach(client => {
-              if (client !== ws && client.readyState === 1) {
+              if (client.readyState === 1) {
                 try {
                   client.send(JSON.stringify({
-                    type: 'match-data-update',
-                    matchId: String(data.matchId),
-                    data: data.matchData
+                    type: 'match-deleted',
+                    matchId: matchId
                   }))
                 } catch (err) {
-                  console.error('[WebSocket] Error sending update to subscriber:', err)
+                  console.error('[WebSocket] Error notifying subscriber of match deletion:', err)
                 }
               }
             })
           }
         }
+      } else if (data.type === 'clear-all-matches') {
+        // Scoreboard is clearing all matches (source of truth - no active match)
+        // Optionally keep one match if keepMatchId is specified
+        const keepMatchId = data.keepMatchId ? String(data.keepMatchId) : null
+        
+        const matchesToDelete = []
+        for (const [storedMatchId] of matchDataStore.entries()) {
+          if (!keepMatchId || storedMatchId !== keepMatchId) {
+            matchesToDelete.push(storedMatchId)
+          }
+        }
+        
+        matchesToDelete.forEach(matchIdToDelete => {
+          matchDataStore.delete(matchIdToDelete)
+          matchSubscriptions.delete(matchIdToDelete)
+          
+          // Notify subscribed clients
+          const subscribers = matchSubscriptions.get(matchIdToDelete)
+          if (subscribers) {
+            subscribers.forEach(client => {
+              if (client.readyState === 1) {
+                try {
+                  client.send(JSON.stringify({
+                    type: 'match-deleted',
+                    matchId: matchIdToDelete
+                  }))
+                } catch (err) {
+                  console.error('[WebSocket] Error notifying subscriber of match deletion:', err)
+                }
+              }
+            })
+          }
+        })
+        
+        console.log(`[WebSocket] Cleared ${matchesToDelete.length} match(es) from server store${keepMatchId ? ` (kept match ${keepMatchId})` : ''}`)
       } else if (data.type === 'subscribe-match') {
         // Client wants to subscribe to match updates
         const matchId = String(data.matchId)
@@ -834,8 +942,10 @@ wss.on('connection', (ws, req) => {
       } else if (data.type === 'match-update-response') {
         // Main scoresheet responded to match update request
         const requestId = data.requestId
+        console.log(`[WebSocket] Received match-update-response for requestId: ${requestId}, success: ${data.success}`)
         const pending = pendingPinRequests.get(requestId)
         if (pending && pending.type === 'match-update') {
+          console.log(`[WebSocket] Found pending request, responding to HTTP client`)
           clearTimeout(pending.timeout)
           pendingPinRequests.delete(requestId)
           
@@ -863,6 +973,9 @@ wss.on('connection', (ws, req) => {
               error: data.error || 'Update failed' 
             }))
           }
+        } else {
+          console.warn(`[WebSocket] Received match-update-response but no pending request found for requestId: ${requestId}`)
+          console.log(`[WebSocket] Available pending requests:`, Array.from(pendingPinRequests.keys()))
         }
       } else {
         // Broadcast to all other clients (for other message types)

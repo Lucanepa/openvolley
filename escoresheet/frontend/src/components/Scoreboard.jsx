@@ -29,6 +29,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [serverStatus, setServerStatus] = useState(null)
   const [serverLoading, setServerLoading] = useState(false)
   const [editPinModal, setEditPinModal] = useState(false)
+  const [showPinsModal, setShowPinsModal] = useState(false)
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
   const [editPinType, setEditPinType] = useState(null) // 'referee' | 'teamA' | 'teamB'
@@ -55,6 +56,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string } | null
   const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string } | null
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
+  const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away' } | null
   const [reopenSetConfirm, setReopenSetConfirm] = useState(null) // { setId: number, setIndex: number } | null
   const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
   const [setEndTimeModal, setSetEndTimeModal] = useState(null) // { setIndex: number, winner: string, homePoints: number, awayPoints: number, defaultTime: string } | null
@@ -71,6 +73,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
+  const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
+  const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -163,30 +167,51 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Connect to WebSocket server and sync match data
   useEffect(() => {
-    // Add a very visible console log that will definitely show up
-    console.log('🔵 [WebSocket] useEffect triggered')
-    console.log('🔵 [WebSocket] matchId:', matchId)
-    console.log('🔵 [WebSocket] data:', data)
-    console.log('🔵 [WebSocket] data?.match:', data?.match)
-    console.log('🔵 [WebSocket] data?.match?.id:', data?.match?.id)
-    console.log('🔵 [WebSocket] data?.match?.refereePin:', data?.match?.refereePin)
-    
+    // If no matchId, clear all matches from server (scoreboard is source of truth)
     if (!matchId) {
-      console.warn('⚠️ [WebSocket] ⏸️ Skipping - no matchId')
-      return
+      const clearAllMatches = () => {
+        const ws = wsRef.current
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'clear-all-matches'
+            }))
+            console.log('[WebSocket] Cleared all matches from server (no active match)')
+          } catch (err) {
+            console.error('[WebSocket] Error clearing all matches:', err)
+          }
+        }
+      }
+      
+      // Try to clear immediately if WebSocket is open
+      clearAllMatches()
+      
+      // Also set up a connection to clear when WebSocket opens
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const hostname = window.location.hostname
+      const wsPort = 8080
+      const wsUrl = `${protocol}://${hostname}:${wsPort}`
+      
+      const tempWs = new WebSocket(wsUrl)
+      tempWs.onopen = () => {
+        tempWs.send(JSON.stringify({ type: 'clear-all-matches' }))
+        tempWs.close()
+      }
+      tempWs.onerror = () => {
+        // Ignore - server might not be running
+      }
+      
+      return () => {
+        if (tempWs.readyState === WebSocket.OPEN || tempWs.readyState === WebSocket.CONNECTING) {
+          tempWs.close()
+        }
+      }
     }
     
-    if (!data) {
-      console.warn('⚠️ [WebSocket] ⏸️ Skipping - data is null/undefined (still loading?)')
+    if (!data || !data.match) {
+      // Data is still loading - this is expected, wait for it
       return
     }
-    
-    if (!data.match) {
-      console.warn('⚠️ [WebSocket] ⏸️ Skipping - data.match is null/undefined')
-      return
-    }
-    
-    console.log('✅ [WebSocket] All conditions met, proceeding with connection...')
 
     let ws = null
     let syncInterval = null
@@ -210,13 +235,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         const wsUrl = `${protocol}://${hostname}:${wsPort}`
 
-        console.log('[WebSocket] Attempting to connect to:', wsUrl)
         ws = new WebSocket(wsUrl)
+        wsRef.current = ws // Store in ref for use in callbacks
+        
+        // Set error handler first to catch any immediate errors
+        ws.onerror = () => {
+          // Suppress - browser will show native errors if needed
+        }
 
         ws.onopen = () => {
-          console.log('[WebSocket] ✅ Connected to server at', wsUrl)
-          console.log('[WebSocket] Match ID:', matchId, 'Has match data:', !!data?.match)
-          // Send initial match data sync
+          // Clear all other matches first (scoreboard is source of truth - only current match should exist)
+          try {
+            ws.send(JSON.stringify({
+              type: 'clear-all-matches',
+              keepMatchId: String(matchId) // Keep only the current match
+            }))
+            console.log('[WebSocket] Cleared all matches except current match:', matchId)
+          } catch (err) {
+            console.error('[WebSocket] Error clearing other matches:', err)
+          }
+          
+          // Send initial match data sync (this will overwrite/add the current match)
           syncMatchData()
           // Set up periodic sync (every 5 seconds)
           syncInterval = setInterval(syncMatchData, 5000)
@@ -246,15 +285,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }
         }
 
-        ws.onerror = (error) => {
-          console.error('[WebSocket] ❌ Error connecting:', error)
-          console.error('[WebSocket] Failed URL:', wsUrl)
-        }
 
         ws.onclose = (event) => {
-          console.log('[WebSocket] ⚠️ Disconnected (code:', event.code, 'reason:', event.reason || 'none', ')')
-          console.log('[WebSocket] Will reconnect in 5 seconds...')
           if (syncInterval) clearInterval(syncInterval)
+          // Don't reconnect on normal closure (code 1000)
+          if (event.code === 1000) {
+            return
+          }
           // Reconnect after 5 seconds
           reconnectTimeout = setTimeout(connectWebSocket, 5000)
         }
@@ -265,12 +302,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     const syncMatchData = async () => {
       if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) {
-        console.log('[WebSocket] Cannot sync: ws=', !!ws, 'readyState=', ws?.readyState, 'match=', !!data?.match)
         return
       }
 
       try {
-        // Prepare full match object with all fields
+        // Prepare full match object with all fields - scoreboard is source of truth, always overwrite
         const fullMatch = {
           id: data.match.id,
           refereePin: data.match.refereePin,
@@ -286,6 +322,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           awayTeamId: data.match.awayTeamId,
           gameNumber: data.match.gameNumber,
           game_n: data.match.game_n,
+          externalId: data.match.externalId,
+          scheduledAt: data.match.scheduledAt,
           createdAt: data.match.createdAt,
           updatedAt: data.match.updatedAt,
           coinTossTeamA: data.match.coinTossTeamA,
@@ -293,11 +331,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           firstServe: data.match.firstServe,
           pendingHomeRoster: data.match.pendingHomeRoster,
           pendingAwayRoster: data.match.pendingAwayRoster,
-          // Include all other match fields
+          // Include all other match fields - this ensures complete overwrite
           ...data.match
         }
         
-        // Sync full match data to server (match, teams, players, sets, events)
+        // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
+        // The server will replace all data for this matchId with this data
         const syncPayload = {
           type: 'sync-match-data',
           matchId: matchId,
@@ -310,13 +349,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           events: data.events || []
         }
         
-        console.log('[WebSocket] Syncing match data:', {
+        console.log('[WebSocket] Syncing match data (overwriting server):', {
           matchId,
           hasMatch: !!fullMatch,
           hasRefereePin: !!fullMatch.refereePin,
           refereeConnectionEnabled: fullMatch.refereeConnectionEnabled,
           status: fullMatch.status,
-          gameNumber: fullMatch.gameNumber || fullMatch.game_n
+          gameNumber: fullMatch.gameNumber || fullMatch.game_n || fullMatch.externalId
         })
         
         ws.send(JSON.stringify(syncPayload))
@@ -492,19 +531,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     const handleMatchUpdateRequest = async (request) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+      const { requestId, matchId: requestedMatchId, updates } = request
+      console.log('[Scoreboard WebSocket] Received match-update-request:', { requestId, requestedMatchId, currentMatchId: matchId, wsState: ws?.readyState, hasMatch: !!data?.match })
+      
+      // Always send a response, even if conditions aren't met
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        // Try to send error response if WebSocket exists but isn't open
+        if (ws && ws.readyState === WebSocket.CONNECTING) {
+          // Wait a bit for connection, but don't block too long
+          setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'match-update-response',
+                requestId,
+                matchId: requestedMatchId,
+                success: false,
+                error: 'WebSocket was connecting, please retry'
+              }))
+            }
+          }, 1000)
+        }
+        // If WebSocket doesn't exist or is closed, we can't send a response
+        // The server will timeout, which is expected behavior
+        console.warn('[WebSocket] Cannot respond to match-update-request: WebSocket not connected')
+        return
+      }
+
+      if (!data?.match) {
+        const errorResponse = {
+          type: 'match-update-response',
+          requestId,
+          matchId: requestedMatchId,
+          success: false,
+          error: 'Match data not loaded'
+        }
+        console.log('[Scoreboard WebSocket] Sending match-update-response (error):', errorResponse)
+        ws.send(JSON.stringify(errorResponse))
+        return
+      }
 
       try {
-        const { requestId, matchId: requestedMatchId, updates } = request
-        
         if (String(requestedMatchId) !== String(matchId)) {
-          ws.send(JSON.stringify({
+          const errorResponse = {
             type: 'match-update-response',
             requestId,
             matchId: requestedMatchId,
             success: false,
             error: 'Match ID mismatch'
-          }))
+          }
+          console.log('[Scoreboard WebSocket] Sending match-update-response (error):', errorResponse)
+          ws.send(JSON.stringify(errorResponse))
           return
         }
 
@@ -513,7 +589,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         
         // Send success response with updated data
         const updatedMatch = await db.matches.get(matchId)
-        ws.send(JSON.stringify({
+        const response = {
           type: 'match-update-response',
           requestId,
           matchId: matchId,
@@ -527,30 +603,88 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             sets: data.sets || [],
             events: data.events || []
           }
-        }))
+        }
+        console.log('[Scoreboard WebSocket] Sending match-update-response:', { requestId, success: true })
+        ws.send(JSON.stringify(response))
       } catch (err) {
         console.error('[WebSocket] Error handling match update request:', err)
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
+          const errorResponse = {
             type: 'match-update-response',
             requestId: request.requestId,
             matchId: request.matchId,
             success: false,
-            error: 'Error updating match'
-          }))
+            error: err.message || 'Error updating match'
+          }
+          console.log('[Scoreboard WebSocket] Sending match-update-response (error):', errorResponse)
+          ws.send(JSON.stringify(errorResponse))
         }
       }
     }
 
+    // When matchId changes, clear the old match from server
+    if (previousMatchIdRef.current && previousMatchIdRef.current !== matchId) {
+      const oldMatchId = previousMatchIdRef.current
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'delete-match',
+            matchId: String(oldMatchId)
+          }))
+          console.log('[WebSocket] Deleted old match from server (matchId changed):', oldMatchId)
+        } catch (err) {
+          console.error('[WebSocket] Error deleting old match:', err)
+        }
+      }
+    }
+    previousMatchIdRef.current = matchId
+    
     // Connect to WebSocket
     connectWebSocket()
 
     return () => {
-      console.log('🔴 [WebSocket] Cleanup - closing connection')
       if (syncInterval) clearInterval(syncInterval)
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
-      if (ws) {
-        ws.close()
+      
+      // Clear all matches from server when component unmounts (scoreboard is source of truth)
+      if (wsRef.current) {
+        const ws = wsRef.current
+        const readyState = ws.readyState
+        
+        // Clear all matches from server before closing
+        if (readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'clear-all-matches'
+            }))
+            console.log('[WebSocket] Cleared all matches from server (component unmounting)')
+          } catch (err) {
+            console.error('[WebSocket] Error clearing matches on unmount:', err)
+          }
+        }
+        
+        // Remove all handlers first to prevent error logs
+        try {
+          ws.onerror = null
+          ws.onclose = null
+          ws.onopen = null
+          ws.onmessage = null
+        } catch (err) {
+          // Ignore if handlers can't be set
+        }
+        
+        // Only try to close if connection is OPEN
+        // Don't close if CONNECTING - let it fail naturally to avoid browser errors
+        if (readyState === WebSocket.OPEN) {
+          try {
+            ws.close(1000, 'Component unmounting')
+          } catch (err) {
+            // Ignore errors during cleanup
+          }
+        }
+        // For CONNECTING or CLOSING states, just null the ref
+        wsRef.current = null
       }
     }
   }, [matchId, serverStatus])
@@ -1139,6 +1273,46 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [data?.events, data?.set, data?.homePlayers, data?.awayPlayers])
 
+  // Check if captain is on court and show modal to select new captain if needed
+  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
+    // Check both prop and localStorage
+    const manageCaptainOnCourtEnabled = manageCaptainOnCourt || localStorage.getItem('manageCaptainOnCourt') === 'true'
+    if (!manageCaptainOnCourtEnabled) return
+    
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
+    const teamLineupState = getTeamLineupState(teamKey)
+    const playersOnCourt = teamLineupState.playersOnCourt || []
+    
+    // Find team captain
+    const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
+    if (!teamCaptain) return
+    
+    // Check if captain is on court
+    const captainOnCourt = playersOnCourt.includes(Number(teamCaptain.number))
+    
+    // Get current captain on court from match
+    const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    
+    // If captain is on court, clear any court captain designation
+    if (captainOnCourt) {
+      if (currentCourtCaptain) {
+        await db.matches.update(matchId, { [captainOnCourtField]: null })
+      }
+      return
+    }
+    
+    // Captain is not on court - check if we need to show modal
+    // If there's already a court captain and they're still on court, no need to ask
+    if (currentCourtCaptain) {
+      const courtCaptainOnCourt = playersOnCourt.includes(Number(currentCourtCaptain))
+      if (courtCaptainOnCourt) return // Court captain is still on court, no need to ask
+    }
+    
+    // Show modal to select new captain on court
+    setCaptainOnCourtModal({ team: teamKey })
+  }, [manageCaptainOnCourt, data, matchId, getTeamLineupState])
+
   const buildOnCourt = useCallback((players, isLeft, teamKey) => {
     const { currentLineup, positionLiberoMap } = getTeamLineupState(teamKey)
 
@@ -1447,7 +1621,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Helper function to get next sequence number for events
   const getNextSeq = useCallback(async () => {
     const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+    const coinTossEvent = allEvents.find(e => e.type === 'coin_toss')
     const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
+    
+    // If coin toss exists and has seq=1, ensure next seq is at least 2
+    // Otherwise, if no coin toss exists, the next event should be seq=1 (for coin toss)
+    // But if coin toss already exists, start from maxSeq + 1
+    if (coinTossEvent && coinTossEvent.seq === 1) {
+      return Math.max(2, maxSeq + 1)
+    }
     return maxSeq + 1
   }, [matchId])
 
@@ -1545,12 +1727,133 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           console.error('Error generating fillable PDF:', error)
         }
       }
+
+      // Debug function to check games in progress
+      window.debugCheckGamesInProgress = async () => {
+        try {
+          console.log('🔍 Checking games from two sources:')
+          console.log('   1. Local IndexedDB (current match data)')
+          console.log('   2. Server API (what Referee Dashboard sees)')
+          console.log('')
+          
+          // 1. Check local IndexedDB
+          const allMatches = await db.matches.toArray()
+          const inProgressMatches = allMatches.filter(m => 
+            m.status === 'live' || m.status === 'scheduled'
+          )
+          
+          console.log(`📦 Local IndexedDB: ${inProgressMatches.length} match(es)`)
+          
+          // 2. Check server API (what Referee Dashboard actually uses)
+          let serverMatches = []
+          try {
+            const { listAvailableMatches } = await import('../utils/serverDataSync')
+            const serverResult = await listAvailableMatches()
+            if (serverResult.success && serverResult.matches) {
+              serverMatches = serverResult.matches
+            }
+          } catch (err) {
+            console.warn('⚠️ Could not fetch from server API:', err.message)
+          }
+          
+          console.log(`🌐 Server API: ${serverMatches.length} match(es) available in Referee Dashboard`)
+          console.log('')
+          
+          if (serverMatches.length > 0 && inProgressMatches.length === 0) {
+            console.log('⚠️ DISCREPANCY DETECTED!')
+            console.log('   Server has matches but local DB does not.')
+            console.log('   This means matches exist in server memory but not synced to local DB.')
+            console.log('')
+          }
+          
+          // Show server matches (what actually appears in dropdown)
+          if (serverMatches.length > 0) {
+            console.log('📋 Matches available in Referee Dashboard dropdown:')
+            console.table(serverMatches.map(m => ({
+              id: m.id,
+              gameNumber: m.gameNumber,
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              status: m.status,
+              dateTime: m.dateTime,
+              refereeConnectionEnabled: m.refereeConnectionEnabled
+            })))
+            
+            serverMatches.forEach((m, idx) => {
+              console.log(`\n🎮 Server Match ${idx + 1}:`)
+              console.log(`   ID: ${m.id}`)
+              console.log(`   Game #: ${m.gameNumber}`)
+              console.log(`   Teams: ${m.homeTeam} vs ${m.awayTeam}`)
+              console.log(`   Status: ${m.status}`)
+              console.log(`   Date/Time: ${m.dateTime}`)
+              console.log(`   Referee Connection: ${m.refereeConnectionEnabled ? '✅ Enabled' : '❌ Disabled'}`)
+            })
+          }
+          
+          // Show local DB matches with details
+          if (inProgressMatches.length > 0) {
+            const matchesWithDetails = await Promise.all(
+              inProgressMatches.map(async (match) => {
+                const homeTeam = match.homeTeamId ? await db.teams.get(match.homeTeamId) : null
+                const awayTeam = match.awayTeamId ? await db.teams.get(match.awayTeamId) : null
+                const sets = await db.sets.where('matchId').equals(match.id).toArray()
+                const currentSet = sets.find(s => !s.finished) || sets[sets.length - 1]
+                const eventCount = await db.events.where('matchId').equals(match.id).count()
+                const isCurrentMatch = matchId && String(match.id) === String(matchId)
+                
+                return {
+                  id: match.id,
+                  gameNumber: match.gameNumber || match.externalId || 'N/A',
+                  homeTeam: homeTeam?.name || 'Unknown',
+                  awayTeam: awayTeam?.name || 'Unknown',
+                  status: match.status,
+                  isLive: match.status === 'live',
+                  currentSet: currentSet ? {
+                    index: currentSet.index,
+                    homePoints: currentSet.homePoints,
+                    awayPoints: currentSet.awayPoints
+                  } : null,
+                  totalSets: sets.length,
+                  eventCount: eventCount,
+                  refereeConnectionEnabled: match.refereeConnectionEnabled !== false,
+                  isCurrentMatch: isCurrentMatch
+                }
+              })
+            )
+            
+            console.log('\n📦 Local IndexedDB matches:')
+            console.table(matchesWithDetails)
+            
+            matchesWithDetails.forEach((m, idx) => {
+              const statusIcon = m.isLive ? '🔴' : '📅'
+              console.log(`\n${statusIcon} Local Match ${idx + 1}:${m.isCurrentMatch ? ' (CURRENT)' : ''}`)
+              console.log(`   ID: ${m.id}`)
+              console.log(`   Game #: ${m.gameNumber}`)
+              console.log(`   Teams: ${m.homeTeam} vs ${m.awayTeam}`)
+              console.log(`   Status: ${m.status} ${m.isLive ? '(LIVE)' : '(SCHEDULED)'}`)
+              if (m.currentSet) {
+                console.log(`   Current Set: Set ${m.currentSet.index + 1} - ${m.currentSet.homePoints} - ${m.currentSet.awayPoints}`)
+              }
+              console.log(`   Total Sets: ${m.totalSets}, Events: ${m.eventCount}`)
+            })
+          }
+          
+          return { 
+            localDB: { matches: inProgressMatches, count: inProgressMatches.length },
+            serverAPI: { matches: serverMatches, count: serverMatches.length }
+          }
+        } catch (error) {
+          console.error('❌ Error checking games in progress:', error)
+          return { localDB: { matches: [], count: 0 }, serverAPI: { matches: [], count: 0 }, error: error.message }
+        }
+      }
     }
     return () => {
       if (typeof window !== 'undefined') {
         if (window.debugGeneratePDF) delete window.debugGeneratePDF
         if (window.debugExportMatchData) delete window.debugExportMatchData
         if (window.debugGenerateFillablePDF) delete window.debugGenerateFillablePDF
+        if (window.debugCheckGamesInProgress) delete window.debugCheckGamesInProgress
       }
     }
   }, [matchId, data?.match, data?.homeTeam, data?.awayTeam, data?.homePlayers, data?.awayPlayers])
@@ -2206,6 +2509,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   liberoType: liberoPlayer?.libero,
                   reason: 'rotation_to_front_row'
                 })
+                
+                // Check if the libero leaving is the court captain
+                const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+                const currentCourtCaptain = data?.match?.[captainOnCourtField]
+                if (currentCourtCaptain === liberoNumber) {
+                  setTimeout(() => {
+                    checkAndRequestCaptainOnCourt(teamKey)
+                  }, 100)
+                }
               } else {
                 // Fallback: if we can't find the original player, remove the libero anyway - they can't be in front row
                 rotatedLineup[position] = ''
@@ -2552,6 +2864,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         })
       }
       
+      // Notify server to delete match from matchDataStore (since it's now final)
+      const currentWs = wsRef.current
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        try {
+          currentWs.send(JSON.stringify({
+            type: 'delete-match',
+            matchId: String(matchId)
+          }))
+          console.log('[Scoreboard WebSocket] Notified server to delete ended match:', matchId)
+        } catch (err) {
+          console.error('[Scoreboard WebSocket] Error notifying server of match end:', err)
+        }
+      } else {
+        console.warn('[Scoreboard] WebSocket not available to notify server of match end')
+      }
+      
       if (onFinishSet) onFinishSet(data.set)
     } else {
       // Start countdown immediately when set ends (not match end)
@@ -2746,7 +3074,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     let eventDescription = ''
-    if (event.type === 'point') {
+    if (event.type === 'coin_toss') {
+      const teamA = event.payload?.teamA === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+      const teamB = event.payload?.teamB === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+      const firstServeTeam = event.payload?.firstServe === 'home' ? teamA : teamB
+      eventDescription = `Coin toss — Team A: ${teamA}, Team B: ${teamB}, First serve: ${firstServeTeam}`
+    } else if (event.type === 'point') {
       eventDescription = `Point — ${teamName} (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
     } else if (event.type === 'timeout') {
       eventDescription = `Timeout — ${teamName}`
@@ -4770,9 +5103,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setLiberoDropdown(null) // Close libero dropdown when confirming substitution
     
     // Check if captain is on court after substitution
-    setTimeout(() => {
-      checkAndRequestCaptainOnCourt(team)
-    }, 100)
+    // Check if the player leaving is the captain or court captain
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
+    
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      setTimeout(() => {
+        checkAndRequestCaptainOnCourt(team)
+      }, 100)
+    }
     
     // Check if this is an injury substitution for a libero - if so, log libero_unable and check for re-designation
     if (isInjury && playerOut) {
@@ -5169,6 +5512,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Close the confirmation modal
       setSanctionConfirmModal(null)
       
+      // Check if the player being expelled/disqualified is the captain or court captain
+      const sanctionedPlayer = teamPlayers?.find(p => p.number === playerNumber)
+      const isSanctionedCaptain = sanctionedPlayer && (sanctionedPlayer.isCaptain || sanctionedPlayer.captain)
+      const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+      const currentCourtCaptain = data?.match?.[captainOnCourtField]
+      const isSanctionedCourtCaptain = currentCourtCaptain === playerNumber
+      
       // First, check if a legal substitution is possible (not exceptional)
       const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
       if (legalSubstitutes.length > 0) {
@@ -5219,6 +5569,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           // No exceptional substitution possible - automatic forfait
           await handleForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification')
         }
+      }
+      
+      // Check if captain is on court after substitution (if substitution happened) or forfait
+      if (isSanctionedCaptain || isSanctionedCourtCaptain) {
+        setTimeout(() => {
+          checkAndRequestCaptainOnCourt(team)
+        }, 100)
       }
     } else if (sanctionType === 'expulsion' || sanctionType === 'disqualification') {
       // Expulsion/disqualification for bench players or officials - just log the sanction
@@ -5443,9 +5800,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setLiberoConfirm(null)
     
     // Check if captain is on court after libero entry
-    setTimeout(() => {
-      checkAndRequestCaptainOnCourt(team)
-    }, 100)
+    // The playerOut is leaving, check if they're captain
+    // Reuse teamPlayers variable already declared above
+    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
+    
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      setTimeout(() => {
+        checkAndRequestCaptainOnCourt(team)
+      }, 100)
+    }
     setSubstitutionDropdown(null) // Close substitution dropdown if open
     setLiberoDropdown(null) // Close libero dropdown if open
   }, [liberoConfirm, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable])
@@ -5535,7 +5902,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
     
     setLiberoReentryModal(null)
-  }, [liberoReentryModal, data?.set, data?.events, matchId, logEvent, isLiberoUnable])
+    
+    // Check if captain is on court after libero reentry (playerOut is leaving)
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
+    
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      setTimeout(() => {
+        checkAndRequestCaptainOnCourt(team)
+      }, 100)
+    }
+  }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable, checkAndRequestCaptainOnCourt])
 
   const cancelLiberoReentry = useCallback(() => {
     setLiberoReentryModal(null)
@@ -5653,7 +6034,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       playerIn: originalPlayerNumber,
       liberoType: liberoOnCourt.liberoType
     })
-  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
+    
+    // Check if the libero leaving is the court captain
+    const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    if (currentCourtCaptain === liberoOnCourt.liberoNumber) {
+      setTimeout(() => {
+        checkAndRequestCaptainOnCourt(teamKey)
+      }, 100)
+    }
+  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers, checkAndRequestCaptainOnCourt])
 
   // Handle libero re-designation
   const confirmLiberoRedesignation = useCallback(async (newLiberoNumber) => {
@@ -5910,53 +6300,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled !== false
   const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled !== false
   const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled !== false
-
-  // Check if captain is on court and request captain on court if needed
-  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
-    // Check both prop and localStorage
-    const manageCaptainOnCourtEnabled = manageCaptainOnCourt || localStorage.getItem('manageCaptainOnCourt') === 'true'
-    if (!manageCaptainOnCourtEnabled || !refereeConnectionEnabled || !isAnyRefereeConnected) return
+  
+  // Handle captain on court selection
+  const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
+    if (!captainOnCourtModal || !matchId) return
     
-    const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
-    const teamLineupState = getTeamLineupState(teamKey)
-    const playersOnCourt = teamLineupState.playersOnCourt || []
+    const { team } = captainOnCourtModal
+    const field = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     
-    // Find team captain
-    const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
-    if (!teamCaptain) return
+    // Save the selected captain on court
+    await db.matches.update(matchId, { [field]: playerNumber })
     
-    // Check if captain is on court
-    const captainOnCourt = playersOnCourt.includes(Number(teamCaptain.number))
-    
-    // Get current captain on court from match
-    const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    
-    // If captain is on court, clear any court captain designation
-    if (captainOnCourt) {
-      if (currentCourtCaptain) {
-        await db.matches.update(matchId, { [captainOnCourtField]: null })
-      }
-      return
-    }
-    
-    // Captain is not on court - check if we need to request
-    // If there's already a court captain and they're still on court, no need to ask
-    if (currentCourtCaptain) {
-      const courtCaptainOnCourt = playersOnCourt.includes(Number(currentCourtCaptain))
-      if (courtCaptainOnCourt) return // Court captain is still on court, no need to ask
-    }
-    
-    // Request captain on court from referee
-    await db.matches.update(matchId, {
-      [`${teamKey}CaptainOnCourtRequest`]: {
-        team: teamKey,
-        playersOnCourt: playersOnCourt,
-        lineup: teamLineupState.currentLineup,
-        timestamp: new Date().toISOString()
-      }
-    })
-  }, [manageCaptainOnCourt, refereeConnectionEnabled, isAnyRefereeConnected, data, matchId, getTeamLineupState])
+    setCaptainOnCourtModal(null)
+  }, [captainOnCourtModal, matchId])
+  
+  // Handle cancel (no captain selected)
+  const handleCancelCaptainOnCourt = useCallback(() => {
+    setCaptainOnCourtModal(null)
+  }, [])
 
   // Check if bench teams are connected (heartbeat within last 15 seconds)
   const isHomeTeamConnected = useMemo(() => {
@@ -7864,7 +8225,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         boxShadow: ref1Status ? `0 0 8px ${ref1StatusColor}80` : 'none'
                       }} />
                       <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
-                        1st Ref: {ref1Name}
+                        1<sup><small><small>st</small></small></sup> Ref: {ref1Name}
                       </span>
                     </div>
                   </div>
@@ -8688,7 +9049,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 gap: '8px'
               }}>
                 <div 
-                  onClick={() => setShowCallRefereeButton(!showCallRefereeButton)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -8696,15 +9056,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     padding: '6px 12px',
                     background: 'rgba(255, 255, 255, 0.1)',
                     borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                    border: '1px solid rgba(255, 255, 255, 0.2)'
                   }}
                 >
                   <div style={{
@@ -8715,7 +9067,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     boxShadow: ref2Status ? `0 0 8px ${ref2StatusColor}80` : 'none'
                   }} />
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
-                    2nd Ref: {ref2Name}
+                    2<sup><small><small>nd</small></small></sup> Ref: {ref2Name}
                   </span>
                 </div>
               </div>
@@ -9758,6 +10110,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}>
                 Show Rosters
               </div>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onClick={() => {
+                setShowPinsModal(true)
+                setMenuModal(false)
+              }}>
+                Show PINs
+              </div>
               {onOpenMatchSetup && (
                 <div style={{
                   background: 'rgba(255, 255, 255, 0.05)',
@@ -9867,6 +10241,429 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}>
                 ⚙️ Options
               </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Show PINs Modal */}
+      {showPinsModal && (
+        <Modal
+          title="Game PINs"
+          open={true}
+          onClose={() => setShowPinsModal(false)}
+          width={500}
+        >
+          <div style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {data?.match?.gameNumber && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game Number</div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {data.match.gameNumber || data.match.game_n || 'N/A'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const gameNumber = data.match.gameNumber || data.match.game_n || ''
+                      try {
+                        await navigator.clipboard.writeText(String(gameNumber))
+                        alert('Game number copied to clipboard!')
+                      } catch (err) {
+                        console.error('Failed to copy:', err)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+              
+              {data?.match?.refereePin && data?.match?.refereeConnectionEnabled !== false && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Referee PIN</div>
+                      {(() => {
+                        const isReferee1Connected = data?.match?.lastReferee1Heartbeat && (new Date().getTime() - new Date(data.match.lastReferee1Heartbeat).getTime()) < 15000
+                        const isReferee2Connected = data?.match?.lastReferee2Heartbeat && (new Date().getTime() - new Date(data.match.lastReferee2Heartbeat).getTime()) < 15000
+                        const isConnected = isReferee1Connected || isReferee2Connected
+                        return (
+                          <div style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: isConnected ? '#22c55e' : '#eab308',
+                            boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.6)' : 'none'
+                          }} />
+                        )
+                      })()}
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {String(data.match.refereePin).padStart(6, '0')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const pin = String(data.match.refereePin).padStart(6, '0')
+                      try {
+                        await navigator.clipboard.writeText(pin)
+                        alert('Referee PIN copied to clipboard!')
+                      } catch (err) {
+                        console.error('Failed to copy:', err)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+              
+              {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled !== false && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                        {data?.homeTeam?.name || 'Home Team'} PIN
+                      </div>
+                      {(() => {
+                        const isConnected = data?.match?.lastHomeTeamHeartbeat && (new Date().getTime() - new Date(data.match.lastHomeTeamHeartbeat).getTime()) < 15000
+                        return (
+                          <div style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: isConnected ? '#22c55e' : '#eab308',
+                            boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.6)' : 'none'
+                          }} />
+                        )
+                      })()}
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {String(data.match.homeTeamPin).padStart(6, '0')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const pin = String(data.match.homeTeamPin).padStart(6, '0')
+                      try {
+                        await navigator.clipboard.writeText(pin)
+                        alert('Home Team PIN copied to clipboard!')
+                      } catch (err) {
+                        console.error('Failed to copy:', err)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+              
+              {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled !== false && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                        {data?.awayTeam?.name || 'Away Team'} PIN
+                      </div>
+                      {(() => {
+                        const isConnected = data?.match?.lastAwayTeamHeartbeat && (new Date().getTime() - new Date(data.match.lastAwayTeamHeartbeat).getTime()) < 15000
+                        return (
+                          <div style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: isConnected ? '#22c55e' : '#eab308',
+                            boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.6)' : 'none'
+                          }} />
+                        )
+                      })()}
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {String(data.match.awayTeamPin).padStart(6, '0')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const pin = String(data.match.awayTeamPin).padStart(6, '0')
+                      try {
+                        await navigator.clipboard.writeText(pin)
+                        alert('Away Team PIN copied to clipboard!')
+                      } catch (err) {
+                        console.error('Failed to copy:', err)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+              
+              {data?.match?.homeTeamUploadPin && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      {data?.homeTeam?.name || 'Home Team'} Upload PIN
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {String(data.match.homeTeamUploadPin).padStart(6, '0')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const pin = String(data.match.homeTeamUploadPin).padStart(6, '0')
+                      try {
+                        await navigator.clipboard.writeText(pin)
+                        alert('Home Team Upload PIN copied to clipboard!')
+                      } catch (err) {
+                        console.error('Failed to copy:', err)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+              
+              {data?.match?.awayTeamUploadPin && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      {data?.awayTeam?.name || 'Away Team'} Upload PIN
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {String(data.match.awayTeamUploadPin).padStart(6, '0')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const pin = String(data.match.awayTeamUploadPin).padStart(6, '0')
+                      try {
+                        await navigator.clipboard.writeText(pin)
+                        alert('Away Team Upload PIN copied to clipboard!')
+                      } catch (err) {
+                        console.error('Failed to copy:', err)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Captain on Court Modal */}
+      {captainOnCourtModal && (
+        <Modal
+          title={`Select Captain on Court - ${captainOnCourtModal.team === 'home' ? (data?.homeTeam?.name || 'Home Team') : (data?.awayTeam?.name || 'Away Team')}`}
+          open={true}
+          onClose={handleCancelCaptainOnCourt}
+          width={600}
+        >
+          <div style={{ padding: '24px' }}>
+            <p style={{ marginBottom: '20px', fontSize: '16px' }}>
+              The team captain is not on court. Please select which player is acting as captain on court:
+            </p>
+            
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(3, 1fr)', 
+              gap: '12px',
+              marginBottom: '24px'
+            }}>
+              {(() => {
+                const team = captainOnCourtModal.team
+                const teamPlayers = team === 'home' 
+                  ? (data?.homePlayers || []) 
+                  : (data?.awayPlayers || [])
+                const teamLineupState = getTeamLineupState(team)
+                const currentLineup = teamLineupState.currentLineup || {}
+                
+                // Get players currently on court (including liberos)
+                const playersOnCourtList = []
+                const positionOrder = ['I', 'II', 'III', 'IV', 'V', 'VI']
+                
+                positionOrder.forEach(pos => {
+                  const playerNumber = currentLineup[pos]
+                  if (playerNumber) {
+                    const player = teamPlayers.find(p => String(p.number) === String(playerNumber))
+                    if (player) {
+                      playersOnCourtList.push({
+                        number: player.number,
+                        name: player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim() || `Player ${player.number}`,
+                        position: pos,
+                        isLibero: !!(player.libero && player.libero !== ''),
+                        isTeamCaptain: !!(player.isCaptain || player.captain)
+                      })
+                    }
+                  }
+                })
+                
+                return playersOnCourtList.map((player) => (
+                  <button
+                    key={player.number}
+                    onClick={() => handleSelectCaptainOnCourt(player.number)}
+                    style={{
+                      padding: '16px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '2px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      textAlign: 'center'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                    }}
+                  >
+                    <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>
+                      #{player.number}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      {player.name || 'Player'}
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                      Position {player.position}
+                      {player.isLibero && ' (Libero)'}
+                    </div>
+                  </button>
+                ))
+              })()}
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleCancelCaptainOnCourt}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel (No Captain)
+              </button>
             </div>
           </div>
         </Modal>
@@ -12281,7 +13078,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}>
                           <div style={{ fontWeight: 600, fontSize: '12px' }}>Set {set.index}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <label style={{ fontSize: '11px', minWidth: '80px' }}>Start Time:</label>
                               <input
                                 type="datetime-local"
@@ -12300,7 +13097,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 }}
                               />
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <label style={{ fontSize: '11px', minWidth: '80px' }}>End Time:</label>
                               <input
                                 type="datetime-local"
