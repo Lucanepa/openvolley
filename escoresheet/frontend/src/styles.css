@@ -7,7 +7,12 @@
     --danger: #ef4444;
   }
   
-  html, body, #root { height: 100%; }
+  html, body, #root { 
+    height: 100%; 
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
   body {
     margin: 0;
     background: var(--bg);
@@ -23,6 +28,11 @@
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+  *, *::before, *::after {
+    box-sizing: border-box;
   }
   
   /* Allow text selection in form elements */
