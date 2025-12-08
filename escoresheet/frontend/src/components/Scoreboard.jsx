@@ -4,6 +4,7 @@ import { db } from '../db/db'
 import Modal from './Modal'
 import GuideModal from './GuideModal'
 import ConnectionStatus from './ConnectionStatus'
+import MenuList from './MenuList'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -6945,17 +6946,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div className="toolbar-divider" />
           <span className="toolbar-clock">{formatTimestamp(now)}</span>
           </div>
-        <div className="toolbar-center">
-         Openvolley - eScoresheet
-        </div>
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Connection Status Indicator */}
-          <ConnectionStatus
-            connectionStatuses={connectionStatuses}
-            connectionDebugInfo={connectionDebugInfo}
-            position="right"
-            size="normal"
-          />
+
           
           {refereeConnectionEnabled && isAnyRefereeConnected && (
             <button 
@@ -6979,96 +6971,181 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               Call Referee
             </button>
           )}
-          <button 
-            className="secondary" 
-            onClick={() => setShowHelpModal(true)}
-            style={{ 
-              background: '#3b82f6', 
-              color: '#fff', 
-              fontWeight: 600,
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '20px',
-              padding: 0
-            }}
-            title="Help & Video Guides"
-          >
-            ?
-          </button>
-          <button 
-            className="secondary" 
-            onClick={() => setMenuModal(true)}
-            style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
-          >
-            Menu
-          </button>
-          <button 
-            className="secondary" 
-            onClick={async () => {
-              try {
-                const match = data?.match
-                if (!match) {
-                  alert('No match data available')
-                  return
-                }
-                
-                // Gather all match data for the scoresheet
-                const allSets = data?.sets || []
-                const allEvents = data?.events || []
-                
-                const scoresheetData = {
-                  match,
-                  homeTeam: data?.homeTeam,
-                  awayTeam: data?.awayTeam,
-                  homePlayers: data?.homePlayers || [],
-                  awayPlayers: data?.awayPlayers || [],
-                  sets: allSets,
-                  events: allEvents,
-                  sanctions: [] // TODO: Extract sanctions from events
-                }
-                
-                // Store data in sessionStorage to pass to new window
-                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                
-                // Open scoresheet in new window
-                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
-                
-                if (!scoresheetWindow) {
-                  alert('Please allow popups to view the scoresheet')
-                  return
-                }
-                
-                // Set up error listener for scoresheet window
-                const errorListener = (event) => {
-                  // Only accept messages from the scoresheet window
-                  if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+         
+          <MenuList
+            buttonLabel="Menu"
+            buttonClassName="secondary"
+            buttonStyle={{ background: '#22c55e', color: '#000', fontWeight: 600, width: '160px', textAlign: 'center' }}
+            position="right"
+            items={[
+              {
+                key: 'scoresheet',
+                label: 'Scoresheet',
+                icon: '📄',
+                onClick: async () => {
+                  try {
+                    const match = data?.match
+                    if (!match) {
+                      alert('No match data available')
+                      return
+                    }
+                    
+                    // Gather all match data for the scoresheet
+                    const allSets = data?.sets || []
+                    const allEvents = data?.events || []
+                    
+                    const scoresheetData = {
+                      match,
+                      homeTeam: data?.homeTeam,
+                      awayTeam: data?.awayTeam,
+                      homePlayers: data?.homePlayers || [],
+                      awayPlayers: data?.awayPlayers || [],
+                      sets: allSets,
+                      events: allEvents,
+                      sanctions: [] // TODO: Extract sanctions from events
+                    }
+                    
+                    // Store data in sessionStorage to pass to new window
+                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                    
+                    // Open scoresheet in new window
+                    const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+                    
+                    if (!scoresheetWindow) {
+                      alert('Please allow popups to view the scoresheet')
+                      return
+                    }
+                    
+                    // Set up error listener for scoresheet window
+                    const errorListener = (event) => {
+                      // Only accept messages from the scoresheet window
+                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                        setScoresheetErrorModal({
+                          error: event.data.error || 'Unknown error',
+                          details: event.data.details || event.data.stack || ''
+                        })
+                        window.removeEventListener('message', errorListener)
+                      }
+                    }
+                    
+                    window.addEventListener('message', errorListener)
+                    
+                    // Clean up listener after 30 seconds (scoresheet should load by then)
+                    setTimeout(() => {
+                      window.removeEventListener('message', errorListener)
+                    }, 30000)
+                  } catch (error) {
+                    console.error('Error opening scoresheet:', error)
                     setScoresheetErrorModal({
-                      error: event.data.error || 'Unknown error',
-                      details: event.data.details || event.data.stack || ''
+                      error: 'Failed to open scoresheet',
+                      details: error.message || ''
                     })
-                    window.removeEventListener('message', errorListener)
                   }
                 }
-                
-                window.addEventListener('message', errorListener)
-                
-                // Clean up listener after 30 seconds (scoresheet should load by then)
-                setTimeout(() => {
-                  window.removeEventListener('message', errorListener)
-                }, 30000)
-              } catch (error) {
-                console.error('Error opening scoresheet:', error)
-                alert('Error opening scoresheet: ' + error.message)
+              },
+              { separator: true },
+              {
+                key: 'action-log',
+                label: 'Show Action Log',
+                onClick: () => {
+                  setShowLogs(true)
+                }
+              },
+              {
+                key: 'sanctions',
+                label: 'Show Sanctions and Results',
+                onClick: () => {
+                  setShowSanctions(true)
+                }
+              },
+              {
+                key: 'manual',
+                label: 'Manual Changes',
+                onClick: () => {
+                  setShowManualPanel(true)
+                }
+              },
+              {
+                key: 'remarks',
+                label: 'Open Remarks Recording',
+                onClick: () => {
+                  setShowRemarks(true)
+                }
+              },
+              {
+                key: 'rosters',
+                label: 'Show Rosters',
+                onClick: () => {
+                  setShowRosters(true)
+                }
+              },
+              {
+                key: 'pins',
+                label: 'Show PINs',
+                onClick: () => {
+                  setShowPinsModal(true)
+                }
+              },
+              ...(onOpenMatchSetup ? [{
+                key: 'match-setup',
+                label: 'Show Match Setup',
+                onClick: () => {
+                  onOpenMatchSetup()
+                }
+              }] : []),
+              { separator: true },
+              {
+                key: 'export',
+                label: '📥 Download Game Data (JSON)',
+                onClick: async () => {
+                  try {
+                    // Export all database data
+                    const allMatches = await db.matches.toArray()
+                    const allTeams = await db.teams.toArray()
+                    const allPlayers = await db.players.toArray()
+                    const allSets = await db.sets.toArray()
+                    const allEvents = await db.events.toArray()
+                    const allReferees = await db.referees.toArray()
+                    const allScorers = await db.scorers.toArray()
+                    
+                    const exportData = {
+                      exportDate: new Date().toISOString(),
+                      matchId: matchId,
+                      matches: allMatches,
+                      teams: allTeams,
+                      players: allPlayers,
+                      sets: allSets,
+                      events: allEvents,
+                      referees: allReferees,
+                      scorers: allScorers
+                    }
+                    
+                    // Create a blob and download
+                    const jsonString = JSON.stringify(exportData, null, 2)
+                    const blob = new Blob([jsonString], { type: 'application/json' })
+                    const url = URL.createObjectURL(blob)
+                    const link = document.createElement('a')
+                    link.href = url
+                    link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+                    URL.revokeObjectURL(url)
+                  } catch (error) {
+                    console.error('Error exporting database:', error)
+                    alert('Error exporting database data. Please try again.')
+                  }
+                }
+              },
+              {
+                key: 'options',
+                label: '⚙️ Options',
+                onClick: () => {
+                  setShowOptionsInMenu(true)
+                }
               }
-            }}
-            style={{ marginLeft: '8px' }}
-          >
-            🔍 Scoresheet
-          </button>
+            ]}
+          />
         </div>
       </div>
 
@@ -10151,7 +10228,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       </div>
 
 
-      {/* Menu Modal */}
+      {/* Menu Modal - Keep for Options submenu */}
       {menuModal && (
         <Modal
           title="Menu"

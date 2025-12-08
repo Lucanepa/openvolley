@@ -1,8 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import { getMatchData, subscribeToMatchData, updateMatchData } from '../utils/serverDataSync'
+import { getMatchData, subscribeToMatchData, updateMatchData, listAvailableMatches } from '../utils/serverDataSync'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import Modal from './Modal'
+import ConnectionStatus from './ConnectionStatus'
+import MenuList from './MenuList'
+import { db } from '../db/db'
 
 export default function Referee({ matchId, onExit }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
@@ -25,6 +28,17 @@ export default function Referee({ matchId, onExit }) {
   
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
+  
+  // Connection status for ConnectionStatus component
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    api: 'unknown',
+    server: 'unknown',
+    websocket: 'unknown',
+    scoreboard: 'unknown',
+    match: 'unknown',
+    db: 'unknown'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
   
   // Track consecutive heartbeat failures
   const heartbeatFailureCountRef = useRef(0)
@@ -237,6 +251,252 @@ export default function Referee({ matchId, onExit }) {
       return () => clearInterval(interval)
     }
   }, [connectionType, connectionStatus])
+
+  // Check connection statuses for ConnectionStatus component
+  const checkConnectionStatuses = useCallback(async () => {
+    const statuses = {
+      api: 'unknown',
+      server: 'unknown',
+      websocket: 'unknown',
+      scoreboard: 'unknown',
+      match: 'unknown',
+      db: 'unknown'
+    }
+    const debugInfo = {}
+    
+    // Check API/Server connection
+    try {
+      const result = await listAvailableMatches()
+      if (result.success) {
+        statuses.api = 'connected'
+        statuses.server = 'connected'
+        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
+        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
+      } else {
+        statuses.api = 'disconnected'
+        statuses.server = 'disconnected'
+        debugInfo.api = { status: 'disconnected', message: `API request failed: ${result.error || 'Unknown error'}` }
+        debugInfo.server = { status: 'disconnected', message: `Server request failed: ${result.error || 'Unknown error'}` }
+      }
+    } catch (err) {
+      statuses.api = 'disconnected'
+      statuses.server = 'disconnected'
+      debugInfo.api = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to API'}` }
+      debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
+    }
+    
+    // Check WebSocket server availability
+    // Use a cached check to avoid creating too many test connections
+    // Check if we have an active subscription connection as a proxy for WebSocket availability
+    try {
+      // Instead of creating a test connection, check if we have data indicating WebSocket is working
+      // If we have match data and it's updating, WebSocket is likely working
+      if (data?.match?.updatedAt) {
+        const lastUpdate = new Date(data.match.updatedAt).getTime()
+        const currentTime = new Date().getTime()
+        // If match was updated in last 10 seconds, assume WebSocket is working
+        if ((currentTime - lastUpdate) < 10000) {
+          statuses.websocket = 'connected'
+          debugInfo.websocket = { status: 'connected', message: 'WebSocket connection active (match data updating)' }
+        } else {
+          // Try a lightweight check - just test if we can create a connection quickly
+          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+          const hostname = window.location.hostname
+          const wsPort = 8080
+          const wsUrl = `${protocol}://${hostname}:${wsPort}`
+          
+          // Use a very short timeout to avoid interfering with actual connections
+          const wsTest = new WebSocket(wsUrl)
+          let resolved = false
+          
+          await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                resolved = true
+                try {
+                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                    wsTest.close()
+                  }
+                } catch (e) {}
+                statuses.websocket = 'disconnected'
+                debugInfo.websocket = { 
+                  status: 'disconnected', 
+                  message: `Connection timeout. Server may not be running on port ${wsPort}.`,
+                  details: `Attempted to connect to ${wsUrl}`
+                }
+                resolve()
+              }
+            }, 500) // Very short timeout - 500ms
+            
+            wsTest.onopen = () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                try {
+                  wsTest.close()
+                } catch (e) {}
+                statuses.websocket = 'connected'
+                debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
+                resolve()
+              }
+            }
+            
+            wsTest.onerror = () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                try {
+                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                    wsTest.close()
+                  }
+                } catch (e) {}
+                statuses.websocket = 'disconnected'
+                debugInfo.websocket = { 
+                  status: 'disconnected', 
+                  message: `WebSocket connection error. Server may not be running or port ${wsPort} is blocked.`,
+                  details: `Failed to connect to ${wsUrl}`
+                }
+                resolve()
+              }
+            }
+            
+            wsTest.onclose = (event) => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                statuses.websocket = 'disconnected'
+                if (!debugInfo.websocket) {
+                  debugInfo.websocket = { 
+                    status: 'disconnected', 
+                    message: `Connection closed (code: ${event.code}).`,
+                    details: `WebSocket server on port ${wsPort} may not be running`
+                  }
+                }
+                resolve()
+              }
+            }
+          })
+        }
+      } else {
+        // No match data, do a quick test
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        const wsPort = 8080
+        const wsUrl = `${protocol}://${hostname}:${wsPort}`
+        
+        const wsTest = new WebSocket(wsUrl)
+        let resolved = false
+        
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            if (!resolved) {
+              resolved = true
+              try {
+                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                  wsTest.close()
+                }
+              } catch (e) {}
+              statuses.websocket = 'disconnected'
+              debugInfo.websocket = { 
+                status: 'disconnected', 
+                message: `Connection timeout. Server may not be running on port ${wsPort}.`,
+                details: `Attempted to connect to ${wsUrl}`
+              }
+              resolve()
+            }
+          }, 500) // Very short timeout
+          
+          wsTest.onopen = () => {
+            if (!resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              try {
+                wsTest.close()
+              } catch (e) {}
+              statuses.websocket = 'connected'
+              debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
+              resolve()
+            }
+          }
+          
+          wsTest.onerror = () => {
+            if (!resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              try {
+                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                  wsTest.close()
+                }
+              } catch (e) {}
+              statuses.websocket = 'disconnected'
+              debugInfo.websocket = { 
+                status: 'disconnected', 
+                message: `WebSocket connection error. Server may not be running or port ${wsPort} is blocked.`,
+                details: `Failed to connect to ${wsUrl}`
+              }
+              resolve()
+            }
+          }
+          
+          wsTest.onclose = (event) => {
+            if (!resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              statuses.websocket = 'disconnected'
+              if (!debugInfo.websocket) {
+                debugInfo.websocket = { 
+                  status: 'disconnected', 
+                  message: `Connection closed (code: ${event.code}).`,
+                  details: `WebSocket server on port ${wsPort} may not be running`
+                }
+              }
+              resolve()
+            }
+          }
+        })
+      }
+    } catch (err) {
+      statuses.websocket = 'disconnected'
+      debugInfo.websocket = { 
+        status: 'disconnected', 
+        message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
+        details: 'Check if WebSocket server is running'
+      }
+    }
+    
+    // Check Scoreboard connection (same as server for now)
+    statuses.scoreboard = statuses.server
+    debugInfo.scoreboard = debugInfo.server
+    
+    // Check Match status
+    if (matchId && data?.match) {
+      statuses.match = data.match.status === 'live' ? 'live' : data.match.status === 'scheduled' ? 'scheduled' : 'final'
+      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match}` }
+    } else {
+      statuses.match = 'no_match'
+      debugInfo.match = { status: 'no_match', message: 'No match connected.' }
+    }
+    
+    // Check DB (IndexedDB) - always available in browser
+    try {
+      await db.matches.count()
+      statuses.db = 'connected'
+      debugInfo.db = { status: 'connected', message: 'IndexedDB is available' }
+    } catch (err) {
+      statuses.db = 'error'
+      debugInfo.db = { status: 'error', message: `IndexedDB error: ${err.message || 'Unknown error'}` }
+    }
+    
+    setConnectionStatuses(statuses)
+    setConnectionDebugInfo(debugInfo)
+  }, [matchId, data?.match])
+
+  // Periodically check connection statuses
+  useEffect(() => {
+    checkConnectionStatuses()
+    const interval = setInterval(checkConnectionStatuses, 5000) // Check every 5 seconds
+    return () => clearInterval(interval)
+  }, [checkConnectionStatuses])
 
   useEffect(() => {
     if (!matchId) {
@@ -1061,11 +1321,21 @@ export default function Referee({ matchId, onExit }) {
 
   if (!data) return null
 
+  // Calculate responsive font sizes based on viewport height (before PlayerCircle)
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 1000
+  const baseFontSize = Math.max(10, vh * 0.015) // Minimum 10px, scales with viewport
+  const headerFontSize = Math.max(14, vh * 0.02) // Header text larger
+  const scoreFontSize = Math.max(24, vh * 0.05) // Score counter scales
+  const setCounterFontSize = Math.max(12, vh * 0.025) // Set counter scales
+  const labelFontSize = Math.max(10, vh * 0.018) // Team labels scale
+  const tableFontSize = Math.max(9, vh * 0.016) // Results table scales
+  const toSubFontSize = Math.max(10, vh * 0.018) // TO/SUB counters scale
+
   // Check if referee connection is disabled
   if (data.match.refereeConnectionEnabled === false) {
     return (
       <div style={{
-        minHeight: '100vh',
+        height: '100vh',
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
         display: 'flex',
@@ -1111,6 +1381,11 @@ export default function Referee({ matchId, onExit }) {
 
   const PlayerCircle = ({ number, position, team, isServing, liberoSubInfo, teamLiberoCount }) => {
     if (!number) return null
+    
+    // Calculate responsive sizes for player circles
+    const playerCircleSize = Math.max(30, vh * 0.04) // Scales with viewport
+    const playerFontSize = Math.max(16, vh * 0.02) // Scales with viewport
+    const badgeSize = Math.max(9, vh * 0.012) // Position badges scale
     
     // Find player data
     const teamPlayers = team === 'home' ? data.homePlayers : data.awayPlayers
@@ -1159,10 +1434,10 @@ export default function Referee({ matchId, onExit }) {
           position: 'relative',
           background: isLibero ? '#FFF8E7' : undefined,
           color: isLibero ? '#000' : undefined,
-          width: '40px',
-          height: '40px',
-          fontSize: '20px',
-          maxWidth: '60px'
+          width: `${playerCircleSize}px`,
+          height: `${playerCircleSize}px`,
+          fontSize: `${playerFontSize}px`,
+          maxWidth: `${playerCircleSize * 1.5}px`
         }}
       >
         {/* Substituted player indicator (top-right) */}
@@ -1177,12 +1452,12 @@ export default function Referee({ matchId, onExit }) {
             alt="Volleyball" 
             style={{
               position: 'absolute',
-              left: team === leftTeam ? '-35px' : 'auto',
-              right: team === rightTeam ? '-35px' : 'auto',
+              left: team === leftTeam ? `-${playerCircleSize * 0.9}px` : 'auto',
+              right: team === rightTeam ? `-${playerCircleSize * 0.9}px` : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
-              width: '22px', // 40% smaller than 36px
-              height: '22px',
+              width: `${Math.max(16, vh * 0.02)}px`,
+              height: `${Math.max(16, vh * 0.02)}px`,
               zIndex: 5,
               filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
             }}
@@ -1191,11 +1466,11 @@ export default function Referee({ matchId, onExit }) {
         <span 
           className="court-player-position"
           style={{
-            width: '12.4px', // 20% smaller than 18px
-            height: '12.4px',
-            fontSize: '6px', // 20% smaller than 11px
-            top: '-6.4px', // 20% smaller offset
-            left: '-6.4px'
+            width: `${badgeSize}px`,
+            height: `${badgeSize}px`,
+            fontSize: `${badgeSize * 0.5}px`,
+            top: `-${badgeSize * 0.5}px`,
+            left: `-${badgeSize * 0.5}px`
           }}
         >
           {position}
@@ -1206,11 +1481,11 @@ export default function Referee({ matchId, onExit }) {
               <span 
                 className="court-player-captain"
                 style={{
-                  width: '12px', // 20% smaller (adjusted for content)
-                  height: '12px',
-                  fontSize: '6px', // 20% smaller
-                  bottom: '-6.4px',
-                  left: '-6.4px'
+                  width: `${badgeSize}px`,
+                  height: `${badgeSize}px`,
+                  fontSize: `${badgeSize * 0.5}px`,
+                  bottom: `-${badgeSize * 0.5}px`,
+                  left: `-${badgeSize * 0.5}px`
                 }}
               >
                 {liberoLabel}
@@ -1221,11 +1496,11 @@ export default function Referee({ matchId, onExit }) {
             <span 
               className="court-player-captain"
               style={{
-                width: '12px', // 20% smaller than 18px
-                height: '12px',
-                fontSize: '6px', // 20% smaller than 11px
-                bottom: '-6.4px', // 20% smaller offset
-                left: '-6.4px'
+                width: `${badgeSize}px`,
+                height: `${badgeSize}px`,
+                fontSize: `${badgeSize * 0.5}px`,
+                bottom: `-${badgeSize * 0.5}px`,
+                left: `-${badgeSize * 0.5}px`
               }}
             >
               C
@@ -1238,17 +1513,17 @@ export default function Referee({ matchId, onExit }) {
             className={isCaptain ? "court-player-captain" : ""}
             style={{
               position: 'absolute',
-              bottom: '-6.4px',
-              left: '-6.4px',
-              width: '12px', // 20% smaller
-              height: '12px', // 20% smaller
+              bottom: `-${badgeSize * 0.5}px`,
+              left: `-${badgeSize * 0.5}px`,
+              width: `${badgeSize}px`,
+              height: `${badgeSize}px`,
               background: isCaptain ? 'rgba(15, 23, 42, 0.95)' : '#3b82f6',
-              border: isCaptain ? '1.6px solid var(--accent)' : '1.6px solid rgba(255, 255, 255, 0.4)',
-              borderRadius: '3.2px',
+              border: isCaptain ? `${Math.max(1.2, vh * 0.0015)}px solid var(--accent)` : `${Math.max(1.2, vh * 0.0015)}px solid rgba(255, 255, 255, 0.4)`,
+              borderRadius: `${Math.max(2, vh * 0.003)}px`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '6px', // 20% smaller
+              fontSize: `${badgeSize * 0.5}px`,
               fontWeight: 700,
               color: '#fff',
               zIndex: 5
@@ -1262,19 +1537,19 @@ export default function Referee({ matchId, onExit }) {
         {(hasWarning || hasPenalty || hasExpulsion || hasDisqualification) && (
           <div style={{
             position: 'absolute',
-            bottom: '-6.4px', // 20% smaller offset
-            right: '-6.4px',
+            bottom: `-${badgeSize * 0.5}px`,
+            right: `-${badgeSize * 0.5}px`,
             zIndex: 10
           }}>
             {hasExpulsion ? (
               // Expulsion: overlapping rotated cards
-              <div style={{ position: 'relative', width: '9.6px', height: '9.6px' }}>
+              <div style={{ position: 'relative', width: `${badgeSize * 0.8}px`, height: `${badgeSize * 0.8}px` }}>
                 <div 
                   style={{ 
-                    width: '6.4px', // 20% smaller than 8px
-                    height: '8.8px', // 20% smaller than 11px
+                    width: `${badgeSize * 0.55}px`,
+                    height: `${badgeSize * 0.75}px`,
                     background: 'linear-gradient(160deg, #fde047, #facc15)',
-                    borderRadius: '1px',
+                    borderRadius: `${Math.max(0.8, vh * 0.001)}px`,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                     position: 'absolute',
                     left: '0',
@@ -1285,10 +1560,10 @@ export default function Referee({ matchId, onExit }) {
                 />
                 <div 
                   style={{ 
-                    width: '6.4px', // 20% smaller than 8px
-                    height: '8.8px', // 20% smaller than 11px
+                    width: `${badgeSize * 0.55}px`,
+                    height: `${badgeSize * 0.75}px`,
                     background: 'linear-gradient(160deg, #ef4444, #b91c1c)',
-                    borderRadius: '1px',
+                    borderRadius: `${Math.max(0.8, vh * 0.001)}px`,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                     position: 'absolute',
                     right: '0',
@@ -1300,14 +1575,14 @@ export default function Referee({ matchId, onExit }) {
               </div>
             ) : (
               // Other sanctions: separate cards
-              <div style={{ display: 'flex', gap: '1.6px' }}>
+              <div style={{ display: 'flex', gap: `${Math.max(1, vh * 0.0015)}px` }}>
                 {(hasWarning || hasDisqualification) && (
                   <div 
                     style={{ 
-                      width: '6.4px', // 20% smaller than 8px
-                      height: '8.8px', // 20% smaller than 11px
+                      width: `${badgeSize * 0.55}px`,
+                      height: `${badgeSize * 0.75}px`,
                       background: 'linear-gradient(160deg, #fde047, #facc15)',
-                      borderRadius: '1px',
+                      borderRadius: `${Math.max(0.8, vh * 0.001)}px`,
                       boxShadow: '0 1px 3px rgba(0,0,0,0.8)'
                     }}
                   />
@@ -1315,10 +1590,10 @@ export default function Referee({ matchId, onExit }) {
                 {(hasPenalty || hasDisqualification) && (
                   <div 
                     style={{ 
-                      width: '6.4px', // 20% smaller than 8px
-                      height: '8.8px', // 20% smaller than 11px
+                      width: `${badgeSize * 0.55}px`,
+                      height: `${badgeSize * 0.75}px`,
                       background: 'linear-gradient(160deg, #ef4444, #b91c1c)',
-                      borderRadius: '1px',
+                      borderRadius: `${Math.max(0.8, vh * 0.001)}px`,
                       boxShadow: '0 1px 3px rgba(0,0,0,0.8)'
                     }}
                   />
@@ -1341,13 +1616,22 @@ export default function Referee({ matchId, onExit }) {
     }
   }
 
+  // Calculate header height for proper distribution
+  const headerPadding = Math.max(2, vh * 0.003)
+  const headerMinHeight = Math.max(20, vh * 0.025)
+  const headerMarginBottom = Math.max(1, vh * 0.002)
+  const headerTotalHeight = headerMinHeight + (headerPadding * 2) + headerMarginBottom
+  const containerPadding = Math.max(2, vh * 0.003)
+  const sectionGap = Math.max(1, vh * 0.002)
+  // Calculate available height: 100vh - container padding (top + bottom) - header total height - gaps between sections
+  const availableHeight = `calc(100vh - ${(containerPadding * 2) + headerTotalHeight + (sectionGap * 2)}px)`
+
   return (
     <div style={{
       height: '100vh',
-      overflow: 'hidden',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: '4px',
+      padding: `${containerPadding}px`,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       display: 'flex',
       flexDirection: 'column',
@@ -1358,167 +1642,90 @@ export default function Referee({ matchId, onExit }) {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '2px',
-        gap: '4px',
+        marginBottom: `${Math.max(1, vh * 0.002)}px`,
+        gap: `${Math.max(2, vh * 0.003)}px`,
         flexShrink: 0,
         flexWrap: 'wrap',
-        minHeight: '24px'
+        minHeight: `${Math.max(20, vh * 0.025)}px`,
+        padding: `${Math.max(2, vh * 0.003)}px`
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
           <button
             onClick={toggleFullscreen}
             style={{
-              padding: '4px 8px',
-              fontSize: '10px',
+              padding: `${Math.max(3, vh * 0.004)}px ${Math.max(6, vh * 0.008)}px`,
+              fontSize: `${headerFontSize * 0.7}px`,
               fontWeight: 600,
               background: 'rgba(255,255,255,0.1)',
               color: '#fff',
               border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
               cursor: 'pointer'
             }}
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
           </button>
-          <button
-            onClick={onExit}
-            style={{
-              padding: '4px 8px',
-              fontSize: '10px',
+          
+          {/* Connection Status */}
+          <ConnectionStatus
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            onCheckStatus={checkConnectionStatuses}
+            position="right"
+            size="normal"
+          />
+          
+          {/* Menu with Connect and Exit */}
+          <MenuList
+            buttonLabel="Menu"
+            buttonStyle={{
+              padding: `${Math.max(3, vh * 0.004)}px ${Math.max(6, vh * 0.008)}px`,
+              fontSize: `${headerFontSize * 0.7}px`,
               fontWeight: 600,
               background: 'rgba(255,255,255,0.1)',
               color: '#fff',
               border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              borderRadius: `${Math.max(3, vh * 0.004)}px`
             }}
-          >
-            Exit
-          </button>
-          
-          {/* Scoresheet Connection Status */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '3px 6px',
-            background: 'rgba(255,255,255,0.05)',
-            borderRadius: '4px',
-            fontSize: '9px'
-          }}>
-            <div style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: isScoresheetConnected ? '#22c55e' : '#ef4444',
-              boxShadow: isScoresheetConnected 
-                ? '0 0 6px rgba(34, 197, 94, 0.6)' 
-                : 'none'
-            }} />
-            <span style={{ color: 'var(--muted)' }}>
-              Score
-            </span>
-          </div>
-
-          {/* Connection Type Indicator */}
-          {connectionType && connectionType !== 'database' && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '3px 6px',
-              background: connectionStatus === 'connected' 
-                ? 'rgba(34, 197, 94, 0.15)' 
-                : connectionStatus === 'connecting'
-                ? 'rgba(251, 191, 36, 0.15)'
-                : 'rgba(239, 68, 68, 0.15)',
-              borderRadius: '4px',
-              fontSize: '9px',
-              border: `1px solid ${connectionStatus === 'connected' 
-                ? 'rgba(34, 197, 94, 0.4)' 
-                : connectionStatus === 'connecting'
-                ? 'rgba(251, 191, 36, 0.4)'
-                : 'rgba(239, 68, 68, 0.4)'}`
-            }}>
-              <div style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: connectionStatus === 'connected' 
-                  ? '#22c55e' 
-                  : connectionStatus === 'connecting'
-                  ? '#eab308'
-                  : '#ef4444',
-                boxShadow: connectionStatus === 'connected' 
-                  ? '0 0 6px rgba(34, 197, 94, 0.6)' 
-                  : 'none'
-              }} />
-              <span style={{ 
-                color: connectionStatus === 'connected' 
-                  ? '#22c55e' 
-                  : connectionStatus === 'connecting'
-                  ? '#eab308'
-                  : '#ef4444',
-                fontWeight: 600
-              }}>
-                {connectionType === 'bluetooth' ? 'BT' : connectionType === 'lan' ? 'LAN' : 'NET'}
-              </span>
-              {connectionStatus === 'connected' && (
-                <button
-                  onClick={handleDisconnect}
-                  style={{
-                    padding: '1px 4px',
-                    fontSize: '7px',
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '3px',
-                    color: 'var(--text)',
-                    cursor: 'pointer',
-                    marginLeft: '4px'
-                  }}
-                  title="Disconnect"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Connection Button */}
-          {(!connectionType || connectionType === 'database') && (
-            <button
-              onClick={() => setConnectionModal('select')}
-              style={{
-                padding: '3px 6px',
-                fontSize: '9px',
-                fontWeight: 600,
-                background: 'rgba(255,255,255,0.1)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              title="Connect via Bluetooth, LAN, or Internet"
-            >
-              Connect
-            </button>
-          )}
+            position="right"
+            items={[
+              ...((!connectionType || connectionType === 'database') ? [{
+                key: 'connect',
+                label: 'Connect',
+                icon: '🔌',
+                onClick: () => setConnectionModal('select')
+              }] : []),
+              ...(connectionType && connectionType !== 'database' && connectionStatus === 'connected' ? [{
+                key: 'disconnect',
+                label: 'Disconnect',
+                icon: '🔌',
+                onClick: handleDisconnect
+              }] : []),
+              { separator: true },
+              {
+                key: 'exit',
+                label: 'Exit',
+                icon: '←',
+                onClick: onExit
+              }
+            ]}
+          />
 
           {/* Rally Status */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
-            padding: '3px 6px',
+            gap: `${Math.max(2, vh * 0.003)}px`,
+            padding: `${Math.max(2, vh * 0.003)}px ${Math.max(4, vh * 0.006)}px`,
             background: rallyStatus === 'in_play' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255,255,255,0.05)',
-            borderRadius: '4px',
-            fontSize: '9px',
+            borderRadius: `${Math.max(3, vh * 0.004)}px`,
+            fontSize: `${headerFontSize * 0.65}px`,
             border: rallyStatus === 'in_play' ? '1px solid rgba(34, 197, 94, 0.4)' : 'none'
           }}>
             <div style={{
-              width: '6px',
-              height: '6px',
+              width: `${Math.max(5, vh * 0.006)}px`,
+              height: `${Math.max(5, vh * 0.006)}px`,
               borderRadius: '50%',
               background: rallyStatus === 'in_play' ? '#22c55e' : '#6b7280',
               boxShadow: rallyStatus === 'in_play' 
@@ -1533,13 +1740,12 @@ export default function Referee({ matchId, onExit }) {
           {/* Last Action */}
           {lastAction && (
             <div style={{
-              padding: '3px 6px',
+              padding: `${Math.max(2, vh * 0.003)}px ${Math.max(4, vh * 0.006)}px`,
               background: 'rgba(255,255,255,0.05)',
-              borderRadius: '4px',
-              fontSize: '8px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
+              fontSize: `${headerFontSize * 0.6}px`,
               color: 'var(--muted)',
-              maxWidth: '100px',
-              overflow: 'hidden',
+              maxWidth: `${Math.max(80, vh * 0.1)}px`,
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               flexShrink: 1
@@ -1549,17 +1755,17 @@ export default function Referee({ matchId, onExit }) {
           )}
         </div>
         
-        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: `${Math.max(2, vh * 0.003)}px`, flexShrink: 0 }}>
           <button
             onClick={() => setRefereeView('1st')}
             style={{
-              padding: '4px 10px',
-              fontSize: '10px',
+              padding: `${Math.max(3, vh * 0.004)}px ${Math.max(8, vh * 0.01)}px`,
+              fontSize: `${headerFontSize * 0.7}px`,
               fontWeight: 600,
               background: refereeView === '1st' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
               color: refereeView === '1st' ? '#000' : '#fff',
               border: refereeView === '1st' ? 'none' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
               cursor: 'pointer'
             }}
           >
@@ -1568,13 +1774,13 @@ export default function Referee({ matchId, onExit }) {
           <button
             onClick={() => setRefereeView('2nd')}
             style={{
-              padding: '4px 10px',
-              fontSize: '10px',
+              padding: `${Math.max(3, vh * 0.004)}px ${Math.max(8, vh * 0.01)}px`,
+              fontSize: `${headerFontSize * 0.7}px`,
               fontWeight: 600,
               background: refereeView === '2nd' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
               color: refereeView === '2nd' ? '#000' : '#fff',
               border: refereeView === '2nd' ? 'none' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
               cursor: 'pointer'
             }}
           >
@@ -1583,22 +1789,30 @@ export default function Referee({ matchId, onExit }) {
         </div>
       </div>
 
-      {/* Score Display or Between Sets Countdown */}
-      {betweenSetsCountdown ? (
+      {/* Content Sections Wrapper - Takes remaining space after header */}
+      <div style={{
+        flex: '1 1 0',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: `${Math.max(1, vh * 0.002)}px`
+      }}>
+        {/* Score Display or Between Sets Countdown - Top Section (1/3) */}
+        {betweenSetsCountdown ? (
         <div style={{
           background: 'var(--bg-secondary)',
-          borderRadius: '4px',
-          padding: '8px',
-          marginBottom: '2px',
+          borderRadius: `${Math.max(3, vh * 0.004)}px`,
+          padding: `${Math.max(6, vh * 0.008)}px`,
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'center',
           alignItems: 'center',
-          gap: '6px',
-          flexShrink: 0
+          justifyContent: 'center',
+          gap: `${Math.max(6, vh * 0.008)}px`,
+          flex: '1 1 0',
+          minHeight: 0,
         }}>
           <div style={{
-            fontSize: '32px',
+            fontSize: `${Math.max(28, vh * 0.06)}px`,
             fontWeight: 800,
             color: 'var(--accent)',
             lineHeight: 1
@@ -1608,13 +1822,13 @@ export default function Referee({ matchId, onExit }) {
           <button
             onClick={hideBetweenSetsCountdown}
             style={{
-              padding: '6px 12px',
-              fontSize: '12px',
+              padding: `${Math.max(4, vh * 0.006)}px ${Math.max(8, vh * 0.012)}px`,
+              fontSize: `${headerFontSize}px`,
               fontWeight: 600,
               background: 'rgba(255,255,255,0.1)',
               color: 'var(--text)',
               border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
               cursor: 'pointer'
             }}
           >
@@ -1622,32 +1836,32 @@ export default function Referee({ matchId, onExit }) {
           </button>
         </div>
       ) : (
-      <div style={{
-        background: 'var(--bg-secondary)',
-        borderRadius: '4px',
-        padding: '4px',
-        marginBottom: '2px',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        flexDirection: 'column',
-        gap: '4px',
-        flexShrink: 0
-      }}>
+        <div style={{
+          background: 'var(--bg-secondary)',
+          borderRadius: `${Math.max(3, vh * 0.004)}px`,
+          padding: `${Math.max(2, vh * 0.003)}px`,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'column',
+          gap: `${Math.max(2, vh * 0.003)}px`,
+          flex: '1 1 0',
+          minHeight: 0,
+        }}>
           {/* Sets Counter - Above (like livescore) - Centered horizontally on whole page */}
         <div style={{
           display: 'flex',
           width: '100%',
           justifyContent: 'center',
           alignItems: 'center',
-            gap: '8px',
+            gap: `${Math.max(6, vh * 0.008)}px`,
             position: 'relative'
         }}>
             {/* Left Set Score Box */}
             <div style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-                fontSize: '12px',
+              padding: `${Math.max(3, vh * 0.004)}px ${Math.max(6, vh * 0.008)}px`,
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
+                fontSize: `${setCounterFontSize}px`,
                 fontWeight: 700,
               background: 'rgba(255, 255, 255, 0.1)',
               border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -1667,23 +1881,23 @@ export default function Referee({ matchId, onExit }) {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '1px',
+              gap: `${Math.max(0.5, vh * 0.001)}px`,
               position: 'absolute',
               left: '50%',
               transform: 'translateX(-50%)'
             }}>
               <span style={{
-                fontSize: '9px',
+                fontSize: `${setCounterFontSize * 0.75}px`,
                 fontWeight: 600,
                 color: 'var(--muted)',
                 textTransform: 'uppercase',
-                letterSpacing: '0.5px',
+                letterSpacing: `${Math.max(0.3, vh * 0.0005)}px`,
                 lineHeight: '1'
               }}>
                 SET
             </span>
               <span style={{
-                fontSize: '16px',
+                fontSize: `${setCounterFontSize * 1.3}px`,
                 fontWeight: 700,
                 color: 'var(--text)',
                 lineHeight: '1'
@@ -1694,9 +1908,9 @@ export default function Referee({ matchId, onExit }) {
             
             {/* Right Set Score Box */}
             <div style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '12px',
+              padding: `${Math.max(3, vh * 0.004)}px ${Math.max(6, vh * 0.008)}px`,
+              borderRadius: `${Math.max(3, vh * 0.004)}px`,
+              fontSize: `${setCounterFontSize}px`,
               fontWeight: 700,
               background: 'rgba(255, 255, 255, 0.1)',
               border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -1706,7 +1920,7 @@ export default function Referee({ matchId, onExit }) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              marginLeft: '20px',
+              marginLeft: `${Math.max(15, vh * 0.02)}px`,
             }}>
               {rightSetScore}
             </div>
@@ -1718,14 +1932,14 @@ export default function Referee({ matchId, onExit }) {
             alignItems: 'center', 
             justifyContent: 'center',
             width: '100%',
-            gap: '4px',
+            gap: `${Math.max(3, vh * 0.004)}px`,
             position: 'relative'
           }}>
             {/* Left side: SERVE #, Label, Ball (reserved), Score */}
             <div style={{ 
               display: 'flex', 
               alignItems: 'center', 
-              gap: '8px',
+              gap: `${Math.max(6, vh * 0.008)}px`,
               flex: 1,
               justifyContent: 'flex-end'
             }}>
@@ -1735,30 +1949,30 @@ export default function Referee({ matchId, onExit }) {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '4px',
-                  marginRight: '16px' // Gap from team label
+                  gap: `${Math.max(2, vh * 0.003)}px`,
+                  marginRight: `${Math.max(12, vh * 0.015)}px`
                 }}>
                   <div style={{
-                    fontSize: '7px',
+                    fontSize: `${labelFontSize * 0.7}px`,
                     fontWeight: 700,
                     color: 'var(--text)',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.3px'
+                    letterSpacing: `${Math.max(0.2, vh * 0.0003)}px`
                   }}>
                     SERVE
                   </div>
                   <div style={{
-                    fontSize: '14px',
+                    fontSize: `${labelFontSize * 1.2}px`,
                     fontWeight: 700,
                     color: 'var(--accent)',
-                    width: '28px',
-                    height: '28px',
+                    width: `${Math.max(22, vh * 0.028)}px`,
+                    height: `${Math.max(22, vh * 0.028)}px`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     background: 'rgba(34, 197, 94, 0.1)',
-                    border: '2px solid var(--accent)',
-                    borderRadius: '6px'
+                    border: `${Math.max(1.5, vh * 0.002)}px solid var(--accent)`,
+                    borderRadius: `${Math.max(4, vh * 0.006)}px`
                   }}>
                     {leftLineup.I}
                   </div>
@@ -1770,18 +1984,18 @@ export default function Referee({ matchId, onExit }) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '1px',
-                marginRight: '16px',
-                marginLeft: '16px',
+                gap: `${Math.max(0.5, vh * 0.001)}px`,
+                marginRight: `${Math.max(12, vh * 0.015)}px`,
+                marginLeft: `${Math.max(12, vh * 0.015)}px`,
               }}>
             <span
               className="team-badge"
               style={{
                     background: leftColor,
                     color: isBrightColor(leftColor) ? '#000' : '#fff',
-                padding: '2px 6px',
-                borderRadius: '3px',
-                fontSize: '12px',
+                padding: `${Math.max(1, vh * 0.002)}px ${Math.max(4, vh * 0.006)}px`,
+                borderRadius: `${Math.max(2, vh * 0.003)}px`,
+                fontSize: `${labelFontSize}px`,
                 fontWeight: 700,
                 boxShadow: '0 1px 4px rgba(0, 0, 0, 0.3)'
               }}
@@ -1789,7 +2003,7 @@ export default function Referee({ matchId, onExit }) {
                   {leftLabel}
             </span>
                 <span style={{
-                  fontSize: '8px',
+                  fontSize: `${labelFontSize * 0.7}px`,
                   color: 'var(--muted)',
                   fontWeight: 600
                 }}>
@@ -1799,8 +2013,8 @@ export default function Referee({ matchId, onExit }) {
 
               {/* Ball - reserved space */}
               <div style={{
-                width: '16px',
-                height: '16px',
+                width: `${Math.max(12, vh * 0.015)}px`,
+                height: `${Math.max(12, vh * 0.015)}px`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -1810,8 +2024,8 @@ export default function Referee({ matchId, onExit }) {
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '16px',
-                height: '16px',
+                width: `${Math.max(12, vh * 0.015)}px`,
+                height: `${Math.max(12, vh * 0.015)}px`,
                 filter: 'drop-shadow(0 1px 4px rgba(0, 0, 0, 0.35))'
               }}
             />
@@ -1820,7 +2034,7 @@ export default function Referee({ matchId, onExit }) {
               
               {/* Score */}
               <span style={{
-                fontSize: '36px',
+                fontSize: `${scoreFontSize}px`,
             fontWeight: 800,
             color: 'var(--accent)',
                 lineHeight: 1
@@ -1831,10 +2045,10 @@ export default function Referee({ matchId, onExit }) {
 
             {/* Colon - Centered on net */}
             <div style={{
-              fontSize: '36px',
+              fontSize: `${scoreFontSize}px`,
               fontWeight: 800,
               color: 'var(--muted)',
-              width: '12px',
+              width: `${Math.max(10, vh * 0.012)}px`,
               textAlign: 'center',
               lineHeight: 1,
               flexShrink: 0
@@ -1846,13 +2060,13 @@ export default function Referee({ matchId, onExit }) {
             <div style={{ 
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: `${Math.max(6, vh * 0.008)}px`,
               flex: 1,
               justifyContent: 'flex-start'
             }}>
               {/* Score */}
               <span style={{
-                fontSize: '36px',
+                fontSize: `${scoreFontSize}px`,
                 fontWeight: 800,
                 color: 'var(--accent)',
             lineHeight: 1
@@ -1862,8 +2076,8 @@ export default function Referee({ matchId, onExit }) {
               
               {/* Ball - reserved space */}
               <div style={{
-                width: '16px',
-                height: '16px',
+                width: `${Math.max(12, vh * 0.015)}px`,
+                height: `${Math.max(12, vh * 0.015)}px`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -1873,8 +2087,8 @@ export default function Referee({ matchId, onExit }) {
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '16px',
-                height: '16px',
+                width: `${Math.max(12, vh * 0.015)}px`,
+                height: `${Math.max(12, vh * 0.015)}px`,
                 filter: 'drop-shadow(0 1px 4px rgba(0, 0, 0, 0.35))'
               }}
             />
@@ -1886,18 +2100,18 @@ export default function Referee({ matchId, onExit }) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '2px',
-                marginRight: '30px',
-                marginLeft: '30px',
+                gap: `${Math.max(1, vh * 0.002)}px`,
+                marginRight: `${Math.max(24, vh * 0.03)}px`,
+                marginLeft: `${Math.max(24, vh * 0.03)}px`,
               }}>
                 <span
                   className="team-badge"
                   style={{
                     background: rightColor,
                     color: isBrightColor(rightColor) ? '#000' : '#fff',
-                    padding: '2px 6px',
-                    borderRadius: '3px',
-                    fontSize: '12px',
+                    padding: `${Math.max(1, vh * 0.002)}px ${Math.max(4, vh * 0.006)}px`,
+                    borderRadius: `${Math.max(2, vh * 0.003)}px`,
+                    fontSize: `${labelFontSize}px`,
                     fontWeight: 700,
                     boxShadow: '0 1px 4px rgba(0, 0, 0, 0.3)'
                   }}
@@ -1905,7 +2119,7 @@ export default function Referee({ matchId, onExit }) {
                   {rightLabel}
                 </span>
                 <span style={{
-                  fontSize: '8px',
+                  fontSize: `${labelFontSize * 0.7}px`,
           color: 'var(--muted)',
                   fontWeight: 600
         }}>
@@ -1919,30 +2133,30 @@ export default function Referee({ matchId, onExit }) {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '8px',
-                  marginLeft: '16px' // Gap from team label
+                  gap: `${Math.max(6, vh * 0.008)}px`,
+                  marginLeft: `${Math.max(12, vh * 0.015)}px`
                 }}>
                   <div style={{
-                    fontSize: '7px',
+                    fontSize: `${labelFontSize * 0.7}px`,
                     fontWeight: 700,
                     color: 'var(--text)',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.3px'
+                    letterSpacing: `${Math.max(0.2, vh * 0.0003)}px`
                   }}>
                     SERVE
       </div>
                   <div style={{
-                    fontSize: '14px',
+                    fontSize: `${labelFontSize * 1.2}px`,
                     fontWeight: 700,
                     color: 'var(--accent)',
-                    width: '28px',
-                    height: '28px',
+                    width: `${Math.max(22, vh * 0.028)}px`,
+                    height: `${Math.max(22, vh * 0.028)}px`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     background: 'rgba(34, 197, 94, 0.1)',
-                    border: '2px solid var(--accent)',
-                    borderRadius: '6px'
+                    border: `${Math.max(1.5, vh * 0.002)}px solid var(--accent)`,
+                    borderRadius: `${Math.max(4, vh * 0.006)}px`
                   }}>
                     {rightLineup.I}
                   </div>
@@ -1951,12 +2165,37 @@ export default function Referee({ matchId, onExit }) {
             </div>
           </div>
         </div>
-      )}
+        )}
 
-      {/* Court */}
-      <div style={{ marginBottom: '2px', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <div style={{ width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', maxHeight: '100%' }}>
-          <div className="court" style={{ width: '100%', maxWidth: '600px', aspectRatio: '6 / 3', maxHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* Court - 1/3 */}
+        <div style={{ 
+          flex: '1 1 0', 
+          minHeight: 0,
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+        }}>
+        <div style={{ 
+          width: '100%', 
+          maxWidth: '400px', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100%', 
+          maxHeight: '100%',
+          margin: '0 auto'
+        }}>
+          <div className="court" style={{ 
+            width: '100%', 
+            maxWidth: '100%', 
+            aspectRatio: '6 / 3', 
+            maxHeight: '100%', 
+            height: '100%',
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center' 
+          }}>
             <div className="court-attack-line court-attack-left" />
             <div className="court-attack-line court-attack-right" />
             
@@ -1992,25 +2231,25 @@ export default function Referee({ matchId, onExit }) {
             </div>
           </div>
         </div>
-      </div>
+        </div>
 
-      {/* TO and SUB beneath court - Centered horizontally on whole page */}
-      <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'flex-start',
-            width: '100%',
-            maxWidth: '800px',
-            marginTop: '2px',
-            flexShrink: 0,
-            gap: '8px',
-            paddingBottom: '2px'
-      }}>
-            {/* Left Column - Left Team TO/SUB */}
+        {/* TO and SUB beneath court - Bottom Section (1/3) */}
         <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          width: '100%',
+          maxWidth: '100%',
+          gap: `${Math.max(6, vh * 0.008)}px`,
+          paddingBottom: `${Math.max(1, vh * 0.002)}px`,
+          flex: '1 1 0',
+          minHeight: 0
+        }}>
+          {/* Left Column - Left Team TO/SUB */}
+          <div style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: '4px',
+              gap: `${Math.max(2, vh * 0.003)}px`,
               alignItems: 'center',
               flexShrink: 0
             }}>
@@ -2020,20 +2259,20 @@ export default function Referee({ matchId, onExit }) {
                 background: activeTimeout && activeTimeout.team === leftTeam 
                   ? 'rgba(251, 191, 36, 0.15)' 
                   : 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '4px', 
-                  padding: '6px 12px',
+                borderRadius: `${Math.max(3, vh * 0.004)}px`, 
+                  padding: `${Math.max(4, vh * 0.006)}px ${Math.max(8, vh * 0.012)}px`,
                 textAlign: 'center',
                 border: activeTimeout && activeTimeout.team === leftTeam
-                  ? '2px solid var(--accent)'
-                  : '1px solid rgba(255, 255, 255, 0.1)',
+                  ? `${Math.max(1.5, vh * 0.002)}px solid var(--accent)`
+                  : `${Math.max(0.8, vh * 0.001)}px solid rgba(255, 255, 255, 0.1)`,
                   cursor: activeTimeout && activeTimeout.team === leftTeam ? 'pointer' : 'default',
-                  minWidth: '60px'
+                  minWidth: `${Math.max(48, vh * 0.06)}px`
               }}
             >
-                <div style={{ fontSize: '8px', color: 'var(--muted)', marginBottom: '2px' }}>TO</div>
+                <div style={{ fontSize: `${toSubFontSize * 0.7}px`, color: 'var(--muted)', marginBottom: `${Math.max(1, vh * 0.002)}px` }}>TO</div>
               {activeTimeout && activeTimeout.team === leftTeam ? (
                 <div style={{
-                    fontSize: '12px', 
+                    fontSize: `${toSubFontSize * 1.2}px`, 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
@@ -2042,7 +2281,7 @@ export default function Referee({ matchId, onExit }) {
                 </div>
               ) : (
                 <div style={{ 
-                  fontSize: '12px', 
+                  fontSize: `${toSubFontSize * 1.2}px`, 
                   fontWeight: 700,
                   color: leftStats.timeouts >= 2 ? '#ef4444' : 'inherit'
                 }}>
@@ -2056,14 +2295,14 @@ export default function Referee({ matchId, onExit }) {
                       stopTimeout()
                     }}
                     style={{
-                      marginTop: '2px',
-                      padding: '2px 4px',
-                      fontSize: '10px',
+                      marginTop: `${Math.max(1, vh * 0.002)}px`,
+                      padding: `${Math.max(1, vh * 0.002)}px ${Math.max(3, vh * 0.004)}px`,
+                      fontSize: `${toSubFontSize * 0.8}px`,
                       fontWeight: 600,
                       background: 'rgba(255,255,255,0.1)',
                       color: 'var(--text)',
                       border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '2px',
+                      borderRadius: `${Math.max(1.5, vh * 0.002)}px`,
                       cursor: 'pointer'
                     }}
                   >
@@ -2073,15 +2312,15 @@ export default function Referee({ matchId, onExit }) {
             </div>
             <div style={{ 
               background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '4px', 
-                padding: '4px 8px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`, 
+                padding: `${Math.max(3, vh * 0.004)}px ${Math.max(6, vh * 0.008)}px`,
               textAlign: 'center',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
-                minWidth: '50px'
+                minWidth: `${Math.max(40, vh * 0.05)}px`
             }}>
-                <div style={{ fontSize: '7px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
+                <div style={{ fontSize: `${toSubFontSize * 0.6}px`, color: 'var(--muted)', marginBottom: `${Math.max(0.5, vh * 0.001)}px` }}>SUB</div>
               <div style={{ 
-                fontSize: '12px', 
+                fontSize: `${toSubFontSize * 1.2}px`, 
                 fontWeight: 700,
                 color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'inherit'
               }}>{leftStats.substitutions}</div>
@@ -2092,9 +2331,10 @@ export default function Referee({ matchId, onExit }) {
             <div style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: `${Math.max(6, vh * 0.008)}px`,
               flex: '0 1 auto',
-              minWidth: 0
+              minWidth: 0,
+              maxWidth: '100%'
             }}>
               {/* Results Table */}
               {(() => {
@@ -2106,27 +2346,28 @@ export default function Referee({ matchId, onExit }) {
                   <div style={{ 
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '6px',
-                    padding: '4px',
-                    fontSize: '10px',
-                    minWidth: '300px'
+                    borderRadius: `${Math.max(4, vh * 0.006)}px`,
+                    padding: `${Math.max(3, vh * 0.004)}px`,
+                    fontSize: `${tableFontSize}px`,
+                    minWidth: `${Math.max(240, vh * 0.3)}px`,
+                    maxWidth: '100%'
                   }}>
-                    <h4 style={{ margin: '0 0 4px', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>
+                    <h4 style={{ margin: `0 0 ${Math.max(2, vh * 0.003)}px`, fontSize: `${tableFontSize * 1.2}px`, fontWeight: 600, textAlign: 'center' }}>
                       Results
                     </h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${tableFontSize}px` }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>T</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>S</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>W</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>P</th>
-                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px', borderRight: '1px solid rgba(255,255,255,0.2)' }}>SET</th>
-                          <th style={{ padding: '1px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>Dur</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>P</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>W</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>S</th>
-                          <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '10px' }}>T</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>T</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>S</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>W</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>P</th>
+                          <th style={{ padding: `${Math.max(0.5, vh * 0.001)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px`, borderRight: '1px solid rgba(255,255,255,0.2)' }}>SET</th>
+                          <th style={{ padding: `${Math.max(0.5, vh * 0.001)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px`, borderLeft: '1px solid rgba(255,255,255,0.2)' }}>Dur</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>P</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>W</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>S</th>
+                          <th style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center', fontWeight: 600, fontSize: `${tableFontSize}px` }}>T</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2153,16 +2394,16 @@ export default function Referee({ matchId, onExit }) {
                                 ? (leftSetWon ? 'rgba(34, 197, 94, 0.1)' : rightSetWon ? 'rgba(239, 68, 68, 0.1)' : 'transparent')
                                 : 'transparent'
                             }}>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetTimeouts}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetSubs}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetWon ? '1' : rightSetWon ? '0' : '-'}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftSetPoints}</td>
-                              <td style={{ padding: '1px 2px', textAlign: 'center', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)' }}>{set.index}</td>
-                              <td style={{ padding: '1px 2px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>{setDuration}{setDuration !== '-' ? "'" : ''}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetPoints}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetWon ? '1' : leftSetWon ? '0' : '-'}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetSubs}</td>
-                              <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightSetTimeouts}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{leftSetTimeouts}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{leftSetSubs}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{leftSetWon ? '1' : rightSetWon ? '0' : '-'}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{leftSetPoints}</td>
+                              <td style={{ padding: `${Math.max(0.5, vh * 0.001)}px ${Math.max(1, vh * 0.002)}px`, textAlign: 'center', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)' }}>{set.index}</td>
+                              <td style={{ padding: `${Math.max(0.5, vh * 0.001)}px ${Math.max(1, vh * 0.002)}px`, textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)' }}>{setDuration}{setDuration !== '-' ? "'" : ''}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{rightSetPoints}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{rightSetWon ? '1' : leftSetWon ? '0' : '-'}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{rightSetSubs}</td>
+                              <td style={{ padding: `${Math.max(1, vh * 0.002)}px ${Math.max(0.5, vh * 0.001)}px`, textAlign: 'center' }}>{rightSetTimeouts}</td>
                             </tr>
                           )
                         })}
@@ -2183,14 +2424,14 @@ export default function Referee({ matchId, onExit }) {
                   <div style={{ 
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '6px',
-                    padding: '4px',
-                    fontSize: '8px'
+                    borderRadius: `${Math.max(4, vh * 0.006)}px`,
+                    padding: `${Math.max(3, vh * 0.004)}px`,
+                    fontSize: `${tableFontSize * 0.8}px`
                   }}>
-                    <h4 style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: 600, textAlign: 'center' }}>
+                    <h4 style={{ margin: `0 0 ${Math.max(2, vh * 0.003)}px`, fontSize: `${tableFontSize}px`, fontWeight: 600, textAlign: 'center' }}>
                       Sanctions
                     </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2px', maxHeight: '80px', overflowY: 'auto' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: `${Math.max(1, vh * 0.002)}px`, maxHeight: `${Math.max(60, vh * 0.08)}px`, overflowY: 'auto' }}>
                       {allSanctions.map((s, i) => {
                         const teamLabel = s.team === 'left' ? leftLabel : rightLabel
                         return (
@@ -2323,13 +2564,13 @@ export default function Referee({ matchId, onExit }) {
             </div>
                 )
               })()}
-        </div>
+          </div>
 
-            {/* Right Column - Right Team TO/SUB */}
-        <div style={{
+          {/* Right Column - Right Team TO/SUB */}
+          <div style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: '4px',
+              gap: `${Math.max(2, vh * 0.003)}px`,
               alignItems: 'center',
               flexShrink: 0
             }}>
@@ -2339,20 +2580,20 @@ export default function Referee({ matchId, onExit }) {
                 background: activeTimeout && activeTimeout.team === rightTeam 
                   ? 'rgba(251, 191, 36, 0.15)' 
                   : 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '4px', 
-                  padding: '6px 12px',
+                borderRadius: `${Math.max(3, vh * 0.004)}px`, 
+                  padding: `${Math.max(4, vh * 0.006)}px ${Math.max(8, vh * 0.012)}px`,
                 textAlign: 'center',
                 border: activeTimeout && activeTimeout.team === rightTeam
-                  ? '2px solid var(--accent)'
-                  : '1px solid rgba(255, 255, 255, 0.1)',
+                  ? `${Math.max(1.5, vh * 0.002)}px solid var(--accent)`
+                  : `${Math.max(0.8, vh * 0.001)}px solid rgba(255, 255, 255, 0.1)`,
                   cursor: activeTimeout && activeTimeout.team === rightTeam ? 'pointer' : 'default',
-                  minWidth: '60px'
+                  minWidth: `${Math.max(48, vh * 0.06)}px`
               }}
             >
-                <div style={{ fontSize: '7px', color: 'var(--muted)', marginBottom: '1px' }}>TO</div>
+                <div style={{ fontSize: `${toSubFontSize * 0.7}px`, color: 'var(--muted)', marginBottom: `${Math.max(0.5, vh * 0.001)}px` }}>TO</div>
               {activeTimeout && activeTimeout.team === rightTeam ? (
                 <div style={{ 
-                    fontSize: '12px', 
+                    fontSize: `${toSubFontSize * 1.2}px`, 
                   fontWeight: 800,
                   color: 'var(--accent)',
                   lineHeight: 1
@@ -2361,7 +2602,7 @@ export default function Referee({ matchId, onExit }) {
                 </div>
               ) : (
                 <div style={{ 
-                  fontSize: '12px', 
+                  fontSize: `${toSubFontSize * 1.2}px`, 
                   fontWeight: 700,
                   color: rightStats.timeouts >= 2 ? '#ef4444' : 'inherit'
                 }}>
@@ -2375,14 +2616,14 @@ export default function Referee({ matchId, onExit }) {
                       stopTimeout()
                     }}
                     style={{
-                      marginTop: '2px',
-                      padding: '2px 4px',
-                      fontSize: '10px',
+                      marginTop: `${Math.max(1, vh * 0.002)}px`,
+                      padding: `${Math.max(1, vh * 0.002)}px ${Math.max(3, vh * 0.004)}px`,
+                      fontSize: `${toSubFontSize * 0.8}px`,
                       fontWeight: 600,
                       background: 'rgba(255,255,255,0.1)',
                       color: 'var(--text)',
                       border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '2px',
+                      borderRadius: `${Math.max(1.5, vh * 0.002)}px`,
                       cursor: 'pointer'
                     }}
                   >
@@ -2392,15 +2633,15 @@ export default function Referee({ matchId, onExit }) {
             </div>
             <div style={{ 
               background: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '4px',
-              padding: '4px 8px',
+              borderRadius: `${Math.max(3, vh * 0.004)}px`, 
+                padding: `${Math.max(3, vh * 0.004)}px ${Math.max(6, vh * 0.008)}px`,
               textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              minWidth: '50px'
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                minWidth: `${Math.max(40, vh * 0.05)}px`
             }}>
-              <div style={{ fontSize: '7px', color: 'var(--muted)', marginBottom: '1px' }}>SUB</div>
+                <div style={{ fontSize: `${toSubFontSize * 0.6}px`, color: 'var(--muted)', marginBottom: `${Math.max(0.5, vh * 0.001)}px` }}>SUB</div>
               <div style={{ 
-                fontSize: '12px', 
+                fontSize: `${toSubFontSize * 1.2}px`, 
                 fontWeight: 700,
                 color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'inherit'
               }}>{rightStats.substitutions}</div>
@@ -2408,6 +2649,7 @@ export default function Referee({ matchId, onExit }) {
           </div>
         </div>
       </div>
+      {/* End Content Sections Wrapper */}
 
       {/* Court Switch Waiting Modal */}
       {data?.match && data.currentSet?.index === 5 && 
@@ -3080,7 +3322,7 @@ export default function Referee({ matchId, onExit }) {
         </div>
       )}
 
-
+    </div>
     </div>
   )
 }
