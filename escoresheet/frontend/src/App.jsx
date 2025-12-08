@@ -342,13 +342,13 @@ export default function App() {
     statuses.scoreboard = statuses.server
     debugInfo.scoreboard = debugInfo.server
     
-    // Check Match status
-    if (currentOfficialMatch) {
-      statuses.match = currentOfficialMatch.status === 'live' ? 'live' : currentOfficialMatch.status === 'scheduled' ? 'scheduled' : currentOfficialMatch.status === 'final' ? 'final' : 'unknown'
-      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match}` }
+    // Check Match status (both official and test matches)
+    if (currentMatch) {
+      statuses.match = currentMatch.status === 'live' ? 'live' : currentMatch.status === 'scheduled' ? 'scheduled' : currentMatch.status === 'final' ? 'final' : 'unknown'
+      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match} (${currentMatch.test ? 'Test' : 'Official'} match)` }
     } else {
       statuses.match = 'no_match'
-      debugInfo.match = { status: 'no_match', message: 'No official match found. Create a new match to start.' }
+      debugInfo.match = { status: 'no_match', message: 'No match found. Create a new match to start.' }
     }
     
     // Check DB (IndexedDB)
@@ -403,7 +403,7 @@ export default function App() {
     
     setConnectionStatuses(statuses)
     setConnectionDebugInfo(debugInfo)
-  }, [currentOfficialMatch, syncStatus, serverStatus])
+  }, [currentMatch, syncStatus, serverStatus])
 
   // Periodically check connection statuses
   useEffect(() => {
@@ -411,6 +411,57 @@ export default function App() {
     const interval = setInterval(checkConnectionStatuses, 5000) // Check every 5 seconds
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
+
+  // Auto-import referees from JSON to database on app load
+  useEffect(() => {
+    const importRefereesToDatabase = async () => {
+      try {
+        // Check if referees already exist in database
+        const existingCount = await db.referees.count()
+        if (existingCount > 0) {
+          // Referees already imported, skip
+          return
+        }
+
+        // Fetch referees from JSON
+        const response = await fetch('/referees_svrz.json')
+        if (!response.ok) {
+          console.log('[App] Referees JSON not available, skipping import')
+          return
+        }
+
+        const referees = await response.json()
+        if (!Array.isArray(referees) || referees.length === 0) {
+          console.log('[App] Referees JSON is empty, skipping import')
+          return
+        }
+
+        // Import referees to database
+        const refereesToAdd = referees
+          .filter(ref => ref.lastname && ref.firstname)
+          .map(ref => ({
+            seedKey: `${ref.lastname}_${ref.firstname}`.toLowerCase().replace(/\s+/g, '_'),
+            lastName: ref.lastname.trim(),
+            firstName: ref.firstname.trim(),
+            country: 'CHE',
+            dob: '01.01.1900',
+            level: ref.level || null,
+            email: ref.email || null,
+            phone: ref.phonen || null,
+            createdAt: new Date().toISOString()
+          }))
+
+        // Use bulkPut to avoid duplicates (based on seedKey)
+        await db.referees.bulkPut(refereesToAdd)
+        console.log(`[App] Imported ${refereesToAdd.length} referees to database`)
+      } catch (error) {
+        console.error('[App] Error importing referees:', error)
+        // Don't show error to user, just log it
+      }
+    }
+
+    importRefereesToDatabase()
+  }, [])
 
   const currentTestMatch = useLiveQuery(async () => {
     try {

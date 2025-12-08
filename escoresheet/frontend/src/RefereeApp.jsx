@@ -502,11 +502,11 @@ export default function RefereeApp() {
 
   return (
     <div style={{
-      minHeight: '100vh',
-      width: '100%',
+      height: '100vh',
+      width: '100vw',
       maxWidth: '100vw',
-      overflowX: 'hidden',
-      overflowY: 'auto',
+      margin: '0 auto',
+      overflow: 'hidden',
       background: 'linear-gradient(135deg,rgb(82, 82, 113) 0%,rgb(62, 22, 27) 100%)',
       color: '#fff',
       display: 'flex',
@@ -520,11 +520,10 @@ export default function RefereeApp() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '12px 20px',
           background: 'rgba(0, 0, 0, 0.2)',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
           flexShrink: 0,
-          gap: '16px'
+          width: '100%',
         }}
         onClick={(e) => {
           // Close connection menu and debug menu when clicking outside
@@ -637,14 +636,16 @@ export default function RefereeApp() {
       alignItems: 'center',
       justifyContent: 'center',
       padding: '20px',
-        overflowY: 'auto'
+        overflowY: 'hidden',
+        width: '100%',
     }}>
       <div style={{
         background: 'var(--bg-secondary)',
         borderRadius: '12px',
         padding: '40px',
-          maxWidth: 'min(400px, calc(100vw - 40px))',
-        width: '100%',
+          maxWidth: 'min(400px, calc(100vw - 80px))',
+          width: '100%',
+          maxHeight: '100%',
           textAlign: 'center',
           boxSizing: 'border-box'
       }}>

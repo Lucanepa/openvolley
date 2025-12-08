@@ -99,81 +99,126 @@ export async function getMatchData(matchId) {
   }
 }
 
+// Global WebSocket connection manager to prevent multiple connections
+const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTimeout, reconnectAttempts, isIntentionallyClosed }>
+
 /**
  * Subscribe to match data updates via WebSocket
  */
 export function subscribeToMatchData(matchId, onUpdate) {
   const wsUrl = getWebSocketUrl()
-  let ws = null
-  let reconnectTimeout = null
-  let isIntentionallyClosed = false
-  let reconnectAttempts = 0
+  const matchIdStr = String(matchId)
+  
+  // Get or create connection manager for this match
+  let connection = wsConnections.get(matchIdStr)
+  if (!connection) {
+    connection = {
+      ws: null,
+      subscribers: new Set(),
+      reconnectTimeout: null,
+      reconnectAttempts: 0,
+      isIntentionallyClosed: false
+    }
+    wsConnections.set(matchIdStr, connection)
+  }
+  
+  // Add this subscriber
+  connection.subscribers.add(onUpdate)
+  
   const maxReconnectDelay = 10000 // Max 10 seconds
 
   const connect = () => {
-    // Don't reconnect if intentionally closed
-    if (isIntentionallyClosed) return
+    // Don't reconnect if intentionally closed or already connected
+    if (connection.isIntentionallyClosed) return
+    if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
+      // Already connected, just send subscription message
+      try {
+        connection.ws.send(JSON.stringify({
+          type: 'subscribe-match',
+          matchId: matchIdStr
+        }))
+      } catch (err) {
+        console.error('[ServerDataSync] Error sending subscription:', err)
+      }
+      return
+    }
+    if (connection.ws && connection.ws.readyState === WebSocket.CONNECTING) {
+      // Already connecting, wait for it
+      return
+    }
 
     try {
-      // Close existing connection if any
-      if (ws && ws.readyState !== WebSocket.CLOSED) {
-        ws.close()
+      // Close existing connection if any (but not if it's already closed)
+      if (connection.ws && connection.ws.readyState !== WebSocket.CLOSED) {
+        connection.ws.close()
       }
 
-      ws = new WebSocket(wsUrl)
+      connection.ws = new WebSocket(wsUrl)
 
-      ws.onopen = () => {
+      connection.ws.onopen = () => {
         // Skip if intentionally closed (cleanup ran before connection opened)
-        if (isIntentionallyClosed || !ws) return
+        if (connection.isIntentionallyClosed || !connection.ws) return
         
-        reconnectAttempts = 0 // Reset on successful connection
-        console.log('[ServerDataSync] WebSocket connected')
+        connection.reconnectAttempts = 0 // Reset on successful connection
+        console.log(`[ServerDataSync] WebSocket connected for match ${matchIdStr}`)
         // Request match data subscription
         try {
-          ws.send(JSON.stringify({
+          connection.ws.send(JSON.stringify({
             type: 'subscribe-match',
-            matchId: String(matchId)
+            matchId: matchIdStr
           }))
         } catch (err) {
           console.error('[ServerDataSync] Error sending subscription:', err)
         }
       }
 
-      ws.onmessage = (event) => {
+      connection.ws.onmessage = (event) => {
         // Skip if intentionally closed
-        if (isIntentionallyClosed) return
+        if (connection.isIntentionallyClosed) return
         
         try {
           const message = JSON.parse(event.data)
           
-          if (message.type === 'match-data-update' && String(message.matchId) === String(matchId)) {
-            // Match data updated, call callback
-            onUpdate(message.data)
-          } else if (message.type === 'match-full-data' && String(message.matchId) === String(matchId)) {
-            // Full match data received
-            onUpdate(message.data)
+          if (message.type === 'match-data-update' && String(message.matchId) === matchIdStr) {
+            // Match data updated, notify all subscribers
+            connection.subscribers.forEach(subscriber => {
+              try {
+                subscriber(message.data)
+              } catch (err) {
+                console.error('[ServerDataSync] Error in subscriber callback:', err)
+              }
+            })
+          } else if (message.type === 'match-full-data' && String(message.matchId) === matchIdStr) {
+            // Full match data received, notify all subscribers
+            connection.subscribers.forEach(subscriber => {
+              try {
+                subscriber(message.data)
+              } catch (err) {
+                console.error('[ServerDataSync] Error in subscriber callback:', err)
+              }
+            })
           }
         } catch (err) {
           console.error('[ServerDataSync] Error parsing message:', err)
         }
       }
 
-      ws.onerror = (error) => {
+      connection.ws.onerror = (error) => {
         // Skip if ws is null (cleanup already happened) or intentionally closed
-        if (!ws || isIntentionallyClosed) return
+        if (!connection.ws || connection.isIntentionallyClosed) return
         
         // Only log if it's not a connection error (which is expected during initial connection)
         // Connection errors are usually handled by onclose
-        if (ws.readyState === WebSocket.CONNECTING) {
+        if (connection.ws.readyState === WebSocket.CONNECTING) {
           // This is expected during initial connection attempts, don't log as error
           return
         }
         console.warn('[ServerDataSync] WebSocket error (will attempt reconnect):', error)
       }
 
-      ws.onclose = (event) => {
+      connection.ws.onclose = (event) => {
         // Don't reconnect if intentionally closed or ws is null
-        if (isIntentionallyClosed || !ws) return
+        if (connection.isIntentionallyClosed || !connection.ws) return
 
         // Don't reconnect on normal closure (code 1000)
         if (event.code === 1000) {
@@ -181,33 +226,60 @@ export function subscribeToMatchData(matchId, onUpdate) {
           return
         }
 
+        // Only reconnect if there are still subscribers
+        if (connection.subscribers.size === 0) {
+          console.log('[ServerDataSync] No subscribers, not reconnecting')
+          return
+        }
+
         // Exponential backoff for reconnection
-        reconnectAttempts++
-        const delay = Math.min(3000 * reconnectAttempts, maxReconnectDelay)
-        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay/1000} seconds... (attempt ${reconnectAttempts})`)
-        reconnectTimeout = setTimeout(connect, delay)
+        connection.reconnectAttempts++
+        const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
+        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay/1000} seconds... (attempt ${connection.reconnectAttempts})`)
+        connection.reconnectTimeout = setTimeout(connect, delay)
       }
     } catch (err) {
       console.error('[ServerDataSync] Connection error:', err)
       // Exponential backoff for reconnection
-      reconnectAttempts++
-      const delay = Math.min(3000 * reconnectAttempts, maxReconnectDelay)
-      reconnectTimeout = setTimeout(connect, delay)
+      connection.reconnectAttempts++
+      const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
+      connection.reconnectTimeout = setTimeout(connect, delay)
     }
   }
 
-  connect()
+  // Connect if not already connected
+  if (!connection.ws || connection.ws.readyState === WebSocket.CLOSED) {
+    connect()
+  } else if (connection.ws.readyState === WebSocket.OPEN) {
+    // Already connected, send subscription immediately
+    try {
+      connection.ws.send(JSON.stringify({
+        type: 'subscribe-match',
+        matchId: matchIdStr
+      }))
+    } catch (err) {
+      console.error('[ServerDataSync] Error sending subscription:', err)
+    }
+  }
 
   // Return unsubscribe function
   return () => {
-    isIntentionallyClosed = true
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout)
-      reconnectTimeout = null
-    }
-    if (ws) {
-      ws.close(1000, 'Unsubscribing') // Normal closure
-      ws = null
+    // Remove this subscriber
+    connection.subscribers.delete(onUpdate)
+    
+    // If no more subscribers, close the connection
+    if (connection.subscribers.size === 0) {
+      connection.isIntentionallyClosed = true
+      if (connection.reconnectTimeout) {
+        clearTimeout(connection.reconnectTimeout)
+        connection.reconnectTimeout = null
+      }
+      if (connection.ws) {
+        connection.ws.close(1000, 'Unsubscribing') // Normal closure
+        connection.ws = null
+      }
+      // Remove from map
+      wsConnections.delete(matchIdStr)
     }
   }
 }

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
+import RefereeSelector from './RefereeSelector'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 
@@ -142,6 +143,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   // Referee JSON import state
   const [refereeJsonLoading, setRefereeJsonLoading] = useState(false)
   const [refereeJsonError, setRefereeJsonError] = useState('')
+  
+  // Referee selector state
+  const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
+  const [refereeSelectorPosition, setRefereeSelectorPosition] = useState({})
   const rosterLoadedRef = useRef(false) // Track if roster has been loaded to prevent overwriting user edits
   const homeTeamInputRef = useRef(null)
   const awayTeamInputRef = useRef(null)
@@ -1032,6 +1037,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     }
     setOpenSignature(null)
   }
+
 
   function formatRoster(roster, bench) {
     // All players sorted by number (ascending)
@@ -1953,41 +1959,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           )}
         </div>
         
-        {/* Referee JSON Import Section */}
-        <div style={{
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          padding: '16px',
-          background: 'rgba(15, 23, 42, 0.2)',
-          marginBottom: '16px'
-        }}>
-          <h4 style={{ 
-            marginTop: 0, 
-            marginBottom: '12px',
-            padding: '8px 12px',
-            background: 'rgba(255, 255, 255, 0.1)',
-            borderRadius: '6px',
-            fontSize: '16px',
-            fontWeight: 600
-          }}>Import Referees from JSON</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={handleRefereeJsonImport}
-              disabled={refereeJsonLoading}
-              style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
-            >
-              {refereeJsonLoading ? 'Loading...' : 'Load Referees from referees_svrz.json'}
-            </button>
-            {refereeJsonError && (
-              <span style={{ color: '#ef4444', fontSize: '12px' }}>
-                {refereeJsonError}
-              </span>
-            )}
-          </div>
-        </div>
-        
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -2002,8 +1973,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: '6px',
               fontSize: '16px',
-              fontWeight: 600
-            }}>1st Referee</h4>
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>1st Referee</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setRefereeSelectorPosition({ element: e.currentTarget })
+                  setShowRefereeSelector('ref1')
+                }}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
+                }}
+              >
+                Choose from SVRZ database
+              </button>
+            </h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
@@ -2025,8 +2028,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: '6px',
               fontSize: '16px',
-              fontWeight: 600
-            }}>2nd Referee</h4>
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>2nd Referee</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setRefereeSelectorPosition({ element: e.currentTarget })
+                  setShowRefereeSelector('ref2')
+                }}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
+                }}
+              >
+                Choose from SVRZ database
+              </button>
+            </h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
@@ -2081,6 +2116,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             </div>
           </div>
         </div>
+        {/* Referee Selector */}
+        <RefereeSelector
+          open={showRefereeSelector !== null}
+          onClose={() => setShowRefereeSelector(null)}
+          onSelect={(referee) => {
+            if (showRefereeSelector === 'ref1') {
+              setRef1First(referee.firstName || '')
+              setRef1Last(referee.lastName || '')
+              setRef1Country(referee.country || 'CHE')
+              setRef1Dob(referee.dob || '01.01.1900')
+            } else if (showRefereeSelector === 'ref2') {
+              setRef2First(referee.firstName || '')
+              setRef2Last(referee.lastName || '')
+              setRef2Country(referee.country || 'CHE')
+              setRef2Dob(referee.dob || '01.01.1900')
+            }
+          }}
+          position={refereeSelectorPosition}
+        />
+
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             // Save officials to database if matchId exists
@@ -3270,7 +3325,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             setCurrentView('main')
             if (onCoinTossClose) onCoinTossClose()
           }}>← Back</button>
-          <h2>Coin Toss</h2>
+          <h1>Coin Toss</h1>
           {onGoHome ? (
             <button className="secondary" onClick={onGoHome}>Home</button>
           ) : (
@@ -3281,7 +3336,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 24, marginBottom: 24, alignItems: 'start' }}>
           {/* Team A */}
           <div>
-            <h3>Team A</h3>
+            <h1 style={{ margin: 2, fontSize: '24px', fontWeight: 700, textAlign: 'center' }}>Team A</h1>
             <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, height: '48px' }}>
               <button 
                 type="button"
@@ -3640,33 +3695,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         })()}
             
             <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 24, paddingTop: 16, borderTop: showCoinTossRoster ? '2px solid rgba(255,255,255,0.1)' : 'none' }}>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Coach Signature</h4>
-                {teamACoachSig ? (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <img src={teamACoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
-                    <button onClick={() => {
-                      if (teamA === 'home') setHomeCoachSignature(null)
-                      else setAwayCoachSignature(null)
-                    }}>Remove</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Coach</button>
-                )}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')} className={`sign ${teamACoachSig ? 'signed' : ''}`}>Coach A Signature</button>
               </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Captain Signature</h4>
-                {teamACaptainSig ? (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <img src={teamACaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
-                    <button onClick={() => {
-                      if (teamA === 'home') setHomeCaptainSignature(null)
-                      else setAwayCaptainSignature(null)
-                    }}>Remove</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Captain</button>
-                )}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')} className={`sign ${teamACaptainSig ? 'signed' : ''}`}>Captain A Signature</button>
               </div>
             </div>
           </div>
@@ -3687,7 +3720,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           
           {/* Team B */}
           <div>
-            <h3>Team B</h3>
+            <h1 style={{ margin: 2, fontSize: '24px', fontWeight: 700, textAlign: 'center' }}>Team B</h1>
             <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, height: '48px' }}>
               <button 
                 type="button"
@@ -4066,33 +4099,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         })()}
             
             <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 24, paddingTop: 16, borderTop: showCoinTossRoster ? '2px solid rgba(255,255,255,0.1)' : 'none' }}>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Coach Signature</h4>
-                {teamBCoachSig ? (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <img src={teamBCoachSig} alt="Coach signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
-                    <button onClick={() => {
-                      if (teamB === 'home') setHomeCoachSignature(null)
-                      else setAwayCoachSignature(null)
-                    }}>Remove</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Coach</button>
-                )}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')} className={`sign ${teamBCoachSig ? 'signed' : ''}`}>Coach B Signature</button>
               </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 600 }}>Captain Signature</h4>
-                {teamBCaptainSig ? (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <img src={teamBCaptainSig} alt="Captain signature" style={{ maxWidth: 200, maxHeight: 60, border: '1px solid rgba(255,255,255,.2)', borderRadius: 4, flexShrink: 0 }} />
-                    <button onClick={() => {
-                      if (teamB === 'home') setHomeCaptainSignature(null)
-                      else setAwayCaptainSignature(null)
-                    }}>Remove</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')} style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600 }}>Sign Captain</button>
-                )}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')} className={`sign ${teamBCaptainSig ? 'signed' : ''}`}>Captain B Signature</button>
               </div>
             </div>
           </div>
@@ -4359,6 +4370,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                  openSignature === 'home-captain' ? 'Home Captain Signature' :
                  openSignature === 'away-coach' ? 'Away Coach Signature' :
                  openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+          existingSignature={
+            openSignature === 'home-coach' ? homeCoachSignature :
+            openSignature === 'home-captain' ? homeCaptainSignature :
+            openSignature === 'away-coach' ? awayCoachSignature :
+            openSignature === 'away-captain' ? awayCaptainSignature : null
+          }
         />
       </div>
     )
