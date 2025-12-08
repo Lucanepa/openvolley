@@ -189,7 +189,28 @@
     font-size: 12px;
     line-height: 1.2;
   }
-  
+ 
+  button.sign {
+    background: transparent;
+    color: #ffffff;
+    border: 2px solid rgb(95, 95, 95);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 12px;
+    width: 160px;
+    height: 40px;
+    text-align: center;
+    transition: all 0.2s ease;
+  }
+
+  button.sign.signed {
+    background: rgba(59, 130, 246, 0.2);
+    border: 2px solid rgb(59, 130, 246);
+    color: #ffffff;
+  }
+
   button {
     appearance: none;
     background: var(--accent);
@@ -1378,7 +1399,7 @@
     border-radius: 16px;
     padding: 32px;
     display: flex;
-    width: auto;
+    width: 100%;
     flex-direction: column;
     gap: 8px;
   }

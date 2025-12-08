@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import Modal from './Modal'
 
-export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) {
+export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null }) {
   const canvasRef = useRef(null)
   const isDrawingRef = useRef(false)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -37,9 +37,26 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
       
-      // Clear canvas (transparent background)
-      ctx.clearRect(0, 0, rect.width, rect.height)
-      setHasSignature(false)
+      // Load existing signature if provided, otherwise clear canvas
+      if (existingSignature) {
+        const img = new Image()
+        img.onload = () => {
+          // Draw the existing signature to fill the canvas
+          // Note: ctx is already scaled by dpr, so we draw at the display size
+          ctx.drawImage(img, 0, 0, rect.width, rect.height)
+          setHasSignature(true)
+        }
+        img.onerror = () => {
+          // If image fails to load, clear canvas
+          ctx.clearRect(0, 0, rect.width, rect.height)
+          setHasSignature(false)
+        }
+        img.src = existingSignature
+      } else {
+        // Clear canvas (transparent background)
+        ctx.clearRect(0, 0, rect.width, rect.height)
+        setHasSignature(false)
+      }
       
       // Add touch event listeners with passive: false to allow preventDefault
       const getPointForTouch = (e) => {
@@ -93,7 +110,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
       if (timerId) clearTimeout(timerId)
       if (cleanup) cleanup()
     }
-  }, [open])
+  }, [open, existingSignature])
 
   function getPoint(e) {
     const canvas = canvasRef.current
@@ -156,6 +173,11 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
     onClose()
   }
 
+  function handleCancel() {
+    // Just close without saving - don't clear existing signature
+    onClose()
+  }
+
   return (
     <Modal title={title} open={open} onClose={onClose} width={600}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -183,7 +205,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign' }) 
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button className="secondary" onClick={clear}>Clear</button>
-          <button className="secondary" onClick={onClose}>Cancel</button>
+          <button className="secondary" onClick={handleCancel}>Cancel</button>
           <button onClick={save} disabled={!hasSignature}>Save</button>
         </div>
       </div>
