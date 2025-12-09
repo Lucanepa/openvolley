@@ -15222,96 +15222,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {liberoReentryModal && (() => {
         const teamIsLeft = (liberoReentryModal.team === 'home' && leftIsHome) || (liberoReentryModal.team === 'away' && !leftIsHome)
-        
+
         let modalStyle = {}
-        
+
+        // Get court element
+        const court = document.querySelector('.court')
+        const net = document.querySelector('.court-net')
+
         if (teamIsLeft) {
-          // For left team: anchor to "Libero out" button
-          const allButtons = document.querySelectorAll('button')
-          let liberoOutButton = null
-          for (const btn of allButtons) {
-            if (btn.textContent?.trim() === 'Libero out') {
-              // Check if it's on the left side
-              const rect = btn.getBoundingClientRect()
-              if (rect.left < window.innerWidth / 2) {
-                liberoOutButton = btn
-                break
-              }
-            }
-          }
-          
-          if (liberoOutButton) {
-            const rect = liberoOutButton.getBoundingClientRect()
+          // For left team: align modal's top-left corner with court's top-left corner
+          if (court) {
+            const courtRect = court.getBoundingClientRect()
             modalStyle = {
               position: 'fixed',
-              left: `${rect.left + rect.width / 2}px`,
-              top: `${rect.bottom + 8}px`,
-              transform: 'translateX(-50%)',
-              zIndex: 10000
+              left: `${courtRect.left}px`,
+              top: `${courtRect.top}px`,
+              transform: 'none'
             }
           }
         } else {
-          // For right team: anchor to player in position II
-          const courtPlayers = document.querySelectorAll('.court-player')
-          let positionIIElement = null
-          
-          for (const playerEl of courtPlayers) {
-            const positionEl = playerEl.querySelector('.court-player-position')
-            if (positionEl && positionEl.textContent.trim() === 'II') {
-              const rect = playerEl.getBoundingClientRect()
-              const isRightSide = rect.left >= window.innerWidth / 2
-              
-              // Check if this player belongs to the right team
-              if (isRightSide) {
-                positionIIElement = playerEl
-                break
-              }
-            }
-          }
-          
-          if (positionIIElement) {
-            const rect = positionIIElement.getBoundingClientRect()
+          // For right team: align modal's top-left corner with net's top-right border
+          if (net) {
+            const netRect = net.getBoundingClientRect()
             modalStyle = {
               position: 'fixed',
-              left: `${rect.left + rect.width / 2}px`,
-              top: `${rect.top + rect.height / 2}px`,
-              transform: 'translate(-50%, -50%)',
-              zIndex: 10000
+              left: `${netRect.right}px`,
+              top: `${netRect.top}px`,
+              transform: 'none'
             }
           }
         }
-        
-        // Fallback if anchor element not found
+
+        // Fallback if court/net not found
         if (!modalStyle.position) {
           const courtCenter = window.innerWidth / 2
-          const court = document.querySelector('.court')
           const courtTop = court ? court.getBoundingClientRect().top : 100
-          const courtHeight = court ? court.getBoundingClientRect().height : 400
-          
+
           modalStyle = {
             position: 'fixed',
-            left: `${teamIsLeft ? courtCenter - 150 : courtCenter + 150}px`,
-            top: `${courtTop + courtHeight / 2}px`,
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10000
+            left: teamIsLeft ? '20px' : `${window.innerWidth - 420}px`,
+            top: `${courtTop}px`,
+            transform: 'none'
           }
         }
-        
+
         // Get team info for display
         const teamData = liberoReentryModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoReentryModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoReentryModal.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? 'Home' : 'Away')
         const isBright = isBrightColor(teamColor)
-
-        // Calculate modal position style for custom positioning
-        const modalPositionStyle = modalStyle.position ? modalStyle : {
-          position: 'fixed',
-          top: '30%',
-          [teamIsLeft ? 'left' : 'right']: '2px',
-          transform: 'translateY(-50%)',
-          zIndex: 10000
-        }
 
         return (
             <Modal
@@ -15337,6 +15297,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               width={400}
               hideCloseButton={true}
               position="custom"
+              customStyle={modalStyle}
             >
               <div style={{ padding: '24px', textAlign: 'center' }}>
                 <p style={{ marginBottom: '24px', fontSize: '16px' }}>
@@ -16520,96 +16481,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {liberoRotationModal && (() => {
         const teamIsLeft = (liberoRotationModal.team === 'home' && leftIsHome) || (liberoRotationModal.team === 'away' && !leftIsHome)
-        
+
         let modalStyle = {}
-        
+
+        // Get court element
+        const court = document.querySelector('.court')
+        const net = document.querySelector('.court-net')
+
         if (teamIsLeft) {
-          // For left team: anchor to "Libero out" button
-          const allButtons = document.querySelectorAll('button')
-          let liberoOutButton = null
-          for (const btn of allButtons) {
-            if (btn.textContent?.trim() === 'Libero out') {
-              // Check if it's on the left side
-              const rect = btn.getBoundingClientRect()
-              if (rect.left < window.innerWidth / 2) {
-                liberoOutButton = btn
-                break
-              }
-            }
-          }
-          
-          if (liberoOutButton) {
-            const rect = liberoOutButton.getBoundingClientRect()
+          // For left team: align modal's top-left corner with court's top-left corner
+          if (court) {
+            const courtRect = court.getBoundingClientRect()
             modalStyle = {
               position: 'fixed',
-              left: `${rect.left + rect.width / 2}px`,
-              top: `${rect.bottom + 8}px`,
-              transform: 'translateX(-50%)',
-              zIndex: 10000
+              left: `${courtRect.left}px`,
+              top: `${courtRect.top}px`,
+              transform: 'none'
             }
           }
         } else {
-          // For right team: anchor to player in position II
-          const courtPlayers = document.querySelectorAll('.court-player')
-          let positionIIElement = null
-          
-          for (const playerEl of courtPlayers) {
-            const positionEl = playerEl.querySelector('.court-player-position')
-            if (positionEl && positionEl.textContent.trim() === 'II') {
-              const rect = playerEl.getBoundingClientRect()
-              const isRightSide = rect.left >= window.innerWidth / 2
-              
-              // Check if this player belongs to the right team
-              if (isRightSide) {
-                positionIIElement = playerEl
-                break
-              }
-            }
-          }
-          
-          if (positionIIElement) {
-            const rect = positionIIElement.getBoundingClientRect()
+          // For right team: align modal's top-left corner with net's top-right border
+          if (net) {
+            const netRect = net.getBoundingClientRect()
             modalStyle = {
               position: 'fixed',
-              left: `${rect.left + rect.width / 2}px`,
-              top: `${rect.top + rect.height / 2}px`,
-              transform: 'translate(-50%, -50%)',
-              zIndex: 10000
+              left: `${netRect.right}px`,
+              top: `${netRect.top}px`,
+              transform: 'none'
             }
           }
         }
-        
-        // Fallback if anchor element not found
+
+        // Fallback if court/net not found
         if (!modalStyle.position) {
           const courtCenter = window.innerWidth / 2
-          const court = document.querySelector('.court')
           const courtTop = court ? court.getBoundingClientRect().top : 100
-          const courtHeight = court ? court.getBoundingClientRect().height : 400
-          
+
           modalStyle = {
             position: 'fixed',
-            left: `${teamIsLeft ? courtCenter - 150 : courtCenter + 150}px`,
-            top: `${courtTop + courtHeight / 2}px`,
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10000
+            left: teamIsLeft ? '20px' : `${window.innerWidth - 420}px`,
+            top: `${courtTop}px`,
+            transform: 'none'
           }
         }
-        
+
         // Get team info for display
         const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? 'Home' : 'Away')
         const isBright = isBrightColor(teamColor)
-
-        // Calculate modal position style for custom positioning
-        const modalPositionStyle = modalStyle.position ? modalStyle : {
-          position: 'fixed',
-          top: '30%',
-          [teamIsLeft ? 'left' : 'right']: '2px',
-          transform: 'translateY(-50%)',
-          zIndex: 10000
-        }
 
         return (
             <Modal
@@ -16635,6 +16556,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               width={400}
               position="custom"
               hideCloseButton={true}
+              customStyle={modalStyle}
             >
               <div style={{ padding: '24px', textAlign: 'center' }}>
                 <p style={{ marginBottom: '24px', fontSize: '16px' }}>
