@@ -7758,11 +7758,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <aside className="team-controls">
           <div className="team-info">
             <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
-                setConnectionModal('teamA')
-              }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -7773,12 +7768,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 borderRadius: '6px',
                 fontWeight: 600,
                 fontSize: '14px',
-                marginBottom: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
+                marginBottom: '8px'
               }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
               <span>{teamALabel}</span>
               <span>-</span>
@@ -9648,11 +9639,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <aside className="team-controls">
           <div className="team-info">
             <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setConnectionModalPosition({ x: rect.left, y: rect.bottom + 8 })
-                setConnectionModal('teamB')
-              }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -9663,12 +9649,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 borderRadius: '6px',
                 fontWeight: 600,
                 fontSize: '14px',
-                marginBottom: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
+                marginBottom: '8px'
               }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
               <span>{teamBLabel}</span>
               <span>-</span>
@@ -10606,62 +10588,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </div>
               )}
 
-              {/* Team PINs - Only show if connection is enabled */}
-              {(data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled !== false) || (data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled !== false) ? (
-                <div style={{
-                  display: 'flex',
-                  gap: '16px',
-                  width: '100%'
-                }}>
-                  {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled !== false && (
-                    <div style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '8px',
-                      padding: '16px',
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      minWidth: 0
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                          {data?.homeTeam?.name || 'Home Team'} PIN
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
-                        {String(data.match.homeTeamPin).padStart(6, '0')}
-                      </div>
-                    </div>
-                  )}
-                  {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled !== false && (
-                    <div style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '8px',
-                      padding: '16px',
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      minWidth: 0
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                          {data?.awayTeam?.name || 'Away Team'} PIN
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
-                        {String(data.match.awayTeamPin).padStart(6, '0')}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
+              {/* Team PINs - Hidden for benches (only upload PINs are shown) */}
               {/* Game Upload PINs - Same row (50/50) */}
               {(data?.match?.homeTeamUploadPin || data?.match?.awayTeamUploadPin) && (
                 <div style={{
@@ -16205,7 +16132,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       )}
       
       {/* Connection Status Popover */}
-      {connectionModal && (
+      {connectionModal && connectionModal !== 'teamA' && connectionModal !== 'teamB' && (
         <div
           onClick={(e) => {
             if (e.target === e.currentTarget) {
@@ -16298,7 +16225,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 padding: '8px 0'
               }}>
                 <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                  Enable Connection
+                  Enable Dashboard
                 </span>
                 <div style={{
                   position: 'relative',
