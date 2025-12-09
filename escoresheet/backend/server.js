@@ -69,7 +69,10 @@ const server = createServer((req, res) => {
   // List active matches (ephemeral - just for current session)
   if (url.pathname === '/api/match/list') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify(Array.from(activeMatches.values())))
+    res.end(JSON.stringify({
+      success: true,
+      matches: Array.from(activeMatches.values())
+    }))
     return
   }
 
