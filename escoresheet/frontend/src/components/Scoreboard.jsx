@@ -3057,21 +3057,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
     if (!setEndTimeModal || !data?.match || !data?.set) return
-    
+
     const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
-    
+
+    // Close modal immediately to prevent multiple confirmations
+    setSetEndTimeModal(null)
+
     // Determine team labels (A or B) based on coin toss
     const teamAKey = data.match.coinTossTeamA || 'home'
-    const winnerLabel = winner === 'home' 
+    const winnerLabel = winner === 'home'
       ? (teamAKey === 'home' ? 'A' : 'B')
       : (teamAKey === 'away' ? 'A' : 'B')
-    
+
     // Get start time from current set
     const startTime = data.set.startTime
-    
+
     // Log set win with start and end times
-    await logEvent('set_end', { 
-      team: winner, 
+    await logEvent('set_end', {
+      team: winner,
       teamLabel: winnerLabel,
       setIndex: setIndex,
       homePoints,
@@ -3079,7 +3082,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       startTime: startTime,
       endTime: time
     })
-    
+
     // Update set with end time and finished status
     await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
 
@@ -3257,8 +3260,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         status: 'queued'
       })
     }
-    
-    setSetEndTimeModal(null)
   }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey])
 
   // Confirm set 5 side and service choices
