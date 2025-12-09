@@ -228,6 +228,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       sets.find(s => !s.finished) ??
       null
 
+    if (currentSet) {
+      console.log(`[Scoreboard useLiveQuery] Current set: ${currentSet.index} (ID: ${currentSet.id}, finished: ${currentSet.finished})`)
+    } else {
+      console.log(`[Scoreboard useLiveQuery] No current set found. All sets:`, sets.map(s => ({ index: s.index, finished: s.finished })))
+    }
+
     const [homePlayers, awayPlayers] = await Promise.all([
       match?.homeTeamId
         ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
@@ -3076,9 +3082,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Update set with end time and finished status
     await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
-    
+
+    console.log(`[Scoreboard] Marked set ${data.set.index} (ID: ${data.set.id}) as finished`)
+
     // Get all sets and calculate sets won by each team
     const sets = await db.sets.where({ matchId }).toArray()
+    console.log(`[Scoreboard] All sets after marking finished:`, sets.map(s => ({ index: s.index, finished: s.finished, id: s.id })))
     const finishedSets = sets.filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
@@ -3186,14 +3195,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return existingSet.id
       }
       
-      const newSetId = await db.sets.add({ 
-        matchId, 
-        index: newSetIndex, 
-        homePoints: 0, 
-        awayPoints: 0, 
-        finished: false 
+      const newSetId = await db.sets.add({
+        matchId,
+        index: newSetIndex,
+        homePoints: 0,
+        awayPoints: 0,
+        finished: false
       })
-      
+
+      console.log(`[Scoreboard] Created new set ${newSetIndex} (ID: ${newSetId})`)
+
+      // Verify the new set was created by querying it back
+      const verifyNewSet = await db.sets.get(newSetId)
+      console.log(`[Scoreboard] Verified new set:`, verifyNewSet)
+
       // Get match to determine first serve for the new set
       const match = await db.matches.get(matchId)
       const coinTossFirstServe = match?.firstServe || 'home' // Original first serve from coin toss
