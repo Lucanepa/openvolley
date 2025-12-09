@@ -1317,10 +1317,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }
 
   async function confirmCoinToss() {
-    
-    if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-      setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
-      return
+
+    // Only check signatures for official matches, skip for test matches
+    if (!match?.test) {
+      if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
+        setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
+        return
+      }
     }
     
     // Use matchId if pendingMatchId is not set
@@ -1340,20 +1343,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     // Determine which team serves first
     const firstServeTeam = serveA ? teamA : teamB
     
-    // Update match with signatures and rosters
+    // Update match with signatures (only for official matches) and coin toss result
     await db.transaction('rw', db.matches, db.players, db.sync_queue, db.events, async () => {
-    // Update match with signatures, first serve, and coin toss result
-    const updateResult = await db.matches.update(targetMatchId, {
-      homeCoachSignature,
-      homeCaptainSignature,
-      awayCoachSignature,
-      awayCaptainSignature,
+    // Build update object
+    const updateData = {
       firstServe: firstServeTeam, // 'home' or 'away'
       coinTossTeamA: teamA, // 'home' or 'away'
       coinTossTeamB: teamB, // 'home' or 'away'
       coinTossServeA: serveA, // true or false
       coinTossServeB: serveB // true or false
-      })
+    }
+
+    // Only save signatures for official matches
+    if (!match?.test) {
+      updateData.homeCoachSignature = homeCoachSignature
+      updateData.homeCaptainSignature = homeCaptainSignature
+      updateData.awayCoachSignature = awayCoachSignature
+      updateData.awayCaptainSignature = awayCaptainSignature
+    }
+
+    const updateResult = await db.matches.update(targetMatchId, updateData)
     
     // Check if coin toss event already exists
     const existingCoinTossEvent = await db.events
