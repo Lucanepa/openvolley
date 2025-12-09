@@ -128,10 +128,23 @@ Answer prompts:
 - **Project name**: `escoresheet-backend`
 - **Environment**: `production`
 
-Deploy:
+**IMPORTANT**: Railway needs to know to deploy from the backend folder only.
+
+Option A - Deploy via Railway CLI (Recommended):
 ```bash
 railway up
 ```
+
+Option B - Deploy via GitHub (if railway up doesn't work):
+1. Link to your GitHub repo:
+   ```bash
+   railway link
+   ```
+2. In Railway dashboard, set **Root Directory** to `escoresheet/backend`
+3. Deploy:
+   ```bash
+   git push
+   ```
 
 Wait for deployment (30-60 seconds).
 

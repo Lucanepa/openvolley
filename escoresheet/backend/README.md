@@ -392,6 +392,17 @@ Server logs are printed to console with emojis for easy monitoring:
 
 ## Troubleshooting
 
+### Railway: "EADDRINUSE: address already in use"
+
+**Problem**: Railway is trying to deploy the entire repo including frontend.
+
+**Solution**: Configure Railway to use backend folder only:
+
+1. In Railway dashboard → Settings → **Root Directory**: `escoresheet/backend`
+2. Redeploy
+
+Or use `railway up` from the `backend` folder directly.
+
 ### Connection refused
 - Check firewall settings
 - Ensure port 8080 is open
@@ -410,6 +421,13 @@ Server logs are printed to console with emojis for easy monitoring:
 - Check Railway logs: `railway logs`
 - Memory limit: 512MB on free tier
 - Increase if needed (paid tier)
+
+### Railway deployment fails
+
+1. Check logs: `railway logs`
+2. Verify `package.json` exists in backend folder
+3. Ensure Root Directory is set to `escoresheet/backend`
+4. Try deploying from backend folder: `cd escoresheet/backend && railway up`
 
 ## Next Steps
 
