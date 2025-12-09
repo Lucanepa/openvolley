@@ -1,0 +1,26 @@
+# Cloudflare Workers configuration
+name = "escoresheet"
+type = "webpack"
+account_id = ""
+workers_dev = true
+route = ""
+zone_id = ""
+
+[site]
+bucket = "./dist"
+
+[build]
+command = "npm run build"
+
+[build.upload]
+format = "service-worker"
+
+# Durable Objects for WebSocket support
+[[durable_objects.bindings]]
+name = "MATCH_ROOM"
+class_name = "MatchRoom"
+
+# KV namespace for match data
+[[kv_namespaces]]
+binding = "MATCHES_KV"
+id = ""
