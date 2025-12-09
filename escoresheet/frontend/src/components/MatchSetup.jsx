@@ -4814,7 +4814,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     type="text"
                     value={homeShortName}
                     onChange={e => setHomeShortName(e.target.value.toUpperCase())}
-                    placeholder="Short name"
                     maxLength={8}
                     required
                     style={{
@@ -4951,7 +4950,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     type="text"
                     value={awayShortName}
                     onChange={e => setAwayShortName(e.target.value.toUpperCase())}
-                    placeholder="Short name"
                     maxLength={8}
                     required
                     style={{
