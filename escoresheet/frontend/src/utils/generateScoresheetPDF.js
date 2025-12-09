@@ -177,9 +177,17 @@ export async function generateScoresheetPDF(matchData) {
     const initialLineupA = setStartEvent?.payload?.homeLineup || setStartEvent?.payload?.lineup?.home || {}
     const initialLineupB = setStartEvent?.payload?.awayLineup || setStartEvent?.payload?.lineup?.away || {}
 
-    // Find first lineup event for each team
-    const firstLineupA = setEvents.find(e => e.type === 'lineup' && e.payload?.team === (teamAKey === 'home' ? 'home' : 'away'))
-    const firstLineupB = setEvents.find(e => e.type === 'lineup' && e.payload?.team === (teamBKey === 'home' ? 'home' : 'away'))
+    // Find INITIAL lineup event for each team (not rotation or substitution lineups)
+    const firstLineupA = setEvents.find(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === (teamAKey === 'home' ? 'home' : 'away') &&
+      e.payload?.isInitial === true
+    )
+    const firstLineupB = setEvents.find(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === (teamBKey === 'home' ? 'home' : 'away') &&
+      e.payload?.isInitial === true
+    )
 
     const lineupA = firstLineupA?.payload?.lineup || initialLineupA
     const lineupB = firstLineupB?.payload?.lineup || initialLineupB
