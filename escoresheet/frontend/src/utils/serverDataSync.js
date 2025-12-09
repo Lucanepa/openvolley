@@ -9,7 +9,6 @@ function getServerUrl() {
   const backendUrl = import.meta.env.VITE_BACKEND_URL
 
   if (backendUrl) {
-    console.log('📡 Using configured backend URL:', backendUrl)
     return backendUrl
   }
 
@@ -17,9 +16,7 @@ function getServerUrl() {
   const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
   const hostname = window.location.hostname
   const port = window.location.port || (protocol === 'https' ? '443' : '5173')
-  const localUrl = `${protocol}://${hostname}:${port}`
-  console.log('💻 Using local server URL:', localUrl)
-  return localUrl
+  return `${protocol}://${hostname}:${port}`
 }
 
 // Get WebSocket URL - checks for configured backend first, then falls back to current location
@@ -30,18 +27,14 @@ function getWebSocketUrl() {
   if (backendUrl) {
     const url = new URL(backendUrl)
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${url.host}`
-    console.log('📡 Using configured WebSocket URL:', wsUrl)
-    return wsUrl
+    return `${protocol}//${url.host}`
   }
 
   // Fallback to local WebSocket server (development or Electron)
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const hostname = window.location.hostname
   const wsPort = 8080 // Default WebSocket port
-  const localWsUrl = `${protocol}://${hostname}:${wsPort}`
-  console.log('💻 Using local WebSocket URL:', localWsUrl)
-  return localWsUrl
+  return `${protocol}://${hostname}:${wsPort}`
 }
 
 /**
@@ -414,8 +407,9 @@ export async function updateMatchData(matchId, updates) {
  */
 export async function listAvailableMatches() {
   const serverUrl = getServerUrl()
-  
+
   try {
+    console.log('🔍 Fetching matches from:', `${serverUrl}/api/match/list`)
     const response = await fetch(`${serverUrl}/api/match/list`, {
       method: 'GET',
       headers: {
@@ -423,14 +417,18 @@ export async function listAvailableMatches() {
       }
     })
 
+    console.log('📊 Response status:', response.status, response.statusText)
+
     if (!response.ok) {
-      return { success: false, matches: [] }
+      console.log('❌ Response not OK, returning error')
+      return { success: false, matches: [], error: `HTTP ${response.status}: ${response.statusText}` }
     }
 
     const result = await response.json()
+    console.log('✅ Matches response:', result)
     return result
   } catch (error) {
-    console.error('Error listing matches:', error)
-    return { success: false, matches: [] }
+    console.error('❌ Error listing matches:', error)
+    return { success: false, matches: [], error: error.message }
   }
 }
