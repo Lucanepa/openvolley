@@ -2722,8 +2722,8 @@ export default function App() {
           />
         </div>
 
-        {/* Center: Match Type (only show when not on home view and match exists) */}
-        {currentView !== 'home' && currentMatch && (
+        {/* Center: Match Type (only show when match is active and not on home view) */}
+        {(showMatchSetup || matchId) && currentMatch && (
           <div style={{
             flex: '1 1 auto',
             display: 'flex',
