@@ -4852,13 +4852,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 </div>
               </div>
             </div>
-            <ConnectionBanner
-              team="home"
-              enabled={homeTeamConnectionEnabled}
-              onToggle={handleHomeTeamConnectionToggle}
-              pin={match?.homeTeamPin}
-              onEditPin={() => handleEditPin('benchHome')}
-            />
+            {/* <ConnectionBanner
+            //   team="home"
+            //   enabled={homeTeamConnectionEnabled}
+            //   onToggle={handleHomeTeamConnectionToggle}
+            //   pin={match?.homeTeamPin}
+            //   onEditPin={() => handleEditPin('benchHome')}
+            // /> */}
             <div
               className="text-sm"
               style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
@@ -4988,13 +4988,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                 </div>
               </div>
             </div>
-            <ConnectionBanner
+            {/*<ConnectionBanner
               team="away"
               enabled={awayTeamConnectionEnabled}
               onToggle={handleAwayTeamConnectionToggle}
               pin={match?.awayTeamPin}
               onEditPin={() => handleEditPin('benchAway')}
-            />
+            />*/}
             <div
               className="text-sm"
               style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
