@@ -11,7 +11,9 @@
       "Bash(npm update:*)",
       "Bash(curl:*)",
       "Bash(npm outdated:*)",
-      "Bash(npm audit:*)"
+      "Bash(npm audit:*)",
+      "Bash(railway logs:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []
