@@ -145,7 +145,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [homePdfError, setHomePdfError] = useState('')
   const [awayPdfError, setAwayPdfError] = useState('')
   const homeFileInputRef = useRef(null)
-  
+  const awayFileInputRef = useRef(null)
+
   // Referee JSON import state
   const [refereeJsonLoading, setRefereeJsonLoading] = useState(false)
   const [refereeJsonError, setRefereeJsonError] = useState('')
@@ -321,7 +322,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
-        // Only load short names if they exist - they should only be set if user explicitly entered them
         // The placeholder will show a suggestion, but won't auto-fill a value
         if (match.homeShortName && match.homeShortName.trim()) {
           setHomeShortName(match.homeShortName)
@@ -950,27 +950,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       return () => clearTimeout(timeoutId)
     }
   }, [home, away, currentView])
-
-  // Helper function to generate smart short name placeholder
-  function generateShortNamePlaceholder(teamName) {
-    if (!teamName) return 'Short name'
-    // Common words to skip
-    const commonWords = ['volley', 'volleyball', 'vbc', 'vc', 'bc', 'club', 'team']
-    // Split into words and find the first word that is NOT a common word
-    const words = teamName.trim().split(/\s+/)
-    for (const word of words) {
-      const lowerWord = word.toLowerCase()
-      if (!commonWords.includes(lowerWord) && word.length > 0) {
-        // Take first 8 characters and uppercase
-        return word.substring(0, 8).toUpperCase()
-      }
-    }
-    // If all words are common, use the first word anyway
-    if (words.length > 0) {
-      return words[0].substring(0, 8).toUpperCase()
-    }
-    return 'Short name'
-  }
 
   // Helper function to determine if a color is bright/light
   function isBrightColor(color) {
@@ -4813,7 +4792,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     type="text"
                     value={homeShortName}
                     onChange={e => setHomeShortName(e.target.value.toUpperCase())}
-                    placeholder={generateShortNamePlaceholder(home)}
+                    placeholder="Short name"
                     maxLength={8}
                     style={{
                       width: '100%',
@@ -4949,7 +4928,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     type="text"
                     value={awayShortName}
                     onChange={e => setAwayShortName(e.target.value.toUpperCase())}
-                    placeholder={generateShortNamePlaceholder(away)}
+                    placeholder="Short name"
                     maxLength={8}
                     style={{
                       width: '100%',
