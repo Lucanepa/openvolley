@@ -146,9 +146,29 @@ wss.on('connection', (ws, req) => {
           handleMatchUpdate(clientInfo, message)
           break
 
+        case 'sync-match-data':
+          // Scoreboard sends match data sync (frontend uses this format)
+          handleSyncMatchData(clientInfo, message)
+          break
+
+        case 'match-action':
+          // Scoreboard sends action (timeout, substitution, etc.) - frontend format
+          handleMatchAction(clientInfo, message)
+          break
+
         case 'action':
-          // Scoreboard sends action (timeout, substitution, etc.)
+          // Scoreboard sends action (timeout, substitution, etc.) - legacy format
           handleAction(clientInfo, message)
+          break
+
+        case 'clear-all-matches':
+          // Clear all matches (or all except one)
+          handleClearMatches(message)
+          break
+
+        case 'delete-match':
+          // Delete a specific match
+          handleDeleteMatch(message)
           break
 
         case 'ping':
@@ -320,6 +340,123 @@ function handleClientDisconnect(clientInfo) {
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   console.log(`❌ Client disconnected: ${clientInfo.id} (Total: ${connections.size})`)
+}
+
+// Handle sync-match-data from frontend scoreboard
+function handleSyncMatchData(clientInfo, message) {
+  const { matchId, match, teams, players, sets, events } = message
+
+  if (!matchId) {
+    clientInfo.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Match ID required'
+    }))
+    return
+  }
+
+  // Store/update match in activeMatches with all the data
+  activeMatches.set(matchId, {
+    matchId,
+    match,
+    teams,
+    players,
+    sets,
+    events,
+    gameNumber: match?.gameN || match?.gameNumber,
+    homeTeam: teams?.[0]?.name || 'Home',
+    awayTeam: teams?.[1]?.name || 'Away',
+    updatedAt: new Date().toISOString(),
+    updatedBy: clientInfo.id
+  })
+
+  // Ensure room exists
+  if (!rooms.has(matchId)) {
+    rooms.set(matchId, {
+      matchId,
+      clients: new Set(),
+      createdAt: new Date().toISOString()
+    })
+  }
+
+  // Add client to room if not already there
+  const room = rooms.get(matchId)
+  if (!room.clients.has(clientInfo.id)) {
+    room.clients.add(clientInfo.id)
+    clientInfo.matchId = matchId
+    clientInfo.role = 'scoreboard'
+  }
+
+  // Broadcast to other clients in the room
+  broadcastToRoom(matchId, {
+    type: 'match-data-update',
+    matchId,
+    match,
+    teams,
+    players,
+    sets,
+    events,
+    timestamp: new Date().toISOString()
+  }, clientInfo.id)
+
+  console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
+}
+
+// Handle match-action from frontend
+function handleMatchAction(clientInfo, message) {
+  const { matchId, action, actionData } = message
+
+  if (!matchId || !action) {
+    return
+  }
+
+  // Broadcast action to all clients in the room
+  broadcastToRoom(matchId, {
+    type: 'match-action',
+    matchId,
+    action,
+    data: actionData,
+    timestamp: new Date().toISOString(),
+    from: clientInfo.id
+  }, clientInfo.id)
+
+  console.log(`⚡ Match action broadcasted to room ${matchId}: ${action}`)
+}
+
+// Handle clear-all-matches
+function handleClearMatches(message) {
+  const keepMatchId = message.keepMatchId
+
+  if (keepMatchId) {
+    // Clear all matches except the specified one
+    const keysToDelete = []
+    activeMatches.forEach((_, matchId) => {
+      if (String(matchId) !== String(keepMatchId)) {
+        keysToDelete.push(matchId)
+      }
+    })
+    keysToDelete.forEach(matchId => {
+      activeMatches.delete(matchId)
+      rooms.delete(matchId)
+    })
+    console.log(`🗑️  Cleared ${keysToDelete.length} matches (kept ${keepMatchId})`)
+  } else {
+    // Clear all matches
+    const count = activeMatches.size
+    activeMatches.clear()
+    rooms.clear()
+    console.log(`🗑️  Cleared all ${count} matches`)
+  }
+}
+
+// Handle delete-match
+function handleDeleteMatch(message) {
+  const { matchId } = message
+
+  if (!matchId) return
+
+  activeMatches.delete(matchId)
+  rooms.delete(matchId)
+  console.log(`🗑️  Deleted match ${matchId}`)
 }
 
 // Broadcast message to all clients in a specific room
