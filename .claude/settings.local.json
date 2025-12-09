@@ -13,7 +13,9 @@
       "Bash(npm outdated:*)",
       "Bash(npm audit:*)",
       "Bash(railway logs:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(railway up:*)",
+      "Bash(railway redeploy:*)"
     ],
     "deny": [],
     "ask": []
