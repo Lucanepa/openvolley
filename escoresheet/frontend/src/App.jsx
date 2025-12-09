@@ -342,12 +342,15 @@ export default function App() {
       let errorMessage = ''
 
       // Use longer timeout for cloud backends (Railway needs more time to wake up)
-      const connectionTimeout = backendUrl ? 5000 : 2000
+      const connectionTimeout = backendUrl ? 10000 : 2000
+
+      console.log(`⏱️  WebSocket timeout set to ${connectionTimeout / 1000}s`)
 
       await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           if (!resolved) {
             resolved = true
+            console.log(`⏱️  WebSocket connection timeout after ${connectionTimeout / 1000}s, readyState:`, wsTest.readyState)
             try {
               if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
                 wsTest.close()
@@ -359,13 +362,14 @@ export default function App() {
             debugInfo.websocket = {
               status: 'disconnected',
               message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
-              details: `Attempted to connect to ${wsUrl}`
+              details: `Attempted to connect to ${wsUrl}, readyState: ${wsTest.readyState}`
             }
             resolve()
           }
         }, connectionTimeout)
         
         wsTest.onopen = () => {
+          console.log('✅ WebSocket test connection opened successfully!')
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -379,8 +383,9 @@ export default function App() {
             resolve()
           }
         }
-        
+
         wsTest.onerror = (error) => {
+          console.log('❌ WebSocket test error:', error)
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -400,8 +405,9 @@ export default function App() {
             resolve()
           }
         }
-        
+
         wsTest.onclose = (event) => {
+          console.log(`🔌 WebSocket test closed: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`)
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
