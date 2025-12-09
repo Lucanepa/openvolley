@@ -323,7 +323,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
         // The placeholder will show a suggestion, but won't auto-fill a value
-       
+        if (match.homeShortName && match.homeShortName.trim()) {
+          setHomeShortName(match.homeShortName)
+        }
+        if (match.awayShortName && match.awayShortName.trim()) {
+          setAwayShortName(match.awayShortName)
+        }
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
         
@@ -799,8 +804,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           match_type_2: type2,
           match_type_3: type3,
           match_type_3_other: type3 === 'other' ? type3Other : null,
-          homeShortName: homeShortName || 'Short name',
-          awayShortName: awayShortName || 'Short name',
+          homeShortName: homeShortName || home.substring(0, 8).toUpperCase(),
+          awayShortName: awayShortName || away.substring(0, 8).toUpperCase(),
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
@@ -1138,8 +1143,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       match_type_2: type2,
       match_type_3: type3,
       match_type_3_other: type3 === 'other' ? type3Other : null,
-      homeShortName: homeShortName || 'Short name',
-      awayShortName: awayShortName || 'Short name',
+      homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
+      awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
       game_n: gameN ? Number(gameN) : null,
       league,
       gamePin: (() => {
@@ -2684,7 +2689,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               
               // Update match with short name and restore signatures (re-lock)
               const updateData = {
-                homeShortName: homeShortName || 'Home short'
+                homeShortName: homeShortName || home.substring(0, 3).toUpperCase()
               }
               
               // Restore signatures if they were previously saved (re-lock the team)
@@ -3237,7 +3242,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               
               // Update match with short name and restore signatures (re-lock)
               const updateData = {
-                awayShortName: awayShortName || 'Away short'
+                awayShortName: awayShortName || away.substring(0, 3).toUpperCase()
               }
               
               // Restore signatures if they were previously saved (re-lock the team)
@@ -5193,8 +5198,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   match_type_2: type2,
                   match_type_3: type3,
                   match_type_3_other: type3 === 'other' ? type3Other : null,
-                  homeShortName: homeShortName || 'Short name',
-                  awayShortName: awayShortName || 'Short name',
+                  homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
+                  awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
                   game_n: gameN ? Number(gameN) : null,
                   gameNumber: gameN ? gameN : null,
                   league,
