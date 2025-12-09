@@ -2712,25 +2712,59 @@ export default function App() {
         gap: '16px',
         zIndex: 100
       }}>
-        {/* Left: Version */}
-        <div style={{ flex: '0 0 auto', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
-          Version {__APP_VERSION__ || '1.0.0'}
-        </div>
-        
-        {/* Right: Connection Status and Fullscreen */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '12px',
-          flex: '0 0 auto'
-        }}>
-          {/* Connection Status Indicator */}
+        {/* Left: Connection Status */}
+        <div style={{ flex: '0 0 auto' }}>
           <ConnectionStatus
             connectionStatuses={connectionStatuses}
             connectionDebugInfo={connectionDebugInfo}
-            position="right"
+            position="left"
             size="normal"
           />
+        </div>
+
+        {/* Center: Match Type (only show when not on home view and match exists) */}
+        {currentView !== 'home' && currentMatch && (
+          <div style={{
+            flex: '1 1 auto',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}>
+            {currentMatch.test ? (
+              <span style={{
+                fontSize: '14px',
+                fontWeight: 700,
+                color: '#fbbf24',
+                textTransform: 'uppercase',
+                letterSpacing: '1px'
+              }}>
+                TEST MATCH
+              </span>
+            ) : (
+              <span style={{
+                fontSize: '14px',
+                fontWeight: 600,
+                color: 'rgba(255, 255, 255, 0.7)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                MATCH #{currentMatch.gameNumber || currentMatch.game_n || 'N/A'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Right: Version and Fullscreen */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          flex: '0 0 auto'
+        }}>
+          {/* Version */}
+          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+            Version {__APP_VERSION__ || '1.0.0'}
+          </div>
           
           {/* Fullscreen Button */}
           <button
