@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../db/db'
 
 export default function ConnectionStatus({ 
@@ -10,6 +10,68 @@ export default function ConnectionStatus({
 }) {
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, maxHeight: 0 })
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  // Calculate menu position based on button position
+  const calculateMenuPosition = useCallback(() => {
+    if (!buttonRef.current) return
+
+    const buttonRect = buttonRef.current.getBoundingClientRect()
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const menuMaxWidth = 300
+    const menuPadding = 12
+    const gap = 8 // Gap between button and menu
+
+    // Calculate horizontal position
+    let left = buttonRect.left
+
+    // Ensure menu doesn't go off the right edge
+    if (left + menuMaxWidth > viewportWidth - menuPadding) {
+      left = viewportWidth - menuMaxWidth - menuPadding
+    }
+
+    // Ensure menu doesn't go off the left edge
+    if (left < menuPadding) {
+      left = menuPadding
+    }
+
+    // Calculate vertical position and max height
+    const spaceBelow = viewportHeight - buttonRect.bottom - gap - menuPadding
+    const spaceAbove = buttonRect.top - gap - menuPadding
+    let top
+    let maxHeight
+
+    // Prefer positioning below, but if not enough space, position above
+    if (spaceBelow >= 200 || spaceBelow >= spaceAbove) {
+      // Position below the button
+      top = buttonRect.bottom + gap
+      maxHeight = Math.max(200, Math.min(spaceBelow, viewportHeight - top - menuPadding))
+    } else {
+      // Position above the button
+      const estimatedHeight = Math.min(400, spaceAbove)
+      top = buttonRect.top - estimatedHeight - gap
+      maxHeight = Math.max(200, Math.min(estimatedHeight, spaceAbove))
+    }
+
+    setMenuPosition({ top, left, maxHeight })
+  }, [])
+
+  // Recalculate menu position when menu is shown or window is resized
+  useEffect(() => {
+    if (showConnectionMenu) {
+      calculateMenuPosition()
+      const handleResize = () => calculateMenuPosition()
+      window.addEventListener('resize', handleResize)
+      window.addEventListener('scroll', handleResize, true)
+      return () => {
+        window.removeEventListener('resize', handleResize)
+        window.removeEventListener('scroll', handleResize, true)
+      }
+    }
+  }, [showConnectionMenu, calculateMenuPosition])
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -129,8 +191,12 @@ export default function ConnectionStatus({
   return (
     <div style={{ position: 'relative' }} data-connection-menu>
       <div
+        ref={buttonRef}
         onClick={(e) => {
           e.stopPropagation()
+          if (!showConnectionMenu) {
+            calculateMenuPosition()
+          }
           setShowConnectionMenu(!showConnectionMenu)
         }}
         style={{
@@ -172,17 +238,20 @@ export default function ConnectionStatus({
       {/* Connection Status Menu */}
       {showConnectionMenu && (
         <div
+          ref={menuRef}
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'fixed',
-            top: '50px',
-            left: '12px',
-            right: '12px',
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            maxWidth: '300px',
+            width: 'max-content',
+            minWidth: '200px',
             background: 'rgba(0, 0, 0, 0.95)',
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
-            maxHeight: 'calc(100vh - 120px)',
+            maxHeight: `${menuPosition.maxHeight}px`,
             overflowY: 'auto',
             overflowX: 'hidden',
             zIndex: 1000,
