@@ -3571,9 +3571,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setUndoConfirm(null)
       return
     }
-    
+
     const lastEvent = undoConfirm.event
-    
+
+    // Get the next sequence number ONCE at the start, before any deletions
+    // This ensures consistent sequential IDs even when multiple events are added during undo
+    let nextSeqCounter = await getNextSeq()
+    const getNextSeqInUndo = () => nextSeqCounter++
+
     try {
     // Skip rotation lineups (they don't have isInitial, fromSubstitution, or liberoSubstitution)
     if (lastEvent.type === 'lineup') {
@@ -3715,7 +3720,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           type: 'lineup',
           payload: { team, lineup: restoredLineup, fromSubstitution: true },
           ts: new Date().toISOString(),
-          seq: await getNextSeq()
+          seq: getNextSeqInUndo()
         })
       }
     }
@@ -3784,13 +3789,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             matchId,
             setIndex: data.set.index,
             type: 'lineup',
-            payload: { 
-              team, 
+            payload: {
+              team,
               lineup: restoredLineup,
               liberoSubstitution: null // Explicitly clear libero substitution
             },
             ts: new Date().toISOString(),
-            seq: await getNextSeq()
+            seq: getNextSeqInUndo()
           })
         } else {
           // No previous lineup found, get the current most recent lineup (after deletion) and restore
@@ -3822,13 +3827,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
-              payload: { 
-                team, 
+              payload: {
+                team,
                 lineup: restoredLineup,
                 liberoSubstitution: null // Explicitly clear libero substitution
               },
               ts: new Date().toISOString(),
-              seq: await getNextSeq()
+              seq: getNextSeqInUndo()
             })
           }
         }
@@ -3974,13 +3979,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             matchId,
             setIndex: data.set.index,
             type: 'lineup',
-            payload: { 
-              team, 
+            payload: {
+              team,
               lineup: restoredLineup,
               liberoSubstitution: previousLiberoSub || null
             },
             ts: new Date().toISOString(),
-            seq: await getNextSeq()
+            seq: getNextSeqInUndo()
           })
         }
       }
@@ -4057,13 +4062,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
-              payload: { 
-                team, 
+              payload: {
+                team,
                 lineup: restoredLineup,
                 liberoSubstitution: restoredLiberoSub
               },
               ts: new Date().toISOString(),
-              seq: await getNextSeq()
+              seq: getNextSeqInUndo()
             })
           } else {
             // No previous libero sub, just restore the lineup
@@ -4071,13 +4076,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
-              payload: { 
-                team, 
+              payload: {
+                team,
                 lineup: restoredLineup,
                 liberoSubstitution: null
               },
               ts: new Date().toISOString(),
-              seq: await getNextSeq()
+              seq: getNextSeqInUndo()
             })
           }
         }
@@ -4132,7 +4137,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Always close the modal
     setUndoConfirm(null)
     }
-  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription])
+  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq])
 
   const cancelUndo = useCallback(() => {
     setUndoConfirm(null)
