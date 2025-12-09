@@ -292,11 +292,25 @@ export default function App() {
     
     // Check WebSocket server availability
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const hostname = window.location.hostname
-      const wsPort = serverStatus?.wsPort || 8080
-      const wsUrl = `${protocol}://${hostname}:${wsPort}`
-      
+      // Check if we have a configured backend URL (Railway/cloud backend)
+      const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+      let wsUrl
+      if (backendUrl) {
+        // Use configured backend (Railway cloud)
+        const url = new URL(backendUrl)
+        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        wsUrl = `${protocol}//${url.host}`
+        console.log('🌐 Testing cloud WebSocket backend:', wsUrl)
+      } else {
+        // Fallback to local WebSocket server
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        const wsPort = serverStatus?.wsPort || 8080
+        wsUrl = `${protocol}://${hostname}:${wsPort}`
+        console.log('💻 Testing local WebSocket server:', wsUrl)
+      }
+
       const wsTest = new WebSocket(wsUrl)
       let resolved = false
       let errorMessage = ''
@@ -850,13 +864,25 @@ export default function App() {
       
       // Try to clear immediately if WebSocket is open
       clearAllMatches()
-      
+
       // Also set up a connection to clear when WebSocket opens
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const hostname = window.location.hostname
-      const wsPort = serverStatus?.wsPort || 8080
-      const wsUrl = `${protocol}://${hostname}:${wsPort}`
-      
+      // Check if we have a configured backend URL (Railway/cloud backend)
+      const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+      let wsUrl
+      if (backendUrl) {
+        // Use configured backend (Railway cloud)
+        const url = new URL(backendUrl)
+        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        wsUrl = `${protocol}//${url.host}`
+      } else {
+        // Fallback to local WebSocket server
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        const wsPort = serverStatus?.wsPort || 8080
+        wsUrl = `${protocol}://${hostname}:${wsPort}`
+      }
+
       const tempWs = new WebSocket(wsUrl)
       tempWs.onopen = () => {
         tempWs.send(JSON.stringify({ type: 'clear-all-matches' }))
@@ -912,13 +938,27 @@ export default function App() {
       }
 
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        let wsPort = 8080
-        if (serverStatus?.wsPort) {
-          wsPort = serverStatus.wsPort
+        // Check if we have a configured backend URL (Railway/cloud backend)
+        const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+        let wsUrl
+        if (backendUrl) {
+          // Use configured backend (Railway cloud)
+          const url = new URL(backendUrl)
+          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+          wsUrl = `${protocol}//${url.host}`
+          console.log('🌐 App connecting to cloud WebSocket backend:', wsUrl)
+        } else {
+          // Fallback to local WebSocket server
+          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+          const hostname = window.location.hostname
+          let wsPort = 8080
+          if (serverStatus?.wsPort) {
+            wsPort = serverStatus.wsPort
+          }
+          wsUrl = `${protocol}://${hostname}:${wsPort}`
+          console.log('💻 App connecting to local WebSocket server:', wsUrl)
         }
-        const wsUrl = `${protocol}://${hostname}:${wsPort}`
 
         wsRef.current = new WebSocket(wsUrl)
         
