@@ -7508,7 +7508,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
         </div>
 
-        {/* Set Counter / Match Header - 20% */}
+        {/* Set Counter - 20% */}
         <div style={{
           flex: '0 0 20%',
           display: 'flex',
@@ -7540,49 +7540,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             justifyContent: 'center',
             gap: '2px'
           }}>
-            {data?.match?.test ? (
-              <span style={{
-                fontSize: '14px',
-                fontWeight: 700,
-                color: '#fbbf24',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                lineHeight: '1'
-              }}>
-                TEST MATCH
-              </span>
-            ) : (
-              <span style={{
-                fontSize: '14px',
-                fontWeight: 600,
-                color: 'var(--muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                lineHeight: '1'
-              }}>
-                MATCH #{data?.match?.gameNumber || data?.match?.game_n || 'N/A'}
-              </span>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                lineHeight: '1'
-              }}>
-                SET
-              </span>
-              <span style={{
-                fontSize: '16px',
-                fontWeight: 700,
-                color: 'var(--text)',
-                lineHeight: '1'
-              }}>
-                {data?.set?.index || 1}
-              </span>
-            </div>
+            <span style={{
+              fontSize: '20px',
+              fontWeight: 600,
+              color: 'var(--muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              lineHeight: '1'
+            }}>
+              SET
+            </span>
+            <span style={{
+              fontSize: '20px',
+              fontWeight: 700,
+              color: 'var(--text)',
+              lineHeight: '1'
+            }}>
+              {data?.set?.index || 1}
+            </span>
           </div>
           <div style={{
             padding: '6px 12px',
