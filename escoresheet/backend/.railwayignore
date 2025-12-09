@@ -1,0 +1,13 @@
+# Ignore everything except this backend folder
+# This file should be in the backend directory
+
+# Ignore parent directories
+../*
+
+# Include only backend files
+!package.json
+!package-lock.json
+!server.js
+!railway.toml
+!nixpacks.toml
+!README.md
