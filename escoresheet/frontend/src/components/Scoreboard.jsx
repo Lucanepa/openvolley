@@ -324,21 +324,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     const connectWebSocket = () => {
       try {
-        // Detect WebSocket URL from current location
-        // WS port is typically 8080 (or from server status if available)
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        // Try to get WS port from server status, otherwise default to 8080
-        let wsPort = 8080
-        // Check if we have server status (from Electron or previous API call)
-        const currentServerStatus = serverStatus
-        if (currentServerStatus?.wsPort) {
-          wsPort = currentServerStatus.wsPort
+        // Check if we have a configured backend URL (Railway/cloud backend)
+        const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+        let wsUrl
+        if (backendUrl) {
+          // Use configured backend (Railway cloud)
+          const url = new URL(backendUrl)
+          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+          wsUrl = `${protocol}//${url.host}`
+          console.log('🌐 Connecting to cloud WebSocket backend:', wsUrl)
         } else {
-          // Default to 8080 for WebSocket
-          wsPort = 8080
+          // Fallback to local WebSocket server (development/Electron)
+          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+          const hostname = window.location.hostname
+          let wsPort = 8080
+          // Check if we have server status (from Electron or previous API call)
+          const currentServerStatus = serverStatus
+          if (currentServerStatus?.wsPort) {
+            wsPort = currentServerStatus.wsPort
+          }
+          wsUrl = `${protocol}://${hostname}:${wsPort}`
+          console.log('💻 Connecting to local WebSocket server:', wsUrl)
         }
-        const wsUrl = `${protocol}://${hostname}:${wsPort}`
 
         ws = new WebSocket(wsUrl)
         wsRef.current = ws // Store in ref for use in callbacks
