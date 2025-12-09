@@ -79,14 +79,12 @@ export default function RefereeApp() {
         const url = new URL(backendUrl)
         const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl = `${protocol}//${url.host}`
-        console.log('🌐 Referee testing cloud WebSocket backend:', wsUrl)
       } else {
         // Fallback to local WebSocket server
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
         const hostname = window.location.hostname
         const wsPort = 8080
         wsUrl = `${protocol}://${hostname}:${wsPort}`
-        console.log('💻 Referee testing local WebSocket server:', wsUrl)
       }
 
       const wsTest = new WebSocket(wsUrl)
@@ -99,16 +97,14 @@ export default function RefereeApp() {
         const timeout = setTimeout(() => {
           if (!resolved) {
             resolved = true
-            console.log(`⏱️  Referee WebSocket timeout after ${connectionTimeout / 1000}s`)
             try { wsTest.close() } catch (e) {}
             statuses.websocket = 'disconnected'
             debugInfo.websocket = { status: 'disconnected', message: `Connection timeout after ${connectionTimeout / 1000}s` }
             resolve()
           }
         }, connectionTimeout)
-        
+
         wsTest.onopen = () => {
-          console.log('✅ Referee WebSocket test connection opened!')
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -119,8 +115,7 @@ export default function RefereeApp() {
           }
         }
 
-        wsTest.onerror = (error) => {
-          console.log('❌ Referee WebSocket test error:', error)
+        wsTest.onerror = () => {
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -197,7 +192,7 @@ export default function RefereeApp() {
     const interval = setInterval(() => {
       loadMatches()
       checkConnectionStatuses()
-    }, 5000)
+    }, 30000) // Check every 30 seconds
     
     return () => clearInterval(interval)
   }, [matchId, match, isMasterMode])
