@@ -583,20 +583,22 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
             onClick={async () => {
               setIsSaving(true)
               try {
-                // Check if all required signatures are present
-                const requiredSignatures = [
-                  match.homeCaptainSignature,
-                  match.awayCaptainSignature,
-                  match.scorerSignature,
-                  match.ref1Signature
-                ]
-                
-                const hasAllRequired = requiredSignatures.every(sig => sig !== null && sig !== undefined)
-                
-                if (!hasAllRequired) {
-                  alert('Please sign all required fields before approving.')
-                  setIsSaving(false)
-                  return
+                // Only check signatures for official matches, skip for test matches
+                if (!match.test) {
+                  const requiredSignatures = [
+                    match.homeCaptainSignature,
+                    match.awayCaptainSignature,
+                    match.scorerSignature,
+                    match.ref1Signature
+                  ]
+
+                  const hasAllRequired = requiredSignatures.every(sig => sig !== null && sig !== undefined)
+
+                  if (!hasAllRequired) {
+                    alert('Please sign all required fields before approving.')
+                    setIsSaving(false)
+                    return
+                  }
                 }
 
                 // Save to Supabase if official match
