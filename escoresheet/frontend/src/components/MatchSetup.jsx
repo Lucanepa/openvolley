@@ -4554,7 +4554,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             fontWeight: 500,
             whiteSpace: 'nowrap'
           }}>
-            <span>Enable Connection</span>
+            <span>Enable Dashboard</span>
             <div style={{
               position: 'relative',
               width: '44px',
