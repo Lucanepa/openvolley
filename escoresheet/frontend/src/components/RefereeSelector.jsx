@@ -43,7 +43,28 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
     setLoading(true)
     try {
       const allReferees = await db.referees.orderBy('lastName').toArray()
-      setReferees(allReferees)
+      
+      // Deduplicate referees by lastName + firstName (case-insensitive)
+      // Keep the first occurrence (or the one with the most complete data)
+      const uniqueRefereesMap = new Map()
+      allReferees.forEach(ref => {
+        const key = `${(ref.lastName || '').toLowerCase().trim()}_${(ref.firstName || '').toLowerCase().trim()}`
+        if (!uniqueRefereesMap.has(key)) {
+          uniqueRefereesMap.set(key, ref)
+        } else {
+          // If duplicate found, keep the one with more complete data (has email, phone, level, etc.)
+          const existing = uniqueRefereesMap.get(key)
+          const existingCompleteness = (existing.email ? 1 : 0) + (existing.phone ? 1 : 0) + (existing.level ? 1 : 0)
+          const newCompleteness = (ref.email ? 1 : 0) + (ref.phone ? 1 : 0) + (ref.level ? 1 : 0)
+          if (newCompleteness > existingCompleteness) {
+            uniqueRefereesMap.set(key, ref)
+          }
+        }
+      })
+      
+      const uniqueReferees = Array.from(uniqueRefereesMap.values())
+      console.log(`[RefereeSelector] Loaded ${uniqueReferees.length} unique referees (from ${allReferees.length} total)`)
+      setReferees(uniqueReferees)
     } catch (error) {
       console.error('Error loading referees:', error)
       setReferees([])

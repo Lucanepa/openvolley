@@ -5,6 +5,14 @@
 
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
+import { createServer as createHttpsServer } from 'https'
+import { createServer as createHttpServer } from 'http'
+import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // Shared state (same as server.js)
 const matchDataStore = new Map() // key: matchId, value: { match, teams, players, sets, events }
@@ -45,20 +53,50 @@ export function vitePluginApiRoutes(options = {}) {
   const { wsPort = 8080 } = options
   let wss = null
   let viteServer = null
+  let httpServer = null
 
   return {
     name: 'vite-plugin-api-routes',
     enforce: 'pre', // Run before other plugins
     configureServer(server) {
       viteServer = server
-      const protocol = server.config.server.https ? 'https' : 'http'
+      const useHttps = !!server.config.server.https
+      const protocol = useHttps ? 'wss' : 'ws'
       const hostname = '0.0.0.0'
 
-      // Create WebSocket server
+      // Create WebSocket server with SSL support
+      if (useHttps) {
+        // Try to use the same certificates as Vite
+        const certPath = resolve(__dirname, 'localhost.pem')
+        const keyPath = resolve(__dirname, 'localhost-key.pem')
+        
+        if (existsSync(certPath) && existsSync(keyPath)) {
+          const httpsOptions = {
+            cert: readFileSync(certPath),
+            key: readFileSync(keyPath)
+          }
+          httpServer = createHttpsServer(httpsOptions)
+          wss = new WebSocketServer({ 
+            server: httpServer,
+            perMessageDeflate: false
+          })
+          httpServer.listen(wsPort, hostname, () => {
+            console.log(`🔒 Secure WebSocket Server (WSS) running on port ${wsPort}`)
+          })
+        } else {
+          console.warn('⚠️  SSL certificates not found, falling back to non-secure WebSocket')
+          wss = new WebSocketServer({ 
+            port: wsPort,
+            perMessageDeflate: false
+          })
+        }
+      } else {
+        // Create non-secure WebSocket server
       wss = new WebSocketServer({ 
         port: wsPort,
         perMessageDeflate: false
       })
+      }
 
       wss.on('connection', (ws, req) => {
         wsClients.add(ws)
@@ -78,6 +116,10 @@ export function vitePluginApiRoutes(options = {}) {
               // Store full match data from main scoresheet
               // SCOREBOARD IS SOURCE OF TRUTH - This ALWAYS overwrites existing data
               // Handle both formats: { matchId, match, ... } and { matchId, matchData: { match, ... } }
+              const receiveTimestamp = Date.now()
+              const scoreboardTimestamp = message._timestamp || receiveTimestamp
+              const serverLatency = receiveTimestamp - scoreboardTimestamp
+              
               let matchId = message.matchId
               let match = message.match
               let homeTeam = message.homeTeam
@@ -86,6 +128,15 @@ export function vitePluginApiRoutes(options = {}) {
               let awayPlayers = message.awayPlayers
               let sets = message.sets
               let events = message.events
+
+              console.log(`[Server] 📥 Received sync-match-data at ${new Date(receiveTimestamp).toISOString()} (${receiveTimestamp}) for match ${matchId}:`, {
+                hasMatch: !!match,
+                hasHomeTeam: !!homeTeam,
+                hasAwayTeam: !!awayTeam,
+                setsCount: sets?.length,
+                eventsCount: events?.length,
+                serverLatency: `${serverLatency}ms`
+              })
               
               // If data is nested in matchData, extract it
               if (message.matchData) {
@@ -112,16 +163,23 @@ export function vitePluginApiRoutes(options = {}) {
                 
                 // Broadcast to subscribed clients
                 const subscribers = matchSubscriptions.get(String(matchId))
-                if (subscribers) {
+                if (subscribers && subscribers.size > 0) {
+                  const broadcastTimestamp = Date.now()
+                  const broadcastLatency = broadcastTimestamp - receiveTimestamp
+                  console.log(`[Server] 📡 Broadcasting match-data-update at ${new Date(broadcastTimestamp).toISOString()} (${broadcastTimestamp}) to ${subscribers.size} subscribers for match ${matchId} (broadcast latency: ${broadcastLatency}ms, total from scoreboard: ${broadcastTimestamp - scoreboardTimestamp}ms)`)
                   subscribers.forEach((subscriber) => {
                     if (subscriber.readyState === 1) {
                       subscriber.send(JSON.stringify({
                         type: 'match-data-update',
                         matchId: String(matchId),
-                        data: { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
+                        data: { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events },
+                        _timestamp: broadcastTimestamp, // When server broadcasted
+                        _scoreboardTimestamp: scoreboardTimestamp // Original scoreboard send time
                       }))
                     }
                   })
+                } else {
+                  console.log(`[Server] No subscribers for match ${matchId} - data stored but not broadcasted`)
                 }
               }
             } else if (message.type === 'delete-match') {
@@ -191,15 +249,46 @@ export function vitePluginApiRoutes(options = {}) {
                 matchSubscriptions.set(String(matchId), new Set())
               }
               matchSubscriptions.get(String(matchId)).add(ws)
+              console.log(`[WebSocket] Client subscribed to match ${matchId}. Total subscribers: ${matchSubscriptions.get(String(matchId)).size}`)
               
               // Send current data if available
               const matchData = matchDataStore.get(String(matchId))
               if (matchData) {
+                console.log(`[WebSocket] Sending stored match-full-data to new subscriber for match ${matchId}`)
                 ws.send(JSON.stringify({
                   type: 'match-full-data',
                   matchId: String(matchId),
                   data: matchData
                 }))
+              } else {
+                console.log(`[WebSocket] No stored data for match ${matchId} - new subscriber will wait for scoreboard sync`)
+              }
+            } else if (message.type === 'match-action') {
+              // Forward action from scoreboard to all subscribers (referee, bench, etc.)
+              const receiveTimestamp = Date.now()
+              const scoreboardTimestamp = message._timestamp || message.timestamp || receiveTimestamp
+              const serverLatency = receiveTimestamp - scoreboardTimestamp
+              const { matchId, action, data, timestamp } = message
+              const subscribers = matchSubscriptions.get(String(matchId))
+              if (subscribers && subscribers.size > 0) {
+                const broadcastTimestamp = Date.now()
+                const broadcastLatency = broadcastTimestamp - receiveTimestamp
+                console.log(`[Server] 📡 Broadcasting match-action '${action}' at ${new Date(broadcastTimestamp).toISOString()} (${broadcastTimestamp}) to ${subscribers.size} subscribers for match ${matchId} (server latency: ${serverLatency}ms, broadcast latency: ${broadcastLatency}ms, total: ${broadcastTimestamp - scoreboardTimestamp}ms)`)
+                subscribers.forEach((subscriber) => {
+                  if (subscriber.readyState === 1) {
+                    subscriber.send(JSON.stringify({
+                      type: 'match-action',
+                      matchId: String(matchId),
+                      action,
+                      data,
+                      timestamp,
+                      _timestamp: broadcastTimestamp,
+                      _scoreboardTimestamp: scoreboardTimestamp
+                    }))
+                  }
+                })
+              } else {
+                console.log(`[Server] No subscribers for match ${matchId} - action '${action}' not broadcasted`)
               }
             } else if (message.type === 'pin-validation-response') {
               const { requestId, success, match, fullData } = message
@@ -255,7 +344,7 @@ export function vitePluginApiRoutes(options = {}) {
                 pendingPinRequests.delete(requestId)
               }
             } else if (message.type === 'match-update-response') {
-              const { requestId, success, error } = message
+              const { requestId, success, error, data, matchId } = message
               const pending = pendingPinRequests.get(requestId)
               if (pending && pending.res && !pending.res.headersSent) {
                 pending.res.writeHead(success ? 200 : 500, { 
@@ -265,6 +354,32 @@ export function vitePluginApiRoutes(options = {}) {
                 pending.res.end(JSON.stringify({ success, error }))
                 if (pending.timeout) clearTimeout(pending.timeout)
                 pendingPinRequests.delete(requestId)
+                
+                // Update the matchDataStore with the new data so polling returns correct data
+                if (success && data && matchId) {
+                  matchDataStore.set(String(matchId), data)
+                  console.log(`[WebSocket] Updated matchDataStore for match ${matchId}`)
+                  
+                  // Broadcast the updated data to all subscribers immediately
+                  const subscribers = matchSubscriptions.get(String(matchId))
+                  if (subscribers && subscribers.size > 0) {
+                    const updateMessage = JSON.stringify({
+                      type: 'match-data-update',
+                      matchId: String(matchId),
+                      data: data
+                    })
+                    subscribers.forEach(client => {
+                      if (client.readyState === 1) { // WebSocket.OPEN
+                        try {
+                          client.send(updateMessage)
+                        } catch (err) {
+                          console.error('[WebSocket] Error broadcasting update:', err)
+                        }
+                      }
+                    })
+                    console.log(`[WebSocket] Broadcasted update to ${subscribers.size} subscribers for match ${matchId}`)
+                  }
+                }
               }
             }
           } catch (err) {
@@ -285,7 +400,9 @@ export function vitePluginApiRoutes(options = {}) {
         })
       })
 
+      if (!useHttps || !httpServer) {
       console.log(`🔌 WebSocket Server running on port ${wsPort}`)
+      }
       console.log(`📡 API routes enabled for dev server`)
 
       // Add API middleware - must be added before Vite's default middleware
@@ -699,6 +816,10 @@ export function vitePluginApiRoutes(options = {}) {
       if (wss) {
         wss.close()
         console.log('WebSocket server closed')
+      }
+      if (httpServer) {
+        httpServer.close()
+        console.log('HTTPS server for WebSocket closed')
       }
     }
   }

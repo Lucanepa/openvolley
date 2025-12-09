@@ -43,6 +43,8 @@ export default function ConnectionStatus({
       return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: 'Not Configured' }
     } else if (status === 'connecting') {
       return { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308', text: 'Connecting' }
+    } else if (status === 'test_mode') {
+      return { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgba(139, 92, 246, 0.5)', dot: '#8b5cf6', text: 'Test Mode' }
     } else {
       return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Unknown' }
     }
@@ -74,6 +76,7 @@ export default function ConnectionStatus({
                status === 'scheduled' || 
                status === 'synced' || 
                status === 'syncing' ||
+               status === 'test_mode' ||
                status === 'not_applicable' // Not applicable is considered OK
       })
     )
@@ -89,6 +92,7 @@ export default function ConnectionStatus({
              status === 'scheduled' || 
              status === 'synced' || 
              status === 'syncing' ||
+             status === 'test_mode' ||
              status === 'not_applicable' // Not applicable is considered OK
     })
     
@@ -121,18 +125,6 @@ export default function ConnectionStatus({
   }
 
   const currentSize = sizeStyles[size]
-
-  const getPositionStyle = () => {
-    switch (position) {
-      case 'left':
-        return { left: 0, right: 'auto' }
-      case 'center':
-        return { left: '50%', right: 'auto', transform: 'translateX(-50%)' }
-      case 'right':
-      default:
-        return { right: 0, left: 'auto' }
-    }
-  }
 
   return (
     <div style={{ position: 'relative' }} data-connection-menu>
@@ -182,18 +174,19 @@ export default function ConnectionStatus({
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'absolute',
-            top: '100%',
-            ...getPositionStyle(),
-            marginTop: '4px',
-            background: 'rgba(0, 0, 0, 0.9)',
+            position: 'fixed',
+            top: '50px',
+            left: '12px',
+            right: '12px',
+            background: 'rgba(0, 0, 0, 0.95)',
             border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '6px',
-            padding: '8px',
-            width: 'auto',
-            minWidth: '220px',
+            borderRadius: '8px',
+            padding: '12px',
+            maxHeight: 'calc(100vh - 120px)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
             zIndex: 1000,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)'
           }}
         >
           <div style={{
@@ -269,24 +262,20 @@ export default function ConnectionStatus({
                   </div>
                 </div>
                 
-                {/* Debug Menu */}
+                {/* Debug Menu - inline instead of absolute to avoid overflow */}
                 {!isConnected && showDebugMenu === key && debugInfo && (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      right: 0,
                       marginTop: '4px',
-                      background: 'rgba(0, 0, 0, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      marginBottom: '8px',
+                      background: 'rgba(30, 30, 40, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '6px',
-                      padding: '12px',
-                      zIndex: 1001,
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                      padding: '10px',
                       fontSize: '11px',
-                      lineHeight: '1.6'
+                      lineHeight: '1.5',
+                      wordBreak: 'break-word'
                     }}
                   >
                     <div style={{
