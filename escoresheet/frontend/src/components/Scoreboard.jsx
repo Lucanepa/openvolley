@@ -2239,65 +2239,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       if (onFinishSet) onFinishSet(set)
     } else {
-      const newSetIndex = set.index + 1
-      
-      // Check if a set with this index already exists to prevent duplicates
-      const existingSet = await db.sets.where({ matchId: set.matchId, index: newSetIndex }).first()
-      let newSetId
-      if (existingSet) {
-        console.log(`[Scoreboard] Set ${newSetIndex} already exists, using existing`)
-        newSetId = existingSet.id
-      } else {
-        newSetId = await db.sets.add({ matchId: set.matchId, index: newSetIndex, homePoints: 0, awayPoints: 0, finished: false })
-      }
-      
-      // Get match to determine first serve for the new set
-      const match = await db.matches.get(set.matchId)
-      const coinTossFirstServe = match?.firstServe || 'home' // Original first serve from coin toss
-      const teamAKey = match?.coinTossTeamA || 'home'
-      const teamBKey = match?.coinTossTeamB || 'away'
-      
-      // Determine first serve based on set number (except set 5 which has its own logic)
-      // The coin toss determines who serves first in set 1, then it alternates
-      // Set 1: Coin toss winner serves, Set 2: Coin toss winner receives, Set 3: Coin toss winner serves, Set 4: Coin toss winner receives
-      let newFirstServe = 'home'
-      if (newSetIndex !== 5) {
-        // For sets 1-4: odd sets (1, 3) = coin toss winner serves, even sets (2, 4) = opposite serves
-        const oppositeTeam = coinTossFirstServe === 'home' ? 'away' : 'home'
-        newFirstServe = newSetIndex % 2 === 1 ? coinTossFirstServe : oppositeTeam
-      } else {
-        // Set 5 uses set5FirstServe if specified, otherwise keep current firstServe
-        if (match?.set5FirstServe) {
-          newFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
-        } else {
-          newFirstServe = match?.firstServe || coinTossFirstServe
-        }
-      }
-      
-      // Update match with new first serve and reset set5CourtSwitched flag
-      await db.matches.update(set.matchId, { 
-        firstServe: newFirstServe,
-        set5CourtSwitched: false 
-      })
-      
-      const isTest = match?.test || false
-      
-      await db.sync_queue.add({
-        resource: 'set',
-        action: 'insert',
-        payload: {
-          external_id: String(newSetId),
-          match_id: match?.externalId || String(set.matchId),
-          index: set.index + 1,
-          home_points: 0,
-          away_points: 0,
-          finished: false,
-          test: isTest,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+      // DEPRECATED: This legacy set end confirmation is replaced by confirmSetEndTime
+      // which handles set creation with time picker modal
+      // This path should not execute if confirmSetEndTime is being used
+      console.warn(`[Scoreboard confirmSetEnd] DEPRECATED: Use confirmSetEndTime instead`)
     }
     
     setSetEndModal(null)
@@ -3137,7 +3082,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       } else {
         console.warn('[Scoreboard] WebSocket not available to notify server of match end')
       }
-      
+
+      // Only call onFinishSet for match end, not between sets
+      // (Scoreboard now handles set creation internally)
       if (onFinishSet) onFinishSet(data.set)
     } else {
       // Start countdown immediately when set ends (not match end)
@@ -15541,15 +15488,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         
         const wrapperStyle = modalStyle.position ? {
-          ...modalStyle,
-          pointerEvents: 'none'
+          ...modalStyle
         } : {
           position: 'fixed',
           top: '30%',
           [teamIsLeft ? 'left' : 'right']: '2px',
           transform: 'translateY(-50%)',
-          zIndex: 10000,
-          pointerEvents: 'none'
+          zIndex: 10000
         }
         
         // Get team info for display
@@ -16844,15 +16789,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         
         const wrapperStyle = modalStyle.position ? {
-          ...modalStyle,
-          pointerEvents: 'none'
+          ...modalStyle
         } : {
           position: 'fixed',
           top: '30%',
           [teamIsLeft ? 'left' : 'right']: '2px',
           transform: 'translateY(-50%)',
-          zIndex: 10000,
-          pointerEvents: 'none'
+          zIndex: 10000
         }
         
         // Get team info for display
