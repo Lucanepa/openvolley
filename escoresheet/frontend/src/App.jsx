@@ -252,19 +252,45 @@ export default function App() {
     }
     const debugInfo = {}
 
-    // Skip server status checks in production GitHub Pages deployment
+    // Check if we're on GitHub Pages (static deployment)
     const isGitHubPages = !import.meta.env.DEV && (
       window.location.hostname.includes('github.io') ||
       window.location.hostname === 'app.openvolley.app'
     )
 
+    // Check if we have a configured backend URL (Railway/cloud backend)
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
+
     // Check API/Server connection
-    if (isGitHubPages) {
-      // No server in GitHub Pages deployment
+    if (isGitHubPages && !hasBackendUrl) {
+      // No backend configured - pure standalone mode
       statuses.api = 'not_available'
       statuses.server = 'not_available'
       debugInfo.api = { status: 'not_available', message: 'API not available in static deployment (using local database only)' }
       debugInfo.server = { status: 'not_available', message: 'Server not available in static deployment (using local database only)' }
+    } else if (hasBackendUrl) {
+      // Backend URL configured - check Railway backend health
+      try {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL
+        const response = await fetch(`${backendUrl}/health`)
+        if (response.ok) {
+          const data = await response.json()
+          statuses.api = 'connected'
+          statuses.server = 'connected'
+          debugInfo.api = { status: 'connected', message: `Cloud backend responding (${data.mode} mode)` }
+          debugInfo.server = { status: 'connected', message: `Backend healthy, ${data.connections} connections, ${data.activeRooms} active rooms` }
+        } else {
+          statuses.api = 'disconnected'
+          statuses.server = 'disconnected'
+          debugInfo.api = { status: 'disconnected', message: `Backend returned status ${response.status}` }
+          debugInfo.server = { status: 'disconnected', message: `Backend returned status ${response.status}` }
+        }
+      } catch (err) {
+        statuses.api = 'disconnected'
+        statuses.server = 'disconnected'
+        debugInfo.api = { status: 'disconnected', message: `Backend unreachable: ${err.message}` }
+        debugInfo.server = { status: 'disconnected', message: `Backend unreachable: ${err.message}` }
+      }
     } else {
       try {
         const response = await fetch('/api/match/list')
