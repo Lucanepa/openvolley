@@ -78,7 +78,7 @@ export default function App() {
   const [testMatchLoading, setTestMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
-  const [homeCardModal, setHomeCardModal] = useState(null) // 'official' | 'test' | null
+  const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
   const [homeGuideModal, setHomeGuideModal] = useState(false)
   const { syncStatus, isOnline } = useSyncQueue()
@@ -2797,26 +2797,194 @@ export default function App() {
               <div className="home-logo" style={{ width: '200px' }}>
                 <img src={favicon} alt="Openvolley" style={{ width: '100%' }} />
               </div>
-              
-              <div className="home-match-section" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                <div className="home-card home-card--clickable" style={{ flex: '1 1 0', minWidth: '280px', maxWidth: '400px' }} onClick={(e) => {
-                  // Don't open modal if clicking on connection menu or debug menu
-                  if (!e.target.closest('[data-connection-menu]') && !e.target.closest('[data-debug-menu]')) {
-                    setHomeCardModal('official')
-                  }
-                }}>
-                  <div className="home-card-header">
-                    <h2>Official Match</h2>
-                  </div>
+
+              <div className="home-match-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', maxWidth: '400px', margin: '0 auto', width: '100%', padding: '0 20px' }}>
+                {/* New Match Button with Collapsible Menu */}
+                <div style={{ width: '100%' }}>
+                  <button
+                    onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
+                    style={{
+                      width: '100%',
+                      padding: '16px 24px',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      transition: 'transform 0.2s, box-shadow 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                      e.currentTarget.style.boxShadow = '0 8px 16px rgba(59, 130, 246, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
+                  >
+                    <span>New Match</span>
+                    <span style={{ transform: newMatchMenuOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
+                  </button>
+
+                  {/* Collapsible Menu */}
+                  {newMatchMenuOpen && (
+                    <div style={{
+                      marginTop: '8px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      <button
+                        onClick={() => {
+                          setNewMatchMenuOpen(false)
+                          createNewOfficialMatch()
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px 20px',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          background: 'rgba(59, 130, 246, 0.1)',
+                          color: '#3b82f6',
+                          border: '1px solid rgba(59, 130, 246, 0.3)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
+                      >
+                        Official Match
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNewMatchMenuOpen(false)
+                          createNewTestMatch()
+                        }}
+                        disabled={testMatchLoading}
+                        style={{
+                          width: '100%',
+                          padding: '12px 20px',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          background: testMatchLoading ? 'rgba(168, 85, 247, 0.05)' : 'rgba(168, 85, 247, 0.1)',
+                          color: testMatchLoading ? 'rgba(168, 85, 247, 0.5)' : '#a855f7',
+                          border: testMatchLoading ? '1px solid rgba(168, 85, 247, 0.15)' : '1px solid rgba(168, 85, 247, 0.3)',
+                          borderRadius: '8px',
+                          cursor: testMatchLoading ? 'not-allowed' : 'pointer',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => !testMatchLoading && (e.currentTarget.style.background = 'rgba(168, 85, 247, 0.2)')}
+                        onMouseLeave={(e) => !testMatchLoading && (e.currentTarget.style.background = 'rgba(168, 85, 247, 0.1)')}
+                      >
+                        {testMatchLoading ? 'Preparing…' : 'Test Match'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                
-                <div className="home-card home-card--test home-card--clickable" style={{ flex: '1 1 0', minWidth: '280px', maxWidth: '400px' }} onClick={() => setHomeCardModal('test')}>
-                  <div className="home-card-header">
-                    <h2>Test Match</h2>
+
+                {/* Continue Match Button */}
+                <button
+                  onClick={() => {
+                    if (currentOfficialMatch) {
+                      continueMatch(currentOfficialMatch.id)
+                    } else if (currentTestMatch) {
+                      continueTestMatch()
+                    }
+                  }}
+                  disabled={!currentOfficialMatch && !currentTestMatch}
+                  style={{
+                    width: '100%',
+                    padding: '16px 24px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.3)' : '#fff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: (!currentOfficialMatch && !currentTestMatch) ? 'not-allowed' : 'pointer',
+                    transition: 'transform 0.2s, box-shadow 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentOfficialMatch || currentTestMatch) {
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                      e.currentTarget.style.boxShadow = '0 8px 16px rgba(16, 185, 129, 0.3)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (currentOfficialMatch || currentTestMatch) {
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }
+                  }}
+                >
+                  Continue Match
+                </button>
+
+                {/* Delete Match Button */}
+                <button
+                  onClick={() => {
+                    if (currentOfficialMatch) {
+                      showDeleteMatchModal()
+                    } else if (currentTestMatch) {
+                      restartTestMatch()
+                    }
+                  }}
+                  disabled={!currentOfficialMatch && !currentTestMatch}
+                  style={{
+                    width: '100%',
+                    padding: '16px 24px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    color: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.3)' : '#fff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: (!currentOfficialMatch && !currentTestMatch) ? 'not-allowed' : 'pointer',
+                    transition: 'transform 0.2s, box-shadow 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentOfficialMatch || currentTestMatch) {
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                      e.currentTarget.style.boxShadow = '0 8px 16px rgba(239, 68, 68, 0.3)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (currentOfficialMatch || currentTestMatch) {
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }
+                  }}
+                >
+                  Delete Match
+                </button>
+
+                {/* Game PIN Display (if exists) */}
+                {currentOfficialMatch?.gamePin && (
+                  <div style={{
+                    width: '100%',
+                    marginTop: '8px',
+                    padding: '12px 16px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '12px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Game PIN</div>
+                    <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>
+                      {currentOfficialMatch.gamePin}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
-              
+
               <div style={{ marginTop: '24px' }}>
                 <button
                   onClick={() => setHomeOptionsModal(true)}
@@ -3023,110 +3191,6 @@ export default function App() {
                 }}
               >
                 Cancel
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Official Match Modal */}
-      {homeCardModal === 'official' && (
-        <Modal
-          title="Official Match"
-          open={true}
-          onClose={() => setHomeCardModal(null)}
-          width={500}
-        >
-          <div style={{ padding: '24px' }}>
-            {currentOfficialMatch?.gamePin && (
-              <div style={{ 
-                marginBottom: '24px', 
-                padding: '12px 16px', 
-                background: 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game PIN</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                  {currentOfficialMatch.gamePin}
-                </div>
-              </div>
-            )}
-            <div className="home-card-actions" style={{ flexDirection: 'column', marginTop: 0 }}>
-              <button 
-                onClick={() => {
-                  setHomeCardModal(null)
-                  createNewOfficialMatch()
-                }}
-                disabled={matchStatus?.status === 'Match recording'}
-                className={matchStatus?.status === 'Match recording' ? 'disabled' : ''}
-              >
-                New official match
-              </button>
-              <button 
-                onClick={() => {
-                  setHomeCardModal(null)
-                  if (currentOfficialMatch) continueMatch(currentOfficialMatch.id)
-                }}
-                disabled={!currentOfficialMatch}
-                className={!currentOfficialMatch ? 'disabled' : ''}
-              >
-                Continue official match
-              </button>
-              <button 
-                onClick={() => {
-                  setHomeCardModal(null)
-                  showDeleteMatchModal()
-                }}
-                disabled={!currentOfficialMatch}
-                className={'danger ' + (!currentOfficialMatch ? 'disabled' : '')}
-              >
-                Delete official match
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Test Match Modal */}
-      {homeCardModal === 'test' && (
-        <Modal
-          title="Test Match"
-          open={true}
-          onClose={() => setHomeCardModal(null)}
-          width={500}
-        >
-          <div style={{ padding: '24px' }}>
-            <div className="home-card-actions" style={{ flexDirection: 'column', marginTop: 0 }}>
-              <button 
-                onClick={() => {
-                  setHomeCardModal(null)
-                  createNewTestMatch()
-                }}
-                disabled={testMatchLoading}
-                className={testMatchLoading ? 'test-button disabled' : 'test-button'}
-              >
-                {testMatchLoading ? 'Preparing…' : 'New test match'}
-              </button>
-              <button 
-                onClick={() => {
-                  setHomeCardModal(null)
-                  continueTestMatch()
-                }}
-                disabled={testMatchLoading || !currentTestMatch}
-                className={(testMatchLoading || !currentTestMatch) ? 'test-button disabled' : 'test-button'}
-              >
-                {testMatchLoading ? 'Loading…' : 'Continue test match'}
-              </button>
-              <button 
-                onClick={() => {
-                  setHomeCardModal(null)
-                  restartTestMatch()
-                }}
-                disabled={testMatchLoading || !currentTestMatch}
-                className={(testMatchLoading || !currentTestMatch) ? 'test-button test-button--danger disabled' : 'test-button test-button--danger'}
-              >
-                {testMatchLoading ? 'Clearing…' : 'Clear test match'}
               </button>
             </div>
           </div>
