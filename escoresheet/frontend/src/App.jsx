@@ -100,6 +100,18 @@ export default function App() {
 
   // Fetch server status periodically
   useEffect(() => {
+    // Skip server status checks in production GitHub Pages deployment
+    // Server is only available in development or Electron app
+    const isGitHubPages = !import.meta.env.DEV && (
+      window.location.hostname.includes('github.io') ||
+      window.location.hostname === 'app.openvolley.app'
+    )
+
+    if (isGitHubPages) {
+      // No server available in static GitHub Pages deployment
+      return
+    }
+
     const fetchServerStatus = async () => {
       try {
         const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
@@ -112,10 +124,12 @@ export default function App() {
         }
       } catch (err) {
         // Server might not be running, that's okay
-        console.log('[App] Server status not available:', err.message)
+        if (import.meta.env.DEV) {
+          console.log('[App] Server status not available:', err.message)
+        }
       }
     }
-    
+
     fetchServerStatus()
     const interval = setInterval(fetchServerStatus, 10000) // Check every 10 seconds
     return () => clearInterval(interval)
@@ -218,26 +232,43 @@ export default function App() {
       supabase: 'unknown'
     }
     const debugInfo = {}
-    
+
+    // Skip server status checks in production GitHub Pages deployment
+    const isGitHubPages = !import.meta.env.DEV && (
+      window.location.hostname.includes('github.io') ||
+      window.location.hostname === 'app.openvolley.app'
+    )
+
     // Check API/Server connection
-    try {
-      const response = await fetch('/api/match/list')
-      if (response.ok) {
-        statuses.api = 'connected'
-        statuses.server = 'connected'
-        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
-        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
-      } else {
+    if (isGitHubPages) {
+      // No server in GitHub Pages deployment
+      statuses.api = 'not_available'
+      statuses.server = 'not_available'
+      debugInfo.api = { status: 'not_available', message: 'API not available in static deployment (using local database only)' }
+      debugInfo.server = { status: 'not_available', message: 'Server not available in static deployment (using local database only)' }
+    } else {
+      try {
+        const response = await fetch('/api/match/list')
+        if (response.ok) {
+          statuses.api = 'connected'
+          statuses.server = 'connected'
+          debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
+          debugInfo.server = { status: 'connected', message: 'Server is reachable' }
+        } else {
+          statuses.api = 'disconnected'
+          statuses.server = 'disconnected'
+          debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
+          debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
+        }
+      } catch (err) {
         statuses.api = 'disconnected'
         statuses.server = 'disconnected'
-        debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
-        debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
+        const errMsg = import.meta.env.DEV
+          ? `Network error: ${err.message || 'Failed to connect to API'}`
+          : 'Server not available (running in standalone mode)'
+        debugInfo.api = { status: 'disconnected', message: errMsg }
+        debugInfo.server = { status: 'disconnected', message: errMsg }
       }
-    } catch (err) {
-      statuses.api = 'disconnected'
-      statuses.server = 'disconnected'
-      debugInfo.api = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to API'}` }
-      debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
     }
     
     // Check WebSocket server availability

@@ -787,8 +787,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     } catch (err) {
       statuses.api = 'disconnected'
       statuses.server = 'disconnected'
-      debugInfo.api = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to API'}` }
-      debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
+      const errMsg = import.meta.env.DEV
+        ? `Network error: ${err.message || 'Failed to connect to API'}`
+        : 'Server not available (running in standalone mode)'
+      debugInfo.api = { status: 'disconnected', message: errMsg }
+      debugInfo.server = { status: 'disconnected', message: errMsg }
     }
     
     // Check WebSocket connection
