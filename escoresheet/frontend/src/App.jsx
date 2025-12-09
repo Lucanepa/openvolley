@@ -327,14 +327,12 @@ export default function App() {
         const url = new URL(backendUrl)
         const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl = `${protocol}//${url.host}`
-        console.log('🌐 Testing cloud WebSocket backend:', wsUrl)
       } else {
         // Fallback to local WebSocket server
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
         const hostname = window.location.hostname
         const wsPort = serverStatus?.wsPort || 8080
         wsUrl = `${protocol}://${hostname}:${wsPort}`
-        console.log('💻 Testing local WebSocket server:', wsUrl)
       }
 
       const wsTest = new WebSocket(wsUrl)
@@ -343,8 +341,6 @@ export default function App() {
 
       // Use longer timeout for cloud backends (Railway needs more time to wake up)
       const connectionTimeout = backendUrl ? 10000 : 2000
-
-      console.log(`⏱️  WebSocket timeout set to ${connectionTimeout / 1000}s`)
 
       await new Promise((resolve) => {
         const timeout = setTimeout(() => {
@@ -369,7 +365,6 @@ export default function App() {
         }, connectionTimeout)
         
         wsTest.onopen = () => {
-          console.log('✅ WebSocket test connection opened successfully!')
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -384,8 +379,7 @@ export default function App() {
           }
         }
 
-        wsTest.onerror = (error) => {
-          console.log('❌ WebSocket test error:', error)
+        wsTest.onerror = () => {
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -402,12 +396,12 @@ export default function App() {
               message: `WebSocket connection error. Server may not be available.`,
               details: `Failed to connect to ${wsUrl}`
             }
+            console.log('❌ WebSocket test error - server may not be available')
             resolve()
           }
         }
 
         wsTest.onclose = (event) => {
-          console.log(`🔌 WebSocket test closed: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`)
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -502,7 +496,7 @@ export default function App() {
   // Periodically check connection statuses
   useEffect(() => {
     checkConnectionStatuses()
-    const interval = setInterval(checkConnectionStatuses, 5000) // Check every 5 seconds
+    const interval = setInterval(checkConnectionStatuses, 30000) // Check every 30 seconds
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
 
