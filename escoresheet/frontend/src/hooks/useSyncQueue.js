@@ -64,17 +64,19 @@ export function useSyncQueue() {
     const connected = await checkSupabaseConnection()
     if (!connected) return
 
-    busy.current = true
-    setSyncStatus('syncing')
-    
+    // Check if there's work to do before setting status to syncing
     try {
       const queued = await db.sync_queue.where('status').equals('queued').toArray()
-      
+
       if (queued.length === 0) {
+        // No work to do - keep status as 'synced', don't flicker to 'syncing'
         setSyncStatus('synced')
-        busy.current = false
         return
       }
+
+      // There's work to do - now set to syncing
+      busy.current = true
+      setSyncStatus('syncing')
 
       let hasError = false
       for (const job of queued) {
