@@ -261,6 +261,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
       return aTime - bTime
     })
+    
+    // Log all action IDs to track sequence numbers
+    const actionIds = events.map(e => e.seq || 0).filter(id => id > 0)
+    if (actionIds.length > 0) {
+      console.log(`[Scoreboard] All Action IDs: [${actionIds.join(', ')}]`)
+      // Check for gaps
+      const maxId = Math.max(...actionIds)
+      const missingIds = []
+      for (let i = 1; i <= maxId; i++) {
+        if (!actionIds.includes(i)) {
+          missingIds.push(i)
+        }
+      }
+      if (missingIds.length > 0) {
+        console.warn(`[Scoreboard] Missing Action IDs: [${missingIds.join(', ')}]`)
+      }
+    }
 
     const result = {
       set: currentSet,
@@ -2094,7 +2111,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Simple timestamp for reference (not used for ordering)
       const timestamp = options.timestamp ? new Date(options.timestamp) : new Date()
       
-      await db.events.add({
+      const eventId = await db.events.add({
         matchId,
         setIndex: data.set.index,
         type,
@@ -2102,6 +2119,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         ts: timestamp.toISOString(), // Store as ISO string for reference
         seq: nextSeq // Use sequence for ordering
       })
+      
+      // Log all action IDs to track sequence numbers
+      console.log(`[Scoreboard] Action ID ${nextSeq} (Event ID: ${eventId}): ${type}`, payload)
       
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
@@ -2868,7 +2888,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const nextSeq2 = nextSeq1 + 1
     
     // Log set_start event
-    await db.events.add({
+    const setStartEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'set_start',
@@ -2879,11 +2899,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: time,
       seq: nextSeq1
     })
+    console.log(`[Scoreboard] Action ID ${nextSeq1} (Event ID: ${setStartEventId}): set_start`, { setIndex: setStartTimeModal.setIndex, startTime: time })
     
     setSetStartTimeModal(null)
     
     // Now actually start the rally
-    await db.events.add({
+    const rallyStartEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'rally_start',
@@ -2891,6 +2912,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: nextSeq2
     })
+    console.log(`[Scoreboard] Action ID ${nextSeq2} (Event ID: ${rallyStartEventId}): rally_start`, {})
   }, [setStartTimeModal, data?.set, matchId])
 
   // Confirm set end time
@@ -5181,14 +5203,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     // Save the updated lineup (mark as from substitution)
-    await db.events.add({
+    const subSeq = await getNextSeq()
+    const subEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
       payload: { team, lineup: finalLineup, fromSubstitution: true },
       ts: new Date().toISOString(),
-      seq: await getNextSeq()
+      seq: subSeq
     })
+    console.log(`[Scoreboard] Action ID ${subSeq} (Event ID: ${subEventId}): lineup (from substitution)`, { team, lineup: finalLineup })
     
     // Log the substitution event
     await logEvent('substitution', { 
@@ -5919,7 +5943,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Save the updated lineup with libero substitution info
     const nextSeq = await getNextSeq()
     
-    await db.events.add({
+    const liberoEntryEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -5936,6 +5960,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: nextSeq
     })
+    console.log(`[Scoreboard] Action ID ${nextSeq} (Event ID: ${liberoEntryEventId}): lineup (libero entry)`, { team, position, liberoNumber: liberoPlayer.number, playerNumber: playerOut })
     
     // Log the libero entry event
     await logEvent('libero_entry', { 
@@ -6023,7 +6048,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     // Save the updated lineup with libero substitution info
-    await db.events.add({
+    const liberoExitSeq = await getNextSeq()
+    const liberoExitEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -6038,8 +6064,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: await getNextSeq()
+      seq: liberoExitSeq
     })
+    console.log(`[Scoreboard] Action ID ${liberoExitSeq} (Event ID: ${liberoExitEventId}): lineup (libero exit)`, { team, position, liberoNumber, playerNumber: playerOut })
     
     // Log the libero entry event
     await logEvent('libero_entry', { 
@@ -6162,7 +6189,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     // Save the updated lineup (explicitly without libero substitution)
-    await db.events.add({
+    const liberoClearSeq = await getNextSeq()
+    const liberoClearEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -6172,8 +6200,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         liberoSubstitution: null // Explicitly clear libero substitution
       },
       ts: new Date().toISOString(),
-      seq: await getNextSeq()
+      seq: liberoClearSeq
     })
+    console.log(`[Scoreboard] Action ID ${liberoClearSeq} (Event ID: ${liberoClearEventId}): lineup (clear libero)`, { team: teamKey })
     
     // Log the libero exit event
     await logEvent('libero_exit', {
@@ -6366,7 +6395,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     newLineup[liberoOnCourt.position] = String(otherLibero.number)
     
     // Save the updated lineup with libero substitution info
-    await db.events.add({
+    const liberoExchangeSeq = await getNextSeq()
+    const liberoExchangeEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -6381,8 +6411,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: await getNextSeq()
+      seq: liberoExchangeSeq
     })
+    console.log(`[Scoreboard] Action ID ${liberoExchangeSeq} (Event ID: ${liberoExchangeEventId}): lineup (libero exchange)`, { team: teamKey, position: liberoOnCourt.position, liberoNumber: otherLibero.number })
     
     // Log the libero exchange event
     await logEvent('libero_exchange', {
@@ -11256,76 +11287,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Coin Toss Entry - Always first, cannot be undone */}
-                      {data?.match && (() => {
-                        const coinTossTeamA = data.match.coinTossTeamA || 'home'
-                        const coinTossTeamB = data.match.coinTossTeamB || 'away'
-                        const firstServe = data.match.firstServe || 'home'
-                        const firstServeTeam = firstServe === coinTossTeamA ? 'A' : 'B'
-                        const teamAName = coinTossTeamA === 'home' ? (data.homeTeam?.name || 'Home') : (data.awayTeam?.name || 'Away')
-                        const teamBName = coinTossTeamB === 'home' ? (data.homeTeam?.name || 'Home') : (data.awayTeam?.name || 'Away')
-                        
-                        // In Set 1, Team A is on left, Team B is on right
-                        const coinTossDescription = `Coin Toss — Team A: ${teamAName} (Left, Set 1), Team B: ${teamBName} (Right, Set 1), First Serve: Team ${firstServeTeam}`
-                        
-                        // Use match creation time or a very early time
-                        const matchTime = data.match.created_at ? new Date(data.match.created_at) : new Date(0)
-                        const timeStr = matchTime.toLocaleTimeString(undefined, { 
-                          hour: '2-digit', 
-                          minute: '2-digit', 
-                          second: '2-digit', 
-                          hour12: false 
-                        })
-                        
-                        // Check if coin toss should be shown (if search query matches or is empty)
-                        const shouldShowCoinToss = logSearchQuery.trim() === '' || 
-                          coinTossDescription.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-                          'coin toss'.includes(logSearchQuery.toLowerCase()) ||
-                          'A'.includes(logSearchQuery.toLowerCase()) ||
-                          'B'.includes(logSearchQuery.toLowerCase())
-                        
-                        if (!shouldShowCoinToss) return null
-                        
-                        return (
-                          <tr 
-                            key="coin-toss"
-                            style={{ 
-                              borderBottom: '2px solid rgba(255,255,255,0.2)',
-                              background: 'rgba(255,255,255,0.03)',
-                              fontWeight: 600
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
-                            }}
-                          >
-                            <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px', color: 'var(--muted)' }}>
-                              COIN
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              {timeStr}
-                            </td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>
-                              1
-                            </td>
-                            <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace' }}>
-                              0:0
-                            </td>
-                            <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>
-                              GAME
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              GAME
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              {coinTossDescription}
-                            </td>
-                          </tr>
-                        )
-                      })()}
-                      
                       {filteredEvents.length === 0 ? (
                         <tr>
                           <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>
@@ -13206,14 +13167,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           payload.reason = 'injury'
                         }
                         
-                        await db.events.add({
+                        const debugSeq = maxSeq + 1
+                        const debugEventId = await db.events.add({
                           matchId,
                           setIndex,
                           type: eventType,
                           payload,
                           ts: new Date().toISOString(),
-                          seq: maxSeq + 1
+                          seq: debugSeq
                         })
+                        console.log(`[Scoreboard] Action ID ${debugSeq} (Event ID: ${debugEventId}): ${eventType} (debug/test)`, payload)
                         
                         alert('Event added. You can now edit it in the sections above.')
                       }}
@@ -15334,25 +15297,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }
         }
         
-        const wrapperStyle = modalStyle.position ? {
-          ...modalStyle
-        } : {
-          position: 'fixed',
-          top: '30%',
-          [teamIsLeft ? 'left' : 'right']: '2px',
-          transform: 'translateY(-50%)',
-          zIndex: 10000
-        }
-        
         // Get team info for display
         const teamData = liberoReentryModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoReentryModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoReentryModal.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? 'Home' : 'Away')
         const isBright = isBrightColor(teamColor)
-        
+
+        // Calculate modal position style for custom positioning
+        const modalPositionStyle = modalStyle.position ? modalStyle : {
+          position: 'fixed',
+          top: '30%',
+          [teamIsLeft ? 'left' : 'right']: '2px',
+          transform: 'translateY(-50%)',
+          zIndex: 10000
+        }
+
         return (
-          <div style={wrapperStyle}>
             <Modal
               title={
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -15425,10 +15386,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </div>
               </div>
             </Modal>
-          </div>
         )
       })()}
-      
+
       {liberoRedesignationModal && data && (() => {
         let availablePlayers = []
         try {
@@ -16635,25 +16595,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }
         }
         
-        const wrapperStyle = modalStyle.position ? {
-          ...modalStyle
-        } : {
-          position: 'fixed',
-          top: '30%',
-          [teamIsLeft ? 'left' : 'right']: '2px',
-          transform: 'translateY(-50%)',
-          zIndex: 10000
-        }
-        
         // Get team info for display
         const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? 'Home' : 'Away')
         const isBright = isBrightColor(teamColor)
-        
+
+        // Calculate modal position style for custom positioning
+        const modalPositionStyle = modalStyle.position ? modalStyle : {
+          position: 'fixed',
+          top: '30%',
+          [teamIsLeft ? 'left' : 'right']: '2px',
+          transform: 'translateY(-50%)',
+          zIndex: 10000
+        }
+
         return (
-          <div style={wrapperStyle}>
             <Modal
               title={
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -16711,10 +16669,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </div>
               </div>
             </Modal>
-          </div>
         )
       })()}
-      
+
       {undoConfirm && (
         <Modal
           title="Confirm Undo"
@@ -16933,7 +16890,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         const allEvents = await db.events.where('matchId').equals(matchId).toArray()
         const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
         
-        await db.events.add({
+        const manualLineupSeq = maxSeq + 1
+        const manualLineupEventId = await db.events.add({
           matchId,
           setIndex,
           ts: new Date().toISOString(),
@@ -16943,8 +16901,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             lineup: lineupData,
             isInitial: mode === 'initial'
           },
-          seq: maxSeq + 1
+          seq: manualLineupSeq
         })
+        console.log(`[Scoreboard] Action ID ${manualLineupSeq} (Event ID: ${manualLineupEventId}): lineup (manual)`, { team, isInitial: mode === 'initial' })
         
         setConfirmMessage(captainInCourt ? 'Captain on court' : 'Captain not on court')
         
@@ -16990,14 +16949,16 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 })
                 
                 // Log point event
-                await db.events.add({
+                const penaltyPointSeq = maxSeq + 2 + pendingPenalties.indexOf(penalty)
+                const penaltyPointEventId = await db.events.add({
                   matchId,
                   setIndex,
                   ts: new Date().toISOString(),
                   type: 'point',
                   payload: { team: otherTeam, fromPenalty: true },
-                  seq: maxSeq + 2 + pendingPenalties.indexOf(penalty)
+                  seq: penaltyPointSeq
                 })
+                console.log(`[Scoreboard] Action ID ${penaltyPointSeq} (Event ID: ${penaltyPointEventId}): point (from penalty)`, { team: otherTeam })
                 
               }
             }
