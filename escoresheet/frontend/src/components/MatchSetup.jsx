@@ -529,14 +529,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   // Show coin toss view if requested
   useEffect(() => {
     if (showCoinToss && matchId) {
-      // Check if team names are set before showing coin toss
+      // Check if team names and short names are set before showing coin toss
       if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
         setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
         return
       }
+      if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
+        setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
+        return
+      }
       setCurrentView('coin-toss')
     }
-  }, [showCoinToss, matchId, home, away])
+  }, [showCoinToss, matchId, home, away, homeShortName, awayShortName])
 
   // Server management - Only check in Electron
   useEffect(() => {
@@ -1285,12 +1289,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
       }
       
     // Don't start match yet - go to coin toss first
-    // Check if team names are set
+    // Check if team names and short names are set
     if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
       setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
       return
     }
-    
+
+    if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
+      setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
+      return
+    }
+
     setPendingMatchId(matchId)
     setCurrentView('coin-toss')
     })
@@ -2464,6 +2473,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   if (val !== null && (val < 1 || val > 99)) return
                   const updated = [...homeRoster]
                   updated[i] = { ...updated[i], number: val }
+                  // Sort roster by player number
+                  updated.sort((a, b) => (a.number || 0) - (b.number || 0))
                   setHomeRoster(updated)
                 }} 
               />
@@ -3015,6 +3026,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   if (val !== null && (val < 1 || val > 99)) return
                   const updated = [...awayRoster]
                   updated[i] = { ...updated[i], number: val }
+                  // Sort roster by player number
+                  updated.sort((a, b) => (a.number || 0) - (b.number || 0))
                   setAwayRoster(updated)
                 }} 
               />
@@ -4794,6 +4807,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     onChange={e => setHomeShortName(e.target.value.toUpperCase())}
                     placeholder="Short name"
                     maxLength={8}
+                    required
                     style={{
                       width: '100%',
                       padding: '8px 8px',
@@ -4930,6 +4944,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                     onChange={e => setAwayShortName(e.target.value.toUpperCase())}
                     placeholder="Short name"
                     maxLength={8}
+                    required
                     style={{
                       width: '100%',
                       padding: '8px 8px',
@@ -5238,9 +5253,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   )
                 }
                 
-                // Check if team names are set before going to coin toss
+                // Check if team names and short names are set before going to coin toss
                 if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
                   setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+                  return
+                }
+
+                if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
+                  setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
                   return
                 }
                 
