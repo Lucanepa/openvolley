@@ -15,7 +15,8 @@
       "Bash(railway logs:*)",
       "Bash(node:*)",
       "Bash(railway up:*)",
-      "Bash(railway redeploy:*)"
+      "Bash(railway redeploy:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
