@@ -47,7 +47,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
-  const [setEndModal, setSetEndModal] = useState(null) // { set, homePoints, awayPoints } | null
   const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
   const [exceptionalSubstitutionModal, setExceptionalSubstitutionModal] = useState(null) // { team: 'home'|'away', position: string, playerOut: number, reason: 'expulsion'|'disqualification'|'injury' } | null
   const [substitutionDropdown, setSubstitutionDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, isInjury?: boolean } | null
@@ -2186,111 +2185,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     return false
   }, [matchId, setEndTimeModal])
-
-  const confirmSetEnd = useCallback(async () => {
-    if (!setEndModal || !data?.match) return
-    
-    const { set, homePoints, awayPoints, winner } = setEndModal
-    
-    // Determine team labels (A or B) based on coin toss
-    const teamAKey = data.match.coinTossTeamA || 'home'
-    const teamBKey = data.match.coinTossTeamB || 'away'
-    const winnerLabel = winner === 'home' 
-      ? (teamAKey === 'home' ? 'A' : 'B')
-      : (teamAKey === 'away' ? 'A' : 'B')
-    
-    // Get current time for end time
-    const endTime = new Date().toISOString()
-    const startTime = set.startTime
-    
-    // Log set win with times
-    await logEvent('set_end', { 
-      team: winner, 
-      teamLabel: winnerLabel,
-      setIndex: set.index,
-      homePoints,
-      awayPoints,
-      startTime: startTime,
-      endTime: endTime
-    })
-    
-    await db.sets.update(set.id, { finished: true, homePoints, awayPoints, endTime: endTime })
-    const sets = await db.sets.where({ matchId: set.matchId }).toArray()
-    const finished = sets.filter(s => s.finished).length
-    if (finished >= 5) {
-      // IMPORTANT: When match ends, preserve ALL data in database:
-      // - All sets remain in db.sets
-      // - All events remain in db.events
-      // - All players remain in db.players
-      // - All teams remain in db.teams
-      // - Only update match status to 'final' - DO NOT DELETE ANYTHING
-      await db.matches.update(set.matchId, { status: 'final' })
-      
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'update',
-        payload: {
-          id: String(set.matchId),
-          status: 'final'
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-      
-      if (onFinishSet) onFinishSet(set)
-    } else {
-      // DEPRECATED: This legacy set end confirmation is replaced by confirmSetEndTime
-      // which handles set creation with time picker modal
-      // This path should not execute if confirmSetEndTime is being used
-      console.warn(`[Scoreboard confirmSetEnd] DEPRECATED: Use confirmSetEndTime instead`)
-    }
-    
-    setSetEndModal(null)
-  }, [setEndModal, data?.match, logEvent, onFinishSet])
-
-  const cancelSetEnd = useCallback(async () => {
-    if (!setEndModal || !data?.events || data.events.length === 0) {
-      setSetEndModal(null)
-      return
-    }
-    
-    // Undo the last action (the point that would have ended the set)
-    const lastEvent = data.events[data.events.length - 1]
-    
-    // If it's a point, decrease the score
-    if (lastEvent.type === 'point' && lastEvent.payload?.team) {
-      const teamKey = lastEvent.payload.team
-      const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
-      const currentPoints = data.set[field]
-      
-      if (currentPoints > 0) {
-        await db.sets.update(data.set.id, {
-          [field]: currentPoints - 1
-        })
-      }
-    }
-    
-    // Delete the event
-    await db.events.delete(lastEvent.id)
-    
-    // Also remove from sync_queue if it exists
-    const allSyncItems = await db.sync_queue
-      .where('status')
-      .equals('queued')
-      .toArray()
-    
-    const syncItems = allSyncItems.filter(item => 
-      item.payload?.type === lastEvent.type && 
-      item.payload?.set_index === lastEvent.setIndex
-    )
-    
-    if (syncItems.length > 0) {
-      const lastSyncItem = syncItems[syncItems.length - 1]
-      await db.sync_queue.delete(lastSyncItem.id)
-    }
-    
-    setSetEndModal(null)
-  }, [setEndModal, data?.events, data?.set])
 
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
@@ -14136,53 +14030,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }, 100)
         }}
       />}
-      
-      {setEndModal && (
-        <Modal
-          title="Set End Confirmation"
-          open={true}
-          onClose={() => setSetEndModal(null)}
-          width={400}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Do you confirm the set is over?
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={confirmSetEnd}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={cancelSetEnd}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: '#ef4444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Undo last action
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
       
       {playerActionMenu && (() => {
         // Get element position - use stored coordinates if available
