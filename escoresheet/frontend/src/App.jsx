@@ -327,9 +327,9 @@ export default function App() {
               // Ignore errors when closing
             }
             statuses.websocket = 'disconnected'
-            debugInfo.websocket = { 
-              status: 'disconnected', 
-              message: `Connection timeout after 2 seconds. Server may not be running on port ${wsPort}.`,
+            debugInfo.websocket = {
+              status: 'disconnected',
+              message: `Connection timeout after 2 seconds. WebSocket server may not be available.`,
               details: `Attempted to connect to ${wsUrl}`
             }
             resolve()
