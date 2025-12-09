@@ -314,7 +314,10 @@ export default function App() {
       const wsTest = new WebSocket(wsUrl)
       let resolved = false
       let errorMessage = ''
-      
+
+      // Use longer timeout for cloud backends (Railway needs more time to wake up)
+      const connectionTimeout = backendUrl ? 5000 : 2000
+
       await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           if (!resolved) {
@@ -329,12 +332,12 @@ export default function App() {
             statuses.websocket = 'disconnected'
             debugInfo.websocket = {
               status: 'disconnected',
-              message: `Connection timeout after 2 seconds. WebSocket server may not be available.`,
+              message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
               details: `Attempted to connect to ${wsUrl}`
             }
             resolve()
           }
-        }, 2000)
+        }, connectionTimeout)
         
         wsTest.onopen = () => {
           if (!resolved) {
@@ -363,9 +366,9 @@ export default function App() {
               // Ignore errors when closing
             }
             statuses.websocket = 'disconnected'
-            debugInfo.websocket = { 
-              status: 'disconnected', 
-              message: `WebSocket connection error. Server may not be running or port ${wsPort} is blocked.`,
+            debugInfo.websocket = {
+              status: 'disconnected',
+              message: `WebSocket connection error. Server may not be available.`,
               details: `Failed to connect to ${wsUrl}`
             }
             resolve()
