@@ -98,6 +98,25 @@ export default function App() {
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [isFullscreen, setIsFullscreen] = useState(false)
 
+  // Log backend configuration on mount
+  useEffect(() => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL
+    const isDev = import.meta.env.DEV
+    const mode = import.meta.env.MODE
+
+    console.log('🔧 Backend Configuration:')
+    console.log('  VITE_BACKEND_URL:', backendUrl || '(not set)')
+    console.log('  Mode:', mode)
+    console.log('  Is Dev:', isDev)
+    console.log('  Expected behavior:', backendUrl ? 'Connect to Railway backend' : 'Standalone mode (no backend)')
+
+    if (backendUrl) {
+      console.log('  ✅ Backend URL configured - WebSocket will connect to:', backendUrl)
+    } else {
+      console.log('  ℹ️  No backend URL - Running in standalone mode')
+    }
+  }, [])
+
   // Fetch server status periodically
   useEffect(() => {
     // Skip server status checks in production GitHub Pages deployment
