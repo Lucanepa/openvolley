@@ -15573,12 +15573,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 <p style={{ marginBottom: '24px', fontSize: '16px' }}>
                   Do you want to sub the libero in position I?
                 </p>
-                <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)' }}>
-                  # {liberoReentryModal.playerNumber} out
-                </p>
-                <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-                  {liberoReentryModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoReentryModal.liberoNumber} in
-                </p>
+                <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
+                  <div style={{ marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span>OUT: # {liberoReentryModal.playerNumber}</span>
+                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
+                  </div>
+                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span>IN: {liberoReentryModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoReentryModal.liberoNumber}</span>
+                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                   <button
                     onClick={confirmLiberoReentry}
@@ -16872,9 +16876,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 <p style={{ marginBottom: '24px', fontSize: '16px' }}>
                   The libero rotated to position IV and must leave the court.
                 </p>
-                <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-                  {liberoRotationModal.liberoType === 'libero1' ? 'L1' : 'L2'} #{liberoRotationModal.liberoNumber} has been automatically replaced by player #{liberoRotationModal.playerNumber}
-                </p>
+                <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
+                  <div style={{ marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span>OUT: {liberoRotationModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoRotationModal.liberoNumber}</span>
+                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
+                  </div>
+                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span>IN: # {liberoRotationModal.playerNumber}</span>
+                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                   <button
                     onClick={() => setLiberoRotationModal(null)}
