@@ -374,6 +374,9 @@ export default function RefereeApp() {
         flexShrink: 0,
         height: '40px'
       }}>
+         <div style={{ flex: '0 0 auto', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+          Version {__APP_VERSION__ || '1.0.0'}
+        </div>
         <div style={{ flex: '0 0 auto', minWidth: '80px' }}></div>
         
         <div style={{ 
