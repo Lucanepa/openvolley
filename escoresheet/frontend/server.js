@@ -1068,6 +1068,3 @@ process.on('SIGINT', () => {
   })
   process.exit(0)
 })
-
-// Export broadcast function for potential use in other modules
-export { broadcast }

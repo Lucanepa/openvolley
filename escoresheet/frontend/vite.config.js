@@ -52,6 +52,60 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png'],
+      workbox: {
+        // Network-first strategy for API calls, cache-first for assets
+        runtimeCaching: [
+          {
+            // API routes - network first, fallback to cache
+            urlPattern: /^https?:\/\/.*\/api\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+              },
+              networkTimeoutSeconds: 10,
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            // Static assets - cache first
+            urlPattern: /\.(?:js|css|png|jpg|jpeg|svg|gif|woff|woff2)$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-assets',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+              }
+            }
+          },
+          {
+            // HTML pages - network first
+            urlPattern: /\.html$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-cache',
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+              }
+            }
+          }
+        ],
+        // Don't cache these routes
+        navigateFallbackDenylist: [/^\/api\//],
+        // Clean up old caches
+        cleanupOutdatedCaches: true
+      },
+      devOptions: {
+        enabled: true, // Enable PWA in development
+        type: 'module',
+        navigateFallback: 'index.html'
+      },
       manifest: {
         name: process.env.VITE_APP_TITLE || 'Open eScoresheet',
         short_name: 'eScoresheet',

@@ -1,0 +1,14 @@
+# Netlify configuration for serverless functions
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Enable Edge Functions for WebSocket (Netlify only)
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

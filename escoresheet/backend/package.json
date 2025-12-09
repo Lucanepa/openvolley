@@ -1,0 +1,17 @@
+{
+  "name": "escoresheet-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend server for eScoresheet with WebSocket support",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
