@@ -3,20 +3,45 @@
  * Fetches match data from the main scoreboard server instead of using local IndexedDB
  */
 
-// Get server URL from current location
+// Get server URL - checks for configured backend first, then falls back to current location
 function getServerUrl() {
+  // Check if we have a configured backend URL (Railway/cloud backend)
+  const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+  if (backendUrl) {
+    console.log('📡 Using configured backend URL:', backendUrl)
+    return backendUrl
+  }
+
+  // Fallback to local server (development or Electron)
   const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
   const hostname = window.location.hostname
   const port = window.location.port || (protocol === 'https' ? '443' : '5173')
-  return `${protocol}://${hostname}:${port}`
+  const localUrl = `${protocol}://${hostname}:${port}`
+  console.log('💻 Using local server URL:', localUrl)
+  return localUrl
 }
 
-// Get WebSocket URL
+// Get WebSocket URL - checks for configured backend first, then falls back to current location
 function getWebSocketUrl() {
+  // Check if we have a configured backend URL (Railway/cloud backend)
+  const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+  if (backendUrl) {
+    const url = new URL(backendUrl)
+    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${url.host}`
+    console.log('📡 Using configured WebSocket URL:', wsUrl)
+    return wsUrl
+  }
+
+  // Fallback to local WebSocket server (development or Electron)
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const hostname = window.location.hostname
   const wsPort = 8080 // Default WebSocket port
-  return `${protocol}://${hostname}:${wsPort}`
+  const localWsUrl = `${protocol}://${hostname}:${wsPort}`
+  console.log('💻 Using local WebSocket URL:', localWsUrl)
+  return localWsUrl
 }
 
 /**

@@ -70,26 +70,45 @@ export default function RefereeApp() {
     
     // Check WebSocket server availability
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const hostname = window.location.hostname
-      const wsPort = 8080
-      const wsUrl = `${protocol}://${hostname}:${wsPort}`
-      
+      // Check if we have a configured backend URL (Railway/cloud backend)
+      const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+      let wsUrl
+      if (backendUrl) {
+        // Use configured backend (Railway cloud)
+        const url = new URL(backendUrl)
+        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        wsUrl = `${protocol}//${url.host}`
+        console.log('🌐 Referee testing cloud WebSocket backend:', wsUrl)
+      } else {
+        // Fallback to local WebSocket server
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        const wsPort = 8080
+        wsUrl = `${protocol}://${hostname}:${wsPort}`
+        console.log('💻 Referee testing local WebSocket server:', wsUrl)
+      }
+
       const wsTest = new WebSocket(wsUrl)
       let resolved = false
-      
+
+      // Use longer timeout for cloud backends
+      const connectionTimeout = backendUrl ? 10000 : 2000
+
       await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           if (!resolved) {
             resolved = true
+            console.log(`⏱️  Referee WebSocket timeout after ${connectionTimeout / 1000}s`)
             try { wsTest.close() } catch (e) {}
             statuses.websocket = 'disconnected'
-            debugInfo.websocket = { status: 'disconnected', message: `Connection timeout` }
+            debugInfo.websocket = { status: 'disconnected', message: `Connection timeout after ${connectionTimeout / 1000}s` }
             resolve()
           }
-        }, 2000)
+        }, connectionTimeout)
         
         wsTest.onopen = () => {
+          console.log('✅ Referee WebSocket test connection opened!')
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
@@ -99,8 +118,9 @@ export default function RefereeApp() {
             resolve()
           }
         }
-        
-        wsTest.onerror = () => {
+
+        wsTest.onerror = (error) => {
+          console.log('❌ Referee WebSocket test error:', error)
           if (!resolved) {
             resolved = true
             clearTimeout(timeout)
