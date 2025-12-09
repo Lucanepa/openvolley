@@ -181,9 +181,15 @@ export function subscribeToMatchData(matchId, onUpdate) {
           
           if (message.type === 'match-data-update' && String(message.matchId) === matchIdStr) {
             // Match data updated, notify all subscribers
+            // Pass through timestamp fields for latency tracking
+            const dataWithTimestamps = {
+              ...message.data,
+              _timestamp: message._timestamp,
+              _scoreboardTimestamp: message._scoreboardTimestamp
+            }
             connection.subscribers.forEach(subscriber => {
               try {
-                subscriber(message.data)
+                subscriber(dataWithTimestamps)
               } catch (err) {
                 console.error('[ServerDataSync] Error in subscriber callback:', err)
               }
@@ -195,6 +201,22 @@ export function subscribeToMatchData(matchId, onUpdate) {
                 subscriber(message.data)
               } catch (err) {
                 console.error('[ServerDataSync] Error in subscriber callback:', err)
+              }
+            })
+          } else if (message.type === 'match-action' && String(message.matchId) === matchIdStr) {
+            // Action received from scoreboard (timeout, substitution, set_end, etc.)
+            console.log('[ServerDataSync] Received match-action:', message.action, message.data)
+            connection.subscribers.forEach(subscriber => {
+              try {
+                // Pass the action with a special _action wrapper, including timestamps for latency tracking
+                subscriber({ 
+                  _action: message.action, 
+                  _actionData: message.data, 
+                  _timestamp: message._timestamp || message.timestamp,
+                  _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
+                })
+              } catch (err) {
+                console.error('[ServerDataSync] Error in subscriber callback for action:', err)
               }
             })
           }
@@ -281,6 +303,31 @@ export function subscribeToMatchData(matchId, onUpdate) {
       // Remove from map
       wsConnections.delete(matchIdStr)
     }
+  }
+}
+
+/**
+ * Get WebSocket connection status for a match
+ * Returns: 'connected', 'connecting', 'disconnected', or 'unknown'
+ */
+export function getWebSocketStatus(matchId) {
+  const matchIdStr = String(matchId)
+  const connection = wsConnections.get(matchIdStr)
+  
+  if (!connection || !connection.ws) {
+    return 'disconnected'
+  }
+  
+  switch (connection.ws.readyState) {
+    case WebSocket.CONNECTING:
+      return 'connecting'
+    case WebSocket.OPEN:
+      return 'connected'
+    case WebSocket.CLOSING:
+    case WebSocket.CLOSED:
+      return 'disconnected'
+    default:
+      return 'unknown'
   }
 }
 
