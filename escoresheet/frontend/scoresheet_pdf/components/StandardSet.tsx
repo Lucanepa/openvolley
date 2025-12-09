@@ -50,19 +50,16 @@ export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2; isCircle
             className="flex-1 w-full relative flex items-center justify-center"
             
         >
-            {/* Background Number */}
-            <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-100' : ''}`}>{num}</span>
-            
+            {/* Background Number - don't render if cancelled (filledState === 2) */}
+            {filledState !== 2 && (
+                <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-100' : ''}`}>{num}</span>
+            )}
+
             {/* Overlays */}
             {/* Only show slash if not circled (penalty points should only have circle, no slash) */}
             {filledState === 1 && !isCircled && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="15" />
-                 </svg>
-            )}
-            {filledState === 2 && (
-                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="50" y1="-5" x2="50" y2="105" stroke="black" strokeWidth="15" strokeLinecap="butt" />
                  </svg>
             )}
             {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}

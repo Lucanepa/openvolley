@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { findMatchByGameNumber, getMatchData, subscribeToMatchData } from './utils/serverDataSync'
 import mikasaVolleyball from './mikasa_v200w.png'
 
@@ -18,6 +18,85 @@ export default function LivescoreApp() {
   const [gameIdInput, setGameIdInput] = useState('')
   const [error, setError] = useState('')
   const [sidesSwitched, setSidesSwitched] = useState(false)
+  const wakeLockRef = useRef(null)
+  const noSleepVideoRef = useRef(null)
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    const createNoSleepVideo = () => {
+      if (noSleepVideoRef.current) return
+      const mp4 = 'data:video/mp4;base64,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'
+      const video = document.createElement('video')
+      video.setAttribute('playsinline', '')
+      video.setAttribute('muted', '')
+      video.setAttribute('loop', '')
+      video.setAttribute('src', mp4)
+      video.style.position = 'fixed'
+      video.style.top = '-9999px'
+      video.style.left = '-9999px'
+      video.style.width = '1px'
+      video.style.height = '1px'
+      document.body.appendChild(video)
+      noSleepVideoRef.current = video
+      return video
+    }
+    
+    const enableNoSleep = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          console.log('[WakeLock] Screen wake lock acquired (Livescore)')
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] Screen wake lock released (Livescore)')
+          })
+        }
+      } catch (err) {
+        console.log('[WakeLock] Native wake lock failed:', err.message)
+      }
+      
+      try {
+        const video = createNoSleepVideo()
+        if (video) {
+          await video.play()
+          console.log('[NoSleep] Video wake lock enabled (Livescore)')
+        }
+      } catch (err) {
+        console.log('[NoSleep] Video wake lock failed:', err.message)
+      }
+    }
+
+    const handleInteraction = () => {
+      enableNoSleep()
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+    }
+    
+    enableNoSleep()
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        enableNoSleep()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release()
+        wakeLockRef.current = null
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+        noSleepVideoRef.current.remove()
+        noSleepVideoRef.current = null
+      }
+    }
+  }, [])
 
   // Get gameId from URL (optional)
   useEffect(() => {
@@ -112,6 +191,7 @@ export default function LivescoreApp() {
 
     // Subscribe to match data updates
     const unsubscribe = subscribeToMatchData(gameId, (updatedData) => {
+      console.log('[Livescore] WebSocket update received')
       const currentSet = (updatedData.sets || []).find(s => !s.finished) || 
                         (updatedData.sets || []).sort((a, b) => b.index - a.index)[0]
       
@@ -127,8 +207,18 @@ export default function LivescoreApp() {
       })
     })
 
+    // Refetch data when page becomes visible (handles screen wake from sleep)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Livescore] Page became visible, refetching data...')
+        fetchData()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [gameId])
 

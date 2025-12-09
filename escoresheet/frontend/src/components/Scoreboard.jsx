@@ -10,7 +10,7 @@ import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { generateScoresheetPDF } from '../utils/generateScoresheetPDF'
 
-export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, manageCaptainOnCourt = false }) {
+export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss }) {
   const { syncStatus } = useSyncQueue()
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
@@ -26,6 +26,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showSanctions, setShowSanctions] = useState(false)
   const [menuModal, setMenuModal] = useState(false)
   const [showOptionsInMenu, setShowOptionsInMenu] = useState(false)
+  const [localManageCaptainOnCourt, setLocalManageCaptainOnCourt] = useState(() => {
+    // Load from localStorage, default to false
+    const saved = localStorage.getItem('manageCaptainOnCourt')
+    return saved === 'true'
+  })
   const [scoreboardGuideModal, setScoreboardGuideModal] = useState(false)
   const [serverRunning, setServerRunning] = useState(false)
   const [serverStatus, setServerStatus] = useState(null)
@@ -71,12 +76,100 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [sanctionConfirmModal, setSanctionConfirmModal] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, sanctionType: 'warning'|'penalty'|'expulsion'|'disqualification' } | null
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
-  const [showCallRefereeButton, setShowCallRefereeButton] = useState(false) // Show/hide the call referee button
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
+  const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
+  const syncFunctionRef = useRef(null) // Store sync function for use in action handlers
+  const noSleepVideoRef = useRef(null) // Video element for NoSleep fallback
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    // Create a tiny looping video that keeps the screen awake on mobile/tablets
+    const createNoSleepVideo = () => {
+      if (noSleepVideoRef.current) return
+      
+      // Base64 encoded tiny MP4 video (blank, silent, loops)
+      const mp4 = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAA1VtZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1NSByMjkxNyAwYTg0ZDk4IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxOCAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTMgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAbWWIhAAz//727L4FNf2f0JcRLMXaSnA+KqSAgHc0wAAAAwAAAwAAV/8iZ2P/4kTVAAIgAAABHQZ4iRPCv/wAAAwAAAwAAHxQSRJ2C2E0AAAMAAAMAYOLkAADAAAHPgVxpAAKGAAABvBqIAg5LAH4AABLNAAAAHEGeQniFfwAAAwAAAwACNQsIAADAAADABOvIgAAAABoBnmF0Rn8AAAMAAAMAAApFAADAAADAECGAAHUAAAAaAZ5jakZ/AAADAAADAAClYlVkAAADAAADAJdwAAAAVUGaZkmoQWyZTAhv//6qVQAAAwAACjIWAANXJ5AAVKLiPqsAAHG/pAALrZ6AAHUhqAAC8QOAAHo0KAAHqwIAAeNf4AAcfgdSAAGdg+sAAOCnAABH6AAAADdBnoRFESwn/wAAAwAAAwAB7YZ+YfJAAOwAkxZiAgABmtQACVrdYAAbcqMAAPMrOAAH1LsAAJ5gAAAAGgGeo3RGfwAAAwAAAwAAXHMAADAAADAEfmAAdQAAABoBnqVqRn8AAAMAAAMAAKReyQADAAADABYxgAAAAFVBmqpJqEFsmUwIb//+qlUAAAMAAAoWMAANXIYAAUZC4kLQAB8rCgABTxKAADq86AAFHAwAAe3E4AAdTHoAAahnMAAL7zYAAR9BcAAN0SgAASNvQAAAADdBnshFFSwn/wAAAwAAAwAB7YZ+YfJAAOwAkxZiAgABvNIACVqdYAAbcqMAAPcquAAH1LsAAJ5gAAAAGgGe53RGfwAAAwAAAwAAXHUAADAAADAEfmAAdQAAABoBnulqRn8AAAMAAAMAAKRhXQADAAADABVxgAAAAGhBmu5JqEFsmUwIb//+qlUAAAMAAH8yQAB7sgACKrBcSAAIKXS4AAd8MAAG7xwAApriMAASJiQAAXfPOAACmvmAACNqrgAB2OyYAAm0kwABRZvgABCrlAAC7SfAABqJMAAHpZugAAAzQZ8MRRUsJ/8AAAMAAAMA5nIA/VBzAADYASYsxBwAA3mjABLVOsAANuVGAAHuVnAACuYAAAAXAZ8rdEZ/AAADAAADABSsSqyAYAC6zAAAdQAAABkBny1qRn8AAAMAAAMAFGpKrIBgAMDOJKAAdQA='
+      
+      const video = document.createElement('video')
+      video.setAttribute('playsinline', '')
+      video.setAttribute('muted', '')
+      video.setAttribute('loop', '')
+      video.setAttribute('src', mp4)
+      video.style.position = 'fixed'
+      video.style.top = '-9999px'
+      video.style.left = '-9999px'
+      video.style.width = '1px'
+      video.style.height = '1px'
+      document.body.appendChild(video)
+      noSleepVideoRef.current = video
+      
+      return video
+    }
+    
+    const enableNoSleep = async () => {
+      // First try native Wake Lock API (works on desktop browsers)
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          console.log('[WakeLock] Screen wake lock acquired')
+          
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] Screen wake lock released')
+          })
+        }
+      } catch (err) {
+        console.log('[WakeLock] Native wake lock failed:', err.message)
+      }
+      
+      // Also use video trick as fallback (better for tablets/mobile)
+      try {
+        const video = createNoSleepVideo()
+        if (video) {
+          await video.play()
+          console.log('[NoSleep] Video wake lock enabled')
+        }
+      } catch (err) {
+        console.log('[NoSleep] Video wake lock failed:', err.message)
+      }
+    }
+
+    // Enable on user interaction (required on some devices)
+    const handleInteraction = () => {
+      enableNoSleep()
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+    }
+    
+    enableNoSleep()
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        enableNoSleep()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release()
+        wakeLockRef.current = null
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+        noSleepVideoRef.current.remove()
+        noSleepVideoRef.current = null
+      }
+    }
+  }, [])
   const [connectionStatuses, setConnectionStatuses] = useState({
     api: 'unknown',
     server: 'unknown',
@@ -115,6 +208,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     return () => clearInterval(interval)
   }, [matchId])
+
 
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
@@ -226,7 +320,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     let ws = null
-    let syncInterval = null
     let reconnectTimeout = null
 
     const connectWebSocket = () => {
@@ -268,9 +361,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }
           
           // Send initial match data sync (this will overwrite/add the current match)
+          // No periodic sync - data is synced only when actions occur
           syncMatchData()
-          // Set up periodic sync (every 5 seconds)
-          syncInterval = setInterval(syncMatchData, 5000)
         }
 
         ws.onmessage = (event) => {
@@ -286,9 +378,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             } else if (message.type === 'game-number-request') {
               // Respond to game number request
               handleGameNumberRequest(message)
-            } else if (message.type === 'match-update-request') {
-              // Respond to match update request
-              handleMatchUpdateRequest(message)
             } else if (message.type === 'pong') {
               // Heartbeat response
             }
@@ -299,7 +388,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
 
         ws.onclose = (event) => {
-          if (syncInterval) clearInterval(syncInterval)
           // Don't reconnect on normal closure (code 1000)
           if (event.code === 1000) {
             return
@@ -313,68 +401,53 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     const syncMatchData = async () => {
-      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) {
+      // Use wsRef.current to always get the current WebSocket (not stale closure)
+      const currentWs = wsRef.current
+      if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
+        console.log('[Scoreboard] Sync skipped - WebSocket not ready:', { hasWs: !!currentWs, readyState: currentWs?.readyState })
         return
       }
 
       try {
-        // Prepare full match object with all fields - scoreboard is source of truth, always overwrite
-        const fullMatch = {
-          id: data.match.id,
-          refereePin: data.match.refereePin,
-          homeTeamPin: data.match.homeTeamPin,
-          awayTeamPin: data.match.awayTeamPin,
-          homeTeamUploadPin: data.match.homeTeamUploadPin,
-          awayTeamUploadPin: data.match.awayTeamUploadPin,
-          refereeConnectionEnabled: data.match.refereeConnectionEnabled,
-          homeTeamConnectionEnabled: data.match.homeTeamConnectionEnabled,
-          awayTeamConnectionEnabled: data.match.awayTeamConnectionEnabled,
-          status: data.match.status,
-          homeTeamId: data.match.homeTeamId,
-          awayTeamId: data.match.awayTeamId,
-          gameNumber: data.match.gameNumber,
-          game_n: data.match.game_n,
-          externalId: data.match.externalId,
-          scheduledAt: data.match.scheduledAt,
-          createdAt: data.match.createdAt,
-          updatedAt: data.match.updatedAt,
-          coinTossTeamA: data.match.coinTossTeamA,
-          coinTossTeamB: data.match.coinTossTeamB,
-          firstServe: data.match.firstServe,
-          pendingHomeRoster: data.match.pendingHomeRoster,
-          pendingAwayRoster: data.match.pendingAwayRoster,
-          // Include all other match fields - this ensures complete overwrite
-          ...data.match
-        }
-        
+        // Fetch ALL fresh data from IndexedDB (not from React state which may be stale due to closures)
+        const freshMatch = await db.matches.get(matchId)
+        if (!freshMatch) return
+
+        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+          db.teams.get(freshMatch?.homeTeamId),
+          db.teams.get(freshMatch?.awayTeamId),
+          db.sets.where('matchId').equals(matchId).toArray(),
+          db.events.where('matchId').equals(matchId).toArray(),
+          freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
+          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+        ])
+
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         // The server will replace all data for this matchId with this data
+        const sendTimestamp = Date.now()
         const syncPayload = {
           type: 'sync-match-data',
           matchId: matchId,
-          match: fullMatch,
-          homeTeam: data.homeTeam,
-          awayTeam: data.awayTeam,
-          homePlayers: data.homePlayers || [],
-          awayPlayers: data.awayPlayers || [],
-          sets: data.sets || [],
-          events: data.events || []
+          match: freshMatch,
+          homeTeam: freshHomeTeam || null,
+          awayTeam: freshAwayTeam || null,
+          homePlayers: freshHomePlayers || [],
+          awayPlayers: freshAwayPlayers || [],
+          sets: freshSets || [],
+          events: freshEvents || [],
+          _timestamp: sendTimestamp // Track when sent from scoreboard
         }
         
-        console.log('[WebSocket] Syncing match data (overwriting server):', {
-          matchId,
-          hasMatch: !!fullMatch,
-          hasRefereePin: !!fullMatch.refereePin,
-          refereeConnectionEnabled: fullMatch.refereeConnectionEnabled,
-          status: fullMatch.status,
-          gameNumber: fullMatch.gameNumber || fullMatch.game_n || fullMatch.externalId
-        })
+        console.log(`[Scoreboard] 📤 Sending sync-match-data at ${new Date(sendTimestamp).toISOString()} (${sendTimestamp}):`, { matchId, eventsCount: freshEvents?.length, setsCount: freshSets?.length })
         
-        ws.send(JSON.stringify(syncPayload))
+        currentWs.send(JSON.stringify(syncPayload))
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
       }
     }
+
+    // Store sync function in ref so it can be called from action handlers
+    syncFunctionRef.current = syncMatchData
 
     const handlePinValidationRequest = async (request) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return
@@ -383,53 +456,76 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const { pin, pinType, requestId } = request
         const pinStr = String(pin).trim()
 
+        // Fetch fresh match data from IndexedDB (not from React state which may be stale due to closures)
+        const freshMatch = await db.matches.get(matchId)
+        if (!freshMatch) {
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: false,
+            error: 'Match not found'
+          }))
+          return
+        }
+
         // Check if PIN matches
         let matchPin = null
         let connectionEnabled = false
 
         if (pinType === 'referee') {
-          matchPin = data.match.refereePin
-          connectionEnabled = data.match.refereeConnectionEnabled !== false
+          matchPin = freshMatch.refereePin
+          connectionEnabled = freshMatch.refereeConnectionEnabled !== false
         } else if (pinType === 'homeTeam') {
-          matchPin = data.match.homeTeamPin
-          connectionEnabled = data.match.homeTeamConnectionEnabled !== false
+          matchPin = freshMatch.homeTeamPin
+          connectionEnabled = freshMatch.homeTeamConnectionEnabled !== false
         } else if (pinType === 'awayTeam') {
-          matchPin = data.match.awayTeamPin
-          connectionEnabled = data.match.awayTeamConnectionEnabled !== false
+          matchPin = freshMatch.awayTeamPin
+          connectionEnabled = freshMatch.awayTeamConnectionEnabled !== false
         }
 
-        if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && data.match.status !== 'final') {
+        if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && freshMatch.status !== 'final') {
+          // Fetch all related data fresh from IndexedDB
+          const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+            db.teams.get(freshMatch?.homeTeamId),
+            db.teams.get(freshMatch?.awayTeamId),
+            db.sets.where('matchId').equals(matchId).toArray(),
+            db.events.where('matchId').equals(matchId).toArray(),
+            freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
+            freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+          ])
+
           // Send match data with full data
           ws.send(JSON.stringify({
             type: 'pin-validation-response',
             requestId,
             success: true,
             match: {
-              id: data.match.id,
-              refereePin: data.match.refereePin,
-              homeTeamPin: data.match.homeTeamPin,
-              awayTeamPin: data.match.awayTeamPin,
-              homeTeamUploadPin: data.match.homeTeamUploadPin,
-              awayTeamUploadPin: data.match.awayTeamUploadPin,
-              refereeConnectionEnabled: data.match.refereeConnectionEnabled,
-              homeTeamConnectionEnabled: data.match.homeTeamConnectionEnabled,
-              awayTeamConnectionEnabled: data.match.awayTeamConnectionEnabled,
-              status: data.match.status,
-              homeTeamId: data.match.homeTeamId,
-              awayTeamId: data.match.awayTeamId,
-              gameNumber: data.match.gameNumber,
-              game_n: data.match.game_n,
-              createdAt: data.match.createdAt,
-              updatedAt: data.match.updatedAt
+              id: freshMatch.id,
+              refereePin: freshMatch.refereePin,
+              homeTeamPin: freshMatch.homeTeamPin,
+              awayTeamPin: freshMatch.awayTeamPin,
+              homeTeamUploadPin: freshMatch.homeTeamUploadPin,
+              awayTeamUploadPin: freshMatch.awayTeamUploadPin,
+              refereeConnectionEnabled: freshMatch.refereeConnectionEnabled,
+              homeTeamConnectionEnabled: freshMatch.homeTeamConnectionEnabled,
+              awayTeamConnectionEnabled: freshMatch.awayTeamConnectionEnabled,
+              status: freshMatch.status,
+              homeTeamId: freshMatch.homeTeamId,
+              awayTeamId: freshMatch.awayTeamId,
+              gameNumber: freshMatch.gameNumber,
+              game_n: freshMatch.game_n,
+              createdAt: freshMatch.createdAt,
+              updatedAt: freshMatch.updatedAt
             },
             fullData: {
-              match: data.match,
-              homeTeam: data.homeTeam,
-              awayTeam: data.awayTeam,
-              homePlayers: data.homePlayers || [],
-              awayPlayers: data.awayPlayers || [],
-              sets: data.sets || [],
-              events: data.events || []
+              matchId: matchId,
+              match: freshMatch,
+              homeTeam: freshHomeTeam || null,
+              awayTeam: freshAwayTeam || null,
+              homePlayers: freshHomePlayers || [],
+              awayPlayers: freshAwayPlayers || [],
+              sets: freshSets || [],
+              events: freshEvents || []
             }
           }))
         } else {
@@ -457,11 +553,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     const handleMatchDataRequest = async (request) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       try {
         const { requestId, matchId: requestedMatchId } = request
-        
+
         if (String(requestedMatchId) !== String(matchId)) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
@@ -473,19 +569,41 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           return
         }
 
+        // Fetch ALL fresh data from IndexedDB (not from React state which may be stale due to closures)
+        const freshMatch = await db.matches.get(matchId)
+        if (!freshMatch) {
+          ws.send(JSON.stringify({
+            type: 'match-data-response',
+            requestId,
+            matchId: requestedMatchId,
+            success: false,
+            error: 'Match not found in database'
+          }))
+          return
+        }
+
+        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+          db.teams.get(freshMatch?.homeTeamId),
+          db.teams.get(freshMatch?.awayTeamId),
+          db.sets.where('matchId').equals(matchId).toArray(),
+          db.events.where('matchId').equals(matchId).toArray(),
+          freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
+          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+        ])
+
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
           matchId: matchId,
           success: true,
           data: {
-            match: data.match,
-            homeTeam: data.homeTeam,
-            awayTeam: data.awayTeam,
-            homePlayers: data.homePlayers || [],
-            awayPlayers: data.awayPlayers || [],
-            sets: data.sets || [],
-            events: data.events || []
+            match: freshMatch,
+            homeTeam: freshHomeTeam || null,
+            awayTeam: freshAwayTeam || null,
+            homePlayers: freshHomePlayers || [],
+            awayPlayers: freshAwayPlayers || [],
+            sets: freshSets || [],
+            events: freshEvents || []
           }
         }))
       } catch (err) {
@@ -542,97 +660,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
 
-    const handleMatchUpdateRequest = async (request) => {
-      const { requestId, matchId: requestedMatchId, updates } = request
-      console.log('[Scoreboard WebSocket] Received match-update-request:', { requestId, requestedMatchId, currentMatchId: matchId, wsState: ws?.readyState, hasMatch: !!data?.match })
-      
-      // Always send a response, even if conditions aren't met
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        // Try to send error response if WebSocket exists but isn't open
-        if (ws && ws.readyState === WebSocket.CONNECTING) {
-          // Wait a bit for connection, but don't block too long
-          setTimeout(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'match-update-response',
-                requestId,
-                matchId: requestedMatchId,
-                success: false,
-                error: 'WebSocket was connecting, please retry'
-              }))
-            }
-          }, 1000)
-        }
-        // If WebSocket doesn't exist or is closed, we can't send a response
-        // The server will timeout, which is expected behavior
-        console.warn('[WebSocket] Cannot respond to match-update-request: WebSocket not connected')
-        return
-      }
-
-      if (!data?.match) {
-        const errorResponse = {
-          type: 'match-update-response',
-          requestId,
-          matchId: requestedMatchId,
-          success: false,
-          error: 'Match data not loaded'
-        }
-        console.log('[Scoreboard WebSocket] Sending match-update-response (error):', errorResponse)
-        ws.send(JSON.stringify(errorResponse))
-        return
-      }
-
-      try {
-        if (String(requestedMatchId) !== String(matchId)) {
-          const errorResponse = {
-            type: 'match-update-response',
-            requestId,
-            matchId: requestedMatchId,
-            success: false,
-            error: 'Match ID mismatch'
-          }
-          console.log('[Scoreboard WebSocket] Sending match-update-response (error):', errorResponse)
-          ws.send(JSON.stringify(errorResponse))
-          return
-        }
-
-        // Update match in local database
-        await db.matches.update(matchId, updates)
-        
-        // Send success response with updated data
-        const updatedMatch = await db.matches.get(matchId)
-        const response = {
-          type: 'match-update-response',
-          requestId,
-          matchId: matchId,
-          success: true,
-          data: {
-            match: updatedMatch,
-            homeTeam: data.homeTeam,
-            awayTeam: data.awayTeam,
-            homePlayers: data.homePlayers || [],
-            awayPlayers: data.awayPlayers || [],
-            sets: data.sets || [],
-            events: data.events || []
-          }
-        }
-        console.log('[Scoreboard WebSocket] Sending match-update-response:', { requestId, success: true })
-        ws.send(JSON.stringify(response))
-      } catch (err) {
-        console.error('[WebSocket] Error handling match update request:', err)
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          const errorResponse = {
-            type: 'match-update-response',
-            requestId: request.requestId,
-            matchId: request.matchId,
-            success: false,
-            error: err.message || 'Error updating match'
-          }
-          console.log('[Scoreboard WebSocket] Sending match-update-response (error):', errorResponse)
-          ws.send(JSON.stringify(errorResponse))
-        }
-      }
-    }
+    // Removed handleMatchUpdateRequest - using sync-match-data instead
 
     // When matchId changes, clear the old match from server
     if (previousMatchIdRef.current && previousMatchIdRef.current !== matchId) {
@@ -656,7 +684,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     connectWebSocket()
 
     return () => {
-      if (syncInterval) clearInterval(syncInterval)
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
       
       // Clear all matches from server when component unmounts (scoreboard is source of truth)
@@ -700,6 +727,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
   }, [matchId, serverStatus])
+
+  // Sync data to referee/bench - call this after any action that changes match data
+  const syncToReferee = useCallback(() => {
+    if (syncFunctionRef.current) {
+      console.log('[Scoreboard] Syncing data to referee after action')
+      syncFunctionRef.current()
+    }
+  }, [])
+
+  // Send action to referee/bench for showing modals/countdowns
+  const sendActionToReferee = useCallback((actionType, actionData) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.log('[Scoreboard] Cannot send action - WebSocket not ready')
+      return
+    }
+
+    const sendTimestamp = Date.now()
+    const actionPayload = {
+      type: 'match-action',
+      matchId: matchId,
+      action: actionType,
+      data: actionData,
+      timestamp: sendTimestamp,
+      _timestamp: sendTimestamp // For latency tracking
+    }
+    
+    console.log(`[Scoreboard] 📤 Sending match-action '${actionType}' at ${new Date(sendTimestamp).toISOString()} (${sendTimestamp}):`, actionData)
+    ws.send(JSON.stringify(actionPayload))
+  }, [matchId])
 
   // Check connection statuses
   const checkConnectionStatuses = useCallback(async () => {
@@ -1232,33 +1289,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Start between-sets countdown when we detect we're between sets
   useEffect(() => {
-    if (isBetweenSets && !betweenSetsCountdown && !countdownDismissedRef.current) {
+    // Only start countdown if between sets AND countdown is null (not started yet)
+    // Don't restart if countdown exists (even if finished) or was dismissed
+    if (isBetweenSets && betweenSetsCountdown === null && !countdownDismissedRef.current) {
       setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
-      countdownDismissedRef.current = false // Reset when starting new countdown
-    } else if (!isBetweenSets && betweenSetsCountdown) {
+    } else if (!isBetweenSets) {
+      // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
-      countdownDismissedRef.current = false // Reset when no longer between sets
+      countdownDismissedRef.current = false // Reset for next time
     }
-    // Don't restart countdown if it has finished or was manually dismissed
-  }, [isBetweenSets, betweenSetsCountdown])
+  }, [isBetweenSets]) // Removed betweenSetsCountdown from deps to prevent restart loop
 
   // Handle between-sets countdown timer
   useEffect(() => {
-    if (!betweenSetsCountdown || !betweenSetsCountdown.started || betweenSetsCountdown.finished) return
+    if (!betweenSetsCountdown || !betweenSetsCountdown.started) return
 
-    if (betweenSetsCountdown.countdown <= 0) {
-      // When countdown reaches 0, clear it completely so rally controls appear
-      setBetweenSetsCountdown(null)
-      return
-    }
+    // Don't set interval if already at 0
+    if (betweenSetsCountdown.countdown <= 0) return
 
     const timer = setInterval(() => {
       setBetweenSetsCountdown(prev => {
-        if (!prev || !prev.started || prev.finished) return prev
+        if (!prev || !prev.started) return prev
         const newCountdown = prev.countdown - 1
         if (newCountdown <= 0) {
-          // When countdown reaches 0, clear it completely so rally controls appear
-          return null
+          // Stay at 0, don't reset to null - this prevents restart
+          return { countdown: 0, started: false }
         }
         return { ...prev, countdown: newCountdown }
       })
@@ -1429,9 +1484,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Check if captain is on court and show modal to select new captain if needed
   const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
-    // Check both prop and localStorage
-    const manageCaptainOnCourtEnabled = manageCaptainOnCourt || localStorage.getItem('manageCaptainOnCourt') === 'true'
-    if (!manageCaptainOnCourtEnabled) return
+    // Check if manage captain on court is enabled
+    if (!localManageCaptainOnCourt) return
     
     const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
     const teamLineupState = getTeamLineupState(teamKey)
@@ -1443,15 +1497,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Check if captain is on court
     const captainOnCourt = playersOnCourt.includes(Number(teamCaptain.number))
-    
+
     // Get current captain on court from match
     const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    
-    // If captain is on court, clear any court captain designation
+
+    // If team captain is on court, they automatically become captain on court (no need to ask)
+    // Team captain has precedence over everyone
     if (captainOnCourt) {
-      if (currentCourtCaptain) {
-        await db.matches.update(matchId, { [captainOnCourtField]: null })
+      // Set team captain as court captain (or clear if already set to them)
+      if (currentCourtCaptain !== teamCaptain.number) {
+        await db.matches.update(matchId, { [captainOnCourtField]: teamCaptain.number })
       }
       return
     }
@@ -1465,7 +1521,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Show modal to select new captain on court
     setCaptainOnCourtModal({ team: teamKey })
-  }, [manageCaptainOnCourt, data, matchId, getTeamLineupState])
+  }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState])
 
   const buildOnCourt = useCallback((players, isLeft, teamKey) => {
     const { currentLineup, positionLiberoMap } = getTeamLineupState(teamKey)
@@ -2051,15 +2107,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           status: 'queued'
         })
       }
+      
+      // Sync to referee after every event
+      syncToReferee()
     },
-    [data?.set, matchId, getNextSeq]
+    [data?.set, matchId, getNextSeq, syncToReferee]
   )
 
   const checkSetEnd = useCallback(async (set, homePoints, awayPoints) => {
+    // Don't show modal if it's already open
+    if (setEndTimeModal) return false
+
     // Determine if this is the 5th set (tie-break set)
     const is5thSet = set.index === 5
     const pointsToWin = is5thSet ? 15 : 25
-    
+
     // Check if this point would end the set
     if (homePoints >= pointsToWin && homePoints - awayPoints >= 2) {
       // Close all libero modals
@@ -2106,7 +2168,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return true
     }
     return false
-  }, [matchId])
+  }, [matchId, setEndTimeModal])
 
   const confirmSetEnd = useCallback(async () => {
     if (!setEndModal || !data?.match) return
@@ -2161,7 +2223,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (onFinishSet) onFinishSet(set)
     } else {
       const newSetIndex = set.index + 1
-      const newSetId = await db.sets.add({ matchId: set.matchId, index: newSetIndex, homePoints: 0, awayPoints: 0, finished: false })
+      
+      // Check if a set with this index already exists to prevent duplicates
+      const existingSet = await db.sets.where({ matchId: set.matchId, index: newSetIndex }).first()
+      let newSetId
+      if (existingSet) {
+        console.log(`[Scoreboard] Set ${newSetIndex} already exists, using existing`)
+        newSetId = existingSet.id
+      } else {
+        newSetId = await db.sets.add({ matchId: set.matchId, index: newSetIndex, homePoints: 0, awayPoints: 0, finished: false })
+      }
       
       // Get match to determine first serve for the new set
       const match = await db.matches.get(set.matchId)
@@ -2345,53 +2416,61 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const renderScoreDisplay = useCallback(
     (style = {}) => (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', ...style }}>
-        <div
-          className="set-score-display"
-          style={{
-            position: 'relative',
-            display: 'inline-block',
-            padding: '0 44px',
-            borderRadius: '14px'
-          }}
-        >
-          {leftServing && (
-            <img
-              src={mikasaVolleyball}
-              alt="Serving team"
-              style={{
-                ...serveBallBaseStyle,
-                position: 'absolute',
-                left: 10,
-                top: '50%',
-                transform: 'translateY(-50%)'
-              }}
-            />
-          )}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
+        {/* Wrapper with ball on left/right OUTSIDE the score container */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Left ball - visible when left team is serving */}
+          <div style={{ width: 32, height: 32, flexShrink: 0 }}>
+            {leftServing && (
+              <img
+                src={mikasaVolleyball}
+                alt="Serving team"
+                style={{
+                  ...serveBallBaseStyle,
+                  width: 32,
+                  height: 32
+                }}
+              />
+            )}
+          </div>
+          
+          {/* Score display container */}
           <div
+            className="set-score-display"
             style={{
-              display: 'inline-flex',
+              position: 'relative',
+              display: 'flex',
               alignItems: 'center',
-              gap: '8px'
+              justifyContent: 'center',
+              padding: '5px 16px'
             }}
           >
-            <span style={{ minWidth: 28, textAlign: 'right' }}>{pointsBySide.left}</span>
-            <span>:</span>
-            <span style={{ minWidth: 28, textAlign: 'left' }}>{pointsBySide.right}</span>
+            {/* Left side: score - FIXED width to prevent colon movement */}
+            <div style={{ width: 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '90px', textAlign: 'right' }}>{pointsBySide.left}</span>
+            </div>
+            {/* Center colon - fixed width to stay centered */}
+            <span style={{ width: 30, textAlign: 'center', flexShrink: 0 }}>:</span>
+            {/* Right side: score - FIXED width to prevent colon movement */}
+            <div style={{ width: 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '90px', textAlign: 'left' }}>{pointsBySide.right}</span>
+            </div>
           </div>
-          {rightServing && (
-            <img
-              src={mikasaVolleyball}
-              alt="Serving team"
-              style={{
-                ...serveBallBaseStyle,
-                position: 'absolute',
-                right: 4,
-                top: '50%',
-                transform: 'translateY(-50%)'
-              }}
-            />
-          )}
+          
+          {/* Right ball - visible when right team is serving */}
+          <div style={{ width: 32, height: 32, flexShrink: 0 }}>
+            {rightServing && (
+              <img
+                src={mikasaVolleyball}
+                alt="Serving team"
+                style={{
+                  ...serveBallBaseStyle,
+                  width: 32,
+                  height: 32
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
     ),
@@ -2702,6 +2781,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               seq: await getNextSeq() // Sequential ID for ordering
             })
             // Don't add to sync_queue for rotation lineups
+            // But sync to referee so they see the updated lineup after rotation
+            syncToReferee()
           }
         }
       }
@@ -2776,7 +2857,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const setEnded = checkSetEnd(data.set, homePoints, awayPoints)
       // If set didn't end, we're done. If it did, checkSetEnd will show the confirmation modal
     },
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId, syncToReferee]
   )
 
   const handleStartRally = useCallback(async () => {
@@ -3041,6 +3122,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       countdownDismissedRef.current = false
       setBetweenSetsCountdown({ countdown: 180, started: true })
       
+      // Send set_end action to referee to show countdown
+      sendActionToReferee('set_end', {
+        setIndex,
+        winner: winner,
+        homePoints: homePoints,
+        awayPoints: awayPoints,
+        countdown: 180
+      })
+
       // If set 4 just ended, show modal to choose sides and service for set 5
       if (setIndex === 4) {
         // Close the set end time modal first
@@ -3077,6 +3167,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
       
       const newSetIndex = setIndex + 1
+      
+      // Check if a set with this index already exists to prevent duplicates
+      const existingSet = await db.sets.where({ matchId, index: newSetIndex }).first()
+      if (existingSet) {
+        console.log(`[Scoreboard] Set ${newSetIndex} already exists, skipping creation`)
+        return existingSet.id
+      }
+      
       const newSetId = await db.sets.add({ 
         matchId, 
         index: newSetIndex, 
@@ -3157,14 +3255,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       set5FirstServe: firstServe
     })
     
-    // Create set 5
-    const newSetId = await db.sets.add({ 
-      matchId, 
-      index: setIndex, 
-      homePoints: 0, 
-      awayPoints: 0, 
-      finished: false 
-    })
+    // Create set 5 (check if already exists first)
+    const existingSet5 = await db.sets.where({ matchId, index: setIndex }).first()
+    let newSetId
+    if (existingSet5) {
+      console.log(`[Scoreboard] Set ${setIndex} already exists, using existing`)
+      newSetId = existingSet5.id
+    } else {
+      newSetId = await db.sets.add({ 
+        matchId, 
+        index: setIndex, 
+        homePoints: 0, 
+        awayPoints: 0, 
+        finished: false 
+      })
+    }
     
     // Reset set5CourtSwitched flag when starting set 5
     await db.matches.update(matchId, { set5CourtSwitched: false })
@@ -4038,7 +4143,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     await logEvent('timeout', { team: timeoutModal.team })
     // Start the timeout countdown
     setTimeoutModal({ ...timeoutModal, started: true })
-  }, [timeoutModal, logEvent])
+    
+    // Send timeout action to referee to show modal
+    sendActionToReferee('timeout', {
+      team: timeoutModal.team,
+      countdown: 30
+    })
+  }, [timeoutModal, logEvent, sendActionToReferee])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -5256,6 +5367,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setSubstitutionConfirm(null)
     setLiberoDropdown(null) // Close libero dropdown when confirming substitution
     
+    // Send substitution action to referee to show modal
+    const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home' : data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
+    sendActionToReferee('substitution', {
+      team,
+      teamName,
+      position,
+      playerOut,
+      playerIn,
+      isExceptional: isExceptional || false
+    })
+    
     // Check if captain is on court after substitution
     // Check if the player leaving is the captain or court captain
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -5289,7 +5411,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }, 100)
       }
     }
-  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, teamAKey, checkLiberoRedesignation])
+  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, teamAKey, checkLiberoRedesignation, sendActionToReferee])
 
   // Common modal position - all modals use the same position
   const getCommonModalPosition = useCallback((element, menuX, menuY) => {
@@ -6529,17 +6651,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return { status: 'error', color: '#ef4444' } // red - unknown
   }, [refereeConnectionEnabled, isReferee1Connected, isReferee2Connected, homeTeamConnectionEnabled, awayTeamConnectionEnabled, isHomeTeamConnected, isAwayTeamConnected, data?.match])
 
-  const callReferee = useCallback(async () => {
-    if (!matchId) return
-    try {
-      await db.matches.update(matchId, {
-        refereeCallActive: true
-      })
-    } catch (error) {
-      // Silently handle error
-    }
-  }, [matchId])
-
   const handleRefereeConnectionToggle = useCallback(async (enabled) => {
     if (!matchId) return
     try {
@@ -6949,29 +7060,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
 
           
-          {refereeConnectionEnabled && isAnyRefereeConnected && (
-            <button 
-              onClick={callReferee}
-              style={{
-                background: '#dc2626',
-                color: '#fff',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 8px rgba(220, 38, 38, 0.4)'
-              }}
-            >
-              <span style={{ fontSize: '18px' }}>⚠️</span>
-              Call Referee
-            </button>
-          )}
-         
           <MenuList
             buttonLabel="Menu"
             buttonClassName="secondary"
@@ -7684,21 +7772,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <span>{teamALabel}</span>
               <span>-</span>
               <span>{teamAShortName}</span>
-              {homeTeamConnectionEnabled && (() => {
-                const status = getConnectionStatus('teamA')
-                return (
-                  <div style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: status.color,
-                    boxShadow: status.status === 'connected'
-                      ? `0 0 6px ${status.color}80` 
-                      : 'none',
-                    marginLeft: '4px'
-                  }} />
-                )
-              })()}
+             
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -7952,7 +8026,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                         style={{ 
                           padding: '4px 8px', 
-                          background: isSubstitutedByLibero ? '#FFF8E7' : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
+                          background: isSubstitutedByLibero 
+                            ? '#ffffff'  // White for libero-replaced
+                            : wasSubstitutedOut 
+                              ? '#fde047'  // Yellow for substituted-out
+                              : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
                           borderRadius: '4px',
                           fontSize: '11px',
                           display: 'flex',
@@ -7960,20 +8038,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           gap: '4px',
                           position: 'relative',
                           opacity: (hasComeBack || showX) ? 0.4 : 1,
-                          color: isSubstitutedByLibero ? '#000' : undefined,
+                          color: (isSubstitutedByLibero || wasSubstitutedOut) ? '#000' : undefined,
                           cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
                         }}
                       >
                         <span style={{ fontWeight: 600 }}>{player.number}</span>
                         {player.isCaptain && (
-                          <span style={{ color: isSubstitutedByLibero ? '#000' : 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>C</span>
+                          <span style={{ color: (isSubstitutedByLibero || wasSubstitutedOut) ? '#000' : 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>C</span>
                         )}
                         {isSubstitutedByLibero && (
                           <span style={{ 
                             fontSize: '9px',
                             fontWeight: 700,
                             color: '#000',
-                            background: 'rgba(255, 255, 255, 0.8)',
+                            background: 'rgba(0, 0, 0, 0.1)',
                             padding: '1px 3px',
                             borderRadius: '2px'
                           }}>
@@ -8311,7 +8389,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </aside>
 
         <section className="court-wrapper">
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
             {/* SERVE indicator container - Left (fixed width) */}
             <div style={{
               width: '100px',
@@ -8362,7 +8440,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               })()}
             </div>
 
-            <div style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <div className="set-summary">
                 <div className="set-info">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', width: '100%' }}>
@@ -8455,13 +8533,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         border: '1px solid rgba(255, 255, 255, 0.2)'
                       }}
                     >
-                      <div style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: ref1StatusColor,
-                        boxShadow: ref1Status ? `0 0 8px ${ref1StatusColor}80` : 'none'
-                      }} />
                       <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
                         1<sup><small><small>st</small></small></sup> Ref: {ref1Name}
                       </span>
@@ -8797,23 +8868,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           />
                         )}
                         {replacementNumber && (
-                          <span style={{
-                            position: 'absolute',
-                            top: '-8px',
-                            right: '-8px',
-                            width: '18px',
-                            height: '18px',
-                            background: '#FFF8E7',
-                            border: '2px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: '#000',
-                            zIndex: 6
-                          }}>
+                          <span style={getReplacementBadgeStyle(player)}>
                             {replacementNumber}
                           </span>
                         )}
@@ -9297,13 +9352,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     border: '1px solid rgba(255, 255, 255, 0.2)'
                   }}
                 >
-                  <div style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: ref2StatusColor,
-                    boxShadow: ref2Status ? `0 0 8px ${ref2StatusColor}80` : 'none'
-                  }} />
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
                     2<sup><small><small>nd</small></small></sup> Ref: {ref2Name}
                   </span>
@@ -9334,9 +9382,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
                 
                 // Get all sets, filter to show only current set and previous sets
+                // Also deduplicate by index (keep the latest one for each index)
                 const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
                 const currentSetIndex = data?.set?.index || 1
-                const visibleSets = allSets.filter(set => set.index <= currentSetIndex)
+                const setsByIndex = new Map()
+                allSets.forEach(set => {
+                  if (set.index <= currentSetIndex) {
+                    setsByIndex.set(set.index, set) // Later entries overwrite earlier ones
+                  }
+                })
+                const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
                 
                 return (
                   <div style={{ 
@@ -9385,7 +9440,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }
                           
                           return (
-                            <tr key={set.index} style={{ 
+                            <tr key={set.id} style={{ 
                               borderBottom: '1px solid rgba(255,255,255,0.1)',
                               color: rowColor
                             }}>
@@ -9427,17 +9482,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     Stop timeout
                   </button>
                 </>
-              ) : betweenSetsCountdown && betweenSetsCountdown.started && !betweenSetsCountdown.finished ? (
+              ) : betweenSetsCountdown ? (
                 <>
                   <div style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: 'var(--accent)',
+                    color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
                     textAlign: 'center',
                     marginBottom: '16px',
                     fontFamily: 'monospace'
                   }}>
-                    {formatCountdown(betweenSetsCountdown.countdown)}
+                    {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
                   </div>
                   <button
                     className="secondary"
@@ -9500,9 +9555,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
                 
                 // Get all sets, filter to show only current set and previous sets
+                // Also deduplicate by index (keep the latest one for each index)
                 const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
                 const currentSetIndex = data?.set?.index || 1
-                const visibleSets = allSets.filter(set => set.index <= currentSetIndex)
+                const setsByIndex = new Map()
+                allSets.forEach(set => {
+                  if (set.index <= currentSetIndex) {
+                    setsByIndex.set(set.index, set) // Later entries overwrite earlier ones
+                  }
+                })
+                const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
                 
                 return (
                   <div style={{ 
@@ -9551,7 +9613,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }
                           
                           return (
-                            <tr key={set.index} style={{ 
+                            <tr key={set.id} style={{ 
                               borderBottom: '1px solid rgba(255,255,255,0.1)',
                               color: rowColor
                             }}>
@@ -9600,21 +9662,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <span>{teamBLabel}</span>
               <span>-</span>
               <span>{teamBShortName}</span>
-              {awayTeamConnectionEnabled && (() => {
-                const status = getConnectionStatus('teamB')
-                return (
-                  <div style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: status.color,
-                    boxShadow: status.status === 'connected'
-                      ? `0 0 6px ${status.color}80` 
-                      : 'none',
-                    marginLeft: '4px'
-                  }} />
-                )
-              })()}
+             
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -9868,7 +9916,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                         style={{ 
                           padding: '4px 8px', 
-                          background: isSubstitutedByLibero ? '#FFF8E7' : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
+                          background: isSubstitutedByLibero 
+                            ? '#ffffff'  // White for libero-replaced
+                            : wasSubstitutedOut 
+                              ? '#fde047'  // Yellow for substituted-out
+                              : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'), 
                           borderRadius: '4px',
                           fontSize: '11px',
                           display: 'flex',
@@ -9876,20 +9928,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           gap: '4px',
                           position: 'relative',
                           opacity: (hasComeBack || showX) ? 0.4 : 1,
-                          color: isSubstitutedByLibero ? '#000' : undefined,
+                          color: (isSubstitutedByLibero || wasSubstitutedOut) ? '#000' : undefined,
                           cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
                         }}
                       >
                         <span style={{ fontWeight: 600 }}>{player.number}</span>
                         {player.isCaptain && (
-                          <span style={{ color: isSubstitutedByLibero ? '#000' : 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>C</span>
+                          <span style={{ color: (isSubstitutedByLibero || wasSubstitutedOut) ? '#000' : 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>C</span>
                         )}
                         {isSubstitutedByLibero && (
                           <span style={{ 
                             fontSize: '9px',
                             fontWeight: 700,
                             color: '#000',
-                            background: 'rgba(255, 255, 255, 0.8)',
+                            background: 'rgba(0, 0, 0, 0.1)',
                             padding: '1px 3px',
                             borderRadius: '2px'
                           }}>
@@ -10494,307 +10546,161 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         >
           <div style={{ padding: '24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {data?.match?.gameNumber && (
+              {/* Game Number and Referee PIN - Same row (50/50) */}
+              {(data?.match?.gameNumber || (data?.match?.refereePin && data?.match?.refereeConnectionEnabled !== false)) && (
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '16px',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  gap: '16px',
+                  width: '100%'
                 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game Number</div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                      {data.match.gameNumber || data.match.game_n || 'N/A'}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const gameNumber = data.match.gameNumber || data.match.game_n || ''
-                      try {
-                        await navigator.clipboard.writeText(String(gameNumber))
-                        alert('Game number copied to clipboard!')
-                      } catch (err) {
-                        console.error('Failed to copy:', err)
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Copy
-                  </button>
-                </div>
-              )}
-              
-              {data?.match?.refereePin && data?.match?.refereeConnectionEnabled !== false && (
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Referee PIN</div>
-                      {(() => {
-                        const isReferee1Connected = data?.match?.lastReferee1Heartbeat && (new Date().getTime() - new Date(data.match.lastReferee1Heartbeat).getTime()) < 15000
-                        const isReferee2Connected = data?.match?.lastReferee2Heartbeat && (new Date().getTime() - new Date(data.match.lastReferee2Heartbeat).getTime()) < 15000
-                        const isConnected = isReferee1Connected || isReferee2Connected
-                        return (
-                          <div style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            background: isConnected ? '#22c55e' : '#eab308',
-                            boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.6)' : 'none'
-                          }} />
-                        )
-                      })()}
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                      {String(data.match.refereePin).padStart(6, '0')}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const pin = String(data.match.refereePin).padStart(6, '0')
-                      try {
-                        await navigator.clipboard.writeText(pin)
-                        alert('Referee PIN copied to clipboard!')
-                      } catch (err) {
-                        console.error('Failed to copy:', err)
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Copy
-                  </button>
-                </div>
-              )}
-              
-              {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled !== false && (
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {data?.homeTeam?.name || 'Home Team'} PIN
+                  {data?.match?.gameNumber && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      minWidth: 0
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game Number</div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        {data.match.gameNumber || data.match.game_n || 'N/A'}
                       </div>
-                      {(() => {
-                        const isConnected = data?.match?.lastHomeTeamHeartbeat && (new Date().getTime() - new Date(data.match.lastHomeTeamHeartbeat).getTime()) < 15000
-                        return (
-                          <div style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            background: isConnected ? '#22c55e' : '#eab308',
-                            boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.6)' : 'none'
-                          }} />
-                        )
-                      })()}
                     </div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                      {String(data.match.homeTeamPin).padStart(6, '0')}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const pin = String(data.match.homeTeamPin).padStart(6, '0')
-                      try {
-                        await navigator.clipboard.writeText(pin)
-                        alert('Home Team PIN copied to clipboard!')
-                      } catch (err) {
-                        console.error('Failed to copy:', err)
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Copy
-                  </button>
-                </div>
-              )}
-              
-              {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled !== false && (
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {data?.awayTeam?.name || 'Away Team'} PIN
+                  )}
+                  
+                  {data?.match?.refereePin && data?.match?.refereeConnectionEnabled !== false && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      minWidth: 0
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Referee PIN</div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        {String(data.match.refereePin).padStart(6, '0')}
                       </div>
-                      {(() => {
-                        const isConnected = data?.match?.lastAwayTeamHeartbeat && (new Date().getTime() - new Date(data.match.lastAwayTeamHeartbeat).getTime()) < 15000
-                        return (
-                          <div style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            background: isConnected ? '#22c55e' : '#eab308',
-                            boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.6)' : 'none'
-                          }} />
-                        )
-                      })()}
                     </div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                      {String(data.match.awayTeamPin).padStart(6, '0')}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const pin = String(data.match.awayTeamPin).padStart(6, '0')
-                      try {
-                        await navigator.clipboard.writeText(pin)
-                        alert('Away Team PIN copied to clipboard!')
-                      } catch (err) {
-                        console.error('Failed to copy:', err)
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Copy
-                  </button>
+                  )}
                 </div>
               )}
-              
-              {data?.match?.homeTeamUploadPin && (
+
+              {/* Team PINs - Only show if connection is enabled */}
+              {(data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled !== false) || (data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled !== false) ? (
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '16px',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  gap: '16px',
+                  width: '100%'
                 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
-                      {data?.homeTeam?.name || 'Home Team'} Upload PIN
+                  {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled !== false && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      minWidth: 0
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                          {data?.homeTeam?.name || 'Home Team'} PIN
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        {String(data.match.homeTeamPin).padStart(6, '0')}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                      {String(data.match.homeTeamUploadPin).padStart(6, '0')}
+                  )}
+                  {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled !== false && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      minWidth: 0
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                          {data?.awayTeam?.name || 'Away Team'} PIN
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        {String(data.match.awayTeamPin).padStart(6, '0')}
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const pin = String(data.match.homeTeamUploadPin).padStart(6, '0')
-                      try {
-                        await navigator.clipboard.writeText(pin)
-                        alert('Home Team Upload PIN copied to clipboard!')
-                      } catch (err) {
-                        console.error('Failed to copy:', err)
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Copy
-                  </button>
+                  )}
                 </div>
-              )}
-              
-              {data?.match?.awayTeamUploadPin && (
+              ) : null}
+
+              {/* Game Upload PINs - Same row (50/50) */}
+              {(data?.match?.homeTeamUploadPin || data?.match?.awayTeamUploadPin) && (
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '16px',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  gap: '16px',
+                  width: '100%'
                 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
-                      {data?.awayTeam?.name || 'Away Team'} Upload PIN
+                  {data?.match?.homeTeamUploadPin && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      minWidth: 0
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                        {data?.homeTeam?.name || 'Home Team'} Upload PIN
+                      </div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        {String(data.match.homeTeamUploadPin).padStart(6, '0')}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px' }}>
-                      {String(data.match.awayTeamUploadPin).padStart(6, '0')}
+                  )}
+                  
+                  {data?.match?.awayTeamUploadPin && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      minWidth: 0
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                        {data?.awayTeam?.name || 'Away Team'} Upload PIN
+                      </div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        {String(data.match.awayTeamUploadPin).padStart(6, '0')}
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const pin = String(data.match.awayTeamUploadPin).padStart(6, '0')
-                      try {
-                        await navigator.clipboard.writeText(pin)
-                        alert('Away Team Upload PIN copied to clipboard!')
-                      } catch (err) {
-                        console.error('Failed to copy:', err)
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Copy
-                  </button>
+                  )}
                 </div>
               )}
             </div>
@@ -11092,42 +10998,58 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             )}
 
             {/* Other Options */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '12px',
-                cursor: 'pointer',
-                fontSize: '16px'
+            <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Match Options</h3>
+
+              {/* Manage Captain on Court Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
               }}>
-                <input
-                  type="checkbox"
-                  checked={(() => {
-                    const saved = localStorage.getItem('manageCaptainOnCourt')
-                    return saved === 'true'
-                  })()}
-                  onChange={(e) => {
-                    const value = e.target.checked
-                    localStorage.setItem('manageCaptainOnCourt', value.toString())
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Manage Captain on Court</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Automatically track which player acts as captain when team captain is not on court
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !localManageCaptainOnCourt
+                    setLocalManageCaptainOnCourt(newValue)
+                    localStorage.setItem('manageCaptainOnCourt', String(newValue))
                   }}
                   style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: localManageCaptainOnCourt ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
                     width: '20px',
                     height: '20px',
-                    cursor: 'pointer'
-                  }}
-                />
-                <span>Manage Captain on Court</span>
-              </label>
-              <div style={{ 
-                marginTop: '8px', 
-                fontSize: '14px', 
-                color: 'rgba(255,255,255,0.6)',
-                paddingLeft: '32px'
-              }}>
-                When enabled and referee app is connected, referees can designate a captain on court when the team captain is not playing.
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: localManageCaptainOnCourt ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
               </div>
             </div>
-            
+
             <div style={{ marginBottom: '24px' }}>
               <button
                 onClick={() => {
@@ -17422,7 +17344,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               }}>
                 {/* Position label rectangle */}
                 <div style={{
-                  width: '61px',
+                  width: '60px',
                   height: '24px',
                   background: 'rgba(255, 255, 255, 0.1)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -17451,7 +17373,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       }
                     }}
                     style={{
-                      width: '57px',
+                      width: '60px',
                       height: '60px',
                       padding: '0',
                       fontSize: '18px',
@@ -17502,7 +17424,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               >
                 {/* Position label rectangle */}
                 <div style={{
-                  width: '61px',
+                  width: '60px',
                   height: '24px',
                   background: 'rgba(255, 255, 255, 0.1)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -17531,7 +17453,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       }
                     }}
                     style={{
-                      width: '57px',
+                      width: '60px',
                       height: '60px',
                       padding: '0',
                       fontSize: '18px',

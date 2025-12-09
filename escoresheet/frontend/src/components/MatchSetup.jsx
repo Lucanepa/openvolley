@@ -131,6 +131,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   const [homeTeamConnectionEnabled, setHomeTeamConnectionEnabled] = useState(false)
   const [awayTeamConnectionEnabled, setAwayTeamConnectionEnabled] = useState(false)
 
+  // Manage Captain on Court setting
+  const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
+    const saved = localStorage.getItem('manageCaptainOnCourt')
+    return saved === 'true'
+  })
+
   // PDF upload state for each team
   const [homePdfFile, setHomePdfFile] = useState(null)
   const [awayPdfFile, setAwayPdfFile] = useState(null)
@@ -1808,7 +1814,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Date & Time</h3>
             <div className="field"><label>Date</label><input className="w-dob" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
-            <div className="field"><label>Time</label><input className="w-80" type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
+            <div className="field"><label>Time</label><input className="w-90" type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
           </div>
           
           <div className="card">
@@ -5101,6 +5107,63 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </div>
         </div>
         )}
+
+        {/* Match Options Card */}
+        <div className="card" style={{ order: 6 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0 }}>Match Options</h3>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              {/* Manage Captain on Court Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Manage Captain on Court</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Track which player acts as captain when team captain is not on court
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !manageCaptainOnCourt
+                    setManageCaptainOnCourt(newValue)
+                    localStorage.setItem('manageCaptainOnCourt', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: manageCaptainOnCourt ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: manageCaptainOnCourt ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center' }}>

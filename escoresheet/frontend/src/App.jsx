@@ -81,11 +81,6 @@ export default function App() {
   const [homeCardModal, setHomeCardModal] = useState(null) // 'official' | 'test' | null
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
   const [homeGuideModal, setHomeGuideModal] = useState(false)
-  const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
-    // Load from localStorage
-    const saved = localStorage.getItem('manageCaptainOnCourt')
-    return saved === 'true'
-  })
   const { syncStatus, isOnline } = useSyncQueue()
   const canUseSupabase = Boolean(supabase)
   const [serverStatus, setServerStatus] = useState(null)
@@ -436,8 +431,8 @@ export default function App() {
           return
         }
 
-        // Import referees to database
-        const refereesToAdd = referees
+        // Import referees to database - deduplicate by seedKey
+        const refereesToProcess = referees
           .filter(ref => ref.lastname && ref.firstname)
           .map(ref => ({
             seedKey: `${ref.lastname}_${ref.firstname}`.toLowerCase().replace(/\s+/g, '_'),
@@ -451,9 +446,22 @@ export default function App() {
             createdAt: new Date().toISOString()
           }))
 
-        // Use bulkPut to avoid duplicates (based on seedKey)
-        await db.referees.bulkPut(refereesToAdd)
-        console.log(`[App] Imported ${refereesToAdd.length} referees to database`)
+        // Get existing referees by seedKey to avoid duplicates
+        const existingReferees = await db.referees.toArray()
+        const existingSeedKeys = new Set(existingReferees.map(r => r.seedKey?.toLowerCase()))
+        
+        // Only add referees that don't already exist
+        const refereesToAdd = refereesToProcess.filter(ref => {
+          const seedKey = ref.seedKey?.toLowerCase()
+          return seedKey && !existingSeedKeys.has(seedKey)
+        })
+
+        if (refereesToAdd.length > 0) {
+          await db.referees.bulkAdd(refereesToAdd)
+          console.log(`[App] Imported ${refereesToAdd.length} new referees to database (${refereesToProcess.length - refereesToAdd.length} duplicates skipped)`)
+        } else {
+          console.log(`[App] All ${refereesToProcess.length} referees already exist in database`)
+        }
       } catch (error) {
         console.error('[App] Error importing referees:', error)
         // Don't show error to user, just log it
@@ -890,7 +898,9 @@ export default function App() {
           }
           
           syncMatchData()
-          syncIntervalRef.current = setInterval(syncMatchData, 5000)
+          // Periodic sync as backup only (every 30 seconds)
+          // Primary sync happens via data change detection in Scoreboard component
+          syncIntervalRef.current = setInterval(syncMatchData, 30000)
         }
 
         wsRef.current.onmessage = (event) => {
@@ -903,9 +913,8 @@ export default function App() {
               handleMatchDataRequest(message)
             } else if (message.type === 'game-number-request') {
               handleGameNumberRequest(message)
-            } else if (message.type === 'match-update-request') {
-              handleMatchUpdateRequest(message)
             }
+            // Removed match-update-request handling - using sync-match-data instead
           } catch (err) {
             console.error('[App WebSocket] Error parsing message:', err)
           }
@@ -990,11 +999,7 @@ export default function App() {
           events
         }
         
-        console.log('[App WebSocket] Syncing match data (overwriting server):', {
-          matchId: currentActiveMatchId,
-          status: fullMatch.status,
-          gameNumber: fullMatch.gameNumber || fullMatch.game_n || fullMatch.externalId
-        })
+        // Periodic sync - don't log every time to reduce noise
         
         ws.send(JSON.stringify(syncPayload))
       } catch (err) {
@@ -1150,90 +1155,7 @@ export default function App() {
       }
     }
 
-    const handleMatchUpdateRequest = async (request) => {
-      const ws = wsRef.current
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-      const { requestId, matchId: requestedMatchId, updates } = request
-      console.log('[App WebSocket] Received match-update-request:', { requestId, requestedMatchId, currentActiveMatchId, wsState: ws?.readyState, hasMatch: !!currentMatchData })
-
-      // Always send a response, even if conditions aren't met
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        // Try to send error response if WebSocket exists but isn't open
-        if (ws && ws.readyState === WebSocket.CONNECTING) {
-          // Wait a bit for connection, but don't block too long
-          setTimeout(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'match-update-response',
-                requestId,
-                matchId: requestedMatchId,
-                success: false,
-                error: 'WebSocket was connecting, please retry'
-              }))
-            }
-          }, 1000)
-        }
-        // If WebSocket doesn't exist or is closed, we can't send a response
-        // The server will timeout, which is expected behavior
-        console.warn('[App WebSocket] Cannot respond to match-update-request: WebSocket not connected')
-        return
-      }
-
-      if (!currentMatchData) {
-        ws.send(JSON.stringify({
-          type: 'match-update-response',
-          requestId,
-          matchId: requestedMatchId,
-          success: false,
-          error: 'Match data not loaded'
-        }))
-        return
-      }
-
-      try {
-        if (String(requestedMatchId) !== String(currentActiveMatchId)) {
-          const errorResponse = {
-            type: 'match-update-response',
-            requestId,
-            matchId: requestedMatchId,
-            success: false,
-            error: 'Match ID mismatch'
-          }
-          console.log('[App WebSocket] Sending match-update-response (error):', errorResponse)
-          ws.send(JSON.stringify(errorResponse))
-          return
-        }
-
-        await db.matches.update(currentActiveMatchId, updates)
-        const updatedMatch = await db.matches.get(currentActiveMatchId)
-        
-        const response = {
-          type: 'match-update-response',
-          requestId,
-          matchId: currentActiveMatchId,
-          success: true,
-          data: {
-            match: updatedMatch
-          }
-        }
-        console.log('[App WebSocket] Sending match-update-response:', { requestId, success: true })
-        ws.send(JSON.stringify(response))
-      } catch (err) {
-        console.error('[App WebSocket] Error handling match update request:', err)
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          const errorResponse = {
-            type: 'match-update-response',
-            requestId,
-            matchId: requestedMatchId,
-            success: false,
-            error: err.message || 'Error updating match'
-          }
-          console.log('[App WebSocket] Sending match-update-response (error):', errorResponse)
-          ws.send(JSON.stringify(errorResponse))
-        }
-      }
-    }
+    // Removed handleMatchUpdateRequest - using sync-match-data instead
 
     connectWebSocket()
 
@@ -2650,7 +2572,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => {
+    <div style={{ position: 'relative', minHeight: '100vh', width: 'auto', display: 'flex', flexDirection: 'column' }} onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
       if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
         setShowConnectionMenu(false)
@@ -2721,7 +2643,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="container" style={{ flex: '1 1 auto', overflow: 'auto' }}>
+      <div className="container" style={{ flex: '1 1 auto', overflow: 'auto', width: 'auto' }}>
 
       {!matchId && matchStatus && (
         <div className="match-status-banner">
@@ -2796,13 +2718,12 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <Scoreboard 
-            matchId={matchId} 
-            onFinishSet={finishSet} 
-            onOpenSetup={openMatchSetup} 
-            onOpenMatchSetup={openMatchSetupView} 
+          <Scoreboard
+            matchId={matchId}
+            onFinishSet={finishSet}
+            onOpenSetup={openMatchSetup}
+            onOpenMatchSetup={openMatchSetupView}
             onOpenCoinToss={openCoinTossView}
-            manageCaptainOnCourt={manageCaptainOnCourt}
           />
         )}
       </div>
@@ -3102,70 +3023,62 @@ export default function App() {
           width={500}
         >
           <div style={{ padding: '24px' }}>
+
+            {/* Match Options Section */}
             <div style={{ marginBottom: '24px' }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
+              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Match Options</h3>
+
+              {/* Manage Captain on Court Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: '8px'
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px'
               }}>
-                <span style={{ fontSize: '16px', fontWeight: 500 }}>Manage Captain on Court</span>
-                <label style={{ 
-                  display: 'flex',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  width: '48px',
-                  height: '24px'
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={manageCaptainOnCourt}
-                    onChange={(e) => {
-                      const value = e.target.checked
-                      setManageCaptainOnCourt(value)
-                      localStorage.setItem('manageCaptainOnCourt', value.toString())
-                    }}
-                    style={{
-                      opacity: 0,
-                      width: 0,
-                      height: 0
-                    }}
-                  />
-                  <span style={{
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Manage Captain on Court</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Automatically track which player acts as captain when team captain is not on court
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const saved = localStorage.getItem('manageCaptainOnCourt')
+                    const newValue = saved !== 'true'
+                    localStorage.setItem('manageCaptainOnCourt', String(newValue))
+                    // Force re-render by closing and reopening modal
+                    setHomeOptionsModal(false)
+                    setTimeout(() => setHomeOptionsModal(true), 0)
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: localStorage.getItem('manageCaptainOnCourt') === 'true' ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
                     position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: manageCaptainOnCourt ? 'var(--accent)' : 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '24px',
-                    transition: 'background-color 0.2s',
-                    cursor: 'pointer'
-                  }}>
-                    <span style={{
-                      position: 'absolute',
-                      top: '2px',
-                      left: manageCaptainOnCourt ? '26px' : '2px',
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '50%',
-                      backgroundColor: '#fff',
-                      transition: 'left 0.2s',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
-                    }} />
-                  </span>
-                </label>
-              </div>
-              <div style={{ 
-                fontSize: '14px', 
-                color: 'var(--muted)',
-                lineHeight: '1.5'
-              }}>
-                When enabled, the scorer on the scoreboard can designate a captain on court when the team captain is not playing.
+                    top: '4px',
+                    left: localStorage.getItem('manageCaptainOnCourt') === 'true' ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
               </div>
             </div>
-            
+
             <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
               <button
                 onClick={() => {

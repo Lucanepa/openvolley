@@ -43,7 +43,7 @@
     user-select: text;
   }
   
-  .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+  .container { margin: 0 auto; padding: 24px 16px; }
   
   h1 { margin: 0 0 16px; font-size: 28px; }
   h2 { margin: 0 0 12px; font-size: 20px; }
@@ -52,6 +52,7 @@
   
   .panel {
     background: var(--panel);
+    width: auto;
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 12px;
     padding: 16px;
@@ -341,11 +342,46 @@
     .score { font-size: 34px; }
   }
 
-  /* Match record layout */
+  /* Responsive scaling for smaller laptops */
+  @media (max-width: 1400px) {
+    .score { font-size: 36px; }
+  }
+
+  @media (max-width: 1280px) {
+    .score { font-size: 32px; }
+  }
+
+  @media (max-height: 850px) {
+    .score { font-size: 30px; }
+  }
+
+  /* Match record layout - FIXED dimensions to prevent layout shifts */
   .match-record {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    height: 100vh;
+    max-height: 100vh;
+    width: 1200px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 1800px) {
+    .match-record {
+      gap: 12px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .match-record {
+      gap: 8px;
+    }
+  }
+
+  /* Prevent layout shifts during gameplay */
+  .match-record * {
+    box-sizing: border-box;
   }
 
   .match-toolbar {
@@ -358,6 +394,20 @@
     background: rgba(15, 23, 42, 0.8);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
+  }
+
+  @media (max-width: 1400px) {
+    .match-toolbar {
+      gap: 8px;
+      padding: 10px 12px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .match-toolbar {
+      gap: 6px;
+      padding: 8px 10px;
+    }
   }
 
   .toolbar-left {
@@ -700,8 +750,20 @@
   .match-content {
     display: grid;
     gap: 16px;
-    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(200px, 240px);
+    grid-template-columns: 240px 1fr 240px;
     align-items: stretch;
+  }
+
+  @media (max-width: 1400px) {
+    .match-content {
+      grid-template-columns: 220px 1fr 220px;
+    }
+  }
+
+  @media (max-width: 1280px) {
+    .match-content {
+      grid-template-columns: 200px 1fr 200px;
+    }
   }
 
   @media (max-width: 1024px) {
@@ -718,6 +780,8 @@
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
     padding: 16px;
+    width: 100%;
+    flex-shrink: 0;
   }
 
   .team-header {
@@ -758,6 +822,7 @@
 
   .court-wrapper {
     position: relative;
+    min-width: 680px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -765,6 +830,22 @@
     background: rgba(15, 23, 42, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
+    flex-shrink: 0;
+    flex-grow: 0;
+  }
+
+  @media (max-width: 1400px) {
+    .court-wrapper {
+      gap: 12px;
+      padding: 12px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .court-wrapper {
+      gap: 8px;
+      padding: 10px;
+    }
   }
 
   .set-summary {
@@ -793,23 +874,31 @@
   }
 
   .set-score-display {
-    font-size: 48px;
+    font-size: 60px;
     font-weight: 800;
     letter-spacing: 2px;
     background: rgba(15, 23, 42, 0.8);
-    padding: 12px 24px;
-    border-radius: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    min-width: 140px;
-    text-align: center;
     margin: 0 auto;
-    display: block;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 1400px) {
+    .set-score-display {
+      font-size: 40px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .set-score-display {
+      font-size: 36px;
+    }
   }
 
   .set-summary > div {
     display: flex;
     gap: 8px;
     align-items: baseline;
+    white-space: nowrap;
   }
 
   .summary-label {
@@ -817,11 +906,13 @@
     text-transform: uppercase;
     font-size: 11px;
     letter-spacing: 0.4px;
+    white-space: nowrap;
   }
 
   .summary-value {
     font-weight: 600;
     font-size: 14px;
+    white-space: nowrap;
   }
 
   .court {
@@ -949,18 +1040,52 @@
 
   .court-player {
     position: relative;
-    width: clamp(28px, 6vw, 48px);
-    height: clamp(28px, 6vw, 48px);
+    width: 60px;
+    height: 60px;
+    min-width: 48px;
+    min-height: 48px;
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.2);
     background: rgba(51, 65, 85, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: clamp(12px, 2.5vw, 18px);
+    font-size: 30px;
     font-weight: 700;
     color: var(--text);
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
+    flex-shrink: 0;
+  }
+
+  /* Scale down for smaller laptops - FIXED sizes per breakpoint */
+  @media (max-width: 1400px) {
+    .court-player {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      min-height: 40px;
+      font-size: 15px;
+    }
+  }
+
+  @media (max-width: 1280px) {
+    .court-player {
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      min-height: 36px;
+      font-size: 14px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .court-player {
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      min-height: 32px;
+      font-size: 13px;
+    }
   }
 
   .court-team-left .court-player {
@@ -1009,6 +1134,42 @@
     z-index: 10;
   }
 
+  @media (max-width: 1400px) {
+    .court-player-position {
+      top: -6px;
+      left: -6px;
+      width: 16px;
+      height: 16px;
+      font-size: 9px;
+    }
+    .court-player-captain {
+      bottom: -6px;
+      left: -6px;
+      width: 16px;
+      height: 16px;
+      font-size: 9px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .court-player-position {
+      top: -5px;
+      left: -5px;
+      width: 14px;
+      height: 14px;
+      font-size: 8px;
+      border-width: 1px;
+    }
+    .court-player-captain {
+      bottom: -5px;
+      left: -5px;
+      width: 14px;
+      height: 14px;
+      font-size: 8px;
+      border-width: 1px;
+    }
+  }
+
   .rally-controls {
     display: flex;
     flex-direction: column;
@@ -1038,6 +1199,36 @@
     font-size: 20px;
     font-weight: 700;
     padding: 16px 24px;
+  }
+
+  @media (max-width: 1400px) {
+    .rally-controls {
+      gap: 8px;
+    }
+    .rally-controls-row {
+      gap: 16px;
+    }
+    .rally-point-button {
+      min-width: 100px;
+      min-height: 65px;
+      font-size: 18px;
+      padding: 12px 20px;
+    }
+  }
+
+  @media (max-height: 850px) {
+    .rally-controls {
+      gap: 6px;
+    }
+    .rally-controls-row {
+      gap: 12px;
+    }
+    .rally-point-button {
+      min-width: 90px;
+      min-height: 55px;
+      font-size: 16px;
+      padding: 10px 16px;
+    }
   }
 
   .match-footer {

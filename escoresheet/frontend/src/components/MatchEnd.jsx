@@ -8,11 +8,6 @@ import jsPDF from 'jspdf'
 import { generateScoresheetPDF } from '../utils/generateScoresheetPDF'
 
 export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
-  const [openSignature, setOpenSignature] = useState(null) // 'home-captain', 'away-captain', 'ref1', 'ref2', 'scorer', 'asst-scorer'
-  const [isApproved, setIsApproved] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const scoresheetIframeRef = useRef(null)
-
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
     if (!match) return null
@@ -51,6 +46,11 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
       events
     }
   }, [matchId])
+
+  const [openSignature, setOpenSignature] = useState(null) // 'home-captain', 'away-captain', 'ref1', 'ref2', 'scorer', 'asst-scorer'
+  const [isApproved, setIsApproved] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const scoresheetIframeRef = useRef(null)
 
   if (!data) return null
 
