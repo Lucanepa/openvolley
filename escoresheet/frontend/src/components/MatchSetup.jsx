@@ -2572,11 +2572,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               />
               <select 
                 className="w-90" 
-                value={p.libero || ''} 
+                value={p.libero || ''}
                 onChange={async e => {
                   const updated = [...homeRoster]
+                  const oldValue = updated[i].libero
                   updated[i] = { ...updated[i], libero: e.target.value }
-                  
+
                   // If L2 is selected but no L1 exists, automatically change L2 to L1
                   if (e.target.value === 'libero2') {
                     const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
@@ -2584,9 +2585,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       updated[i] = { ...updated[i], libero: 'libero1' }
                     }
                   }
-                  
+
+                  // If L1 is being cleared and there's an L2, promote L2 to L1
+                  if (oldValue === 'libero1' && !e.target.value) {
+                    const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
+                    if (l2Idx !== -1) {
+                      updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                      // Update L2->L1 player in database if they have an ID
+                      if (updated[l2Idx].id) {
+                        await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
+                      }
+                    }
+                  }
+
                   setHomeRoster(updated)
-                  
+
                   // Update database immediately if player has an ID
                   if (p.id) {
                     await db.players.update(p.id, { libero: updated[i].libero })
@@ -3125,11 +3138,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
               />
               <select 
                 className="w-90" 
-                value={p.libero || ''} 
+                value={p.libero || ''}
                 onChange={async e => {
                   const updated = [...awayRoster]
+                  const oldValue = updated[i].libero
                   updated[i] = { ...updated[i], libero: e.target.value }
-                  
+
                   // If L2 is selected but no L1 exists, automatically change L2 to L1
                   if (e.target.value === 'libero2') {
                     const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
@@ -3137,9 +3151,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       updated[i] = { ...updated[i], libero: 'libero1' }
                     }
                   }
-                  
+
+                  // If L1 is being cleared and there's an L2, promote L2 to L1
+                  if (oldValue === 'libero1' && !e.target.value) {
+                    const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
+                    if (l2Idx !== -1) {
+                      updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                      // Update L2->L1 player in database if they have an ID
+                      if (updated[l2Idx].id) {
+                        await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
+                      }
+                    }
+                  }
+
                   setAwayRoster(updated)
-                  
+
                   // Update database immediately if player has an ID
                   if (p.id) {
                     await db.players.update(p.id, { libero: updated[i].libero })
@@ -3546,13 +3572,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       </td>
                       <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <select 
-                            value={p.libero || ''} 
+                          <select
+                            value={p.libero || ''}
                             onChange={e => {
                               if (teamA === 'home') {
                                 const updated = [...homeRoster]
+                                const oldValue = updated[originalIdx].libero
                                 updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-                                
+
                                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                                 if (e.target.value === 'libero2') {
                                   const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
@@ -3560,12 +3587,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                                     updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
-                                
+
+                                // If L1 is being cleared and there's an L2, promote L2 to L1
+                                if (oldValue === 'libero1' && !e.target.value) {
+                                  const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
+                                  if (l2Idx !== -1) {
+                                    updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                                  }
+                                }
+
                                 setHomeRoster(updated)
                               } else {
                                 const updated = [...awayRoster]
+                                const oldValue = updated[originalIdx].libero
                                 updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-                                
+
                                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                                 if (e.target.value === 'libero2') {
                                   const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
@@ -3573,7 +3609,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                                     updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
-                                
+
+                                // If L1 is being cleared and there's an L2, promote L2 to L1
+                                if (oldValue === 'libero1' && !e.target.value) {
+                                  const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
+                                  if (l2Idx !== -1) {
+                                    updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                                  }
+                                }
+
                                 setAwayRoster(updated)
                               }
                             }}
@@ -3930,32 +3974,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                       </td>
                       <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <select 
-                            value={p.libero || ''} 
+                          <select
+                            value={p.libero || ''}
                             onChange={e => {
                               if (teamB === 'home') {
                                 const updated = [...homeRoster]
+                                const oldValue = updated[originalIdx].libero
                                 updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-                                
+
                                 if (e.target.value === 'libero2') {
                                   const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
                                   if (!hasL1) {
                                     updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
-                                
+
+                                // If L1 is being cleared and there's an L2, promote L2 to L1
+                                if (oldValue === 'libero1' && !e.target.value) {
+                                  const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
+                                  if (l2Idx !== -1) {
+                                    updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                                  }
+                                }
+
                                 setHomeRoster(updated)
                               } else {
                                 const updated = [...awayRoster]
+                                const oldValue = updated[originalIdx].libero
                                 updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-                                
+
                                 if (e.target.value === 'libero2') {
                                   const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
                                   if (!hasL1) {
                                     updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
                                   }
                                 }
-                                
+
+                                // If L1 is being cleared and there's an L2, promote L2 to L1
+                                if (oldValue === 'libero1' && !e.target.value) {
+                                  const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
+                                  if (l2Idx !== -1) {
+                                    updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                                  }
+                                }
+
                                 setAwayRoster(updated)
                               }
                             }}
