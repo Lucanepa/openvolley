@@ -227,7 +227,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       sets.find(s => !s.finished) ??
       null
 
-    // Set info is now tracked without logging
+    // Debug: log current set detection
+    if (sets.length > 0) {
+      console.log('[useLiveQuery] Sets:', sets.map(s => ({ id: s.id, index: s.index, finished: s.finished, points: `${s.homePoints}-${s.awayPoints}` })))
+      console.log('[useLiveQuery] Current set:', currentSet ? { id: currentSet.id, index: currentSet.index, finished: currentSet.finished } : 'null')
+    }
 
     const [homePlayers, awayPlayers] = await Promise.all([
       match?.homeTeamId
@@ -3186,64 +3190,88 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Confirm set 5 side and service choices
   const confirmSet5SideService = useCallback(async (leftTeam, firstServe) => {
     if (!set5SideServiceModal || !data?.match) return
-    
+
     const { setIndex } = set5SideServiceModal
     const teamAKey = data.match.coinTossTeamA || 'home'
     const teamBKey = data.match.coinTossTeamB || 'away'
-    
+
     // Determine which team (home/away) is on the left
     const leftTeamKey = leftTeam === 'A' ? teamAKey : teamBKey
-    
+
     // Determine which team (home/away) serves first
     const firstServeTeamKey = firstServe === 'A' ? teamAKey : teamBKey
-    
-    // Update match with set 5 configuration
+
+    console.log('[Set 5 Coin Toss] Confirming set 5 configuration:', { leftTeam, firstServe, setIndex })
+
+    // Update match with set 5 configuration and first serve
     await db.matches.update(matchId, {
       set5LeftTeam: leftTeam,
-      set5FirstServe: firstServe
+      set5FirstServe: firstServe,
+      firstServe: firstServeTeamKey,
+      set5CourtSwitched: false
     })
-    
+
     // Create set 5 (check if already exists first)
     const existingSet5 = await db.sets.where({ matchId, index: setIndex }).first()
     let newSetId
     if (existingSet5) {
+      console.log('[Set 5 Coin Toss] Set 5 already exists with id:', existingSet5.id)
+      // Make sure it's not marked as finished (in case of redo)
+      await db.sets.update(existingSet5.id, { finished: false, homePoints: 0, awayPoints: 0 })
       newSetId = existingSet5.id
     } else {
-      newSetId = await db.sets.add({ 
-        matchId, 
-        index: setIndex, 
-        homePoints: 0, 
-        awayPoints: 0, 
-        finished: false 
+      newSetId = await db.sets.add({
+        matchId,
+        index: setIndex,
+        homePoints: 0,
+        awayPoints: 0,
+        finished: false
       })
+      console.log('[Set 5 Coin Toss] Created new set 5 with id:', newSetId)
     }
-    
-    // Reset set5CourtSwitched flag when starting set 5
-    await db.matches.update(matchId, { set5CourtSwitched: false })
-    
+
+    // Log the set 5 coin toss event so it can be undone
+    const nextSeq = await getNextSeq()
+    await db.events.add({
+      matchId,
+      setIndex: setIndex,
+      type: 'set5_coin_toss',
+      payload: {
+        leftTeam,
+        firstServe,
+        leftTeamKey,
+        firstServeTeamKey
+      },
+      ts: new Date().toISOString(),
+      seq: nextSeq
+    })
+
     // Get match to check if it's a test match
     const match = await db.matches.get(matchId)
     const isTest = match?.test || false
-    
-    await db.sync_queue.add({
-      resource: 'set',
-      action: 'insert',
-      payload: {
-        external_id: String(newSetId),
-        match_id: match?.externalId || String(matchId),
-        index: setIndex,
-        home_points: 0,
-        away_points: 0,
-        finished: false,
-        test: isTest,
-        created_at: new Date().toISOString()
-      },
-      ts: new Date().toISOString(),
-      status: 'queued'
-    })
-    
+
+    // Only add to sync queue if set was newly created
+    if (!existingSet5) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: String(newSetId),
+          match_id: match?.externalId || String(matchId),
+          index: setIndex,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          test: isTest,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
+
     setSet5SideServiceModal(null)
-  }, [set5SideServiceModal, data?.match, matchId])
+  }, [set5SideServiceModal, data?.match, matchId, getNextSeq])
 
   // Get action description for an event
   const getActionDescription = useCallback((event) => {
@@ -3376,7 +3404,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const setIndex = event.payload?.setIndex || event.setIndex || '?'
       const startTime = event.payload?.startTime
       const endTime = event.payload?.endTime
-      
+
       let timeInfo = ''
       if (startTime && endTime) {
         const start = new Date(startTime)
@@ -3388,8 +3416,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const endTimeStr = end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
         timeInfo = ` (${startTimeStr} - ${endTimeStr}, ${durationMin} min)`
       }
-      
+
       eventDescription = `Team ${winnerLabel} won Set ${setIndex}${timeInfo}`
+    } else if (event.type === 'set5_coin_toss') {
+      const leftTeam = event.payload?.leftTeam || '?'
+      const firstServe = event.payload?.firstServe || '?'
+      eventDescription = `Set 5 coin toss — Left: Team ${leftTeam}, First serve: Team ${firstServe}`
     } else if (event.type === 'sanction') {
       const sanctionType = event.payload?.type || 'unknown'
       const sanctionLabel = sanctionType === 'improper_request' ? 'Improper Request' :
@@ -7062,6 +7094,73 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </button>
           <div className="toolbar-divider" />
           <span className="toolbar-clock">{formatTimestamp(now)}</span>
+          <div className="toolbar-divider" />
+          <button 
+            className="secondary" 
+            onClick={async () => {
+              try {
+                const match = data?.match
+                if (!match) {
+                  alert('No match data available')
+                  return
+                }
+                
+                // Gather all match data for the scoresheet
+                const allSets = data?.sets || []
+                const allEvents = data?.events || []
+                
+                const scoresheetData = {
+                  match,
+                  homeTeam: data?.homeTeam,
+                  awayTeam: data?.awayTeam,
+                  homePlayers: data?.homePlayers || [],
+                  awayPlayers: data?.awayPlayers || [],
+                  sets: allSets,
+                  events: allEvents,
+                  sanctions: [] // TODO: Extract sanctions from events
+                }
+                
+                // Store data in sessionStorage to pass to new window
+                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                
+                // Open scoresheet in new window
+                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+                
+                if (!scoresheetWindow) {
+                  alert('Please allow popups to view the scoresheet')
+                  return
+                }
+                
+                // Set up error listener for scoresheet window
+                const errorListener = (event) => {
+                  // Only accept messages from the scoresheet window
+                  if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                    setScoresheetErrorModal({
+                      error: event.data.error || 'Unknown error',
+                      details: event.data.details || event.data.stack || ''
+                    })
+                    window.removeEventListener('message', errorListener)
+                  }
+                }
+                
+                window.addEventListener('message', errorListener)
+                
+                // Clean up listener after 30 seconds (scoresheet should load by then)
+                setTimeout(() => {
+                  window.removeEventListener('message', errorListener)
+                }, 30000)
+              } catch (error) {
+                console.error('Error opening scoresheet:', error)
+                setScoresheetErrorModal({
+                  error: 'Failed to open scoresheet',
+                  details: error.message || ''
+                })
+              }
+            }}
+            style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
+          >
+            📄 Scoresheet
+          </button>
           </div>
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
 
@@ -7072,72 +7171,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             buttonStyle={{ background: '#22c55e', color: '#000', fontWeight: 600, width: '160px', textAlign: 'center' }}
             position="right"
             items={[
-              {
-                key: 'scoresheet',
-                label: 'Scoresheet',
-                icon: '📄',
-                onClick: async () => {
-                  try {
-                    const match = data?.match
-                    if (!match) {
-                      alert('No match data available')
-                      return
-                    }
-                    
-                    // Gather all match data for the scoresheet
-                    const allSets = data?.sets || []
-                    const allEvents = data?.events || []
-                    
-                    const scoresheetData = {
-                      match,
-                      homeTeam: data?.homeTeam,
-                      awayTeam: data?.awayTeam,
-                      homePlayers: data?.homePlayers || [],
-                      awayPlayers: data?.awayPlayers || [],
-                      sets: allSets,
-                      events: allEvents,
-                      sanctions: [] // TODO: Extract sanctions from events
-                    }
-                    
-                    // Store data in sessionStorage to pass to new window
-                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    
-                    // Open scoresheet in new window
-                    const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
-                    
-                    if (!scoresheetWindow) {
-                      alert('Please allow popups to view the scoresheet')
-                      return
-                    }
-                    
-                    // Set up error listener for scoresheet window
-                    const errorListener = (event) => {
-                      // Only accept messages from the scoresheet window
-                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                        setScoresheetErrorModal({
-                          error: event.data.error || 'Unknown error',
-                          details: event.data.details || event.data.stack || ''
-                        })
-                        window.removeEventListener('message', errorListener)
-                      }
-                    }
-                    
-                    window.addEventListener('message', errorListener)
-                    
-                    // Clean up listener after 30 seconds (scoresheet should load by then)
-                    setTimeout(() => {
-                      window.removeEventListener('message', errorListener)
-                    }, 30000)
-                  } catch (error) {
-                    console.error('Error opening scoresheet:', error)
-                    setScoresheetErrorModal({
-                      error: 'Failed to open scoresheet',
-                      details: error.message || ''
-                    })
-                  }
-                }
-              },
-              { separator: true },
               {
                 key: 'action-log',
                 label: 'Show Action Log',

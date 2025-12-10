@@ -187,47 +187,11 @@ interface ResultsProps {
   result?: string;
 }
 
-// Countdown timer component for set intervals
-const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = ({ endTime, duration }) => {
-  const [countdown, setCountdown] = useState<string>('');
-
-  useEffect(() => {
-    // If duration is already calculated, show it instead of countdown
-    if (duration) {
-      setCountdown('');
-      return;
-    }
-
-    if (!endTime) {
-      setCountdown('');
-      return;
-    }
-
-    const calculateCountdown = () => {
-      const end = new Date(endTime);
-      const now = new Date();
-      const elapsed = now.getTime() - end.getTime();
-      const intervalDuration = 3 * 60 * 1000; // 3 minutes in milliseconds
-      const remaining = intervalDuration - elapsed;
-
-      if (remaining <= 0) {
-        setCountdown('');
-        return;
-      }
-
-      const minutes = Math.floor(remaining / 60000);
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      setCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-    };
-
-    calculateCountdown();
-    const interval = setInterval(calculateCountdown, 1000);
-
-    return () => clearInterval(interval);
-  }, [endTime, duration]);
-
-  // Show countdown if active, otherwise show duration
-  return <span>{countdown || duration || ''}</span>;
+// Component to display set duration (removed countdown functionality - duration should only show the set length)
+const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = ({ duration }) => {
+  // Simply show the duration - no countdown needed for Results table
+  // The duration is the length of the set, calculated from start to end time
+  return <span>{duration || ''}</span>;
 };
 
 export const Results: React.FC<ResultsProps> = ({ 
