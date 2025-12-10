@@ -1316,6 +1316,58 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     setServeB(!serveB)
   }
 
+  // Open scoresheet in a new window
+  async function openScoresheet() {
+    const targetMatchId = pendingMatchId || matchId
+    if (!targetMatchId) {
+      alert('No match data available')
+      return
+    }
+
+    const matchData = await db.matches.get(targetMatchId)
+    if (!matchData) {
+      alert('Match not found')
+      return
+    }
+
+    // Get teams
+    const homeTeamData = matchData.homeTeamId ? await db.teams.get(matchData.homeTeamId) : null
+    const awayTeamData = matchData.awayTeamId ? await db.teams.get(matchData.awayTeamId) : null
+
+    // Get players
+    const homePlayersData = matchData.homeTeamId
+      ? await db.players.where('teamId').equals(matchData.homeTeamId).toArray()
+      : []
+    const awayPlayersData = matchData.awayTeamId
+      ? await db.players.where('teamId').equals(matchData.awayTeamId).toArray()
+      : []
+
+    // Get sets and events
+    const allSets = await db.sets.where('matchId').equals(targetMatchId).sortBy('index')
+    const allEvents = await db.events.where('matchId').equals(targetMatchId).sortBy('seq')
+
+    const scoresheetData = {
+      match: matchData,
+      homeTeam: homeTeamData,
+      awayTeam: awayTeamData,
+      homePlayers: homePlayersData,
+      awayPlayers: awayPlayersData,
+      sets: allSets,
+      events: allEvents,
+      sanctions: []
+    }
+
+    // Store data in sessionStorage to pass to new window
+    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+
+    // Open scoresheet in new window
+    const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+
+    if (!scoresheetWindow) {
+      alert('Please allow popups to view the scoresheet')
+    }
+  }
+
   async function confirmCoinToss() {
 
     // Only check signatures for official matches, skip for test matches
@@ -3332,7 +3384,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             setCurrentView('main')
             if (onCoinTossClose) onCoinTossClose()
           }}>← Back</button>
-          <h1>Coin Toss</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h1 style={{ margin: 0 }}>Coin Toss</h1>
+            <button
+              className="secondary"
+              onClick={openScoresheet}
+              style={{ padding: '6px 12px', fontSize: '13px' }}
+            >
+              Scoresheet
+            </button>
+          </div>
           {onGoHome ? (
             <button className="secondary" onClick={onGoHome}>Home</button>
           ) : (
@@ -4673,9 +4734,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   return (
     <div className="setup">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
-        <h2 style={{ margin: 0 }}>Match Setup</h2>
-        
-        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>Match Setup</h2>
+          <button
+            className="secondary"
+            onClick={openScoresheet}
+            style={{ padding: '6px 12px', fontSize: '13px' }}
+          >
+            Scoresheet
+          </button>
+        </div>
+
         {onGoHome && (
           <button className="secondary" onClick={onGoHome}>
             Home

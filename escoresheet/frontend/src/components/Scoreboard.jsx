@@ -77,6 +77,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
+  const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string } | null
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
@@ -1299,6 +1300,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     const lastEvent = currentSetEvents[0]
     return lastEvent.type === 'replay'
+  }, [data?.events, data?.set])
+
+  // Check if the last event was a point (can replay rally)
+  const canReplayRally = useMemo(() => {
+    if (!data?.events || !data?.set || data.events.length === 0) return false
+
+    // Get events for current set only and sort by sequence number (most recent first)
+    const currentSetEvents = data.events
+      .filter(e => e.setIndex === data.set.index)
+      .sort((a, b) => {
+        const aSeq = a.seq || 0
+        const bSeq = b.seq || 0
+        if (aSeq !== 0 || bSeq !== 0) {
+          return bSeq - aSeq
+        }
+        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+        return bTime - aTime
+      })
+
+    if (currentSetEvents.length === 0) return false
+
+    const lastEvent = currentSetEvents[0]
+    // Can replay rally if the last event was a point
+    return lastEvent.type === 'point'
   }, [data?.events, data?.set])
 
   const isFirstRally = useMemo(() => {
@@ -2846,8 +2872,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee])
 
   const handleReplay = useCallback(async () => {
-    await logEvent('replay')
-  }, [logEvent])
+    // During rally: just log replay event (no point to undo)
+    if (rallyStatus === 'in_play') {
+      await logEvent('replay')
+      return
+    }
+    // After point: show confirmation modal to undo point
+    if (rallyStatus === 'idle' && canReplayRally && data?.events) {
+      // Find the last event by sequence number (highest seq)
+      const allEvents = [...data.events].sort((a, b) => {
+        const aSeq = a.seq || 0
+        const bSeq = b.seq || 0
+        if (aSeq !== 0 || bSeq !== 0) {
+          return bSeq - aSeq // Descending
+        }
+        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+        return bTime - aTime
+      })
+
+      const lastEvent = allEvents[0]
+      if (lastEvent && lastEvent.type === 'point') {
+        // Simple description for replay confirmation
+        const teamName = lastEvent.payload?.team === 'home'
+          ? (data?.homeTeam?.name || 'Home')
+          : (data?.awayTeam?.name || 'Away')
+        const description = `Point for ${teamName}`
+        setReplayRallyConfirm({ event: lastEvent, description })
+      }
+    }
+  }, [logEvent, rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
 
   // Handle Improper Request sanction
   const handleImproperRequest = useCallback((side) => {
@@ -3428,10 +3482,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Show undo confirmation
   const showUndoConfirm = useCallback(() => {
-    if (!data?.events || data.events.length === 0) return
-    
+    if (!data?.events || data.events.length === 0 || !data?.set) return
+
+    // IMPORTANT: Only consider events from the CURRENT SET
+    // Undo should NEVER affect other sets - use "Reopen set" in manual changes for that
+    const currentSetIndex = data.set.index
+    const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
+
+    if (currentSetEvents.length === 0) return
+
     // Find the last event by sequence number (highest seq)
-    const allEvents = [...data.events].sort((a, b) => {
+    const sortedEvents = [...currentSetEvents].sort((a, b) => {
       const aSeq = a.seq || 0
       const bSeq = b.seq || 0
       if (aSeq !== 0 || bSeq !== 0) {
@@ -3442,33 +3503,33 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
       return bTime - aTime
     })
-    
+
     // Find the most recent event (highest sequence)
-    const lastEvent = allEvents[0]
+    const lastEvent = sortedEvents[0]
     if (!lastEvent) return
-    
+
     // If it's a rotation lineup, find the point before it and undo that instead
     if (lastEvent.type === 'lineup' && !lastEvent.payload?.isInitial && !lastEvent.payload?.fromSubstitution && !lastEvent.payload?.liberoSubstitution) {
       // This is a rotation lineup - find the point that triggered it
-      const pointBefore = allEvents.find(e => e.type === 'point' && (e.seq || 0) < (lastEvent.seq || 0))
+      const pointBefore = sortedEvents.find(e => e.type === 'point' && (e.seq || 0) < (lastEvent.seq || 0))
       if (pointBefore) {
         const description = getActionDescription(pointBefore)
         setUndoConfirm({ event: pointBefore, description })
         return
       }
     }
-    
+
     const lastUndoableEvent = lastEvent
-    
+
     if (!lastUndoableEvent) return
-    
+
     const description = getActionDescription(lastUndoableEvent)
     // getActionDescription returns null for rotation lineups, but we've already filtered those out
     // So if it returns null here, try to find the next undoable event
     if (!description || description === 'Unknown action') {
       // Find the next undoable event after this one
-      const currentIndex = allEvents.findIndex(e => e.id === lastUndoableEvent.id)
-      const nextUndoableEvent = allEvents.slice(currentIndex + 1).find(e => {
+      const currentIndex = sortedEvents.findIndex(e => e.id === lastUndoableEvent.id)
+      const nextUndoableEvent = sortedEvents.slice(currentIndex + 1).find(e => {
           if (e.type === 'lineup') {
             const hasInitial = e.payload?.isInitial === true
             const hasSubstitution = e.payload?.fromSubstitution === true
@@ -3481,7 +3542,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const desc = getActionDescription(e)
         return desc && desc !== 'Unknown action'
       })
-      
+
       if (nextUndoableEvent) {
         const nextDesc = getActionDescription(nextUndoableEvent)
         if (nextDesc && nextDesc !== 'Unknown action') {
@@ -3492,9 +3553,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // No undoable events found
       return
     }
-    
+
     setUndoConfirm({ event: lastUndoableEvent, description })
-  }, [data?.events, getActionDescription])
+  }, [data?.events, data?.set, getActionDescription])
 
   const handleUndo = useCallback(async () => {
     if (!undoConfirm || !data?.set) {
@@ -4069,6 +4130,96 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const cancelUndo = useCallback(() => {
     setUndoConfirm(null)
+  }, [])
+
+  // Handle replay rally - undo last point (go back to state before the point, no rally restart)
+  const handleReplayRally = useCallback(async () => {
+    if (!replayRallyConfirm || !data?.set) {
+      setReplayRallyConfirm(null)
+      return
+    }
+
+    const lastEvent = replayRallyConfirm.event
+    const lastEventSeq = lastEvent.seq || 0
+    const baseSeq = Math.floor(lastEventSeq)
+    console.log(`[Scoreboard] 🔄 REPLAY RALLY: Starting replay for Action ID ${baseSeq} (Event ID: ${lastEvent.id}): ${lastEvent.type}`, lastEvent.payload)
+
+    // Find and delete ALL events with the same base ID (point and any related rotation events)
+    const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+    const eventsToDelete = allEvents.filter(e => {
+      const eSeq = e.seq || 0
+      return Math.floor(eSeq) === baseSeq
+    })
+
+    console.log(`[Scoreboard] 🔄 REPLAY RALLY: Found ${eventsToDelete.length} events with base ID ${baseSeq} to delete:`, eventsToDelete.map(e => ({ id: e.id, seq: e.seq, type: e.type })))
+
+    try {
+      // If it's a point, undo the score change
+      if (lastEvent.type === 'point' && lastEvent.payload?.team) {
+        const team = lastEvent.payload.team
+        const field = team === 'home' ? 'homePoints' : 'awayPoints'
+        const currentPoints = data.set[field]
+
+        // Decrement the score
+        if (currentPoints > 0) {
+          await db.sets.update(data.set.id, {
+            [field]: currentPoints - 1
+          })
+          console.log(`[Scoreboard] 🔄 REPLAY RALLY: Decremented ${team} score from ${currentPoints} to ${currentPoints - 1}`)
+        }
+
+        // Check if there was a rotation after this point (sideout)
+        // Find the lineup event that came right after this point (rotation)
+        const pointEvents = data.events.filter(e => e.type === 'point' && e.setIndex === data.set.index)
+        const sortedPoints = pointEvents.sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+        // Get the team that had the point before this one (to determine who had serve)
+        let previousServeTeam = data?.match?.firstServe || 'home'
+        if (sortedPoints.length > 1) {
+          // The second point is the one before the current one
+          previousServeTeam = sortedPoints[1].payload?.team || previousServeTeam
+        }
+
+        // If the scoring team didn't have serve (sideout), a rotation was logged after the point
+        // We need to undo that rotation too
+        if (lastEvent.payload.team !== previousServeTeam) {
+          // Find the rotation lineup that was created after this point
+          const lineupEvents = data.events.filter(e =>
+            e.type === 'lineup' &&
+            e.setIndex === data.set.index &&
+            !e.payload?.isInitial &&
+            !e.payload?.fromSubstitution &&
+            (e.seq || 0) > lastEventSeq
+          ).sort((a, b) => (a.seq || 0) - (b.seq || 0)) // Ascending by seq
+
+          // The first lineup event after the point is the rotation
+          if (lineupEvents.length > 0 && lineupEvents[0].payload?.team === lastEvent.payload.team) {
+            const rotationEvent = lineupEvents[0]
+            console.log(`[Scoreboard] 🔄 REPLAY RALLY: Deleting rotation lineup Action ID ${rotationEvent.seq || 'N/A'} (Event ID: ${rotationEvent.id})`)
+            await db.events.delete(rotationEvent.id)
+          }
+        }
+      }
+
+      // Delete all events with this base seq
+      for (const eventToDelete of eventsToDelete) {
+        await db.events.delete(eventToDelete.id)
+        console.log(`[Scoreboard] 🔄 REPLAY RALLY: Deleted event Action ID ${eventToDelete.seq || 'N/A'} (Event ID: ${eventToDelete.id}): ${eventToDelete.type}`)
+      }
+
+      // Do NOT start a new rally - just go back to the state before the point
+      // The rally will be in 'idle' state, waiting for "Start rally" to be clicked
+
+    } catch (error) {
+      console.error(`[Scoreboard] 🔄 REPLAY RALLY: Error during replay:`, error)
+    } finally {
+      console.log(`[Scoreboard] 🔄 REPLAY RALLY: Completed replay for Action ID ${baseSeq}.`)
+      setReplayRallyConfirm(null)
+    }
+  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId])
+
+  const cancelReplayRally = useCallback(() => {
+    setReplayRallyConfirm(null)
   }, [])
 
   const handleTimeout = useCallback(
@@ -9453,8 +9604,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               ) : (
                 <>
                   {rallyStatus === 'idle' ? (
-                    <button 
-                      className="secondary" 
+                    <button
+                      className="secondary"
                       onClick={handleStartRally}
                       disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
                     >
@@ -9462,11 +9613,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </button>
                   ) : (
                     <>
-                      <div className="rally-controls-row">
-                        <button className="secondary" onClick={handleReplay}>
-                          Replay rally
-                        </button>
-                      </div>
                       <div className="rally-controls-row">
                         <button className="rally-point-button" onClick={() => handlePoint('left')}>
                           Point {teamALabel}
@@ -9477,13 +9623,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </div>
                     </>
                   )}
-                  <button
-                    className="danger"
-                    onClick={showUndoConfirm}
-                    disabled={!data?.events || data.events.length === 0}
-                  >
-                    Undo
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) && (
+                      <button
+                        className="secondary"
+                        onClick={handleReplay}
+                        style={{ flex: 1 }}
+                      >
+                        Replay
+                      </button>
+                    )}
+                    <button
+                      className="danger"
+                      onClick={showUndoConfirm}
+                      disabled={!data?.events || data.events.length === 0}
+                      style={{ flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none' }}
+                    >
+                      Undo
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -16691,7 +16849,60 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
         </Modal>
       )}
-      
+
+      {replayRallyConfirm && (
+        <Modal
+          title="Replay Rally"
+          open={true}
+          onClose={cancelReplayRally}
+          width={400}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+              Do you want to replay the rally?
+            </p>
+            <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
+              {replayRallyConfirm.description}
+            </p>
+            <p style={{ marginBottom: '24px', fontSize: '13px', color: 'var(--muted)' }}>
+              This will undo the last point. Click "Start rally" to replay.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={handleReplayRally}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes, Replay
+              </button>
+              <button
+                onClick={cancelReplayRally}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {postMatchSignature && (
         <Modal
           title={`${postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')} Captain Signature`}

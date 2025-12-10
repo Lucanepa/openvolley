@@ -46,12 +46,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const teamBPlayers = formatPlayers(teamBKey === 'home' ? homePlayers : awayPlayers);
   
   // Use full team names
-  const teamAName = (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || (teamAKey === 'home' ? 'Home' : 'Away');
-  const teamBName = (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || (teamBKey === 'home' ? 'Home' : 'Away');
-  
-  // Use short names for set labels and rosters
-  const teamAShortName = (teamAKey === 'home' ? match?.homeShortName : match?.awayShortName) || teamAName;
-  const teamBShortName = (teamBKey === 'home' ? match?.homeShortName : match?.awayShortName) || teamBName;
+  const teamAName = (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || '';
+  const teamBName = (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || '';
+
+  // Use short names for set labels and rosters - show empty if not set (don't fallback to full name)
+  const teamAShortName = (teamAKey === 'home' ? match?.homeShortName : match?.awayShortName) || '';
+  const teamBShortName = (teamBKey === 'home' ? match?.homeShortName : match?.awayShortName) || '';
   
   // Helper function to get set data from events and sets
   const getSetData = (setNumber: number, isSwapped: boolean = false) => {
@@ -124,7 +124,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       box: number; // 1-8
       ticked: boolean; // Has tick (4) when player starts serving
       points: number | null; // Points scored when service lost (null if still serving)
-      rotation8: boolean; // Has "8" when opponent must rotate
       circled: boolean; // Circled at end of set for last point
     }
     
@@ -152,13 +151,29 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     let leftServiceStarted = false; // Has left team started serving?
     let rightServiceStarted = false; // Has right team started serving?
     
-    // Initialize first serve (no tick, just track state)
+    // Initialize first serve - create initial service round entry for position I, box 1
     if (firstServeTeam === leftTeamKey) {
       leftServiceStarted = true;
       leftCurrentPosition = 0;
+      // Create initial entry for serving team (ticked = true since this position is serving)
+      leftServiceRounds.push({
+        position: 0, // Column I
+        box: 1,
+        ticked: true,
+        points: null,
+        circled: false
+      });
     } else {
       rightServiceStarted = true;
       rightCurrentPosition = 0;
+      // Create initial entry for serving team (ticked = true since this position is serving)
+      rightServiceRounds.push({
+        position: 0, // Column I
+        box: 1,
+        ticked: true,
+        points: null,
+        circled: false
+      });
     }
     
     pointEvents.forEach((event, idx) => {
@@ -181,9 +196,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         if (currentServeTeam === leftTeamKey && leftServiceStarted) {
           // Left team lost service - record their TEAM SCORE in service box
           const boxNum = Math.floor(leftServiceRound / 6) + 1; // Box number (1-8)
-          // Get the team score at the time of service loss (before the opponent scored)
+          // Get the team score at the time of service loss
+          // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
           const teamScoreAtLoss = leftTeamKey === 'home' ? homeScore : awayScore;
-          
+
           // Update or add service round
           const existingRound = leftServiceRounds.find(sr => sr.position === leftCurrentPosition && sr.box === boxNum);
           if (existingRound) {
@@ -194,35 +210,42 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: boxNum,
               ticked: false,
               points: teamScoreAtLoss,
-              rotation8: false,
-              circled: false
+                            circled: false
             });
           }
           
-          // Right team now serves - mark "8" in their column I, box 1 (if first time)
+          // Right team gains service - create initial entry at position I, box 1 (if first time)
           if (!rightServiceStarted) {
             rightServiceRounds.push({
               position: 0, // Column I
               box: 1,
-              ticked: false,
+              ticked: true, // Tick because this position is now serving
               points: null,
-              rotation8: true, // Mark "8" for rotation
+              circled: false
+            });
+          } else {
+            // Right team already served before - they rotate when gaining service back
+            rightCurrentPosition = (rightCurrentPosition + 1) % 6;
+            rightServiceRound++;
+            // Create entry for the new position
+            const newBoxNum = Math.floor(rightServiceRound / 6) + 1;
+            rightServiceRounds.push({
+              position: rightCurrentPosition,
+              box: newBoxNum,
+              ticked: true, // Tick because this position is now serving
+              points: null,
               circled: false
             });
           }
-          
-          // Right team rotates - next position serves
-          rightCurrentPosition = (rightCurrentPosition + 1) % 6;
-          rightServiceRound++;
-          
+
           rightServiceStarted = true;
           rightPointsInService = 0;
         } else if (currentServeTeam === rightTeamKey && rightServiceStarted) {
           // Right team lost service - record their TEAM SCORE in service box
           const boxNum = Math.floor(rightServiceRound / 6) + 1;
-          // Get the team score at the time of service loss (before the opponent scored)
+          // Get the team score at the time of service loss
           const teamScoreAtLoss = rightTeamKey === 'home' ? homeScore : awayScore;
-          
+
           const existingRound = rightServiceRounds.find(sr => sr.position === rightCurrentPosition && sr.box === boxNum);
           if (existingRound) {
             existingRound.points = teamScoreAtLoss;
@@ -232,31 +255,38 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: boxNum,
               ticked: false,
               points: teamScoreAtLoss,
-              rotation8: false,
-              circled: false
+                            circled: false
             });
           }
           
-          // Left team now serves - mark "8" in their column I, box 1 (if first time)
+          // Left team gains service - create initial entry at position I, box 1 (if first time)
           if (!leftServiceStarted) {
             leftServiceRounds.push({
               position: 0, // Column I
               box: 1,
-              ticked: false,
+              ticked: true, // Tick because this position is now serving
               points: null,
-              rotation8: true, // Mark "8" for rotation
+              circled: false
+            });
+          } else {
+            // Left team already served before - they rotate when gaining service back
+            leftCurrentPosition = (leftCurrentPosition + 1) % 6;
+            leftServiceRound++;
+            // Create entry for the new position
+            const newBoxNum = Math.floor(leftServiceRound / 6) + 1;
+            leftServiceRounds.push({
+              position: leftCurrentPosition,
+              box: newBoxNum,
+              ticked: true, // Tick because this position is now serving
+              points: null,
               circled: false
             });
           }
-          
-          // Left team rotates - next position serves
-          leftCurrentPosition = (leftCurrentPosition + 1) % 6;
-          leftServiceRound++;
-          
+
           leftServiceStarted = true;
           leftPointsInService = 0;
         }
-        
+
         // Update current serve
         currentServeTeam = scoringTeam;
       } else {
@@ -314,8 +344,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                 box: currentBoxNum,
                 ticked: false,
                 points: leftFinalScore,
-                rotation8: false,
-                circled: true
+                                circled: true
               });
             }
           }
@@ -328,8 +357,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             box: nextLeftBox,
             ticked: false,
             points: leftFinalScore, // Add final score even though they didn't serve
-            rotation8: false,
-            circled: true
+                        circled: true
           });
         }
       } else if (isLastPointRight) {
@@ -360,8 +388,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                 box: currentBoxNum,
                 ticked: false,
                 points: rightFinalScore,
-                rotation8: false,
-                circled: true
+                                circled: true
               });
             }
           }
@@ -374,44 +401,41 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             box: nextRightBox,
             ticked: false,
             points: rightFinalScore, // Add final score even though they didn't serve
-            rotation8: false,
-            circled: true
+                        circled: true
           });
         }
       }
       
       // Circle the last point for the losing team as well
+      // The losing team's service is "closed" - just circle their last service round
       if (isLastPointLeft) {
         // Right team lost - circle their last service round
         if (rightServiceRounds.length > 0) {
           const lastRightServiceRound = rightServiceRounds[rightServiceRounds.length - 1];
-          if (lastRightServiceRound.points !== null) {
-            lastRightServiceRound.circled = true;
-          } else {
-            // Right team was still serving - add their final score and circle
+          if (lastRightServiceRound.points === null) {
+            // Right team was still serving when they lost - add their final score
             lastRightServiceRound.points = rightFinalScore;
-            lastRightServiceRound.circled = true;
           }
+          lastRightServiceRound.circled = true;
         }
       } else if (isLastPointRight) {
         // Left team lost - circle their last service round
         if (leftServiceRounds.length > 0) {
           const lastLeftServiceRound = leftServiceRounds[leftServiceRounds.length - 1];
-          if (lastLeftServiceRound.points !== null) {
-            lastLeftServiceRound.circled = true;
-          } else {
-            // Left team was still serving - add their final score and circle
+          if (lastLeftServiceRound.points === null) {
+            // Left team was still serving when they lost - add their final score
             lastLeftServiceRound.points = leftFinalScore;
-            lastLeftServiceRound.circled = true;
           }
+          lastLeftServiceRound.circled = true;
         }
       }
     }
+
     } catch (error) {
       // If service tracking fails, just use empty arrays
       console.error('Error tracking service rounds:', error);
     }
-    
+
     // Identify points scored due to sanctions
     // Get all events (including sanctions) sorted chronologically
     const allEventsWithSanctions = setEvents
@@ -816,7 +840,59 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       // Fallback: Set 1 can use scheduled time if no confirmed time yet
       startTimeStr = new Date(match.scheduledAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
     }
-    
+
+    // Calculate current server info for validation
+    // Determine which team is currently serving
+    let currentServeTeam: 'left' | 'right' | null = null;
+    let currentServePosition = 0; // 0-5 for I-VI
+    let currentServerNumber = '';
+
+    if (hasBeenPlayed) {
+      // Find the team with serve based on who scored the last point
+      const lastPointEvent = pointEvents[pointEvents.length - 1];
+      if (lastPointEvent) {
+        const lastScoringTeam = lastPointEvent.payload?.team as 'home' | 'away';
+        currentServeTeam = lastScoringTeam === leftTeamKey ? 'left' : 'right';
+      } else {
+        // No points yet - first serve team has serve
+        currentServeTeam = firstServeTeam === leftTeamKey ? 'left' : 'right';
+      }
+
+      // Get current serving position from service rounds
+      if (currentServeTeam === 'left' && leftServiceRounds.length > 0) {
+        // Find the last service round entry for the left team that has no points (still serving)
+        const currentRound = leftServiceRounds.filter(sr => sr.points === null).pop() ||
+                            leftServiceRounds[leftServiceRounds.length - 1];
+        currentServePosition = currentRound.position;
+
+        // Get player number from current lineup (after all rotations/substitutions)
+        // Find the most recent lineup event for left team
+        const leftLineupEvents = setEvents
+          .filter(e => e.type === 'lineup' && e.payload?.team === leftTeamKey)
+          .sort((a, b) => (b.seq || 0) - (a.seq || 0)); // Most recent first
+
+        if (leftLineupEvents.length > 0) {
+          const currentLineup = leftLineupEvents[0].payload?.lineup;
+          const positionNames = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+          currentServerNumber = currentLineup?.[positionNames[currentServePosition]] || '';
+        }
+      } else if (currentServeTeam === 'right' && rightServiceRounds.length > 0) {
+        const currentRound = rightServiceRounds.filter(sr => sr.points === null).pop() ||
+                            rightServiceRounds[rightServiceRounds.length - 1];
+        currentServePosition = currentRound.position;
+
+        const rightLineupEvents = setEvents
+          .filter(e => e.type === 'lineup' && e.payload?.team === rightTeamKey)
+          .sort((a, b) => (b.seq || 0) - (a.seq || 0));
+
+        if (rightLineupEvents.length > 0) {
+          const currentLineup = rightLineupEvents[0].payload?.lineup;
+          const positionNames = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+          currentServerNumber = currentLineup?.[positionNames[currentServePosition]] || '';
+        }
+      }
+    }
+
     return {
       startTime: startTimeStr,
       endTime: hasBeenPlayed && setInfo?.endTime ? new Date(setInfo.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : '',
@@ -835,7 +911,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       rightTimeouts,
       leftSubs,
       leftSubs_After: isSet5 ? leftSubs_After : undefined,
-      rightSubs
+      rightSubs,
+      currentServer: hasBeenPlayed ? {
+        team: currentServeTeam,
+        position: currentServePosition,
+        playerNumber: currentServerNumber
+      } : null
     };
   };
 
@@ -1363,7 +1444,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     box: number; // 1-6 for Set 5
     ticked: boolean;
     points: number | null;
-    rotation8: boolean;
     circled: boolean;
   }
   
@@ -1399,11 +1479,27 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   let set5RightServiceStarted = false;
   let set5LeftTeamTotalScore = 0; // Track total left team score to determine before/after change
   
-  // Initialize first serve for Set 5
+  // Initialize first serve for Set 5 - create initial entry at position I, box 1
   if (set5FirstServeTeam === set5LeftTeamKey) {
     set5LeftServiceStarted_Before = true;
+    set5LeftCurrentPosition_Before = 0;
+    set5ServiceRoundsLeftTeam_Before.push({
+      position: 0, // Column I
+      box: 1,
+      ticked: true, // Tick because this position is serving
+      points: null,
+      circled: false
+    });
   } else {
     set5RightServiceStarted = true;
+    set5RightCurrentPosition = 0;
+    set5ServiceRoundsRightTeam.push({
+      position: 0, // Column I
+      box: 1,
+      ticked: true, // Tick because this position is serving
+      points: null,
+      circled: false
+    });
   }
   
   // Track team scores for Set 5
@@ -1436,14 +1532,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       // Service was lost - record TEAM SCORE at time of service loss
       if (set5CurrentServeTeam === set5LeftTeamKey) {
         // Left team lost service - record their TEAM SCORE at the time of service loss
-        // The score is the current score (before opponent scored), but must be at least 1
-        // since they must have scored to get the serve
-        const leftTeamCurrentScore = set5LeftTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-        const leftTeamScoreAtLoss = Math.max(1, leftTeamCurrentScore - 1);
-        // Determine which phase the left team was in when they lost service
-        const leftTeamScoreBeforeLoss = set5LeftTeamTotalScore - 1;
-        
-        if (leftTeamScoreBeforeLoss <= 8 && set5LeftServiceStarted_Before) {
+        // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
+        const leftTeamScoreAtLoss = set5LeftTeamKey === 'home' ? set5HomeScore : set5AwayScore;
+        // The left team's total score hasn't changed (opponent scored), so use it directly
+        // to determine which phase (before/after 8-point change)
+
+        if (leftTeamScoreAtLoss <= 8 && set5LeftServiceStarted_Before) {
           // Left team was before change (Panel 1) when they lost service
           const boxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
           const existingRound = set5ServiceRoundsLeftTeam_Before.find(sr => sr.position === set5LeftCurrentPosition_Before && sr.box === boxNum);
@@ -1455,11 +1549,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: boxNum,
               ticked: false,
               points: leftTeamScoreAtLoss,
-              rotation8: false,
-              circled: false
+                            circled: false
             });
           }
-        } else if (leftTeamScoreBeforeLoss > 8 && set5LeftServiceStarted_After) {
+        } else if (leftTeamScoreAtLoss > 8 && set5LeftServiceStarted_After) {
           // Left team was after change (Panel 3) when they lost service - continuation from Panel 1
           const boxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
           const existingRound = set5ServiceRoundsLeftTeam_After.find(sr => sr.position === set5LeftCurrentPosition_After && sr.box === boxNum);
@@ -1471,35 +1564,41 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: boxNum,
               ticked: false,
               points: leftTeamScoreAtLoss,
-              rotation8: false,
-              circled: false
+                            circled: false
             });
           }
         }
         
-        // Right team now serves - mark "8" in their column I, box 1 (if first time)
+        // Right team gains service - create initial entry at position I, box 1 (if first time)
         if (!set5RightServiceStarted) {
           set5ServiceRoundsRightTeam.push({
-            position: 0,
+            position: 0, // Column I
             box: 1,
-            ticked: false,
+            ticked: true, // Tick because this position is serving
             points: null,
-            rotation8: true,
+            circled: false
+          });
+        } else {
+          // Right team already served before - they rotate when gaining service back
+          set5RightCurrentPosition = (set5RightCurrentPosition + 1) % 6;
+          set5RightServiceRound++;
+          // Create entry for the new position
+          const newBoxNum = Math.floor(set5RightServiceRound / 6) + 1;
+          set5ServiceRoundsRightTeam.push({
+            position: set5RightCurrentPosition,
+            box: newBoxNum,
+            ticked: true, // Tick because this position is serving
+            points: null,
             circled: false
           });
         }
-        
-        set5RightCurrentPosition = (set5RightCurrentPosition + 1) % 6;
-        set5RightServiceRound++;
-        
+
         set5RightServiceStarted = true;
         set5RightPointsInService = 0;
       } else if (set5CurrentServeTeam === set5RightTeamKey && set5RightServiceStarted) {
         // Right team lost service - record their TEAM SCORE at the time of service loss
-        // The score is the current score (before opponent scored), but must be at least 1
-        // since they must have scored to get the serve
-        const rightTeamCurrentScore = set5RightTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-        const rightTeamScoreAtLoss = Math.max(1, rightTeamCurrentScore - 1);
+        // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
+        const rightTeamScoreAtLoss = set5RightTeamKey === 'home' ? set5HomeScore : set5AwayScore;
         const boxNum = Math.floor(set5RightServiceRound / 6) + 1;
         const existingRound = set5ServiceRoundsRightTeam.find(sr => sr.position === set5RightCurrentPosition && sr.box === boxNum);
         if (existingRound) {
@@ -1510,27 +1609,36 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             box: boxNum,
             ticked: false,
             points: rightTeamScoreAtLoss,
-            rotation8: false,
-            circled: false
+                        circled: false
           });
         }
         
-        // Left team now serves - mark "8" in their column I, box 1 (if first time)
+        // Left team gains service
         // Determine if left team is before or after change
         if (set5LeftTeamTotalScore <= 8) {
           // Left team before change (Panel 1)
           if (!set5LeftServiceStarted_Before) {
+            // First time serving - create entry at position I, box 1
             set5ServiceRoundsLeftTeam_Before.push({
-              position: 0,
+              position: 0, // Column I
               box: 1,
-              ticked: false,
+              ticked: true, // Tick because this position is serving
               points: null,
-              rotation8: true,
+              circled: false
+            });
+          } else {
+            // Already served before - rotate and create entry
+            set5LeftCurrentPosition_Before = (set5LeftCurrentPosition_Before + 1) % 6;
+            set5LeftServiceRound_Before++;
+            const newBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
+            set5ServiceRoundsLeftTeam_Before.push({
+              position: set5LeftCurrentPosition_Before,
+              box: newBoxNum,
+              ticked: true, // Tick because this position is serving
+              points: null,
               circled: false
             });
           }
-          set5LeftCurrentPosition_Before = (set5LeftCurrentPosition_Before + 1) % 6;
-          set5LeftServiceRound_Before++;
           set5LeftServiceStarted_Before = true;
           set5LeftPointsInService_Before = 0;
         } else {
@@ -1540,20 +1648,30 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             // Copy the last position and service round from before change
             set5LeftCurrentPosition_After = set5LeftCurrentPosition_Before;
             set5LeftServiceRound_After = set5LeftServiceRound_Before;
-            // The "8" should be in the NEXT position (the one that will serve after the change)
-            // and in box 2 (since we're starting a new box after the change)
-            const nextPositionAfterChange = (set5LeftCurrentPosition_Before + 1) % 6;
+            // Rotate for first serve after change
+            set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
+            set5LeftServiceRound_After++;
+            const newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
             set5ServiceRoundsLeftTeam_After.push({
-              position: nextPositionAfterChange,
-              box: 2,
-              ticked: false,
+              position: set5LeftCurrentPosition_After,
+              box: newBoxNum,
+              ticked: true, // Tick because this position is serving
               points: null,
-              rotation8: true,
+              circled: false
+            });
+          } else {
+            // Already served after change - rotate and create entry
+            set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
+            set5LeftServiceRound_After++;
+            const newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+            set5ServiceRoundsLeftTeam_After.push({
+              position: set5LeftCurrentPosition_After,
+              box: newBoxNum,
+              ticked: true, // Tick because this position is serving
+              points: null,
               circled: false
             });
           }
-          set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
-          set5LeftServiceRound_After++;
           set5LeftServiceStarted_After = true;
           set5LeftPointsInService_After = 0;
         }
@@ -1613,8 +1731,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                 box: currentBoxNum,
                 ticked: false,
                 points: leftTeamFinalScore,
-                rotation8: false,
-                circled: true
+                                circled: true
               });
             }
           }
@@ -1641,8 +1758,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
                 box: currentBoxNum,
                 ticked: false,
                 points: leftTeamFinalScore,
-                rotation8: false,
-                circled: true
+                                circled: true
               });
             }
           }
@@ -1657,8 +1773,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             box: nextLeftBox,
             ticked: false,
             points: leftTeamFinalScore,
-            rotation8: false,
-            circled: true
+                        circled: true
           });
         } else {
           const nextLeftPosition = (set5LeftCurrentPosition_After + 1) % 6;
@@ -1668,8 +1783,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             box: nextLeftBox,
             ticked: false,
             points: leftTeamFinalScore,
-            rotation8: false,
-            circled: true
+                        circled: true
           });
         }
       }
@@ -1694,8 +1808,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             box: nextRightBox,
             ticked: false,
             points: rightTeamFinalScore,
-            rotation8: false,
-            circled: true
+                        circled: true
           });
         }
         // If lastRightServiceRound.points > rightTeamFinalScore, something is wrong, don't circle
@@ -1725,8 +1838,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: currentBoxNum,
               ticked: false,
               points: rightTeamFinalScore,
-              rotation8: false,
-              circled: true
+                            circled: true
             });
           }
         }
@@ -1739,8 +1851,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           box: nextRightBox,
           ticked: false,
           points: rightTeamFinalScore,
-          rotation8: false,
-          circled: true
+                    circled: true
         });
       }
       
@@ -1764,8 +1875,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: nextLeftBox,
               ticked: false,
               points: leftTeamFinalScore,
-              rotation8: false,
-              circled: true
+                            circled: true
             });
           }
         }
@@ -1785,8 +1895,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               box: nextLeftBox,
               ticked: false,
               points: leftTeamFinalScore,
-              rotation8: false,
-              circled: true
+                            circled: true
             });
           }
         }
