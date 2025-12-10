@@ -495,8 +495,8 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
             minHeight: '300px'
           }}>
             <Results
-              teamAShortName={homeLabel === 'A' ? (homeTeam?.shortName || homeTeam?.name || '') : (awayTeam?.shortName || awayTeam?.name || '')}
-              teamBShortName={awayLabel === 'B' ? (awayTeam?.shortName || awayTeam?.name || '') : (homeTeam?.shortName || homeTeam?.name || '')}
+              teamAShortName={homeLabel === 'A' ? (match?.homeShortName || '') : (match?.awayShortName || '')}
+              teamBShortName={awayLabel === 'B' ? (match?.awayShortName || '') : (match?.homeShortName || '')}
               setResults={calculateSetResults}
               matchStart={matchStart}
               matchEnd={matchEndFinal}
