@@ -8,7 +8,6 @@ import MenuList from './MenuList'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
-import { generateScoresheetPDF } from '../utils/generateScoresheetPDF'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss }) {
   const { syncStatus } = useSyncQueue()
@@ -58,7 +57,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [liberoReminder, setLiberoReminder] = useState(null) // { teams: ['home'|'away'] } | null - Show reminder at start of set
   const [liberoRotationModal, setLiberoRotationModal] = useState(null) // { team: 'home'|'away', position: 'IV', liberoNumber: number, playerNumber: number } | null
   const [exchangeLiberoDropdown, setExchangeLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', liberoNumber: number, element: HTMLElement } | null
-  const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string } | null
+  const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string, availableLiberos: [{number, type, label}], selectedLiberoIndex: number } | null
   const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string } | null
   const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string } | null
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
@@ -1917,32 +1916,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return baseSeq + (maxSubSeq + 0.1)
   }, [matchId])
 
-  // Debug function for PDF generation (available in console)
+  // Debug functions (available in console)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.debugGeneratePDF = async () => {
-        try {
-          const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-          const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-          const allReferees = await db.referees.toArray()
-          const allScorers = await db.scorers.toArray()
-          
-          await generateScoresheetPDF({
-            match: data?.match,
-            homeTeam: data?.homeTeam,
-            awayTeam: data?.awayTeam,
-            homePlayers: data?.homePlayers || [],
-            awayPlayers: data?.awayPlayers || [],
-            sets: allSets,
-            events: allEvents,
-            referees: allReferees,
-            scorers: allScorers
-          })
-        } catch (error) {
-          console.error('Error generating PDF:', error)
-        }
-      }
-      
       // Debug function to export match data as JSON (for testing fillable PDF)
       window.debugExportMatchData = async () => {
         try {
@@ -2134,7 +2110,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     return () => {
       if (typeof window !== 'undefined') {
-        if (window.debugGeneratePDF) delete window.debugGeneratePDF
         if (window.debugExportMatchData) delete window.debugExportMatchData
         if (window.debugGenerateFillablePDF) delete window.debugGenerateFillablePDF
         if (window.debugCheckGamesInProgress) delete window.debugCheckGamesInProgress
@@ -2737,29 +2712,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const lastLiberoExit = otherTeamLiberoExits[0]
         const liberoNumber = lastLiberoExit.payload?.liberoOut
         const liberoType = lastLiberoExit.payload?.liberoType
-        
+
         // Check if libero is not currently on court
         const liberoOnCourt = getLiberoOnCourt(otherTeamKey)
         if (!liberoOnCourt && liberoNumber && liberoType) {
           // Get the other team's current lineup
-          const otherTeamLineupEvents = data.events.filter(e => 
-            e.type === 'lineup' && 
-            e.payload?.team === otherTeamKey && 
+          const otherTeamLineupEvents = data.events.filter(e =>
+            e.type === 'lineup' &&
+            e.payload?.team === otherTeamKey &&
             e.setIndex === data.set.index
           ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
-          
+
           if (otherTeamLineupEvents.length > 0) {
             const otherTeamLineup = otherTeamLineupEvents[0].payload?.lineup
             const playerInI = otherTeamLineup?.['I']
-            
+
             if (playerInI && playerInI !== '') {
-              // Ask if they want to put the libero back in at position I
+              // Get all liberos for this team
+              const teamPlayers = otherTeamKey === 'home' ? data.homePlayers : data.awayPlayers
+              const teamLiberos = teamPlayers?.filter(p => p.libero && p.libero !== '' && !isLiberoUnable(otherTeamKey, p.number)) || []
+
+              // Build available liberos list
+              const availableLiberos = teamLiberos.map(libero => ({
+                number: libero.number,
+                type: libero.libero,
+                label: libero.libero === 'libero1' ? 'L1' : 'L2'
+              }))
+
+              // Find which libero was last on court (default selection)
+              const defaultLiberoIndex = availableLiberos.findIndex(l => l.number === Number(liberoNumber) && l.type === liberoType)
+
+              // Ask if they want to put a libero back in at position I
               setLiberoReentryModal({
                 team: otherTeamKey,
                 position: 'I',
                 playerNumber: Number(playerInI),
                 liberoNumber: Number(liberoNumber),
-                liberoType: liberoType
+                liberoType: liberoType,
+                availableLiberos: availableLiberos,
+                selectedLiberoIndex: defaultLiberoIndex >= 0 ? defaultLiberoIndex : 0
               })
             }
           }
@@ -3077,18 +3068,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (setIndex === 4) {
         // Close the set end time modal first
         setSetEndTimeModal(null)
-        
+
+        // Get team A/B assignments for set 5 modal (use local scope to avoid reference errors)
+        const set4TeamAKey = data.match.coinTossTeamA || 'home'
+        const set4TeamBKey = data.match.coinTossTeamB || 'away'
+
         // Determine current positions at end of set 4 (set 2, 3, 4 have teams switched)
-        const set4LeftIsHome = teamAKey !== 'home'
+        const set4LeftIsHome = set4TeamAKey !== 'home'
         const set4LeftTeamKey = set4LeftIsHome ? 'home' : 'away'
         const set4RightTeamKey = set4LeftIsHome ? 'away' : 'home'
-        const set4LeftTeamLabel = set4LeftTeamKey === teamAKey ? 'A' : 'B'
-        const set4RightTeamLabel = set4RightTeamKey === teamAKey ? 'A' : 'B'
-        
+        const set4LeftTeamLabel = set4LeftTeamKey === set4TeamAKey ? 'A' : 'B'
+        const set4RightTeamLabel = set4RightTeamKey === set4TeamAKey ? 'A' : 'B'
+
         // Get current serve at end of set 4
         const currentServe = getCurrentServe()
         const set4ServingTeamKey = currentServe
-        const set4ServingTeamLabel = set4ServingTeamKey === teamAKey ? 'A' : 'B'
+        const set4ServingTeamLabel = set4ServingTeamKey === set4TeamAKey ? 'A' : 'B'
         
         // Use existing values if set, otherwise use current positions
         const selectedLeftTeam = data.match?.set5LeftTeam || set4LeftTeamLabel
@@ -6059,8 +6054,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Handle libero reentry (when opposite player is in position I and not serving)
   const confirmLiberoReentry = useCallback(async () => {
     if (!liberoReentryModal || !data?.set) return
-    
-    const { team, position, playerNumber, liberoNumber, liberoType } = liberoReentryModal
+
+    // Use the selected libero from availableLiberos if present, otherwise use the original values
+    const { team, position, playerNumber, availableLiberos, selectedLiberoIndex } = liberoReentryModal
+    const selectedLibero = availableLiberos && availableLiberos[selectedLiberoIndex]
+    const liberoNumber = selectedLibero ? selectedLibero.number : liberoReentryModal.liberoNumber
+    const liberoType = selectedLibero ? selectedLibero.type : liberoReentryModal.liberoType
     
     // Check if libero is unable to play
     if (isLiberoUnable(team, liberoNumber)) {
@@ -13422,7 +13421,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         >
           <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
             <section className="panel">
-              <h3>Sanctions and Results</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', overflowX: 'auto' }}>
                 {/* Left half: Sanctions */}
                 <div>
@@ -13567,7 +13565,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 
                 {/* Right half: Results */}
                 <div>
-                  <h4 style={{ marginBottom: '12px', fontSize: '12px', fontWeight: 600 }}>Results</h4>
+                <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>Results</h4>
                   {(() => {
                     // Get current left and right teams
                     const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
@@ -13673,30 +13671,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
                             <thead>
                               <tr>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '10px' }}>{leftTeamName}</span>
-                                    <span style={{ 
-                                      padding: '1px 6px', 
-                                      borderRadius: '3px', 
-                                      fontSize: '9px', 
-                                      fontWeight: 700, 
-                                      background: leftTeamColor, 
-                                      color: isBrightColor(leftTeamColor) ? '#000' : '#fff' 
+                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '42%' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
+                                    <span style={{
+                                      padding: '1px 6px',
+                                      borderRadius: '3px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      background: leftTeamColor,
+                                      color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                                     }}>{leftTeamLabel}</span>
                                   </div>
                                 </th>
-                                <th style={{ padding: '4px', fontSize: '8px' }}>Dur</th>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '10px' }}>{rightTeamName}</span>
-                                    <span style={{ 
-                                      padding: '1px 6px', 
-                                      borderRadius: '3px', 
-                                      fontSize: '9px', 
-                                      fontWeight: 700, 
-                                      background: rightTeamColor, 
-                                      color: isBrightColor(rightTeamColor) ? '#000' : '#fff' 
+                                <th style={{ padding: '4px', fontSize: '8px', width: '16%' }}>Dur</th>
+                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '42%' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
+                                    <span style={{
+                                      padding: '1px 6px',
+                                      borderRadius: '3px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      background: rightTeamColor,
+                                      color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
                                     }}>{rightTeamLabel}</span>
                                   </div>
                                 </th>
@@ -13753,59 +13751,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               </tr>
                             </tbody>
                           </table>
-                          
-                          {/* Download PDF Scoresheet button */}
-                          <div style={{ marginTop: '16px', marginBottom: '16px', textAlign: 'center' }}>
-                            <button
-                              onClick={async () => {
-                                try {
-                                  // Collect all necessary data for PDF generation
-                                  const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-                                  const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                                  
-                                  // Get referees and scorers if available
-                                  const allReferees = await db.referees.toArray()
-                                  const allScorers = await db.scorers.toArray()
-                                  
-                                  await generateScoresheetPDF({
-                                    match: data.match,
-                                    homeTeam: data.homeTeam,
-                                    awayTeam: data.awayTeam,
-                                    homePlayers: data.homePlayers || [],
-                                    awayPlayers: data.awayPlayers || [],
-                                    sets: allSets,
-                                    events: allEvents,
-                                    referees: allReferees,
-                                    scorers: allScorers
-                                  })
-                                } catch (error) {
-                                  console.error('Error generating PDF:', error)
-                                  alert('Error generating PDF scoresheet. Please try again.')
-                                }
-                              }}
-                              style={{
-                                padding: '10px 20px',
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                background: 'var(--accent)',
-                                color: '#000',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.opacity = '0.9'
-                                e.currentTarget.style.transform = 'scale(1.02)'
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.opacity = '1'
-                                e.currentTarget.style.transform = 'scale(1)'
-                              }}
-                            >
-                              📄 Download PDF Scoresheet
-                            </button>
-                          </div>
                           
                           {/* Post-match signatures */}
                           <div style={{ marginTop: '16px', display: 'flex', gap: '16px', justifyContent: 'space-around' }}>
@@ -13880,29 +13825,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
                         <thead>
                           <tr>
-                            <th style={{ padding: '4px 2px', textAlign: 'center' }}></th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '10px' }}>{leftTeamName}</span>
-                                <span style={{ 
-                                  padding: '1px 6px', 
-                                  borderRadius: '3px', 
-                                  fontSize: '9px', 
-                                  fontWeight: 700, 
-                                  background: leftTeamColor, 
-                                  color: isBrightColor(leftTeamColor) ? '#000' : '#fff' 
+                            <th style={{ padding: '4px 2px', textAlign: 'center', width: '8%' }}></th>
+                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '38%' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
+                                <span style={{
+                                  padding: '1px 6px',
+                                  borderRadius: '3px',
+                                  fontSize: '9px',
+                                  fontWeight: 700,
+                                  background: leftTeamColor,
+                                  color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                                 }}>{leftTeamLabel}</span>
                               </div>
                             </th>
-                            <th style={{ padding: '4px 2px', fontSize: '8px' }}>Dur</th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '10px' }}>{rightTeamName}</span>
-                                <span style={{ 
-                                  padding: '1px 6px', 
-                                  borderRadius: '3px', 
-                                  fontSize: '9px', 
-                                  fontWeight: 700, 
+                            <th style={{ padding: '4px 2px', fontSize: '8px', width: '8%' }}>Dur</th>
+                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '38%' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
+                                <span style={{
+                                  padding: '1px 6px',
+                                  borderRadius: '3px',
+                                  fontSize: '9px',
+                                  fontWeight: 700,
                                   background: rightTeamColor, 
                                   color: isBrightColor(rightTeamColor) ? '#000' : '#fff' 
                                 }}>{rightTeamLabel}</span>
@@ -15361,16 +15306,59 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             >
               <div style={{ padding: '24px', textAlign: 'center' }}>
                 <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-                  Do you want to sub the libero in position I?
+                  Do you want to sub a libero in position I?
                 </p>
                 <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
-                  <div style={{ marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <div style={{ marginBottom: '16px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <span>OUT: # {liberoReentryModal.playerNumber}</span>
                     <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
                   </div>
+
+                  {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                      <p style={{ marginBottom: '12px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                        Select libero to substitute in:
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                        {liberoReentryModal.availableLiberos.map((libero, index) => (
+                          <div
+                            key={`${libero.type}-${libero.number}`}
+                            onClick={() => {
+                              setLiberoReentryModal({
+                                ...liberoReentryModal,
+                                selectedLiberoIndex: index
+                              })
+                            }}
+                            style={{
+                              padding: '16px 24px',
+                              background: index === liberoReentryModal.selectedLiberoIndex
+                                ? 'var(--accent)'
+                                : 'rgba(255, 255, 255, 0.1)',
+                              color: index === liberoReentryModal.selectedLiberoIndex
+                                ? '#000'
+                                : 'var(--text)',
+                              border: index === liberoReentryModal.selectedLiberoIndex
+                                ? '2px solid var(--accent)'
+                                : '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              fontWeight: 600,
+                              fontSize: '16px',
+                              transition: 'all 0.2s ease',
+                              minWidth: '100px'
+                            }}
+                          >
+                            <div>{libero.label}</div>
+                            <div style={{ fontSize: '20px', marginTop: '4px' }}>#{libero.number}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <span>IN: {liberoReentryModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoReentryModal.liberoNumber}</span>
                     <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                    <span>IN</span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -15387,7 +15375,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Yes
+                    Confirm
                   </button>
                   <button
                     onClick={cancelLiberoReentry}
@@ -15402,7 +15390,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    No
+                    Cancel
                   </button>
                 </div>
               </div>
