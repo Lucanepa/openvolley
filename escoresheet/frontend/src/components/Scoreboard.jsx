@@ -227,11 +227,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       sets.find(s => !s.finished) ??
       null
 
-    if (currentSet) {
-      console.log(`[Scoreboard useLiveQuery] Current set: ${currentSet.index} (ID: ${currentSet.id}, finished: ${currentSet.finished})`)
-    } else {
-      console.log(`[Scoreboard useLiveQuery] No current set found. All sets:`, sets.map(s => ({ index: s.index, finished: s.finished })))
-    }
+    // Set info is now tracked without logging
 
     const [homePlayers, awayPlayers] = await Promise.all([
       match?.homeTeamId
@@ -271,21 +267,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       .filter(id => id > 0)
       .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
     
-    if (baseActionIds.length > 0) {
-      const sortedBaseIds = [...baseActionIds].sort((a, b) => a - b)
-      console.log(`[Scoreboard] All Action IDs: [${sortedBaseIds.join(', ')}]`)
-      // Check for gaps in base IDs
-      const maxId = Math.max(...sortedBaseIds)
-      const missingIds = []
-      for (let i = 1; i <= maxId; i++) {
-        if (!sortedBaseIds.includes(i)) {
-          missingIds.push(i)
-        }
-      }
-      if (missingIds.length > 0) {
-        console.warn(`[Scoreboard] Missing Action IDs: [${missingIds.join(', ')}]`)
-      }
-    }
+    // Action IDs tracked internally
 
     const result = {
       set: currentSet,
@@ -312,9 +294,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             ws.send(JSON.stringify({
               type: 'clear-all-matches'
             }))
-            console.log('[WebSocket] Cleared all matches from server (no active match)')
           } catch (err) {
-            console.error('[WebSocket] Error clearing all matches:', err)
+            // Silently ignore
           }
         }
       }
@@ -363,7 +344,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const url = new URL(backendUrl)
           const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
           wsUrl = `${protocol}//${url.host}`
-          console.log('🌐 Connecting to cloud WebSocket backend:', wsUrl)
         } else {
           // Fallback to local WebSocket server (development/Electron)
           const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -375,7 +355,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             wsPort = currentServerStatus.wsPort
           }
           wsUrl = `${protocol}://${hostname}:${wsPort}`
-          console.log('💻 Connecting to local WebSocket server:', wsUrl)
         }
 
         ws = new WebSocket(wsUrl)
@@ -393,9 +372,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               type: 'clear-all-matches',
               keepMatchId: String(matchId) // Keep only the current match
             }))
-            console.log('[WebSocket] Cleared all matches except current match:', matchId)
           } catch (err) {
-            console.error('[WebSocket] Error clearing other matches:', err)
+            // Silently ignore WebSocket errors
           }
           
           // Send initial match data sync (this will overwrite/add the current match)
@@ -442,7 +420,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Use wsRef.current to always get the current WebSocket (not stale closure)
       const currentWs = wsRef.current
       if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
-        console.log('[Scoreboard] Sync skipped - WebSocket not ready:', { hasWs: !!currentWs, readyState: currentWs?.readyState })
         return
       }
 
@@ -475,9 +452,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           events: freshEvents || [],
           _timestamp: sendTimestamp // Track when sent from scoreboard
         }
-        
-        console.log(`[Scoreboard] 📤 Sending sync-match-data at ${new Date(sendTimestamp).toISOString()} (${sendTimestamp}):`, { matchId, eventsCount: freshEvents?.length, setsCount: freshSets?.length })
-        
+
         currentWs.send(JSON.stringify(syncPayload))
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
@@ -710,9 +685,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             type: 'delete-match',
             matchId: String(oldMatchId)
           }))
-          console.log('[WebSocket] Deleted old match from server (matchId changed):', oldMatchId)
         } catch (err) {
-          console.error('[WebSocket] Error deleting old match:', err)
+          // Silently ignore
         }
       }
     }
@@ -735,9 +709,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             ws.send(JSON.stringify({
               type: 'clear-all-matches'
             }))
-            console.log('[WebSocket] Cleared all matches from server (component unmounting)')
           } catch (err) {
-            console.error('[WebSocket] Error clearing matches on unmount:', err)
+            // Silently ignore errors during cleanup
           }
         }
         
@@ -769,7 +742,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Sync data to referee/bench - call this after any action that changes match data
   const syncToReferee = useCallback(() => {
     if (syncFunctionRef.current) {
-      console.log('[Scoreboard] Syncing data to referee after action')
       syncFunctionRef.current()
     }
   }, [])
@@ -778,7 +750,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const sendActionToReferee = useCallback((actionType, actionData) => {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      console.log('[Scoreboard] Cannot send action - WebSocket not ready')
       return
     }
 
@@ -792,7 +763,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       _timestamp: sendTimestamp // For latency tracking
     }
     
-    console.log(`[Scoreboard] 📤 Sending match-action '${actionType}' at ${new Date(sendTimestamp).toISOString()} (${sendTimestamp}):`, actionData)
     ws.send(JSON.stringify(actionPayload))
   }, [matchId])
 
@@ -2168,10 +2138,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         seq: nextSeq // Use sequence for ordering
       })
       
-      // Log all action IDs to track sequence numbers (show only integer part for display)
-      const displaySeq = Math.floor(nextSeq)
-      const subActionNote = options.parentSeq !== undefined ? ` - sub-action ${nextSeq}` : ''
-      console.log(`[Scoreboard] Action ID ${displaySeq} (Event ID: ${eventId}): ${type}${subActionNote}`, payload)
+      // Sequence tracking (no logging)
       
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
@@ -2711,8 +2678,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               ts: new Date().toISOString(),
               seq: rotationSeq // Decimal ID for ordering (e.g., 1.1)
             })
-            const displaySeq = Math.floor(rotationSeq)
-            console.log(`[Scoreboard] Action ID ${displaySeq} (Event ID: ${rotationEventId}): lineup (rotation) - sub-action ${rotationSeq}`, { team: teamKey, lineup: cleanedRotatedLineup })
             // Don't add to sync_queue for rotation lineups
             // But sync to referee so they see the updated lineup after rotation
             syncToReferee()
@@ -3000,12 +2965,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: time,
       seq: nextSeq1
     })
-    console.log(`[Scoreboard] Action ID ${nextSeq1} (Event ID: ${setStartEventId}): set_start`, { setIndex: setStartTimeModal.setIndex, startTime: time })
-    
+
     setSetStartTimeModal(null)
-    
+
     // Now actually start the rally
-    const rallyStartEventId = await db.events.add({
+    await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'rally_start',
@@ -3013,7 +2977,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: nextSeq2
     })
-    console.log(`[Scoreboard] Action ID ${nextSeq2} (Event ID: ${rallyStartEventId}): rally_start`, {})
   }, [setStartTimeModal, data?.set, matchId])
 
   // Confirm set end time
@@ -3048,11 +3011,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Update set with end time and finished status
     await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
 
-    console.log(`[Scoreboard] Marked set ${data.set.index} (ID: ${data.set.id}) as finished`)
-
     // Get all sets and calculate sets won by each team
     const sets = await db.sets.where({ matchId }).toArray()
-    console.log(`[Scoreboard] All sets after marking finished:`, sets.map(s => ({ index: s.index, finished: s.finished, id: s.id })))
     const finishedSets = sets.filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
@@ -3092,12 +3052,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             type: 'delete-match',
             matchId: String(matchId)
           }))
-          console.log('[Scoreboard WebSocket] Notified server to delete ended match:', matchId)
         } catch (err) {
-          console.error('[Scoreboard WebSocket] Error notifying server of match end:', err)
+          // Silently ignore WebSocket errors
         }
-      } else {
-        console.warn('[Scoreboard] WebSocket not available to notify server of match end')
       }
 
       // Only call onFinishSet for match end, not between sets
@@ -3162,10 +3119,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Check if a set with this index already exists to prevent duplicates
       const existingSet = await db.sets.where({ matchId, index: newSetIndex }).first()
       if (existingSet) {
-        console.log(`[Scoreboard] Set ${newSetIndex} already exists, skipping creation`)
         return existingSet.id
       }
-      
+
       const newSetId = await db.sets.add({
         matchId,
         index: newSetIndex,
@@ -3173,12 +3129,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         awayPoints: 0,
         finished: false
       })
-
-      console.log(`[Scoreboard] Created new set ${newSetIndex} (ID: ${newSetId})`)
-
-      // Verify the new set was created by querying it back
-      const verifyNewSet = await db.sets.get(newSetId)
-      console.log(`[Scoreboard] Verified new set:`, verifyNewSet)
 
       // Get match to determine first serve for the new set
       const match = await db.matches.get(matchId)
@@ -3254,7 +3204,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const existingSet5 = await db.sets.where({ matchId, index: setIndex }).first()
     let newSetId
     if (existingSet5) {
-      console.log(`[Scoreboard] Set ${setIndex} already exists, using existing`)
       newSetId = existingSet5.id
     } else {
       newSetId = await db.sets.add({ 
@@ -3566,29 +3515,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const lastEvent = undoConfirm.event
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq) // Get integer part (e.g., 1 from 1.1 or 1.2)
-    console.log(`[Scoreboard] 🔄 Starting UNDO for Action ID ${baseSeq} (Event ID: ${lastEvent.id}): ${lastEvent.type}`, lastEvent.payload)
-    console.log(`[Scoreboard] 🔄 UNDO: Will delete all events with base ID ${baseSeq} (including ${baseSeq}, ${baseSeq}.1, ${baseSeq}.2, etc.)`)
-
     // Get the next sequence number ONCE at the start, before any deletions
     // This ensures consistent sequential IDs even when multiple events are added during undo
     let nextSeqCounter = await getNextSeq()
     const getNextSeqInUndo = () => nextSeqCounter++
-    console.log(`[Scoreboard] 🔄 UNDO: Next sequence counter starts at ${nextSeqCounter}`)
-    
+
     // Find and delete ALL events with the same base ID (1, 1.1, 1.2, etc.)
     const allEvents = await db.events.where('matchId').equals(matchId).toArray()
     const eventsToDelete = allEvents.filter(e => {
       const eSeq = e.seq || 0
       return Math.floor(eSeq) === baseSeq
     })
-    
-    console.log(`[Scoreboard] 🔄 UNDO: Found ${eventsToDelete.length} events with base ID ${baseSeq} to delete:`, eventsToDelete.map(e => ({ id: e.id, seq: e.seq, type: e.type })))
-    
+
     // Delete all related events
     for (const eventToDelete of eventsToDelete) {
       await db.events.delete(eventToDelete.id)
-      const eventBaseSeq = Math.floor(eventToDelete.seq || 0)
-      console.log(`[Scoreboard] 🔄 UNDO: Deleted event Action ID ${eventToDelete.seq || 'N/A'} (Event ID: ${eventToDelete.id}): ${eventToDelete.type}`)
     }
     
     // Mark that we've already deleted the main event
@@ -3647,17 +3588,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           [field]: currentPoints - 1
         })
       }
-      
+
       // Note: Rotation lineup and libero_exit events are already deleted above
       // (they have the same base ID as the point, so they were deleted with all related events)
       // Point event is already deleted above (with all related events)
+
+      // Also delete the rally_start event that preceded this point
+      // The rally_start has a different sequence ID but should be undone with the point
+      // Find the most recent rally_start before this point
+      const pointSeq = lastEvent.seq || 0
+      const rallyStartEvent = data.events
+        .filter(e =>
+          e.type === 'rally_start' &&
+          e.setIndex === data.set.index &&
+          (e.seq || 0) < pointSeq
+        )
+        .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0] // Most recent rally_start before the point
+
+      if (rallyStartEvent) {
+        await db.events.delete(rallyStartEvent.id)
+      }
     }
     
     // If it's an initial lineup, delete it (players go back to bench)
     if (lastEvent.type === 'lineup' && lastEvent.payload?.isInitial === true) {
       // Simply delete the initial lineup event
       // This will cause players to go back to the bench
-      console.log(`[Scoreboard] 🔄 UNDO: Deleting initial lineup Action ID ${lastEvent.seq || 'N/A'} (Event ID: ${lastEvent.id})`)
       await db.events.delete(lastEvent.id)
       eventAlreadyDeleted = true
     }
@@ -3676,17 +3632,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (lineupEvents.length > 1) {
         // Remove the most recent lineup (the one with the substitution)
         const mostRecentLineup = lineupEvents[0]
-        console.log(`[Scoreboard] 🔄 UNDO: Deleting substitution lineup Action ID ${mostRecentLineup.seq || 'N/A'} (Event ID: ${mostRecentLineup.id})`)
         await db.events.delete(mostRecentLineup.id)
-        
+
         // Get the previous lineup and restore it
         const previousLineup = lineupEvents[1]?.payload?.lineup || {}
         const restoredLineup = { ...previousLineup }
         restoredLineup[position] = String(playerOut)
-        
+
         // Save the restored lineup
         const restoredSubSeq = getNextSeqInUndo()
-        const restoredSubEventId = await db.events.add({
+        await db.events.add({
           matchId,
           setIndex: data.set.index,
           type: 'lineup',
@@ -3694,7 +3649,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           ts: new Date().toISOString(),
           seq: restoredSubSeq
         })
-        console.log(`[Scoreboard] 🔄 UNDO: Created restored lineup Action ID ${restoredSubSeq} (Event ID: ${restoredSubEventId}): lineup (from substitution)`, { team, lineup: restoredLineup })
       }
     }
     
@@ -3722,7 +3676,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (liberoLineupEvents.length > 0) {
         // Remove the lineup with the libero entry
         const liberoLineupEvent = liberoLineupEvents[0]
-        console.log(`[Scoreboard] 🔄 UNDO: Deleting libero entry lineup Action ID ${liberoLineupEvent.seq || 'N/A'} (Event ID: ${liberoLineupEvent.id})`)
         await db.events.delete(liberoLineupEvent.id)
         
         // Find the most recent complete lineup event BEFORE the libero entry
@@ -3760,7 +3713,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           
           // Save the restored complete lineup
           const restoredLiberoEntrySeq = getNextSeqInUndo()
-          const restoredLiberoEntryEventId = await db.events.add({
+          await db.events.add({
             matchId,
             setIndex: data.set.index,
             type: 'lineup',
@@ -3772,7 +3725,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             ts: new Date().toISOString(),
             seq: restoredLiberoEntrySeq
           })
-          console.log(`[Scoreboard] 🔄 UNDO: Created restored lineup Action ID ${restoredLiberoEntrySeq} (Event ID: ${restoredLiberoEntryEventId}): lineup (undo libero entry)`, { team, position, playerOut })
         } else {
           // No previous lineup found, get the current most recent lineup (after deletion) and restore
           const currentLineupEvents = data.events
@@ -3800,7 +3752,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             
             // Save the restored complete lineup
             const restoredLiberoEntrySeq2 = getNextSeqInUndo()
-            const restoredLiberoEntryEventId2 = await db.events.add({
+            await db.events.add({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -3812,7 +3764,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               ts: new Date().toISOString(),
               seq: restoredLiberoEntrySeq2
             })
-            console.log(`[Scoreboard] 🔄 UNDO: Created restored lineup Action ID ${restoredLiberoEntrySeq2} (Event ID: ${restoredLiberoEntryEventId2}): lineup (undo libero entry, fallback)`, { team, position, playerOut })
           }
         }
       }
@@ -3824,47 +3775,43 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // If it's a rally_start, delete it and all subsequent rally_start events (duplicates)
     if (lastEvent.type === 'rally_start') {
       const rallyStartTimestamp = new Date(lastEvent.ts)
-      
+
       // Delete this rally_start
-      console.log(`[Scoreboard] 🔄 UNDO: Deleting rally_start Action ID ${lastEvent.seq || 'N/A'} (Event ID: ${lastEvent.id})`)
       await db.events.delete(lastEvent.id)
       eventAlreadyDeleted = true
-      
+
       // Delete all other rally_start events that came after this one (duplicates)
-      const allRallyStarts = data.events.filter(e => 
-        e.type === 'rally_start' && 
+      const allRallyStarts = data.events.filter(e =>
+        e.type === 'rally_start' &&
         e.setIndex === data.set.index &&
         e.id !== lastEvent.id &&
         new Date(e.ts) >= rallyStartTimestamp
       )
       for (const duplicateRallyStart of allRallyStarts) {
-        console.log(`[Scoreboard] 🔄 UNDO: Deleting duplicate rally_start Action ID ${duplicateRallyStart.seq || 'N/A'} (Event ID: ${duplicateRallyStart.id})`)
         await db.events.delete(duplicateRallyStart.id)
       }
-      
+
       // If this was the first rally_start (oldest), also undo set_start
       const allRallyStartsSorted = data.events
         .filter(e => e.type === 'rally_start' && e.setIndex === data.set.index && e.id !== lastEvent.id)
         .sort((a, b) => new Date(a.ts) - new Date(b.ts)) // Oldest first
-      
+
       // If there are no other rally_start events, this was the first one
-      if (allRallyStartsSorted.length === 0 || 
+      if (allRallyStartsSorted.length === 0 ||
           (allRallyStartsSorted.length > 0 && new Date(allRallyStartsSorted[0].ts) > rallyStartTimestamp)) {
         // Find the set_start event for this set
-        const setStartEvent = data.events.find(e => 
-          e.type === 'set_start' && 
+        const setStartEvent = data.events.find(e =>
+          e.type === 'set_start' &&
           e.setIndex === data.set.index
         )
         if (setStartEvent) {
-          console.log(`[Scoreboard] 🔄 UNDO: Deleting set_start Action ID ${setStartEvent.seq || 'N/A'} (Event ID: ${setStartEvent.id}) (first rally_start was undone)`)
           await db.events.delete(setStartEvent.id)
         }
       }
     }
-    
+
     // If it's a set_start, delete it
     if (lastEvent.type === 'set_start') {
-      console.log(`[Scoreboard] 🔄 UNDO: Deleting set_start Action ID ${lastEvent.seq || 'N/A'} (Event ID: ${lastEvent.id})`)
       await db.events.delete(lastEvent.id)
       eventAlreadyDeleted = true
     }
@@ -3922,7 +3869,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (exitLineupEvents.length > 0) {
         // Remove the lineup with the libero exit
         const exitLineupEvent = exitLineupEvents[0]
-        console.log(`[Scoreboard] 🔄 UNDO: Deleting libero exit lineup Action ID ${exitLineupEvent.seq || 'N/A'} (Event ID: ${exitLineupEvent.id})`)
         await db.events.delete(exitLineupEvent.id)
         
         // Find the most recent lineup event BEFORE the libero exit that had the libero
@@ -3959,7 +3905,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           
           // Save the restored complete lineup
           const restoredLiberoExitSeq = getNextSeqInUndo()
-          const restoredLiberoExitEventId = await db.events.add({
+          await db.events.add({
             matchId,
             setIndex: data.set.index,
             type: 'lineup',
@@ -3971,7 +3917,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             ts: new Date().toISOString(),
             seq: restoredLiberoExitSeq
           })
-          console.log(`[Scoreboard] 🔄 UNDO: Created restored lineup Action ID ${restoredLiberoExitSeq} (Event ID: ${restoredLiberoExitEventId}): lineup (undo libero exit)`, { team, position, liberoOut, playerIn })
         }
       }
     }
@@ -4001,7 +3946,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (exchangeLineupEvents.length > 0) {
         // Remove the lineup with the libero exchange
         const exchangeLineupEvent = exchangeLineupEvents[0]
-        console.log(`[Scoreboard] 🔄 UNDO: Deleting libero exchange lineup Action ID ${exchangeLineupEvent.seq || 'N/A'} (Event ID: ${exchangeLineupEvent.id})`)
         await db.events.delete(exchangeLineupEvent.id)
         
         // Find the most recent lineup event BEFORE the libero exchange
@@ -4045,7 +3989,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             
             // Save the restored complete lineup
             const restoredExchangeSeq = getNextSeqInUndo()
-            const restoredExchangeEventId = await db.events.add({
+            await db.events.add({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -4057,11 +4001,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               ts: new Date().toISOString(),
               seq: restoredExchangeSeq
             })
-            console.log(`[Scoreboard] 🔄 UNDO: Created restored lineup Action ID ${restoredExchangeSeq} (Event ID: ${restoredExchangeEventId}): lineup (undo libero exchange)`, { team, position, liberoOut, liberoIn })
           } else {
             // No previous libero sub, just restore the lineup
             const restoredExchangeSeq2 = getNextSeqInUndo()
-            const restoredExchangeEventId2 = await db.events.add({
+            await db.events.add({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -4073,7 +4016,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               ts: new Date().toISOString(),
               seq: restoredExchangeSeq2
             })
-            console.log(`[Scoreboard] 🔄 UNDO: Created restored lineup Action ID ${restoredExchangeSeq2} (Event ID: ${restoredExchangeEventId2}): lineup (undo libero exchange, no previous sub)`, { team, position, liberoOut })
           }
         }
       }
@@ -4120,10 +4062,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       await db.sync_queue.delete(lastSyncItem.id)
     }
     } catch (error) {
-      console.error(`[Scoreboard] 🔄 UNDO: Error during undo:`, error)
+      // Error during undo - silently handle
     } finally {
       // Always close the modal
-      console.log(`[Scoreboard] 🔄 UNDO: Completed undo for Action ID ${lastEvent.seq || 'N/A'}. Next sequence counter is at ${nextSeqCounter}`)
       setUndoConfirm(null)
     }
   }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq])
@@ -4142,7 +4083,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const lastEvent = replayRallyConfirm.event
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
-    console.log(`[Scoreboard] 🔄 REPLAY RALLY: Starting replay for Action ID ${baseSeq} (Event ID: ${lastEvent.id}): ${lastEvent.type}`, lastEvent.payload)
 
     // Find and delete ALL events with the same base ID (point and any related rotation events)
     const allEvents = await db.events.where('matchId').equals(matchId).toArray()
@@ -4150,8 +4090,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const eSeq = e.seq || 0
       return Math.floor(eSeq) === baseSeq
     })
-
-    console.log(`[Scoreboard] 🔄 REPLAY RALLY: Found ${eventsToDelete.length} events with base ID ${baseSeq} to delete:`, eventsToDelete.map(e => ({ id: e.id, seq: e.seq, type: e.type })))
 
     try {
       // If it's a point, undo the score change
@@ -4165,7 +4103,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           await db.sets.update(data.set.id, {
             [field]: currentPoints - 1
           })
-          console.log(`[Scoreboard] 🔄 REPLAY RALLY: Decremented ${team} score from ${currentPoints} to ${currentPoints - 1}`)
         }
 
         // Check if there was a rotation after this point (sideout)
@@ -4195,7 +4132,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           // The first lineup event after the point is the rotation
           if (lineupEvents.length > 0 && lineupEvents[0].payload?.team === lastEvent.payload.team) {
             const rotationEvent = lineupEvents[0]
-            console.log(`[Scoreboard] 🔄 REPLAY RALLY: Deleting rotation lineup Action ID ${rotationEvent.seq || 'N/A'} (Event ID: ${rotationEvent.id})`)
             await db.events.delete(rotationEvent.id)
           }
         }
@@ -4204,16 +4140,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Delete all events with this base seq
       for (const eventToDelete of eventsToDelete) {
         await db.events.delete(eventToDelete.id)
-        console.log(`[Scoreboard] 🔄 REPLAY RALLY: Deleted event Action ID ${eventToDelete.seq || 'N/A'} (Event ID: ${eventToDelete.id}): ${eventToDelete.type}`)
       }
 
       // Do NOT start a new rally - just go back to the state before the point
       // The rally will be in 'idle' state, waiting for "Start rally" to be clicked
 
     } catch (error) {
-      console.error(`[Scoreboard] 🔄 REPLAY RALLY: Error during replay:`, error)
+      // Error during replay - silently handle
     } finally {
-      console.log(`[Scoreboard] 🔄 REPLAY RALLY: Completed replay for Action ID ${baseSeq}.`)
       setReplayRallyConfirm(null)
     }
   }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId])
@@ -5412,8 +5346,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: subSeq
     })
-    console.log(`[Scoreboard] Action ID ${subSeq} (Event ID: ${subEventId}): lineup (from substitution)`, { team, lineup: finalLineup })
-    
+
     // Log the substitution event
     await logEvent('substitution', { 
       team, 
@@ -5719,13 +5652,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return isSanction && teamMatch && playerMatch && typeMatch
     })
     
-    console.log('[playerHasSanctionType]', {
-      teamKey,
-      playerNumber,
-      sanctionType,
-      hasSanction
-    })
-    
     return hasSanction
   }, [data?.events])
 
@@ -5748,29 +5674,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return isSanction && teamMatch && playerMatch && isFormalSanction
     })
     
-    console.log('[getPlayerSanctionLevel]', {
-      teamKey,
-      playerNumber,
-      playerNumberType: typeof playerNumber,
-      allSanctions: data.events.filter(e => e.type === 'sanction' && e.payload?.team === teamKey),
-      playerSanctions: playerSanctions.map(s => ({
-        type: s.payload?.type,
-        playerNumber: s.payload?.playerNumber,
-        playerNumberType: typeof s.payload?.playerNumber
-      }))
-    })
-    
     if (playerSanctions.length === 0) return null
-    
+
     // Return the highest sanction level
     const levels = { warning: 1, penalty: 2, expulsion: 3, disqualification: 4 }
     const highest = playerSanctions.reduce((max, s) => {
       const level = levels[s.payload?.type] || 0
       return level > max ? level : max
     }, 0)
-    
+
     const result = Object.keys(levels).find(key => levels[key] === highest)
-    console.log('[getPlayerSanctionLevel] result:', result)
     return result
   }, [data?.events])
 
@@ -5827,35 +5740,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Validate that we're not giving the same sanction type again
     if (playerNumber) {
       const hasThisSanction = playerHasSanctionType(team, playerNumber, sanctionType)
-      const currentSanction = getPlayerSanctionLevel(team, playerNumber)
       const teamWarning = teamHasFormalWarning(team)
-      
-      console.log('[confirmPlayerSanction] Validation:', {
-        team,
-        playerNumber,
-        sanctionType,
-        hasThisSanction,
-        currentSanction,
-        teamWarning
-      })
-      
+
       // Prevent giving the same sanction type again
       if (hasThisSanction) {
-        console.warn('[confirmPlayerSanction] BLOCKED: Player already has this specific sanction type')
         alert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`)
         setSanctionConfirmModal(null)
         return
       }
-      
+
       // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
       if (sanctionType === 'warning' && teamWarning) {
-        console.warn('[confirmPlayerSanction] BLOCKED: Warning cannot be given if team warned')
         alert(`Warning cannot be given because the team has already been warned.`)
         setSanctionConfirmModal(null)
         return
       }
-      
-      console.log('[confirmPlayerSanction] Validation passed, proceeding with sanction')
     }
     
     // If expulsion or disqualification for a court player, need to handle substitution
