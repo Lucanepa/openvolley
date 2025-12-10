@@ -380,6 +380,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [matchId])
 
   // Screen size detection for display mode suggestions
+  // < 768px = smartphone, 768-1024px = tablet, > 1024px = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
@@ -389,10 +390,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (width < 768) {
         detected = 'smartphone'
         suggestion = 'smartphone'
-      } else if (width < 1024) {
+      } else if (width <= 1024) {
         detected = 'tablet'
         suggestion = 'tablet'
       }
+      // > 1024px = desktop (default)
 
       setDetectedDisplayMode(detected)
 
