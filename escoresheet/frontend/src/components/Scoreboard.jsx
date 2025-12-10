@@ -15,6 +15,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   )
+  const [duplicateTabError, setDuplicateTabError] = useState(false)
+  const tabIdRef = useRef(Math.random().toString(36).substring(2, 15))
   const [showLogs, setShowLogs] = useState(false)
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
@@ -30,6 +32,67 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const saved = localStorage.getItem('manageCaptainOnCourt')
     return saved === 'true'
   })
+  const [checkAccidentalRallyStart, setCheckAccidentalRallyStart] = useState(() => {
+    const saved = localStorage.getItem('checkAccidentalRallyStart')
+    return saved === 'true' // default false
+  })
+  const [accidentalRallyStartDuration, setAccidentalRallyStartDuration] = useState(() => {
+    const saved = localStorage.getItem('accidentalRallyStartDuration')
+    return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [checkAccidentalPointAward, setCheckAccidentalPointAward] = useState(() => {
+    const saved = localStorage.getItem('checkAccidentalPointAward')
+    return saved === 'true' // default false
+  })
+  const [accidentalPointAwardDuration, setAccidentalPointAwardDuration] = useState(() => {
+    const saved = localStorage.getItem('accidentalPointAwardDuration')
+    return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [liberoExitConfirmation, setLiberoExitConfirmation] = useState(() => {
+    const saved = localStorage.getItem('liberoExitConfirmation')
+    return saved !== 'false' // default true
+  })
+  const [liberoEntrySuggestion, setLiberoEntrySuggestion] = useState(() => {
+    const saved = localStorage.getItem('liberoEntrySuggestion')
+    return saved !== 'false' // default true
+  })
+  const [setIntervalDuration, setSetIntervalDuration] = useState(() => {
+    const saved = localStorage.getItem('setIntervalDuration')
+    return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
+  })
+  const [accidentalRallyConfirmModal, setAccidentalRallyConfirmModal] = useState(null) // { onConfirm: function } | null
+  const [accidentalPointConfirmModal, setAccidentalPointConfirmModal] = useState(null) // { team: 'home'|'away', onConfirm: function } | null
+  const lastPointAwardedTimeRef = useRef(null) // Track when last point was awarded
+  const rallyStartTimeRef = useRef(null) // Track when rally started
+  const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
+    const saved = localStorage.getItem('keybindingsEnabled')
+    return saved === 'true' // default false
+  })
+  const [keybindingsModalOpen, setKeybindingsModalOpen] = useState(false)
+  const defaultKeyBindings = {
+    pointLeft: 'a',
+    pointRight: 'l',
+    timeoutLeft: 'q',
+    timeoutRight: 'p',
+    exchangeLiberoLeft: 'x',
+    exchangeLiberoRight: 'n',
+    undo: 'Backspace',
+    confirm: 'Enter',
+    cancel: 'Escape',
+    startRally: 'Enter'
+  }
+  const [keyBindings, setKeyBindings] = useState(() => {
+    const saved = localStorage.getItem('keyBindings')
+    if (saved) {
+      try {
+        return { ...defaultKeyBindings, ...JSON.parse(saved) }
+      } catch {
+        return defaultKeyBindings
+      }
+    }
+    return defaultKeyBindings
+  })
+  const [editingKey, setEditingKey] = useState(null) // Which key binding is being edited
   const [scoreboardGuideModal, setScoreboardGuideModal] = useState(false)
   const [serverRunning, setServerRunning] = useState(false)
   const [serverStatus, setServerStatus] = useState(null)
@@ -189,6 +252,97 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
+
+  // Single-tab enforcement - prevent opening scoresheet in multiple tabs for same match
+  useEffect(() => {
+    if (!matchId) return
+
+    const channelName = `scoresheet-${matchId}`
+    const storageKey = `scoresheet-active-${matchId}`
+    const tabId = tabIdRef.current
+
+    // Try to claim this tab as active
+    const existingTab = localStorage.getItem(storageKey)
+    if (existingTab && existingTab !== tabId) {
+      // Another tab might be active, check via BroadcastChannel
+      try {
+        const channel = new BroadcastChannel(channelName)
+
+        // Ask if any other tab is active
+        const checkTimeout = setTimeout(() => {
+          // No response, claim the tab
+          localStorage.setItem(storageKey, tabId)
+          channel.close()
+        }, 200)
+
+        channel.onmessage = (event) => {
+          if (event.data.type === 'PING') {
+            // Another tab is checking, respond
+            channel.postMessage({ type: 'PONG', tabId: tabId })
+          } else if (event.data.type === 'PONG' && event.data.tabId !== tabId) {
+            // Another tab responded, this is a duplicate
+            clearTimeout(checkTimeout)
+            setDuplicateTabError(true)
+            channel.close()
+          } else if (event.data.type === 'NEW_TAB' && event.data.tabId !== tabId) {
+            // A new tab just opened, tell it we're here
+            channel.postMessage({ type: 'PONG', tabId: tabId })
+          }
+        }
+
+        // Announce ourselves
+        channel.postMessage({ type: 'NEW_TAB', tabId: tabId })
+
+        return () => {
+          clearTimeout(checkTimeout)
+          channel.close()
+          // Only remove from storage if we're the active tab
+          if (localStorage.getItem(storageKey) === tabId) {
+            localStorage.removeItem(storageKey)
+          }
+        }
+      } catch {
+        // BroadcastChannel not supported, fall back to localStorage only
+        localStorage.setItem(storageKey, tabId)
+      }
+    } else {
+      // Claim this tab as active
+      localStorage.setItem(storageKey, tabId)
+    }
+
+    // Set up BroadcastChannel for ongoing communication
+    let channel
+    try {
+      channel = new BroadcastChannel(channelName)
+
+      channel.onmessage = (event) => {
+        if (event.data.type === 'PING' || event.data.type === 'NEW_TAB') {
+          // Another tab is checking or just opened, respond
+          channel.postMessage({ type: 'PONG', tabId: tabId })
+        }
+      }
+    } catch {
+      // BroadcastChannel not supported
+    }
+
+    // Listen for storage events (when another tab changes localStorage)
+    const handleStorage = (e) => {
+      if (e.key === storageKey && e.newValue && e.newValue !== tabId) {
+        // Another tab just claimed active status
+        setDuplicateTabError(true)
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      if (channel) channel.close()
+      // Only remove from storage if we're the active tab
+      if (localStorage.getItem(storageKey) === tabId) {
+        localStorage.removeItem(storageKey)
+      }
+    }
+  }, [matchId])
 
   // Send heartbeat to indicate scoresheet is active
   useEffect(() => {
@@ -1337,13 +1491,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Only start countdown if between sets AND countdown is null (not started yet)
     // Don't restart if countdown exists (even if finished) or was dismissed
     if (isBetweenSets && betweenSetsCountdown === null && !countdownDismissedRef.current) {
-      setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
+      setBetweenSetsCountdown({ countdown: setIntervalDuration, started: true })
     } else if (!isBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
       countdownDismissedRef.current = false // Reset for next time
     }
-  }, [isBetweenSets]) // Removed betweenSetsCountdown from deps to prevent restart loop
+  }, [isBetweenSets, setIntervalDuration]) // Removed betweenSetsCountdown from deps to prevent restart loop
 
   // Handle between-sets countdown timer
   useEffect(() => {
@@ -2408,9 +2562,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [])
 
   const handlePoint = useCallback(
-    async side => {
+    async (side, skipConfirmation = false) => {
       if (!data?.set) return
       const teamKey = mapSideToTeamKey(side)
+
+      // Check for accidental point award (if enabled and rally just started)
+      if (checkAccidentalPointAward && !skipConfirmation && rallyStartTimeRef.current) {
+        const timeSinceRallyStart = (Date.now() - rallyStartTimeRef.current) / 1000
+        if (timeSinceRallyStart < accidentalPointAwardDuration) {
+          setAccidentalPointConfirmModal({
+            team: teamKey,
+            onConfirm: () => {
+              setAccidentalPointConfirmModal(null)
+              handlePoint(side, true) // Call with skipConfirmation = true
+            }
+          })
+          return
+        }
+      }
       const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
       const newPoints = data.set[field] + 1
       const homePoints = teamKey === 'home' ? newPoints : data.set.homePoints
@@ -2444,6 +2613,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         [field]: newPoints
       })
       const pointSeq = await logEvent('point', { team: teamKey })
+
+      // Track when point was awarded (for accidental rally start check)
+      lastPointAwardedTimeRef.current = Date.now()
+      // Reset rally start time since rally ended
+      rallyStartTimeRef.current = null
 
       // If scoring team didn't have serve, they rotate their lineup AFTER the point
       if (!scoringTeamHadServe) {
@@ -2628,14 +2802,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   originalPlayerNumber: originalPlayerNumber
                 }
                 
-                // Show modal that libero must go out
-                setLiberoRotationModal({
-                  team: teamKey,
-                  position: position,
-                  liberoNumber: Number(liberoNumber),
-                  playerNumber: originalPlayerNumber,
-                  liberoType: liberoPlayer?.libero
-                })
+                // Show modal that libero must go out (if option enabled)
+                if (liberoExitConfirmation) {
+                  setLiberoRotationModal({
+                    team: teamKey,
+                    position: position,
+                    liberoNumber: Number(liberoNumber),
+                    playerNumber: originalPlayerNumber,
+                    liberoType: liberoPlayer?.libero
+                  })
+                }
                 
                 // Log libero exit (after point, so use point relative time + 2ms)
                 // Use decimal ID based on the point's action ID (e.g., if point is 1, libero_exit is 1.2)
@@ -2742,16 +2918,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               // Find which libero was last on court (default selection)
               const defaultLiberoIndex = availableLiberos.findIndex(l => l.number === Number(liberoNumber) && l.type === liberoType)
 
-              // Ask if they want to put a libero back in at position I
-              setLiberoReentryModal({
-                team: otherTeamKey,
-                position: 'I',
-                playerNumber: Number(playerInI),
-                liberoNumber: Number(liberoNumber),
-                liberoType: liberoType,
-                availableLiberos: availableLiberos,
-                selectedLiberoIndex: defaultLiberoIndex >= 0 ? defaultLiberoIndex : 0
-              })
+              // Ask if they want to put a libero back in at position I (if option enabled)
+              if (liberoEntrySuggestion) {
+                setLiberoReentryModal({
+                  team: otherTeamKey,
+                  position: 'I',
+                  playerNumber: Number(playerInI),
+                  liberoNumber: Number(liberoNumber),
+                  liberoType: liberoType,
+                  availableLiberos: availableLiberos,
+                  selectedLiberoIndex: defaultLiberoIndex >= 0 ? defaultLiberoIndex : 0
+                })
+              }
             }
           }
         }
@@ -2783,7 +2961,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId, syncToReferee]
   )
 
-  const handleStartRally = useCallback(async () => {
+  const handleStartRally = useCallback(async (skipConfirmation = false) => {
+    // Check for accidental rally start (if enabled and point was just awarded)
+    if (checkAccidentalRallyStart && !skipConfirmation && lastPointAwardedTimeRef.current) {
+      const timeSinceLastPoint = (Date.now() - lastPointAwardedTimeRef.current) / 1000
+      if (timeSinceLastPoint < accidentalRallyStartDuration) {
+        setAccidentalRallyConfirmModal({
+          onConfirm: () => {
+            setAccidentalRallyConfirmModal(null)
+            handleStartRally(true) // Call with skipConfirmation = true
+          }
+        })
+        return
+      }
+    }
+
     // If this is the first rally, show set start time confirmation
     if (isFirstRally) {
       // Check if liberos exist and haven't been entered
@@ -2843,7 +3035,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     setLiberoReminder(null)
     await logEvent('rally_start')
-  }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee])
+    // Track when rally started (for accidental point award check)
+    rallyStartTimeRef.current = Date.now()
+  }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration])
 
   const handleReplay = useCallback(async () => {
     // During rally: just log replay event (no point to undo)
@@ -3073,15 +3267,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Start countdown immediately when set ends (not match end)
       // Reset dismissed flag and start countdown
       countdownDismissedRef.current = false
-      setBetweenSetsCountdown({ countdown: 180, started: true })
-      
+      setBetweenSetsCountdown({ countdown: setIntervalDuration, started: true })
+
       // Send set_end action to referee to show countdown
       sendActionToReferee('set_end', {
         setIndex,
         winner: winner,
         homePoints: homePoints,
         awayPoints: awayPoints,
-        countdown: 180
+        countdown: setIntervalDuration
       })
 
       // If set 4 just ended, show modal to choose sides and service for set 5
@@ -6566,6 +6760,163 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
 
+  // Keyboard shortcuts handler
+  useEffect(() => {
+    if (!keybindingsEnabled) return
+
+    const handleKeyDown = (e) => {
+      // Don't handle if editing key bindings
+      if (editingKey) return
+      // Don't handle if typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
+      // Don't handle if options modal is open
+      if (showOptionsInMenu || keybindingsModalOpen) return
+
+      const key = e.key
+
+      // Check for modal confirmations first (Enter/Escape)
+      // These modals need a decision - don't allow Escape to close them
+      const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
+        accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm ||
+        replayRallyConfirm || liberoRotationModal || liberoReentryModal
+
+      // Confirm key (Enter)
+      if (key === keyBindings.confirm) {
+        // Start rally if idle and no modals
+        if (!hasDecisionModal && rallyStatus === 'idle') {
+          e.preventDefault()
+          handleStartRally()
+          return
+        }
+        // Confirm modals
+        if (accidentalRallyConfirmModal) {
+          e.preventDefault()
+          accidentalRallyConfirmModal.onConfirm()
+          return
+        }
+        if (accidentalPointConfirmModal) {
+          e.preventDefault()
+          accidentalPointConfirmModal.onConfirm()
+          return
+        }
+        if (substitutionConfirm) {
+          e.preventDefault()
+          confirmSubstitution()
+          return
+        }
+        if (liberoConfirm) {
+          e.preventDefault()
+          confirmLibero()
+          return
+        }
+        if (undoConfirm) {
+          e.preventDefault()
+          handleUndo()
+          return
+        }
+        if (replayRallyConfirm) {
+          e.preventDefault()
+          handleReplayRally()
+          return
+        }
+      }
+
+      // Cancel key (Escape) - only close non-decision modals
+      if (key === keyBindings.cancel) {
+        // Close dropdowns and menus
+        if (playerActionMenu) {
+          e.preventDefault()
+          setPlayerActionMenu(null)
+          return
+        }
+        if (benchPlayerActionMenu) {
+          e.preventDefault()
+          setBenchPlayerActionMenu(null)
+          return
+        }
+        if (liberoDropdown) {
+          e.preventDefault()
+          setLiberoDropdown(null)
+          return
+        }
+        if (liberoInDropdown) {
+          e.preventDefault()
+          setLiberoInDropdown(null)
+          return
+        }
+        if (sanctionDropdown) {
+          e.preventDefault()
+          setSanctionDropdown(null)
+          return
+        }
+        if (timeoutModal) {
+          e.preventDefault()
+          setTimeoutModal(null)
+          return
+        }
+        // Don't close decision modals with Escape
+        return
+      }
+
+      // Don't process other keys if a modal is open
+      if (hasDecisionModal || timeoutModal || lineupModal || menuModal) return
+
+      // Point keys
+      if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
+        e.preventDefault()
+        handlePoint('left')
+        return
+      }
+      if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
+        e.preventDefault()
+        handlePoint('right')
+        return
+      }
+
+      // Timeout keys (only when idle)
+      if (key === keyBindings.timeoutLeft && rallyStatus === 'idle') {
+        e.preventDefault()
+        handleTimeout('left')
+        return
+      }
+      if (key === keyBindings.timeoutRight && rallyStatus === 'idle') {
+        e.preventDefault()
+        handleTimeout('right')
+        return
+      }
+
+      // Exchange libero keys (only when idle)
+      if (key === keyBindings.exchangeLiberoLeft && rallyStatus === 'idle') {
+        e.preventDefault()
+        handleExchangeLibero('left')
+        return
+      }
+      if (key === keyBindings.exchangeLiberoRight && rallyStatus === 'idle') {
+        e.preventDefault()
+        handleExchangeLibero('right')
+        return
+      }
+
+      // Undo key
+      if (key === keyBindings.undo && rallyStatus === 'idle') {
+        e.preventDefault()
+        handleUndo()
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
+    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo,
+    playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
+    timeoutModal, lineupModal, menuModal,
+    substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
+    accidentalPointConfirmModal, undoConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
+    confirmSubstitution, confirmLibero, handleReplayRally
+  ])
+
   const sanctionButtonStyles = useMemo(() => ({
     improper: {
       flex: 1,
@@ -7086,6 +7437,58 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }
 
+  // Show duplicate tab error if scoresheet is already open in another tab
+  if (duplicateTabError) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        padding: '20px',
+        textAlign: 'center'
+      }}>
+        <div style={{
+          fontSize: '48px',
+          marginBottom: '20px'
+        }}>⚠️</div>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: 600,
+          marginBottom: '12px',
+          color: '#f59e0b'
+        }}>Scoresheet Already Open</h1>
+        <p style={{
+          fontSize: '16px',
+          color: 'rgba(255,255,255,0.7)',
+          marginBottom: '24px',
+          maxWidth: '400px'
+        }}>
+          This match scoresheet is already open in another tab or browser window.
+          Please close this tab and use the existing one to avoid data conflicts.
+        </p>
+        <button
+          onClick={() => window.close()}
+          style={{
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: 600,
+            background: '#3b82f6',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer'
+          }}
+        >
+          Close This Tab
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="match-record">
       <div className="match-toolbar">
@@ -7097,75 +7500,76 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           >
             Home
           </button>
-          <div className="toolbar-divider" />
-          <span className="toolbar-clock">{formatTimestamp(now)}</span>
-          <div className="toolbar-divider" />
-          <button 
-            className="secondary" 
-            onClick={async () => {
-              try {
-                const match = data?.match
-                if (!match) {
-                  alert('No match data available')
-                  return
-                }
-                
-                // Gather all match data for the scoresheet
-                const allSets = data?.sets || []
-                const allEvents = data?.events || []
-                
-                const scoresheetData = {
-                  match,
-                  homeTeam: data?.homeTeam,
-                  awayTeam: data?.awayTeam,
-                  homePlayers: data?.homePlayers || [],
-                  awayPlayers: data?.awayPlayers || [],
-                  sets: allSets,
-                  events: allEvents,
-                  sanctions: [] // TODO: Extract sanctions from events
-                }
-                
-                // Store data in sessionStorage to pass to new window
-                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                
-                // Open scoresheet in new window
-                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
-                
-                if (!scoresheetWindow) {
-                  alert('Please allow popups to view the scoresheet')
-                  return
-                }
-                
-                // Set up error listener for scoresheet window
-                const errorListener = (event) => {
-                  // Only accept messages from the scoresheet window
-                  if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                    setScoresheetErrorModal({
-                      error: event.data.error || 'Unknown error',
-                      details: event.data.details || event.data.stack || ''
-                    })
-                    window.removeEventListener('message', errorListener)
+          </div>
+          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span className="toolbar-clock">{formatTimestamp(now)}</span>
+            <div className="toolbar-divider" />
+            <button
+              className="secondary"
+              onClick={async () => {
+                try {
+                  const match = data?.match
+                  if (!match) {
+                    alert('No match data available')
+                    return
                   }
+
+                  // Gather all match data for the scoresheet
+                  const allSets = data?.sets || []
+                  const allEvents = data?.events || []
+
+                  const scoresheetData = {
+                    match,
+                    homeTeam: data?.homeTeam,
+                    awayTeam: data?.awayTeam,
+                    homePlayers: data?.homePlayers || [],
+                    awayPlayers: data?.awayPlayers || [],
+                    sets: allSets,
+                    events: allEvents,
+                    sanctions: [] // TODO: Extract sanctions from events
+                  }
+
+                  // Store data in sessionStorage to pass to new window
+                  sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+
+                  // Open scoresheet in new window
+                  const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+
+                  if (!scoresheetWindow) {
+                    alert('Please allow popups to view the scoresheet')
+                    return
+                  }
+
+                  // Set up error listener for scoresheet window
+                  const errorListener = (event) => {
+                    // Only accept messages from the scoresheet window
+                    if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                      setScoresheetErrorModal({
+                        error: event.data.error || 'Unknown error',
+                        details: event.data.details || event.data.stack || ''
+                      })
+                      window.removeEventListener('message', errorListener)
+                    }
+                  }
+
+                  window.addEventListener('message', errorListener)
+
+                  // Clean up listener after 30 seconds (scoresheet should load by then)
+                  setTimeout(() => {
+                    window.removeEventListener('message', errorListener)
+                  }, 30000)
+                } catch (error) {
+                  console.error('Error opening scoresheet:', error)
+                  setScoresheetErrorModal({
+                    error: 'Failed to open scoresheet',
+                    details: error.message || ''
+                  })
                 }
-                
-                window.addEventListener('message', errorListener)
-                
-                // Clean up listener after 30 seconds (scoresheet should load by then)
-                setTimeout(() => {
-                  window.removeEventListener('message', errorListener)
-                }, 30000)
-              } catch (error) {
-                console.error('Error opening scoresheet:', error)
-                setScoresheetErrorModal({
-                  error: 'Failed to open scoresheet',
-                  details: error.message || ''
-                })
-              }
-            }}
-            style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
-          >
-            📄 Scoresheet
-          </button>
+              }}
+              style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
+            >
+              📄 Scoresheet
+            </button>
           </div>
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
 
@@ -11031,6 +11435,156 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
               <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Match Options</h3>
 
+              {/* Check Accidental Rally Start Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Rally Start</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Ask for confirmation if "Start Rally" is pressed within {accidentalRallyStartDuration}s of awarding a point
+                  </div>
+                  {checkAccidentalRallyStart && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={accidentalRallyStartDuration}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
+                          setAccidentalRallyStartDuration(val)
+                          localStorage.setItem('accidentalRallyStartDuration', String(val))
+                        }}
+                        style={{
+                          width: '50px',
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          background: 'rgba(255,255,255,0.1)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !checkAccidentalRallyStart
+                    setCheckAccidentalRallyStart(newValue)
+                    localStorage.setItem('checkAccidentalRallyStart', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: checkAccidentalRallyStart ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: checkAccidentalRallyStart ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Check Accidental Point Award Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Point Award</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Ask for confirmation if a point is awarded within {accidentalPointAwardDuration}s of starting the rally
+                  </div>
+                  {checkAccidentalPointAward && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={accidentalPointAwardDuration}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
+                          setAccidentalPointAwardDuration(val)
+                          localStorage.setItem('accidentalPointAwardDuration', String(val))
+                        }}
+                        style={{
+                          width: '50px',
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          background: 'rgba(255,255,255,0.1)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !checkAccidentalPointAward
+                    setCheckAccidentalPointAward(newValue)
+                    localStorage.setItem('checkAccidentalPointAward', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: checkAccidentalPointAward ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: checkAccidentalPointAward ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
               {/* Manage Captain on Court Toggle */}
               <div style={{
                 display: 'flex',
@@ -11074,6 +11628,242 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     position: 'absolute',
                     top: '4px',
                     left: localManageCaptainOnCourt ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Set Interval Duration (between sets 2-3) */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Set Interval Duration</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Duration of interval between sets (default 3 minutes)
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
+                  <button
+                    onClick={() => {
+                      const newVal = Math.max(60, setIntervalDuration - 15) // minimum 1 minute
+                      setSetIntervalDuration(newVal)
+                      localStorage.setItem('setIntervalDuration', String(newVal))
+                    }}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    −
+                  </button>
+                  <div style={{
+                    minWidth: '60px',
+                    textAlign: 'center',
+                    fontSize: '14px',
+                    fontWeight: 600
+                  }}>
+                    {Math.floor(setIntervalDuration / 60)}:{String(setIntervalDuration % 60).padStart(2, '0')}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newVal = Math.min(600, setIntervalDuration + 15) // maximum 10 minutes
+                      setSetIntervalDuration(newVal)
+                      localStorage.setItem('setIntervalDuration', String(newVal))
+                    }}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Libero Exit Confirmation Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Must Exit Confirmation</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Show modal when libero must exit due to rotation to front row
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !liberoExitConfirmation
+                    setLiberoExitConfirmation(newValue)
+                    localStorage.setItem('liberoExitConfirmation', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: liberoExitConfirmation ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: liberoExitConfirmation ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Libero Entry Suggestion Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Entry Suggestion</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Show suggestion modal to substitute libero for player rotating to back row
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !liberoEntrySuggestion
+                    setLiberoEntrySuggestion(newValue)
+                    localStorage.setItem('liberoEntrySuggestion', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: liberoEntrySuggestion ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: liberoEntrySuggestion ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Keyboard Shortcuts Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Keyboard Shortcuts</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Use keyboard keys to control scoring and actions
+                  </div>
+                  {keybindingsEnabled && (
+                    <button
+                      onClick={() => setKeybindingsModalOpen(true)}
+                      style={{
+                        marginTop: '8px',
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(59, 130, 246, 0.2)',
+                        color: '#3b82f6',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Configure Keys
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !keybindingsEnabled
+                    setKeybindingsEnabled(newValue)
+                    localStorage.setItem('keybindingsEnabled', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: keybindingsEnabled ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: keybindingsEnabled ? '28px' : '4px',
                     transition: 'left 0.2s'
                   }} />
                 </button>
@@ -15701,6 +16491,247 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         )
       })()}
       
+      {/* Keyboard Shortcuts Configuration Modal */}
+      {keybindingsModalOpen && (
+        <Modal
+          title="Keyboard Shortcuts"
+          open={true}
+          onClose={() => {
+            setKeybindingsModalOpen(false)
+            setEditingKey(null)
+          }}
+          width={500}
+        >
+          <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+            <p style={{ marginBottom: '16px', fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+              Click on a key to change it. Press the new key to assign, or Escape to cancel.
+            </p>
+            {[
+              { key: 'pointLeft', label: 'Point Left Team', description: 'Award point to left team' },
+              { key: 'pointRight', label: 'Point Right Team', description: 'Award point to right team' },
+              { key: 'timeoutLeft', label: 'Timeout Left Team', description: 'Call timeout for left team' },
+              { key: 'timeoutRight', label: 'Timeout Right Team', description: 'Call timeout for right team' },
+              { key: 'exchangeLiberoLeft', label: 'Exchange Libero Left', description: 'Exchange L1/L2 for left team' },
+              { key: 'exchangeLiberoRight', label: 'Exchange Libero Right', description: 'Exchange L1/L2 for right team' },
+              { key: 'undo', label: 'Undo', description: 'Undo last action' },
+              { key: 'startRally', label: 'Start Rally / Confirm', description: 'Start rally or confirm modal' },
+              { key: 'cancel', label: 'Cancel / Close', description: 'Cancel or close menus' }
+            ].map(({ key, label, description }) => (
+              <div
+                key={key}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 12px',
+                  background: editingKey === key ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '6px',
+                  marginBottom: '8px',
+                  border: editingKey === key ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent'
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{label}</div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{description}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (editingKey === key) {
+                      setEditingKey(null)
+                    } else {
+                      setEditingKey(key)
+                      // Listen for next keypress
+                      const handleKeyCapture = (e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        if (e.key === 'Escape') {
+                          setEditingKey(null)
+                        } else {
+                          const newBindings = { ...keyBindings, [key]: e.key }
+                          setKeyBindings(newBindings)
+                          localStorage.setItem('keyBindings', JSON.stringify(newBindings))
+                          setEditingKey(null)
+                        }
+                        window.removeEventListener('keydown', handleKeyCapture, true)
+                      }
+                      window.addEventListener('keydown', handleKeyCapture, true)
+                    }
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: editingKey === key ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                    color: editingKey === key ? '#fff' : 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    minWidth: '80px',
+                    textAlign: 'center'
+                  }}
+                >
+                  {editingKey === key ? 'Press key...' : (
+                    keyBindings[key] === ' ' ? 'Space' :
+                    keyBindings[key] === 'Enter' ? 'Enter' :
+                    keyBindings[key] === 'Escape' ? 'Esc' :
+                    keyBindings[key] === 'Backspace' ? 'Backspace' :
+                    keyBindings[key] === 'ArrowUp' ? '↑' :
+                    keyBindings[key] === 'ArrowDown' ? '↓' :
+                    keyBindings[key] === 'ArrowLeft' ? '←' :
+                    keyBindings[key] === 'ArrowRight' ? '→' :
+                    keyBindings[key].toUpperCase()
+                  )}
+                </button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setKeyBindings(defaultKeyBindings)
+                  localStorage.setItem('keyBindings', JSON.stringify(defaultKeyBindings))
+                }}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Reset to Defaults
+              </button>
+              <button
+                onClick={() => {
+                  setKeybindingsModalOpen(false)
+                  setEditingKey(null)
+                }}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Accidental Rally Start Confirmation Modal */}
+      {accidentalRallyConfirmModal && (
+        <Modal
+          title="Confirm Rally Start"
+          open={true}
+          onClose={() => setAccidentalRallyConfirmModal(null)}
+          width={320}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <div style={{ marginBottom: '16px', fontSize: '48px' }}>⚠️</div>
+            <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+              Rally started very quickly
+            </p>
+            <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
+              Are you sure the rally has actually started?
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={accidentalRallyConfirmModal.onConfirm}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes, Start Rally
+              </button>
+              <button
+                onClick={() => setAccidentalRallyConfirmModal(null)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Accidental Point Award Confirmation Modal */}
+      {accidentalPointConfirmModal && (
+        <Modal
+          title="Confirm Point"
+          open={true}
+          onClose={() => setAccidentalPointConfirmModal(null)}
+          width={320}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <div style={{ marginBottom: '16px', fontSize: '48px' }}>⚠️</div>
+            <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+              Point awarded very quickly
+            </p>
+            <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
+              Are you sure the point should be awarded to {accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}?
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={accidentalPointConfirmModal.onConfirm}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Yes, Award Point
+              </button>
+              <button
+                onClick={() => setAccidentalPointConfirmModal(null)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {sanctionConfirmModal && (() => {
         const teamData = sanctionConfirmModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (sanctionConfirmModal.team === 'home' ? '#ef4444' : '#3b82f6')
