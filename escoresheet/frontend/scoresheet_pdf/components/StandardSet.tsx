@@ -44,19 +44,21 @@ interface StandardSetProps {
 
 // Static Point Box: Display only, not interactive
 export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2; isCircled?: boolean }> = ({ num, filledState = 0, isCircled = false }) => {
-    // type: 0 = none, 1 = slash, 2 = vertical bar
+    // type: 0 = none (blank), 1 = slash (scored), 2 = vertical bar (cancelled at end)
+    // Only show number if scored (filledState === 1) or circled (penalty point)
+    const showNumber = filledState === 1 || isCircled;
+
     return (
-        <div 
+        <div
             className="flex-1 w-full relative flex items-center justify-center"
-            
         >
-            {/* Background Number - don't render if cancelled (filledState === 2) */}
-            {filledState !== 2 && (
-                <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-100' : ''}`}>{num}</span>
+            {/* Background Number - only show if scored or circled */}
+            {showNumber && (
+                <span className="text-[8px] leading-none text-black">{num}</span>
             )}
 
             {/* Overlays */}
-            {/* Only show slash if not circled (penalty points should only have circle, no slash) */}
+            {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
             {filledState === 1 && !isCircled && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="15" />
