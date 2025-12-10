@@ -17,7 +17,9 @@
       "Bash(railway up:*)",
       "Bash(railway redeploy:*)",
       "Bash(find:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npx eslint:*)",
+      "Bash(timeout 30 npm run build)"
     ],
     "deny": [],
     "ask": []
