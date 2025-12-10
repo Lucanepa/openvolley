@@ -5,7 +5,6 @@ import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { Results, Sanctions, Remarks } from '../../scoresheet_pdf/components/FooterSection'
 import jsPDF from 'jspdf'
-import { generateScoresheetPDF } from '../utils/generateScoresheetPDF'
 
 export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
   const data = useLiveQuery(async () => {
@@ -692,18 +691,8 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
                     // Wait for the PDF download to be triggered
                     await new Promise(resolve => setTimeout(resolve, 3000))
                   } else {
-                    // Fallback: use generateScoresheetPDF if Save button not found
-                    await generateScoresheetPDF({
-                      match,
-                      homeTeam,
-                      awayTeam,
-                      homePlayers,
-                      awayPlayers,
-                      sets: allSets,
-                      events: allEvents,
-                      referees: allReferees,
-                      scorers: allScorers
-                    })
+                    console.warn('Save button not found in scoresheet page - PDF not generated')
+                    alert('Could not find Save button in scoresheet page. Please use the Save button on the scoresheet page to download the PDF.')
                   }
                   
                   // Also save as JPG using html2canvas
@@ -749,18 +738,7 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
                   }, 2000)
                 } catch (screenshotError) {
                   console.error('Error using scoresheet save function:', screenshotError)
-                  // Fallback to generateScoresheetPDF
-                  await generateScoresheetPDF({
-                    match,
-                    homeTeam,
-                    awayTeam,
-                    homePlayers,
-                    awayPlayers,
-                    sets: allSets,
-                    events: allEvents,
-                    referees: allReferees,
-                    scorers: allScorers
-                  })
+                  alert('Error generating PDF from scoresheet page. Please try using the Save button on the scoresheet page directly.')
                   if (scoresheetWindow && !scoresheetWindow.closed) {
                     scoresheetWindow.close()
                   }
