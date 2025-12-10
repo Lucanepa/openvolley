@@ -320,8 +320,9 @@ export const TeamServiceGrid: React.FC<{
                                 />
                                 
                                 {rotationNumbers.map((num, boxIdx) => {
+                                    // X marks position I box 1 for receiving team (they start there, never serve from I)
                                     const showX = startsReceiving && colIdx === 0 && num === 1;
-                                    
+
                                     // Find service round data for this position and box
                                     const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
                                     const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
