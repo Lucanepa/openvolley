@@ -76,21 +76,23 @@ const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ initial
 
 // Static Point Box for Set 5 - Display only (matches StandardSet styling)
 const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2; isCircled?: boolean }> = ({ num, filledState = 0, isCircled = false }) => {
+    // type: 0 = none (blank), 1 = slash (scored), 2 = vertical bar (cancelled at end)
+    // Only show number if scored (filledState === 1) or circled (penalty point)
+    const showNumber = filledState === 1 || isCircled;
+
     return (
-        <div 
-            className="flex-1 w-full relative flex items-center justify-center" 
+        <div
+            className="flex-1 w-full relative flex items-center justify-center"
             style={{ borderColor: '#000' }}
         >
-            <span className={`text-[8px] leading-none text-black ${filledState !== 0 ? 'opacity-100' : ''}`}>{num}</span>
-            {/* Only show slash if not circled (penalty points should only have circle, no slash) */}
+            {/* Background Number - only show if scored or circled */}
+            {showNumber && (
+                <span className="text-[8px] leading-none text-black">{num}</span>
+            )}
+            {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
             {filledState === 1 && !isCircled && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="15" />
-                 </svg>
-            )}
-            {filledState === 2 && (
-                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="50" y1="-5" x2="50" y2="105" stroke="black" strokeWidth="15" strokeLinecap="butt" />
                  </svg>
             )}
             {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
