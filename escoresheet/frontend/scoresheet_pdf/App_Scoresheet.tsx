@@ -113,10 +113,24 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     let homeScore = 0;
     let awayScore = 0;
     
-    // Determine first serve team
-    const firstServeTeam = setNumber === 1 
-      ? (match?.coinTossServeA ? teamAKey : teamBKey)
-      : (setNumber % 2 === 0 ? (teamAKey === 'home' ? 'away' : 'home') : teamAKey);
+    // Determine first serve team for this set
+    // Set 1: coinTossServeA determines if A or B serves
+    // Set 2, 4: The opposite team from set 1 serves
+    // Set 3: Same as set 1
+    // Set 5: Uses set5FirstServe if available
+    let firstServeTeam: 'home' | 'away';
+    if (setNumber === 5 && match?.set5FirstServe) {
+      // Set 5 uses explicit set5FirstServe setting
+      const set5ServeLabel = match.set5FirstServe; // 'A' or 'B'
+      firstServeTeam = set5ServeLabel === 'A' ? teamAKey : teamBKey;
+    } else {
+      // For sets 1-4 (and set 5 without explicit setting)
+      // Set 1, 3, 5: Team that won coin toss serve choice serves
+      // Set 2, 4: Opposite team serves
+      const coinTossFirstServeTeam = match?.coinTossServeA ? teamAKey : teamBKey;
+      const isOddSet = setNumber % 2 === 1; // Sets 1, 3, 5 are odd
+      firstServeTeam = isOddSet ? coinTossFirstServeTeam : (coinTossFirstServeTeam === 'home' ? 'away' : 'home');
+    }
     
     // Service tracking: track service rounds for each team
     interface ServiceRound {
@@ -214,10 +228,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             });
           }
           
-          // Right team gains service - create initial entry at position I, box 1 (if first time)
+          // Right team gains service
           if (!rightServiceStarted) {
+            // First time serving - they were receiving, so they rotate when gaining serve
+            // Position II (index 1) is the new server after rotation from receiving position I
+            rightCurrentPosition = 1; // Position II
+            rightServiceRound = 0;
             rightServiceRounds.push({
-              position: 0, // Column I
+              position: 1, // Column II (they rotated from receiving at I)
               box: 1,
               ticked: true, // Tick because this position is now serving
               points: null,
@@ -259,10 +277,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             });
           }
           
-          // Left team gains service - create initial entry at position I, box 1 (if first time)
+          // Left team gains service
           if (!leftServiceStarted) {
+            // First time serving - they were receiving, so they rotate when gaining serve
+            // Position II (index 1) is the new server after rotation from receiving position I
+            leftCurrentPosition = 1; // Position II
+            leftServiceRound = 0;
             leftServiceRounds.push({
-              position: 0, // Column I
+              position: 1, // Column II (they rotated from receiving at I)
               box: 1,
               ticked: true, // Tick because this position is now serving
               points: null,
