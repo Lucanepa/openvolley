@@ -6,7 +6,6 @@ interface ServiceRound {
   box: number; // 1-8
   ticked: boolean; // Has tick (4) when player starts serving
   points: number | null; // Points scored when service lost (null if still serving)
-  rotation8: boolean; // Has "8" when opponent must rotate
   circled: boolean; // Circled at end of set for last point
 }
 
@@ -61,13 +60,13 @@ export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2; isCircle
             {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
             {filledState === 1 && !isCircled && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="15" />
+                    <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="8" />
                  </svg>
             )}
             {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
             {isCircled && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="48" fill="none" stroke="black" strokeWidth="12" />
+                    <circle cx="50" cy="50" r="48" fill="none" stroke="black" strokeWidth="8" />
                 </svg>
             )}
         </div>
@@ -115,7 +114,7 @@ export const PointsColumn: React.FC<{
                 {[0, 12, 24, 36].map((offset) => (
                     <div 
                         key={offset} 
-                        className="flex flex-col border-r border-black last:border-none h-full"
+                        className="flex flex-col h-full"
                         style={{ minWidth: 0, flex: 1 }}
                     >
                         {Array.from({ length: 12 }).map((_, i) => {
@@ -326,7 +325,7 @@ export const TeamServiceGrid: React.FC<{
                                     // Find service round data for this position and box
                                     const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
                                     const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
-                                    const hasRotation8 = serviceRound?.rotation8 || false;
+                                    const isTicked = serviceRound?.ticked || false;
                                     const isCircled = serviceRound?.circled || false;
                                     
                                     // Calculate row position for horizontal borders
@@ -357,6 +356,12 @@ export const TeamServiceGrid: React.FC<{
                                             <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
                                                 {num}
                                             </span>
+                                            {/* Tick/slash through the box number when this position served */}
+                                            {isTicked && !showX && (
+                                                <svg className="absolute top-0 right-0 w-[1.5mm] h-[1.5mm] pointer-events-none" viewBox="0 0 100 100">
+                                                    <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="20" />
+                                                </svg>
+                                            )}
                                             {showX && (
                                                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                                                     <line x1="20" y1="20" x2="80" y2="80" stroke="black" strokeWidth="8" />
@@ -367,12 +372,6 @@ export const TeamServiceGrid: React.FC<{
                                             {hasPoints && serviceRound && !showX && (
                                                 <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
                                                     {serviceRound.points}
-                                                </span>
-                                            )}
-                                            {/* Rotation "8" when opponent must rotate - but not if this is the initial X box */}
-                                            {hasRotation8 && !showX && (
-                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
-                                                    8
                                                 </span>
                                             )}
                                             {/* Circle for last point at end of set */}

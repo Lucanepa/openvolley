@@ -7,7 +7,6 @@ interface ServiceRound {
   box: number; // 1-6 for Set 5
   ticked: boolean; // Has tick (4) when player starts serving
   points: number | null; // Points scored when service lost (null if still serving)
-  rotation8: boolean; // Has "8" when opponent must rotate
   circled: boolean; // Circled at end of set for last point
 }
 
@@ -260,18 +259,24 @@ const TeamServiceGridSet5: React.FC<{
                                     // Find service round data for this position and box
                                     const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
                                     const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
-                                    const hasRotation8 = serviceRound?.rotation8 || false;
+                                    const isTicked = serviceRound?.ticked || false;
                                     const isCircled = serviceRound?.circled || false;
-                                    
+
                                     return (
-                                        <div 
-                                            key={num} 
+                                        <div
+                                            key={num}
                                             className="relative flex items-center justify-center"
                                             style={{ height: '5mm' }}
                                         >
                                             <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
                                                 {num}
                                             </span>
+                                            {/* Tick/slash through the box number when this position served */}
+                                            {isTicked && !showX && (
+                                                <svg className="absolute top-[0px] right-[0px] w-[3.5mm] h-[3.5mm] pointer-events-none" viewBox="0 0 100 100">
+                                                    <line x1="15" y1="15" x2="15" y2="15" stroke="black" strokeWidth="10" />
+                                                </svg>
+                                            )}
                                             {showX && (
                                                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                                                     <line x1="20" y1="20" x2="80" y2="80" stroke="black" strokeWidth="8" />
@@ -282,12 +287,6 @@ const TeamServiceGridSet5: React.FC<{
                                             {hasPoints && serviceRound && !showX && (
                                                 <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
                                                     {serviceRound.points}
-                                                </span>
-                                            )}
-                                            {/* Rotation "8" when opponent must rotate - but not if this is the initial X box */}
-                                            {hasRotation8 && !showX && (
-                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
-                                                    8
                                                 </span>
                                             )}
                                             {/* Circle for last point at end of set */}
@@ -369,7 +368,7 @@ const PointsColumn30: React.FC<{ isLast?: boolean, isPanel3?: boolean, currentSc
         <div className={`flex flex-col shrink-0 ${isLast ? '' : 'border-l-0 border-black'}`} style={{ width: '15mm', height: '3.5cm' }}>
             <div className="grid grid-cols-3 bg-white border-b border-black shrink-0" style={{ height: '2.5cm' }}>
                 {[0, 10, 20].map((offset) => (
-                    <div key={offset} className="flex flex-col border-l first:border-l-0 border-black border-t-0 h-full">
+                    <div key={offset} className="flex flex-col border-t-0 h-full">
                         {Array.from({ length: 10 }).map((_, i) => {
                              const num = offset + i + 1;
                              let state: 0 | 1 | 2 = 0;
