@@ -371,16 +371,28 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             }
           }
         } else {
-          // Left team won on receive - add final score and circle
-          const nextLeftPosition = (leftCurrentPosition + 1) % 6;
-          const nextLeftBox = Math.floor((leftServiceRound + 1) / 6) + 1;
-          leftServiceRounds.push({
-            position: nextLeftPosition,
-            box: nextLeftBox,
-            ticked: false,
-            points: leftFinalScore, // Add final score even though they didn't serve
-                        circled: true
-          });
+          // Left team won on receive - add final score for "the player who would have served"
+          if (!leftServiceStarted) {
+            // They never served - position I player "would have served"
+            leftServiceRounds.push({
+              position: 0, // Position I - the player who would have served
+              box: 1,
+              ticked: false, // No tick - they never actually served
+              points: leftFinalScore,
+              circled: true
+            });
+          } else {
+            // They served before but are receiving now - next rotation position "would have served"
+            const nextPosition = (leftCurrentPosition + 1) % 6;
+            const nextBox = Math.floor((leftServiceRound + 1) / 6) + 1;
+            leftServiceRounds.push({
+              position: nextPosition,
+              box: nextBox,
+              ticked: false, // No tick - they didn't actually serve from this position
+              points: leftFinalScore,
+              circled: true
+            });
+          }
         }
       } else if (isLastPointRight) {
         // Right team won - circle their last point
@@ -415,16 +427,28 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             }
           }
         } else {
-          // Right team won on receive - add final score and circle
-          const nextRightPosition = (rightCurrentPosition + 1) % 6;
-          const nextRightBox = Math.floor((rightServiceRound + 1) / 6) + 1;
-          rightServiceRounds.push({
-            position: nextRightPosition,
-            box: nextRightBox,
-            ticked: false,
-            points: rightFinalScore, // Add final score even though they didn't serve
-                        circled: true
-          });
+          // Right team won on receive - add final score for "the player who would have served"
+          if (!rightServiceStarted) {
+            // They never served - position I player "would have served"
+            rightServiceRounds.push({
+              position: 0, // Position I - the player who would have served
+              box: 1,
+              ticked: false, // No tick - they never actually served
+              points: rightFinalScore,
+              circled: true
+            });
+          } else {
+            // They served before but are receiving now - next rotation position "would have served"
+            const nextPosition = (rightCurrentPosition + 1) % 6;
+            const nextBox = Math.floor((rightServiceRound + 1) / 6) + 1;
+            rightServiceRounds.push({
+              position: nextPosition,
+              box: nextBox,
+              ticked: false, // No tick - they didn't actually serve from this position
+              points: rightFinalScore,
+              circled: true
+            });
+          }
         }
       }
       
