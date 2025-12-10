@@ -394,14 +394,18 @@ export const Results: React.FC<ResultsProps> = ({
             </div>
             
             {/* Winner Area */}
-            <div className="p-1 grid grid-cols-[1.5fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
+            <div className="p-1 grid grid-cols-[3fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
                  <div className="relative">
                      <span className="text-[12px] absolute top-0 left-0 text-gray-500">WINNER</span>
                      <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-end justify-center pb-0.5">{winner}</div>
                  </div>
-                 <div className="relative">
-                     <span className="text-[12px] absolute top-0 left-0 text-gray-500">RESULT</span>
-                     <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">3 : {result}</div>
+                 <div className="relative border-l border-gray-300" >
+                     <span className="text-[12px] absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
+                     <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">
+                         <span className="w-1/2 text-right">3</span>
+                         <span className="px-0.5">:</span>
+                         <span className="w-1/2 text-left">{result}</span>
+                     </div>
                  </div>
             </div>
         </div>
