@@ -877,15 +877,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       : [[], [], [], [], [], []];
     const rightSubs: SubRecordLocal[][] = convertSubsMapToArray(rightSubsByPlayer, rightLineup);
     
-    // Determine start time - always prefer confirmed set start time from modal
+    // Determine start time - only show confirmed set start time from modal
     let startTimeStr = '';
     if (hasBeenPlayed && setInfo?.startTime) {
       // Use confirmed start time from "Confirm start time for Set X" modal
       startTimeStr = new Date(setInfo.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
-    } else if (setNumber === 1 && match?.scheduledAt) {
-      // Fallback: Set 1 can use scheduled time if no confirmed time yet
-      startTimeStr = new Date(match.scheduledAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
     }
+    // Note: Don't fallback to scheduledAt - only show time if explicitly confirmed
 
     // Calculate current server info for validation
     // Determine which team is currently serving
