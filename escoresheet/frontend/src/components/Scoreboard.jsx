@@ -3115,10 +3115,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
       
       const newSetIndex = setIndex + 1
-      
+
       // Check if a set with this index already exists to prevent duplicates
       const existingSet = await db.sets.where({ matchId, index: newSetIndex }).first()
+      console.log('[Set Transition] Creating set', newSetIndex, 'for match', matchId, 'existingSet:', existingSet)
       if (existingSet) {
+        console.log('[Set Transition] Set already exists, returning existing id:', existingSet.id)
         return existingSet.id
       }
 
@@ -3129,6 +3131,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         awayPoints: 0,
         finished: false
       })
+      console.log('[Set Transition] Created new set with id:', newSetId)
 
       // Get match to determine first serve for the new set
       const match = await db.matches.get(matchId)
