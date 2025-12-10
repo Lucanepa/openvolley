@@ -6059,8 +6059,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: nextSeq
     })
-    console.log(`[Scoreboard] Action ID ${nextSeq} (Event ID: ${liberoEntryEventId}): lineup (libero entry)`, { team, position, liberoNumber: liberoPlayer.number, playerNumber: playerOut })
-    
+
     // Log the libero entry event
     await logEvent('libero_entry', { 
       team, 
@@ -6169,8 +6168,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: liberoExitSeq
     })
-    console.log(`[Scoreboard] Action ID ${liberoExitSeq} (Event ID: ${liberoExitEventId}): lineup (libero exit)`, { team, position, liberoNumber, playerNumber: playerOut })
-    
+
     // Log the libero entry event
     await logEvent('libero_entry', { 
       team, 
@@ -6305,8 +6303,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: liberoClearSeq
     })
-    console.log(`[Scoreboard] Action ID ${liberoClearSeq} (Event ID: ${liberoClearEventId}): lineup (clear libero)`, { team: teamKey })
-    
+
     // Log the libero exit event
     await logEvent('libero_exit', {
       team: teamKey,
@@ -6516,8 +6513,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: liberoExchangeSeq
     })
-    console.log(`[Scoreboard] Action ID ${liberoExchangeSeq} (Event ID: ${liberoExchangeEventId}): lineup (libero exchange)`, { team: teamKey, position: liberoOnCourt.position, liberoNumber: otherLibero.number })
-    
+
     // Log the libero exchange event
     await logEvent('libero_exchange', {
       team: teamKey,
@@ -13292,8 +13288,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           ts: new Date().toISOString(),
                           seq: debugSeq
                         })
-                        console.log(`[Scoreboard] Action ID ${debugSeq} (Event ID: ${debugEventId}): ${eventType} (debug/test)`, payload)
-                        
+
                         alert('Event added. You can now edit it in the sections above.')
                       }}
                       style={{
@@ -14750,18 +14745,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   const hasPenalty = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'penalty') : false
                   const hasExpulsion = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'expulsion') : false
                   const hasDisqualification = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'disqualification') : false
-                  
-                  console.log('[Sanction Dropdown]', {
-                    teamKey,
-                    playerNumber,
-                    currentSanction,
-                    teamWarning,
-                    hasWarning,
-                    hasPenalty,
-                    hasExpulsion,
-                    hasDisqualification
-                  })
-                  
+
                   // Determine which sanctions are available
                   // Rule: A player cannot get the same sanction type twice
                   // Exception: Warning can only be given if team hasn't been warned (player can have other sanctions)
@@ -14772,14 +14756,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   const canGetExpulsion = !hasExpulsion
                   // Disqualification: can be given if player doesn't already have a disqualification (back-sanctioning allowed)
                   const canGetDisqualification = !hasDisqualification
-                  
-                  console.log('[Sanction Dropdown] Available:', {
-                    canGetWarning,
-                    canGetPenalty,
-                    canGetExpulsion,
-                    canGetDisqualification
-                  })
-                  
+
                   return (
                     <>
                       <button
@@ -17041,7 +17018,6 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           },
           seq: manualLineupSeq
         })
-        console.log(`[Scoreboard] Action ID ${manualLineupSeq} (Event ID: ${manualLineupEventId}): lineup (manual)`, { team, isInitial: mode === 'initial' })
 
         setConfirmMessage('Lineup saved')
         
@@ -17088,7 +17064,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 
                 // Log point event
                 const penaltyPointSeq = maxSeq + 2 + pendingPenalties.indexOf(penalty)
-                const penaltyPointEventId = await db.events.add({
+                await db.events.add({
                   matchId,
                   setIndex,
                   ts: new Date().toISOString(),
@@ -17096,8 +17072,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   payload: { team: otherTeam, fromPenalty: true },
                   seq: penaltyPointSeq
                 })
-                console.log(`[Scoreboard] Action ID ${penaltyPointSeq} (Event ID: ${penaltyPointEventId}): point (from penalty)`, { team: otherTeam })
-                
+
               }
             }
           }
