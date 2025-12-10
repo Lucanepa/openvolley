@@ -112,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         </div>
                         <input
                             type="text"
-                            className="text-[8px] border-b border-black px-0.5 py-0.5 bg-white"
+                            className="text-[8px]  px-0.5 py-0.5 bg-white"
                             placeholder=""
                             value={match?.championshipTypeOther || ''}
                             onChange={e => {
@@ -178,7 +178,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          </div>
                          <input
                              type="text"
-                             className="text-[8px] border-b border-black px-0.5 py-0.5 bg-white"
+                             className="text-[8px] px-0.5 py-0.5 bg-white"
                              placeholder=""
                              value={match?.match_type_3_other || ''}
                              onChange={e => {
@@ -212,7 +212,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                 <img 
                     src={favicon} 
                     alt="favicon" 
-                    className="h-10 object-contain mx-auto" 
+                    className="h-10 object-contain mx-0" 
                     onError={() => setFaviconImageError(true)}
                 />
             ) : (
@@ -236,7 +236,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                      <div className="w-full font-bold text-xs uppercase text-center bg-white pb-0.5">{teamAName || ''}</div>
                  </div>
                  <div className="flex items-center h-full">
-                     <span className="text-base font-bold">:</span>
+                     <span className="text-base font-bold">VS</span>
                  </div>
                  <div className="flex items-center gap-1 flex-1">
                      <div className="w-full font-bold text-xs uppercase text-center bg-white pb-0.5">{teamBName || ''}</div>
@@ -250,15 +250,15 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             <div className="flex gap-1 w-full">
                 <div className="flex flex-col flex-[2]">
                     <span className="text-[8px] text-gray-500">City/Country</span>
-                    <div className="w-full border-b border-black bg-white text-[10px] pb-0.5 font-bold">{match?.city || ''}</div>
+                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">{match?.city || ''}</div>
                 </div>
                 <div className="flex flex-col flex-[4]">
                     <span className="text-[8px] text-gray-500">Hall/Gym</span>
-                    <div className="w-full border-b border-black bg-white text-[10px] pb-0.5 font-bold">{match?.hall || ''}</div>
+                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">{match?.hall || ''}</div>
                 </div>
                 <div className="flex flex-col flex-[1.5]">
                     <span className="text-[8px] text-gray-500">Date</span>
-                    <div className="w-full border-b border-black bg-white text-[10px] pb-0.5 font-bold">
+                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">
                       {(() => {
                         if (!dateStr) return '';
                         const date = new Date(dateStr);
@@ -272,7 +272,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                 </div>
                 <div className="flex flex-col flex-[1.5]">
                     <span className="text-[8px] text-gray-500">Time</span>
-                    <div className="w-full border-b border-black bg-white text-[10px] pb-0.5 font-bold">{timeStr}</div>
+                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">{timeStr}</div>
                 </div>
             </div>
         </div>
