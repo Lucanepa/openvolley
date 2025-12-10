@@ -73,6 +73,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [sanctionDropdown, setSanctionDropdown] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, element: HTMLElement, x?: number, y?: number } | null
   const [sanctionConfirmModal, setSanctionConfirmModal] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, sanctionType: 'warning'|'penalty'|'expulsion'|'disqualification' } | null
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
+  const [benchSubstitutionDropdown, setBenchSubstitutionDropdown] = useState(null) // { team: 'home'|'away', benchPlayerNumber: number, courtPlayerNumber: number, position: string, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
@@ -14761,7 +14762,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                      role === 'Medic' ? 'M' : role
                     return `Sanction for ${roleAbbr}`
                   } else if (type === 'bench' && playerNumber) {
-                    return `Sanction for # ${playerNumber}`
+                    return `Actions for # ${playerNumber}`
                   } else if (playerNumber) {
                     return `Sanction for ${playerNumber}`
                   } else {
@@ -14773,14 +14774,53 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 {(() => {
                   const teamKey = sanctionDropdown.team
                   const playerNumber = sanctionDropdown.playerNumber
+                  const isBenchPlayer = sanctionDropdown.type === 'bench'
                   const currentSanction = playerNumber ? getPlayerSanctionLevel(teamKey, playerNumber) : null
                   const teamWarning = teamHasFormalWarning(teamKey)
-                  
+
                   // Check if player has each specific sanction type (for back-sanctioning rules)
                   const hasWarning = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'warning') : false
                   const hasPenalty = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'penalty') : false
                   const hasExpulsion = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'expulsion') : false
                   const hasDisqualification = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'disqualification') : false
+
+                  // For bench players: check if they can come back via substitution
+                  let canSubstitute = false
+                  let courtPlayerToSwapWith = null
+                  let courtPlayerPosition = null
+
+                  if (isBenchPlayer && playerNumber) {
+                    // Check if this bench player was substituted out and can come back
+                    const substitutions = getSubstitutionHistory(teamKey)
+                    const canComeBackResult = canPlayerComeBack(teamKey, playerNumber)
+                    const hasComeBackResult = hasPlayerComeBack(teamKey, playerNumber)
+
+                    // Find the player on court who replaced this bench player
+                    const subWhereThisPlayerWentOut = substitutions
+                      .filter(s => String(s.payload?.playerOut) === String(playerNumber))
+                      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+
+                    if (subWhereThisPlayerWentOut) {
+                      const playerWhoReplacedThem = subWhereThisPlayerWentOut.payload?.playerIn
+                      // Check if that player is still on court
+                      const currentLineup = getCurrentLineup(teamKey)
+                      const positionOnCourt = Object.entries(currentLineup || {}).find(
+                        ([pos, num]) => String(num) === String(playerWhoReplacedThem)
+                      )
+                      if (positionOnCourt) {
+                        courtPlayerToSwapWith = playerWhoReplacedThem
+                        courtPlayerPosition = positionOnCourt[0]
+                      }
+                    }
+
+                    // Can substitute if:
+                    // 1. They were substituted out
+                    // 2. They can come back (point change occurred)
+                    // 3. They haven't already come back
+                    // 4. They're not expelled/disqualified
+                    // 5. Team has substitutions left (not replay scenario)
+                    canSubstitute = canComeBackResult && !hasComeBackResult && courtPlayerToSwapWith !== null && !hasExpulsion && !hasDisqualification
+                  }
 
                   // Determine which sanctions are available
                   // Rule: A player cannot get the same sanction type twice
@@ -14795,6 +14835,105 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
                   return (
                     <>
+                      {/* Bench player specific actions: Substitution and Injury */}
+                      {isBenchPlayer && (
+                        <>
+                          {/* Substitution button - only show if player can come back */}
+                          <button
+                            onClick={() => {
+                              setSanctionDropdown(null)
+                              // Open substitution dropdown with bench player as "in" and court player as "out"
+                              setBenchSubstitutionDropdown({
+                                team: teamKey,
+                                benchPlayerNumber: playerNumber,
+                                courtPlayerNumber: courtPlayerToSwapWith,
+                                position: courtPlayerPosition,
+                                x: sanctionDropdown.x,
+                                y: sanctionDropdown.y
+                              })
+                            }}
+                            disabled={!canSubstitute}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              background: canSubstitute ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                              color: canSubstitute ? '#22c55e' : 'var(--muted)',
+                              border: canSubstitute ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+                              borderRadius: '4px',
+                              cursor: canSubstitute ? 'pointer' : 'not-allowed',
+                              textAlign: 'left',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              transition: 'all 0.2s',
+                              opacity: canSubstitute ? 1 : 0.5
+                            }}
+                            onMouseEnter={(e) => {
+                              if (canSubstitute) {
+                                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.25)'
+                                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (canSubstitute) {
+                                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)'
+                                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)'
+                              }
+                            }}
+                          >
+                            <span style={{ fontSize: '14px' }}>↔</span>
+                            <span>Substitution{!canSubstitute && (courtPlayerToSwapWith ? ' (Wait for point)' : ' (Not available)')}</span>
+                          </button>
+
+                          {/* Injury button - always available for bench players */}
+                          <button
+                            onClick={() => {
+                              setSanctionDropdown(null)
+                              // Add injury remark for bench player
+                              const remarkText = `Injury: #${playerNumber} (bench)`
+                              // Add to match remarks
+                              db.matches.get(matchId).then(match => {
+                                const currentRemarks = match?.remarks || ''
+                                const newRemarks = currentRemarks ? `${currentRemarks}\n${remarkText}` : remarkText
+                                db.matches.update(matchId, { remarks: newRemarks })
+                              })
+                              setConfirmMessage(`Injury recorded for #${playerNumber}`)
+                            }}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              color: '#ef4444',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'
+                              e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'
+                              e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'
+                            }}
+                          >
+                            <span style={{ fontSize: '14px' }}>🏥</span>
+                            <span>Injury (Remark)</span>
+                          </button>
+
+                          {/* Divider between actions and sanctions */}
+                          <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                          <div style={{ fontSize: '10px', color: 'var(--muted)', textAlign: 'center', marginBottom: '2px' }}>Sanctions</div>
+                        </>
+                      )}
+
                       <button
                         onClick={() => showSanctionConfirm('warning')}
                         disabled={!canGetWarning}
@@ -14942,7 +15081,121 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </>
         )
       })()}
-      
+
+      {/* Bench Substitution Confirmation Dropdown */}
+      {benchSubstitutionDropdown && (() => {
+        const { team, benchPlayerNumber, courtPlayerNumber, position, x, y } = benchSubstitutionDropdown
+
+        const dropdownStyle = {
+          position: 'fixed',
+          left: `${x}px`,
+          top: `${y}px`,
+          transform: 'translateY(-50%)',
+          zIndex: 1000
+        }
+
+        return (
+          <>
+            {/* Backdrop */}
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 999,
+                background: 'transparent'
+              }}
+              onClick={() => setBenchSubstitutionDropdown(null)}
+            />
+            {/* Dropdown */}
+            <div style={dropdownStyle} className="modal-wrapper-roll-up">
+              <div
+                style={{
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  border: '2px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  minWidth: '180px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                }}
+              >
+                <div style={{ marginBottom: '12px', fontSize: '12px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
+                  Substitution
+                </div>
+                <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
+                  <div style={{ marginBottom: '4px' }}>
+                    <span style={{ color: '#22c55e', fontWeight: 700 }}>IN:</span> #{benchPlayerNumber}
+                  </div>
+                  <div>
+                    <span style={{ color: '#ef4444', fontWeight: 700 }}>OUT:</span> #{courtPlayerNumber} ({position})
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                  <button
+                    onClick={() => setBenchSubstitutionDropdown(null)}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      color: 'var(--text)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      // Perform the substitution (bench player IN, court player OUT)
+                      const teamKey = team
+                      const playerIn = benchPlayerNumber
+                      const playerOut = courtPlayerNumber
+
+                      // Log the substitution event
+                      const nextSeq = await getNextSeq()
+                      await db.events.add({
+                        matchId,
+                        setIndex: data.set.index,
+                        type: 'substitution',
+                        payload: {
+                          team: teamKey,
+                          position: position,
+                          playerOut: playerOut,
+                          playerIn: playerIn
+                        },
+                        ts: new Date().toISOString(),
+                        seq: nextSeq
+                      })
+
+                      setBenchSubstitutionDropdown(null)
+                      setConfirmMessage(`Substitution: #${playerIn} in, #${playerOut} out`)
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      background: 'rgba(34, 197, 94, 0.2)',
+                      color: '#22c55e',
+                      border: '1px solid rgba(34, 197, 94, 0.4)',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+
       {injuryDropdown && (() => {
         // Get element position - use stored coordinates if available
         let dropdownStyle
@@ -14970,7 +15223,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             zIndex: 1000
           }
         }
-        
+
         return (
           <>
             {/* Backdrop to close dropdown on click outside */}
