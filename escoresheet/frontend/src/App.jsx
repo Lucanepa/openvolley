@@ -97,6 +97,44 @@ export default function App() {
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
+  const [displayMode, setDisplayMode] = useState(() => {
+    const saved = localStorage.getItem('displayMode')
+    return saved || 'auto' // default to auto-detect
+  })
+  const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
+  const [checkAccidentalRallyStart, setCheckAccidentalRallyStart] = useState(() => {
+    const saved = localStorage.getItem('checkAccidentalRallyStart')
+    return saved === 'true' // default false
+  })
+  const [accidentalRallyStartDuration, setAccidentalRallyStartDuration] = useState(() => {
+    const saved = localStorage.getItem('accidentalRallyStartDuration')
+    return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [checkAccidentalPointAward, setCheckAccidentalPointAward] = useState(() => {
+    const saved = localStorage.getItem('checkAccidentalPointAward')
+    return saved === 'true' // default false
+  })
+  const [accidentalPointAwardDuration, setAccidentalPointAwardDuration] = useState(() => {
+    const saved = localStorage.getItem('accidentalPointAwardDuration')
+    return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [liberoExitConfirmation, setLiberoExitConfirmation] = useState(() => {
+    const saved = localStorage.getItem('liberoExitConfirmation')
+    return saved !== 'false' // default true
+  })
+  const [liberoEntrySuggestion, setLiberoEntrySuggestion] = useState(() => {
+    const saved = localStorage.getItem('liberoEntrySuggestion')
+    return saved !== 'false' // default true
+  })
+  const [setIntervalDuration, setSetIntervalDuration] = useState(() => {
+    const saved = localStorage.getItem('setIntervalDuration')
+    return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
+  })
+  const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
+    const saved = localStorage.getItem('keybindingsEnabled')
+    return saved === 'true' // default false
+  })
 
   // Log backend configuration on mount
   useEffect(() => {
@@ -153,6 +191,82 @@ export default function App() {
     const interval = setInterval(fetchServerStatus, 10000) // Check every 10 seconds
     return () => clearInterval(interval)
   }, [])
+
+  // Screen size detection for display mode
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const width = window.innerWidth
+      let detected = 'desktop'
+
+      if (width < 768) {
+        detected = 'smartphone'
+      } else if (width < 1024) {
+        detected = 'tablet'
+      }
+
+      setDetectedDisplayMode(detected)
+    }
+
+    // Check on mount
+    checkScreenSize()
+
+    // Check on resize
+    window.addEventListener('resize', checkScreenSize)
+    return () => window.removeEventListener('resize', checkScreenSize)
+  }, [])
+
+  // Fullscreen and orientation lock for tablet/smartphone modes
+  const enterDisplayMode = useCallback((mode) => {
+    // Request fullscreen
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log('Fullscreen request failed:', err)
+      })
+    }
+
+    // Try to lock orientation to landscape (may not work on all browsers)
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(err => {
+        console.log('Orientation lock failed:', err)
+      })
+    }
+
+    // Set the display mode
+    setDisplayMode(mode)
+    localStorage.setItem('displayMode', mode)
+  }, [])
+
+  // Exit fullscreen and reset to desktop mode
+  const exitDisplayMode = useCallback(() => {
+    if (document.exitFullscreen && document.fullscreenElement) {
+      document.exitFullscreen().catch(err => {
+        console.log('Exit fullscreen failed:', err)
+      })
+    }
+
+    // Unlock orientation
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock()
+    }
+
+    setDisplayMode('desktop')
+    localStorage.setItem('displayMode', 'desktop')
+  }, [])
+
+  // Get the active display mode
+  const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
+
+  // Toggle no-scroll class on body when on home page
+  useEffect(() => {
+    if (!matchId && !showMatchSetup && !showMatchEnd) {
+      document.body.classList.add('no-scroll')
+    } else {
+      document.body.classList.remove('no-scroll')
+    }
+    return () => {
+      document.body.classList.remove('no-scroll')
+    }
+  }, [matchId, showMatchSetup, showMatchEnd])
 
   const activeMatch = useLiveQuery(async () => {
     try {
@@ -3242,8 +3356,158 @@ export default function App() {
           <div style={{ padding: '24px' }}>
 
             {/* Match Options Section */}
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
               <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Match Options</h3>
+
+              {/* Check Accidental Rally Start Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Rally Start</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Ask for confirmation if "Start Rally" is pressed within {accidentalRallyStartDuration}s of awarding a point
+                  </div>
+                  {checkAccidentalRallyStart && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={accidentalRallyStartDuration}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
+                          setAccidentalRallyStartDuration(val)
+                          localStorage.setItem('accidentalRallyStartDuration', String(val))
+                        }}
+                        style={{
+                          width: '50px',
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          background: 'rgba(255,255,255,0.1)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !checkAccidentalRallyStart
+                    setCheckAccidentalRallyStart(newValue)
+                    localStorage.setItem('checkAccidentalRallyStart', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: checkAccidentalRallyStart ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: checkAccidentalRallyStart ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Check Accidental Point Award Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Point Award</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Ask for confirmation if a point is awarded within {accidentalPointAwardDuration}s of starting the rally
+                  </div>
+                  {checkAccidentalPointAward && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={accidentalPointAwardDuration}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
+                          setAccidentalPointAwardDuration(val)
+                          localStorage.setItem('accidentalPointAwardDuration', String(val))
+                        }}
+                        style={{
+                          width: '50px',
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          background: 'rgba(255,255,255,0.1)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '4px',
+                          color: 'var(--text)',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !checkAccidentalPointAward
+                    setCheckAccidentalPointAward(newValue)
+                    localStorage.setItem('checkAccidentalPointAward', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: checkAccidentalPointAward ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: checkAccidentalPointAward ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
 
               {/* Manage Captain on Court Toggle */}
               <div style={{
@@ -3252,7 +3516,8 @@ export default function App() {
                 justifyContent: 'space-between',
                 padding: '12px 16px',
                 background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px'
+                borderRadius: '8px',
+                marginBottom: '12px'
               }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Manage Captain on Court</div>
@@ -3294,9 +3559,310 @@ export default function App() {
                   }} />
                 </button>
               </div>
+
+              {/* Libero Exit Confirmation Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Exit Confirmation</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Show confirmation modal when libero must exit after player rotation
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !liberoExitConfirmation
+                    setLiberoExitConfirmation(newValue)
+                    localStorage.setItem('liberoExitConfirmation', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: liberoExitConfirmation ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: liberoExitConfirmation ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Libero Entry Suggestion Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Entry Suggestion</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Show suggestion modal to substitute libero for player rotating to back row
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !liberoEntrySuggestion
+                    setLiberoEntrySuggestion(newValue)
+                    localStorage.setItem('liberoEntrySuggestion', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: liberoEntrySuggestion ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: liberoEntrySuggestion ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {/* Set Interval Duration */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Set Interval Duration</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Duration of break between sets 2 and 3
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
+                  <button
+                    onClick={() => {
+                      const newVal = Math.max(60, setIntervalDuration - 15)
+                      setSetIntervalDuration(newVal)
+                      localStorage.setItem('setIntervalDuration', String(newVal))
+                    }}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'var(--text)',
+                      fontSize: '18px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    -
+                  </button>
+                  <span style={{
+                    minWidth: '50px',
+                    textAlign: 'center',
+                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    fontWeight: 600
+                  }}>
+                    {Math.floor(setIntervalDuration / 60)}:{(setIntervalDuration % 60).toString().padStart(2, '0')}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const newVal = Math.min(600, setIntervalDuration + 15)
+                      setSetIntervalDuration(newVal)
+                      localStorage.setItem('setIntervalDuration', String(newVal))
+                    }}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'var(--text)',
+                      fontSize: '18px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Keyboard Shortcuts Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Keyboard Shortcuts</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Use keyboard keys to control scoring and actions (configure in Scoreboard)
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newValue = !keybindingsEnabled
+                    setKeybindingsEnabled(newValue)
+                    localStorage.setItem('keybindingsEnabled', String(newValue))
+                  }}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: keybindingsEnabled ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: keybindingsEnabled ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
             </div>
 
-            <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            {/* Display Mode Section */}
+            <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Display Mode</h3>
+
+              <div style={{
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '8px' }}>Screen Mode</div>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
+                  Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape.
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        if (mode === 'tablet' || mode === 'smartphone') {
+                          enterDisplayMode(mode)
+                        } else {
+                          if (mode === 'desktop') {
+                            exitDisplayMode()
+                          } else {
+                            setDisplayMode(mode)
+                            localStorage.setItem('displayMode', mode)
+                          }
+                        }
+                      }}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                        color: displayMode === mode ? '#fff' : 'var(--text)',
+                        border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}
+                    </button>
+                  ))}
+                </div>
+                {displayMode !== 'desktop' && displayMode !== 'auto' && (
+                  <div style={{ marginTop: '12px' }}>
+                    <button
+                      onClick={exitDisplayMode}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Exit {displayMode} mode
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div style={{
+                padding: '12px 16px',
+                background: 'rgba(59, 130, 246, 0.1)',
+                borderRadius: '8px',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.8)'
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: '4px' }}>Mode descriptions:</div>
+                <ul style={{ margin: '0', paddingLeft: '16px', lineHeight: '1.6' }}>
+                  <li><b>Desktop:</b> Full layout with court visualization</li>
+                  <li><b>Tablet:</b> Scaled-down layout optimized for 768-1024px screens</li>
+                  <li><b>Smartphone:</b> Compact 3-column layout without court, optimized for &lt;768px screens</li>
+                </ul>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
               <button
                 onClick={() => {
                   setHomeOptionsModal(false)
@@ -3329,72 +3895,49 @@ export default function App() {
               </button>
             </div>
             
-            <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>Download Desktop App</h3>
-              {(() => {
-                const githubRepo = import.meta.env.VITE_GITHUB_REPO || 'lucacanepa/openvolley'
-                const releasesUrl = `https://github.com/Lucanepa/openvolley/releases`
-                
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ 
-                      padding: '12px 16px',
-                      fontSize: '14px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '8px',
-                      color: 'var(--muted)',
-                      textAlign: 'center'
-                    }}>
-                      Build installers and upload to GitHub Releases to enable downloads.
+            {activeDisplayMode === 'desktop' && (
+              <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>Download Desktop App</h3>
+                {(() => {
+                  const releasesUrl = `https://github.com/Lucanepa/openvolley/releases`
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <a
+                        href={releasesUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '12px 16px',
+                          fontSize: '16px',
+                          fontWeight: 600,
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          color: 'var(--text)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '8px',
+                          textDecoration: 'none',
+                          transition: 'all 0.2s',
+                          justifyContent: 'center'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        }}
+                      >
+                        <span>📦 View Releases & Downloads</span>
+                        <span style={{ fontSize: '14px', opacity: 0.7 }}>→</span>
+                      </a>
                     </div>
-                    
-                    <a
-                      href={releasesUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px 16px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        borderRadius: '8px',
-                        textDecoration: 'none',
-                        transition: 'all 0.2s',
-                        justifyContent: 'center'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      }}
-                    >
-                      <span>📦 View Releases & Downloads</span>
-                      <span style={{ fontSize: '14px', opacity: 0.7 }}>→</span>
-                    </a>
-                    
-                    <div style={{ 
-                      marginTop: '8px', 
-                      fontSize: '12px', 
-                      color: 'var(--muted)',
-                      padding: '8px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '6px'
-                    }}>
-                      <strong>To build installers:</strong><br />
-                      Run <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px' }}>npm run electron:build:win</code> (or mac/linux)<br />
-                      Then upload files from <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px' }}>dist-electron/</code> to a GitHub Release
-                    </div>
-                  </div>
-                )
-              })()}
-            </div>
-            
+                  )
+                })()}
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button
                 onClick={() => setHomeOptionsModal(false)}

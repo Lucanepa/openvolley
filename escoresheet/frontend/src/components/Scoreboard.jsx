@@ -60,6 +60,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const saved = localStorage.getItem('setIntervalDuration')
     return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
   })
+  // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
+  const [displayMode, setDisplayMode] = useState(() => {
+    const saved = localStorage.getItem('displayMode')
+    return saved || 'auto' // default to auto-detect
+  })
+  const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
+  const [displayModeSuggestion, setDisplayModeSuggestion] = useState(null) // null | 'tablet' | 'smartphone'
+  const [showDisplayModeSuggestion, setShowDisplayModeSuggestion] = useState(false)
+  const [leftTeamSanctionsExpanded, setLeftTeamSanctionsExpanded] = useState(false)
+  const [rightTeamSanctionsExpanded, setRightTeamSanctionsExpanded] = useState(false)
+  const [leftTeamBenchExpanded, setLeftTeamBenchExpanded] = useState(false)
+  const [rightTeamBenchExpanded, setRightTeamBenchExpanded] = useState(false)
   const [accidentalRallyConfirmModal, setAccidentalRallyConfirmModal] = useState(null) // { onConfirm: function } | null
   const [accidentalPointConfirmModal, setAccidentalPointConfirmModal] = useState(null) // { team: 'home'|'away', onConfirm: function } | null
   const lastPointAwardedTimeRef = useRef(null) // Track when last point was awarded
@@ -367,6 +379,84 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return () => clearInterval(interval)
   }, [matchId])
 
+  // Screen size detection for display mode suggestions
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const width = window.innerWidth
+      let detected = 'desktop'
+      let suggestion = null
+
+      if (width < 768) {
+        detected = 'smartphone'
+        suggestion = 'smartphone'
+      } else if (width < 1024) {
+        detected = 'tablet'
+        suggestion = 'tablet'
+      }
+
+      setDetectedDisplayMode(detected)
+
+      // Only show suggestion if in auto mode and we detected a smaller screen
+      if (displayMode === 'auto' && suggestion) {
+        // Check if user already dismissed this suggestion
+        const dismissedSuggestion = sessionStorage.getItem('displayModeSuggestionDismissed')
+        if (!dismissedSuggestion) {
+          setDisplayModeSuggestion(suggestion)
+          setShowDisplayModeSuggestion(true)
+        }
+      }
+    }
+
+    // Check on mount
+    checkScreenSize()
+
+    // Check on resize
+    window.addEventListener('resize', checkScreenSize)
+    return () => window.removeEventListener('resize', checkScreenSize)
+  }, [displayMode])
+
+  // Get the active display mode (either forced or auto-detected)
+  const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
+
+  // Fullscreen and orientation lock for tablet/smartphone modes
+  const enterDisplayMode = useCallback((mode) => {
+    // Request fullscreen
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log('Fullscreen request failed:', err)
+      })
+    }
+
+    // Try to lock orientation to landscape (may not work on all browsers)
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(err => {
+        console.log('Orientation lock failed:', err)
+      })
+    }
+
+    // Set the display mode
+    setDisplayMode(mode)
+    localStorage.setItem('displayMode', mode)
+    setShowDisplayModeSuggestion(false)
+    sessionStorage.setItem('displayModeSuggestionDismissed', 'true')
+  }, [])
+
+  // Exit fullscreen and reset to desktop mode
+  const exitDisplayMode = useCallback(() => {
+    if (document.exitFullscreen && document.fullscreenElement) {
+      document.exitFullscreen().catch(err => {
+        console.log('Exit fullscreen failed:', err)
+      })
+    }
+
+    // Unlock orientation
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock()
+    }
+
+    setDisplayMode('desktop')
+    localStorage.setItem('displayMode', 'desktop')
+  }, [])
 
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
@@ -3088,6 +3178,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!data?.match || !data?.set || rallyStatus !== 'idle') return
     setSanctionConfirm({ side, type: 'delay_penalty' })
   }, [data?.match, data?.set, rallyStatus])
+
+  // Handle team sanction (for smartphone mode) - takes team key instead of side
+  const handleTeamSanction = useCallback((teamKey, sanctionType) => {
+    if (!data?.match || rallyStatus !== 'idle') return
+    // Convert team key to side
+    const side = (teamKey === 'home' && leftIsHome) || (teamKey === 'away' && !leftIsHome) ? 'left' : 'right'
+    setSanctionConfirm({ side, type: sanctionType })
+  }, [data?.match, rallyStatus, leftIsHome])
 
   // Confirm sanction
   const confirmSanction = useCallback(async () => {
@@ -8191,7 +8289,860 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </div>
       </div>
 
-      <div className="match-content">
+      {/* Display Mode Suggestion Banner */}
+      {showDisplayModeSuggestion && displayModeSuggestion && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+          color: '#fff',
+          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '16px',
+          zIndex: 1000,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+        }}>
+          <span style={{ fontSize: '20px' }}>
+            {displayModeSuggestion === 'tablet' ? '📱' : '📲'}
+          </span>
+          <span style={{ fontWeight: 600 }}>
+            Small screen detected! Enable {displayModeSuggestion} mode for a better experience?
+          </span>
+          <button
+            onClick={() => enterDisplayMode(displayModeSuggestion)}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: '#fff',
+              color: '#3b82f6',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            Enable {displayModeSuggestion} mode
+          </button>
+          <button
+            onClick={() => {
+              setShowDisplayModeSuggestion(false)
+              sessionStorage.setItem('displayModeSuggestionDismissed', 'true')
+            }}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'transparent',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.5)',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            Not now
+          </button>
+        </div>
+      )}
+
+      {/* Smartphone Mode Layout */}
+      {activeDisplayMode === 'smartphone' ? (
+        <div className="smartphone-layout" style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: 'calc(100vh - 60px)',
+          background: 'var(--bg)',
+          overflow: 'hidden'
+        }}>
+          {/* Header Row: Menu, Time, Scoresheet */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            background: 'rgba(15, 23, 42, 0.8)',
+            borderBottom: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <button
+              onClick={() => setMenuModal(true)}
+              style={{
+                padding: '8px 12px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: '#22c55e',
+                color: '#000',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              Menu
+            </button>
+            <span style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'monospace' }}>
+              {formatTimestamp(now)}
+            </span>
+            <button
+              onClick={async () => {
+                const match = data?.match
+                if (!match) return
+                const scoresheetData = {
+                  match,
+                  homeTeam: data?.homeTeam,
+                  awayTeam: data?.awayTeam,
+                  homePlayers: data?.homePlayers || [],
+                  awayPlayers: data?.awayPlayers || [],
+                  sets: data?.sets || [],
+                  events: data?.events || [],
+                  sanctions: []
+                }
+                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+              }}
+              style={{
+                padding: '8px 12px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: '#22c55e',
+                color: '#000',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              Scoresheet
+            </button>
+          </div>
+
+          {/* Main 3-Column Layout */}
+          <div style={{
+            display: 'flex',
+            flex: 1,
+            overflow: 'hidden'
+          }}>
+            {/* Left Team Column */}
+            <div style={{
+              flex: '1 1 30%',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '8px',
+              background: 'rgba(15, 23, 42, 0.4)',
+              borderRight: '1px solid rgba(255,255,255,0.1)',
+              overflow: 'auto'
+            }}>
+              <div style={{
+                background: leftTeam?.color || '#ef4444',
+                color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff',
+                padding: '8px',
+                borderRadius: '6px',
+                textAlign: 'center',
+                fontWeight: 700,
+                fontSize: '14px',
+                marginBottom: '8px'
+              }}>
+                {leftTeam?.shortName || leftTeam?.name || 'Team A'}
+              </div>
+
+              {/* TO/SUB Counter */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                <div style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.1)',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ fontWeight: 600 }}>TO</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{leftTimeouts}</div>
+                </div>
+                <div style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.1)',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ fontWeight: 600 }}>SUB</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{leftSubstitutions}</div>
+                </div>
+              </div>
+
+              {/* Team Sanctions Button */}
+              <button
+                onClick={() => setLeftTeamSanctionsExpanded(!leftTeamSanctionsExpanded)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: leftTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px'
+                }}
+              >
+                Team Sanctions {leftTeamSanctionsExpanded ? '▲' : '▼'}
+              </button>
+
+              {leftTeamSanctionsExpanded && (
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  marginBottom: '8px',
+                  fontSize: '11px'
+                }}>
+                  <button
+                    onClick={() => handleTeamSanction(leftIsHome ? 'home' : 'away', 'improper_request')}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      marginBottom: '4px',
+                      fontSize: '11px',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'var(--text)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Improper Request
+                  </button>
+                  <button
+                    onClick={() => handleTeamSanction(leftIsHome ? 'home' : 'away', 'delay_warning')}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      marginBottom: '4px',
+                      fontSize: '11px',
+                      background: 'rgba(234, 179, 8, 0.3)',
+                      color: '#fbbf24',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delay Warning
+                  </button>
+                  <button
+                    onClick={() => handleTeamSanction(leftIsHome ? 'home' : 'away', 'delay_penalty')}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      fontSize: '11px',
+                      background: 'rgba(239, 68, 68, 0.3)',
+                      color: '#ef4444',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delay Penalty
+                  </button>
+                </div>
+              )}
+
+              {/* Show Bench Button */}
+              <button
+                onClick={() => setLeftTeamBenchExpanded(!leftTeamBenchExpanded)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: leftTeamBenchExpanded ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Show Bench {leftTeamBenchExpanded ? '▲' : '▼'}
+              </button>
+
+              {leftTeamBenchExpanded && (
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  marginTop: '4px',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>Bench Players:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {leftBenchPlayers.filter(p => p.role !== 'libero').map(p => (
+                      <span
+                        key={p.id}
+                        onClick={() => {
+                          // Open bench player action menu
+                          setBenchPlayerActionMenu({
+                            team: leftIsHome ? 'home' : 'away',
+                            playerNumber: p.number,
+                            element: null,
+                            x: window.innerWidth / 2,
+                            y: window.innerHeight / 2
+                          })
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          background: 'rgba(255,255,255,0.1)',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        #{p.number}
+                      </span>
+                    ))}
+                  </div>
+                  {leftBenchPlayers.filter(p => p.role === 'libero').length > 0 && (
+                    <>
+                      <div style={{ fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: '#22c55e' }}>Libero:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {leftBenchPlayers.filter(p => p.role === 'libero').map(p => (
+                          <span
+                            key={p.id}
+                            style={{
+                              padding: '4px 8px',
+                              background: 'rgba(34, 197, 94, 0.3)',
+                              borderRadius: '4px',
+                              color: '#22c55e'
+                            }}
+                          >
+                            #{p.number}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Center Column */}
+            <div style={{
+              flex: '1 1 40%',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '8px',
+              overflow: 'auto'
+            }}>
+              {/* Set Counter */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '16px',
+                marginBottom: '8px'
+              }}>
+                <span style={{
+                  fontSize: '24px',
+                  fontWeight: 700,
+                  color: leftTeam?.color || '#ef4444'
+                }}>
+                  {leftIsHome ? homeSetsWon : awaySetsWon}
+                </span>
+                <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>SETS</span>
+                <span style={{
+                  fontSize: '24px',
+                  fontWeight: 700,
+                  color: rightTeam?.color || '#3b82f6'
+                }}>
+                  {leftIsHome ? awaySetsWon : homeSetsWon}
+                </span>
+              </div>
+
+              {/* Score Counter */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '24px',
+                marginBottom: '12px'
+              }}>
+                <span style={{
+                  fontSize: '48px',
+                  fontWeight: 700,
+                  color: leftTeam?.color || '#ef4444'
+                }}>
+                  {leftIsHome ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)}
+                </span>
+                <span style={{ fontSize: '24px', color: 'rgba(255,255,255,0.4)' }}>-</span>
+                <span style={{
+                  fontSize: '48px',
+                  fontWeight: 700,
+                  color: rightTeam?.color || '#3b82f6'
+                }}>
+                  {leftIsHome ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)}
+                </span>
+              </div>
+
+              {/* Mini Court Position Tables */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '12px',
+                justifyContent: 'center'
+              }}>
+                {/* Left Team Positions */}
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  border: `2px solid ${leftTeam?.color || '#ef4444'}`
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2px', fontSize: '11px' }}>
+                    {['IV', 'III', 'II'].map(pos => {
+                      const player = leftLineup?.find(p => p.position === pos)
+                      const isServing = leftServes && pos === 'I'
+                      return (
+                        <div key={pos} style={{
+                          padding: '4px',
+                          background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                          borderRadius: '2px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                          <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
+                        </div>
+                      )
+                    })}
+                    {['V', 'VI', 'I'].map(pos => {
+                      const player = leftLineup?.find(p => p.position === pos)
+                      const isServing = leftServes && pos === 'I'
+                      return (
+                        <div key={pos} style={{
+                          padding: '4px',
+                          background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                          borderRadius: '2px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                          <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Right Team Positions */}
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  border: `2px solid ${rightTeam?.color || '#3b82f6'}`
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2px', fontSize: '11px' }}>
+                    {['II', 'III', 'IV'].map(pos => {
+                      const player = rightLineup?.find(p => p.position === pos)
+                      const isServing = rightServes && pos === 'I'
+                      return (
+                        <div key={pos} style={{
+                          padding: '4px',
+                          background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                          borderRadius: '2px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                          <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
+                        </div>
+                      )
+                    })}
+                    {['I', 'VI', 'V'].map(pos => {
+                      const player = rightLineup?.find(p => p.position === pos)
+                      const isServing = rightServes && pos === 'I'
+                      return (
+                        <div key={pos} style={{
+                          padding: '4px',
+                          background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                          borderRadius: '2px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                          <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Rally Controls */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: 'auto'
+              }}>
+                {timeoutModal && timeoutModal.started ? (
+                  <>
+                    <div style={{
+                      fontSize: '32px',
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      textAlign: 'center',
+                      fontFamily: 'monospace'
+                    }}>
+                      {formatCountdown(timeoutModal.countdown)}
+                    </div>
+                    <button onClick={stopTimeout} style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: '#ef4444',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}>
+                      Stop Timeout
+                    </button>
+                  </>
+                ) : betweenSetsCountdown ? (
+                  <>
+                    <div style={{
+                      fontSize: '32px',
+                      fontWeight: 700,
+                      color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
+                      textAlign: 'center',
+                      fontFamily: 'monospace'
+                    }}>
+                      {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
+                    </div>
+                    <button onClick={endSetInterval} style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: 'var(--accent)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}>
+                      End Set Interval
+                    </button>
+                  </>
+                ) : rallyStatus === 'idle' ? (
+                  <button
+                    onClick={handleStartRally}
+                    disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+                    style={{
+                      padding: '16px',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      background: 'var(--accent)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      opacity: (isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)) ? 0.5 : 1
+                    }}
+                  >
+                    {isFirstRally ? 'Start Set' : 'Start Rally'}
+                  </button>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => handlePoint(leftIsHome ? 'home' : 'away')}
+                        style={{
+                          flex: 1,
+                          padding: '16px',
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          background: leftTeam?.color || '#ef4444',
+                          color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Point {leftTeam?.shortName || 'L'}
+                      </button>
+                      <button
+                        onClick={() => handlePoint(leftIsHome ? 'away' : 'home')}
+                        style={{
+                          flex: 1,
+                          padding: '16px',
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          background: rightTeam?.color || '#3b82f6',
+                          color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Point {rightTeam?.shortName || 'R'}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => handleTimeout(leftIsHome ? 'home' : 'away')}
+                        disabled={leftTimeouts >= 2}
+                        style={{
+                          flex: 1,
+                          padding: '10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: 'rgba(255,255,255,0.1)',
+                          color: 'var(--text)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '6px',
+                          cursor: leftTimeouts >= 2 ? 'not-allowed' : 'pointer',
+                          opacity: leftTimeouts >= 2 ? 0.5 : 1
+                        }}
+                      >
+                        TO Left
+                      </button>
+                      <button
+                        onClick={handleUndo}
+                        style={{
+                          padding: '10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Undo
+                      </button>
+                      <button
+                        onClick={() => handleTimeout(leftIsHome ? 'away' : 'home')}
+                        disabled={rightTimeouts >= 2}
+                        style={{
+                          flex: 1,
+                          padding: '10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: 'rgba(255,255,255,0.1)',
+                          color: 'var(--text)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '6px',
+                          cursor: rightTimeouts >= 2 ? 'not-allowed' : 'pointer',
+                          opacity: rightTimeouts >= 2 ? 0.5 : 1
+                        }}
+                      >
+                        TO Right
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Right Team Column */}
+            <div style={{
+              flex: '1 1 30%',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '8px',
+              background: 'rgba(15, 23, 42, 0.4)',
+              borderLeft: '1px solid rgba(255,255,255,0.1)',
+              overflow: 'auto'
+            }}>
+              <div style={{
+                background: rightTeam?.color || '#3b82f6',
+                color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff',
+                padding: '8px',
+                borderRadius: '6px',
+                textAlign: 'center',
+                fontWeight: 700,
+                fontSize: '14px',
+                marginBottom: '8px'
+              }}>
+                {rightTeam?.shortName || rightTeam?.name || 'Team B'}
+              </div>
+
+              {/* TO/SUB Counter */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                <div style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.1)',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ fontWeight: 600 }}>TO</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{rightTimeouts}</div>
+                </div>
+                <div style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.1)',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ fontWeight: 600 }}>SUB</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{rightSubstitutions}</div>
+                </div>
+              </div>
+
+              {/* Team Sanctions Button */}
+              <button
+                onClick={() => setRightTeamSanctionsExpanded(!rightTeamSanctionsExpanded)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: rightTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px'
+                }}
+              >
+                Team Sanctions {rightTeamSanctionsExpanded ? '▲' : '▼'}
+              </button>
+
+              {rightTeamSanctionsExpanded && (
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  marginBottom: '8px',
+                  fontSize: '11px'
+                }}>
+                  <button
+                    onClick={() => handleTeamSanction(leftIsHome ? 'away' : 'home', 'improper_request')}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      marginBottom: '4px',
+                      fontSize: '11px',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'var(--text)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Improper Request
+                  </button>
+                  <button
+                    onClick={() => handleTeamSanction(leftIsHome ? 'away' : 'home', 'delay_warning')}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      marginBottom: '4px',
+                      fontSize: '11px',
+                      background: 'rgba(234, 179, 8, 0.3)',
+                      color: '#fbbf24',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delay Warning
+                  </button>
+                  <button
+                    onClick={() => handleTeamSanction(leftIsHome ? 'away' : 'home', 'delay_penalty')}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      fontSize: '11px',
+                      background: 'rgba(239, 68, 68, 0.3)',
+                      color: '#ef4444',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delay Penalty
+                  </button>
+                </div>
+              )}
+
+              {/* Show Bench Button */}
+              <button
+                onClick={() => setRightTeamBenchExpanded(!rightTeamBenchExpanded)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: rightTeamBenchExpanded ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Show Bench {rightTeamBenchExpanded ? '▲' : '▼'}
+              </button>
+
+              {rightTeamBenchExpanded && (
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  marginTop: '4px',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>Bench Players:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {rightBenchPlayers.filter(p => p.role !== 'libero').map(p => (
+                      <span
+                        key={p.id}
+                        onClick={() => {
+                          setBenchPlayerActionMenu({
+                            team: leftIsHome ? 'away' : 'home',
+                            playerNumber: p.number,
+                            element: null,
+                            x: window.innerWidth / 2,
+                            y: window.innerHeight / 2
+                          })
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          background: 'rgba(255,255,255,0.1)',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        #{p.number}
+                      </span>
+                    ))}
+                  </div>
+                  {rightBenchPlayers.filter(p => p.role === 'libero').length > 0 && (
+                    <>
+                      <div style={{ fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: '#22c55e' }}>Libero:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {rightBenchPlayers.filter(p => p.role === 'libero').map(p => (
+                          <span
+                            key={p.id}
+                            style={{
+                              padding: '4px 8px',
+                              background: 'rgba(34, 197, 94, 0.3)',
+                              borderRadius: '4px',
+                              color: '#22c55e'
+                            }}
+                          >
+                            #{p.number}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+      <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: '118vh' } : {}}>
         <aside className="team-controls">
           <div className="team-info">
             <div
@@ -10767,7 +11718,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
         </aside>
       </div>
-
+      )}
 
       {/* Menu Modal - Keep for Options submenu */}
       {menuModal && (
@@ -11867,6 +12818,91 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     transition: 'left 0.2s'
                   }} />
                 </button>
+              </div>
+            </div>
+
+            {/* Display Mode Section */}
+            <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Display Mode</h3>
+
+              <div style={{
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '8px' }}>Screen Mode</div>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
+                  Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape.
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        if (mode === 'tablet' || mode === 'smartphone') {
+                          enterDisplayMode(mode)
+                        } else {
+                          if (mode === 'desktop') {
+                            exitDisplayMode()
+                          } else {
+                            setDisplayMode(mode)
+                            localStorage.setItem('displayMode', mode)
+                          }
+                        }
+                      }}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                        color: displayMode === mode ? '#fff' : 'var(--text)',
+                        border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}
+                    </button>
+                  ))}
+                </div>
+                {displayMode !== 'desktop' && displayMode !== 'auto' && (
+                  <div style={{ marginTop: '12px' }}>
+                    <button
+                      onClick={exitDisplayMode}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Exit {displayMode} mode
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div style={{
+                padding: '12px 16px',
+                background: 'rgba(59, 130, 246, 0.1)',
+                borderRadius: '8px',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.8)'
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: '4px' }}>Mode descriptions:</div>
+                <ul style={{ margin: '0', paddingLeft: '16px', lineHeight: '1.6' }}>
+                  <li><b>Desktop:</b> Full layout with court visualization</li>
+                  <li><b>Tablet:</b> Scaled-down layout optimized for 768-1024px screens</li>
+                  <li><b>Smartphone:</b> Compact 3-column layout without court, optimized for &lt;768px screens</li>
+                </ul>
               </div>
             </div>
 
