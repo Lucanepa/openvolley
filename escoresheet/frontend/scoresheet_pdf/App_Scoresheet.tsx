@@ -935,23 +935,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         : null;
       
       // Calculate duration (in minutes with single quote, only if set is finished)
-      // Use official starting time (match.scheduledAt) for set 1, set's own startTime for others
-      // If startTime is missing, use the first event timestamp as fallback
+      // Use confirmed set start time from the "Confirm start time for Set X" modal
+      // This ensures postponed matches use actual start time, not scheduled time
       let duration = '';
       if (isSetFinished && setInfo?.endTime) {
         let start: Date | null = null;
-        if (setNum === 1) {
-          // Set 1 uses official match start time if available, otherwise set's startTime
-          if (match?.scheduledAt) {
-            start = new Date(match.scheduledAt);
-          } else if (setInfo?.startTime) {
-            start = new Date(setInfo.startTime);
-          }
-        } else {
-          // Sets 2-5 use their recorded start time
-          if (setInfo?.startTime) {
-            start = new Date(setInfo.startTime);
-          }
+        // Always use the set's confirmed startTime (from "Confirm start time" modal)
+        if (setInfo?.startTime) {
+          start = new Date(setInfo.startTime);
         }
         
         // Fallback: if startTime is missing, use the first event timestamp for this set
@@ -1139,9 +1130,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const rowCount = 10;
   const sanctionsInBox = processedSanctions.slice(0, rowCount);
   const overflowSanctions = processedSanctions.slice(rowCount);
-  
-  // Calculate match start
-  const matchStart = match?.scheduledAt 
+
+  // Calculate match start - use Set 1's confirmed start time, not scheduled time
+  // This ensures postponed matches show the actual start time from "Confirm start time for Set 1" modal
+  const set1 = sets?.find(s => s.index === 1);
+  const matchStart = set1?.startTime
+    ? new Date(set1.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    : match?.scheduledAt
     ? new Date(match.scheduledAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
     : '';
   
@@ -1190,9 +1185,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const matchEndFinal = isMatchFinished && lastSet?.endTime
     ? new Date(lastSet.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
     : '';
-  const matchDuration = isMatchFinished && match?.scheduledAt && lastSet?.endTime
+  // Use Set 1's confirmed start time for match duration calculation
+  const matchDuration = isMatchFinished && set1?.startTime && lastSet?.endTime
     ? (() => {
-        const start = new Date(match.scheduledAt);
+        const start = new Date(set1.startTime);
         const end = new Date(lastSet.endTime);
         const durationMs = end.getTime() - start.getTime();
         const totalMinutes = Math.floor(durationMs / 60000);
