@@ -277,16 +277,16 @@ export const Results: React.FC<ResultsProps> = ({
                         {/* Total Row */}
                         <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamATimeouts !== null ? (r.teamATimeouts || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamATimeouts !== null ? (r.teamATimeouts || 0) : 0), 0) || 0}
                             </div>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamASubstitutions !== null ? (r.teamASubstitutions || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamASubstitutions !== null ? (r.teamASubstitutions || 0) : 0), 0) || 0}
                             </div>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamAWon !== null ? (r.teamAWon || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamAWon !== null ? (r.teamAWon || 0) : 0), 0) || 0}
                             </div>
                             <div className="text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamAPoints !== null ? (r.teamAPoints || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamAPoints !== null ? (r.teamAPoints || 0) : 0), 0) || 0}
                             </div>
                         </div>
                     </div>
@@ -361,16 +361,16 @@ export const Results: React.FC<ResultsProps> = ({
                         })}
                         <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBPoints !== null ? (r.teamBPoints || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamBPoints !== null ? (r.teamBPoints || 0) : 0), 0) || 0}
                             </div>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBWon !== null ? (r.teamBWon || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamBWon !== null ? (r.teamBWon || 0) : 0), 0) || 0}
                             </div>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBSubstitutions !== null ? (r.teamBSubstitutions || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamBSubstitutions !== null ? (r.teamBSubstitutions || 0) : 0), 0) || 0}
                             </div>
                             <div className="text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBTimeouts !== null ? (r.teamBTimeouts || 0) : 0), 0) || ''}
+                                {setResults.reduce((sum, r) => sum + (r.teamBTimeouts !== null ? (r.teamBTimeouts || 0) : 0), 0) || 0}
                             </div>
                         </div>
                     </div>
