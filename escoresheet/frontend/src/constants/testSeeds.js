@@ -44,14 +44,14 @@ export const TEST_REFEREE_SEED_DATA = [
     seedKey: 'test-referee-alpha',
     firstName: 'Claudia',
     lastName: 'Moser',
-    country: 'CH',
+    country: 'CHE',
     dob: '1982-04-19'
   },
   {
     seedKey: 'test-referee-bravo',
     firstName: 'Martin',
     lastName: 'Kunz',
-    country: 'CH',
+    country: 'CHE',
     dob: '1979-09-02'
   }
 ]
@@ -61,14 +61,14 @@ export const TEST_SCORER_SEED_DATA = [
     seedKey: 'test-scorer-alpha',
     firstName: 'Petra',
     lastName: 'Schneider',
-    country: 'CH',
+    country: 'CHE',
     dob: '1990-01-15'
   },
   {
     seedKey: 'test-scorer-bravo',
     firstName: 'Lukas',
     lastName: 'Baumann',
-    country: 'CH',
+    country: 'CHE',
     dob: '1988-06-27'
   }
 ]

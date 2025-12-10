@@ -6,7 +6,6 @@ interface ServiceRound {
   box: number;
   ticked: boolean;
   points: number | null;
-  rotation8: boolean;
   circled: boolean;
 }
 

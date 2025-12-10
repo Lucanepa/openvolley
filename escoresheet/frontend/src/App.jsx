@@ -1732,8 +1732,8 @@ export default function App() {
 
         const firstName = record.firstName || record.first_name || fetched?.first_name || template.fallback.firstName || ''
         const lastName = record.lastName || record.last_name || fetched?.last_name || template.fallback.lastName || ''
-        const country = record.country || fetched?.country || template.fallback.country || 'CH'
-        const dob = record.dob || fetched?.dob || template.fallback.dob || ''
+        const country = record.country || fetched?.country || template.fallback.country || 'CHE'
+        const dob = record.dob || fetched?.dob || template.fallback.dob || '01.01.1900'
 
         return {
           role: template.role,
@@ -1760,8 +1760,8 @@ export default function App() {
           ...entry,
           firstName: entry.firstName || fallback.firstName || '',
           lastName: entry.lastName || fallback.lastName || '',
-          country: entry.country || fallback.country || 'CH',
-          dob: entry.dob || fallback.dob || ''
+          country: entry.country || fallback.country || 'CHE',
+          dob: entry.dob || fallback.dob || '01.01.1900'
         }
       })
     }
@@ -2204,7 +2204,7 @@ export default function App() {
             seed_key: record.seedKey,
             first_name: record.firstName,
             last_name: record.lastName,
-            country: record.country || null,
+            country: record.country || 'CHE',
             dob: record.dob || null,
             test: true,
             created_at: createdAt
@@ -2227,7 +2227,7 @@ export default function App() {
             seed_key: record.seedKey,
             first_name: record.firstName,
             last_name: record.lastName,
-            country: record.country || null,
+            country: record.country || 'CHE',
             dob: record.dob || null,
             test: true,
             created_at: createdAt
@@ -2309,7 +2309,7 @@ export default function App() {
             seedKey: definition.seedKey,
             firstName: definition.firstName,
             lastName: definition.lastName,
-            country: definition.country,
+            country: definition.country || 'CHE',
             dob: definition.dob,
             test: true,
             createdAt: timestamp,
@@ -2323,7 +2323,7 @@ export default function App() {
           const definitionChanged =
             scorer.firstName !== definition.firstName ||
             scorer.lastName !== definition.lastName ||
-            scorer.country !== definition.country ||
+            scorer.country !== definition.country || 'CHE'
             scorer.dob !== definition.dob
 
           if (definitionChanged) {
@@ -2331,7 +2331,7 @@ export default function App() {
             await db.scorers.update(scorer.id, {
               firstName: definition.firstName,
               lastName: definition.lastName,
-              country: definition.country,
+              country: definition.country || 'CHE',
               dob: definition.dob,
               synced: false
             })
@@ -2339,7 +2339,7 @@ export default function App() {
               ...scorer,
               firstName: definition.firstName,
               lastName: definition.lastName,
-              country: definition.country,
+              country: definition.country || 'CHE',
               dob: definition.dob,
               synced: false
             }
@@ -2393,28 +2393,28 @@ export default function App() {
         role: '1st referee',
         firstName: firstRef?.firstName || 'Claudia',
         lastName: firstRef?.lastName || 'Moser',
-        country: firstRef?.country || 'CH',
+        country: firstRef?.country || 'CHE',
         dob: firstRef?.dob ? formatISODateToDisplay(firstRef.dob) : formatISODateToDisplay('1982-04-19')
       },
       {
         role: '2nd referee',
         firstName: secondRef?.firstName || 'Martin',
         lastName: secondRef?.lastName || 'Kunz',
-        country: secondRef?.country || 'CH',
+        country: secondRef?.country || 'CHE',
         dob: secondRef?.dob ? formatISODateToDisplay(secondRef.dob) : formatISODateToDisplay('1979-09-02')
       },
       {
         role: 'scorer',
         firstName: primaryScorer?.firstName || 'Petra',
         lastName: primaryScorer?.lastName || 'Schneider',
-        country: primaryScorer?.country || 'CH',
+        country: primaryScorer?.country || 'CHE',
         dob: primaryScorer?.dob ? formatISODateToDisplay(primaryScorer.dob) : formatISODateToDisplay('1990-01-15')
       },
       {
         role: 'assistant scorer',
         firstName: assistantScorer?.firstName || 'Lukas',
         lastName: assistantScorer?.lastName || 'Baumann',
-        country: assistantScorer?.country || 'CH',
+        country: assistantScorer?.country || 'CHE',
         dob: assistantScorer?.dob ? formatISODateToDisplay(assistantScorer.dob) : formatISODateToDisplay('1988-06-27')
       }
     ]
