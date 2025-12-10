@@ -193,6 +193,7 @@ export default function App() {
   }, [])
 
   // Screen size detection for display mode
+  // < 768px = smartphone, 768-1024px = tablet, > 1024px = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
@@ -200,9 +201,10 @@ export default function App() {
 
       if (width < 768) {
         detected = 'smartphone'
-      } else if (width < 1024) {
+      } else if (width <= 1024) {
         detected = 'tablet'
       }
+      // > 1024px = desktop (default)
 
       setDetectedDisplayMode(detected)
     }
