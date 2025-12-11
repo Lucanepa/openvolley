@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -61,6 +61,53 @@ export default function UploadRosterApp() {
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const fileInputRef = useRef(null)
+
+  // Wake lock refs and state
+  const wakeLockRef = useRef(null)
+  const noSleepVideoRef = useRef(null)
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    const enableNoSleep = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          console.log('[WakeLock] Screen wake lock acquired (UploadRoster)')
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] Screen wake lock released (UploadRoster)')
+          })
+        }
+      } catch (err) { console.log('[WakeLock] Native wake lock failed:', err.message) }
+      try {
+        if (!noSleepVideoRef.current) {
+          const video = document.createElement('video')
+          video.setAttribute('playsinline', '')
+          video.setAttribute('loop', '')
+          video.setAttribute('muted', '')
+          video.style.cssText = 'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0.01;pointer-events:none;'
+          video.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAAhmcmVlAAAACG1kYXQAAAAfAgAABQAJJMAAkMAAKQAAH0AAOMAAH0AAOAAAAB9GABtB'
+          document.body.appendChild(video)
+          noSleepVideoRef.current = video
+        }
+        await noSleepVideoRef.current.play()
+        console.log('[NoSleep] Video playing for keep-awake (UploadRoster)')
+      } catch (err) { console.log('[NoSleep] Video fallback failed:', err.message) }
+    }
+    const handleInteraction = async () => { await enableNoSleep() }
+    enableNoSleep()
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+    const handleVisibilityChange = async () => { if (document.visibilityState === 'visible') await enableNoSleep() }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => {}); wakeLockRef.current = null }
+      if (noSleepVideoRef.current) { noSleepVideoRef.current.pause(); noSleepVideoRef.current.remove(); noSleepVideoRef.current = null }
+    }
+  }, [])
 
 
   // Check if match exists and is in setup (not started or finished)
