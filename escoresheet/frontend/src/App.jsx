@@ -2895,14 +2895,19 @@ export default function App() {
       {/* Global Header */}
       <div style={{
         display: 'flex',
+        height: '40px',
+        minHeight: '40px',
+        maxHeight: '40px',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '12px 20px',
+        padding: '0 clamp(8px, 2vw, 20px)',
         background: 'rgba(0, 0, 0, 0.2)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         flexShrink: 0,
-        gap: '16px',
-        zIndex: 100
+        gap: 'clamp(8px, 1.5vw, 16px)',
+        zIndex: 100,
+        position: 'sticky',
+        top: 0
       }}>
         {/* Left: Connection Status */}
         <div style={{ flex: '0 0 auto' }}>
@@ -2954,26 +2959,38 @@ export default function App() {
           flex: '0 0 auto'
         }}>
           {/* Version */}
-          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+          <div className="header-version" style={{ 
+            fontSize: 'clamp(10px, 1.2vw, 12px)', 
+            color: 'rgba(255, 255, 255, 0.6)',
+            whiteSpace: 'nowrap'
+          }}>
             Version {__APP_VERSION__ || '1.0.0'}
           </div>
           
           {/* Fullscreen Button */}
           <button
+            className="header-fullscreen-btn"
             onClick={(e) => {
               e.stopPropagation()
               toggleFullscreen()
             }}
             style={{
-              padding: '8px 16px',
-              fontSize: '14px',
+              padding: '0 clamp(8px, 1.5vw, 16px)',
+              fontSize: 'clamp(10px, 1.2vw, 12px)',
               fontWeight: 600,
               background: 'rgba(255, 255, 255, 0.1)',
               color: '#fff',
               border: '1px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '6px',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              height: '12px',
+              minWidth: '60px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              whiteSpace: 'nowrap',
+              width: 'auto'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
@@ -2983,12 +3000,14 @@ export default function App() {
             }}
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
-            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+            <span className="fullscreen-btn-text" style={{ fontSize: 'clamp(10px, 1.2vw, 12px)' }}>
+              {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+            </span>
           </button>
         </div>
       </div>
 
-      <div className="container" style={{ flex: '1 1 auto', overflow: 'auto', width: 'auto' }}>
+      <div className="container" style={{ flex: '1 1 auto', overflow: 'hidden', width: 'auto', height: 'calc(100vh - 40px)', maxHeight: 'calc(100vh - 40px)' }}>
 
       {!matchId && matchStatus && (
         <div className="match-status-banner">
@@ -3020,8 +3039,8 @@ export default function App() {
           <div className="home-view">
             <div className="home-content">
               <h1 className="home-title" style={{ width: 'auto' }}>Openvolley eScoresheet Indoor</h1>
-              <div className="home-logo" style={{ width: '250px' }}>
-                <img src={favicon} alt="Openvolley" style={{ width: '250px'}} />
+              <div className="home-logo">
+                <img src={favicon} alt="Openvolley" />
               </div>
 
               <div className="home-match-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', maxWidth: '400px', margin: '0 auto', width: '100%', padding: '0 20px' }}>
