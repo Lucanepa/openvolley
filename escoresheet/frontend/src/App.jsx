@@ -3019,18 +3019,18 @@ export default function App() {
         ) : !matchId ? (
           <div className="home-view">
             <div className="home-content">
-              <h1 className="home-title" style={{ whiteSpace: 'nowrap' }}>Openvolley eScoresheet Indoor</h1>
-              <div className="home-logo" style={{ width: '200px' }}>
-                <img src={favicon} alt="Openvolley" style={{ width: '100%' }} />
+              <h1 className="home-title" style={{ width: 'auto' }}>Openvolley eScoresheet Indoor</h1>
+              <div className="home-logo" style={{ width: '250px' }}>
+                <img src={favicon} alt="Openvolley" style={{ width: '250px'}} />
               </div>
 
               <div className="home-match-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', maxWidth: '400px', margin: '0 auto', width: '100%', padding: '0 20px' }}>
                 {/* New Match Button with Collapsible Menu */}
-                <div style={{ width: '100%' }}>
+                <div style={{ width: '180px' }}>
                   <button
                     onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
                     style={{
-                      width: '100%',
+                      width: '180px',
                       padding: '16px 24px',
                       fontSize: '16px',
                       fontWeight: 600,
@@ -3074,8 +3074,8 @@ export default function App() {
                           createNewOfficialMatch()
                         }}
                         style={{
-                          width: '100%',
-                          padding: '12px 20px',
+                            width: '100%',
+                            padding: '12px 20px',
                           fontSize: '14px',
                           fontWeight: 600,
                           background: 'rgba(59, 130, 246, 0.1)',
@@ -3097,7 +3097,7 @@ export default function App() {
                         }}
                         disabled={testMatchLoading}
                         style={{
-                          width: '100%',
+                          width: '180px',
                           padding: '12px 20px',
                           fontSize: '14px',
                           fontWeight: 600,
@@ -3128,7 +3128,7 @@ export default function App() {
                   }}
                   disabled={!currentOfficialMatch && !currentTestMatch}
                   style={{
-                    width: '100%',
+                    width: '180px',
                     padding: '16px 24px',
                     fontSize: '16px',
                     fontWeight: 600,
@@ -3166,7 +3166,7 @@ export default function App() {
                   }}
                   disabled={!currentOfficialMatch && !currentTestMatch}
                   style={{
-                    width: '100%',
+                    width: '180px',
                     padding: '16px 24px',
                     fontSize: '16px',
                     fontWeight: 600,
@@ -3196,7 +3196,7 @@ export default function App() {
                 {/* Game PIN Display (if exists) */}
                 {currentOfficialMatch?.gamePin && (
                   <div style={{
-                    width: '100%',
+                    width: '180px',
                     marginTop: '8px',
                     padding: '12px 16px',
                     background: 'rgba(255, 255, 255, 0.05)',
@@ -3222,10 +3222,11 @@ export default function App() {
                     color: 'var(--text)',
                     border: '1px solid rgba(255, 255, 255, 0.2)',
                     borderRadius: '8px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    width: '180px',
                   }}
                 >
-                  Options
+                  Settings
                 </button>
               </div>
             </div>
@@ -3426,8 +3427,8 @@ export default function App() {
       {/* Home Options Modal */}
       {homeOptionsModal && (
         <Modal
-          title="Options"
           open={true}
+          title="Settings"
           onClose={() => setHomeOptionsModal(false)}
           width={500}
         >
@@ -3435,7 +3436,7 @@ export default function App() {
 
             {/* Match Options Section */}
             <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Match Options</h3>
+              
 
               {/* Check Accidental Rally Start Toggle */}
               <div style={{
@@ -3448,9 +3449,27 @@ export default function App() {
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Rally Start</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Ask for confirmation if "Start Rally" is pressed within {accidentalRallyStartDuration}s of awarding a point
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Rally Start</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title={`Ask for confirmation if "Start Rally" is pressed within ${accidentalRallyStartDuration}s of awarding a point`}
+                    >
+                      i
+                    </div>
                   </div>
                   {checkAccidentalRallyStart && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
@@ -3523,9 +3542,27 @@ export default function App() {
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Point Award</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Ask for confirmation if a point is awarded within {accidentalPointAwardDuration}s of starting the rally
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Point Award</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title={`Ask for confirmation if a point is awarded within ${accidentalPointAwardDuration}s of starting the rally`}
+                    >
+                      i
+                    </div>
                   </div>
                   {checkAccidentalPointAward && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
@@ -3598,9 +3635,27 @@ export default function App() {
                 marginBottom: '12px'
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Manage Captain on Court</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Automatically track which player acts as captain when team captain is not on court
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Manage Captain on Court</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Automatically track which player acts as captain when team captain is not on court"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -3649,9 +3704,27 @@ export default function App() {
                 marginBottom: '12px'
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Exit Confirmation</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Show confirmation modal when libero must exit after player rotation
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Exit Confirmation</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Show confirmation modal when libero must exit after player rotation"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -3697,9 +3770,27 @@ export default function App() {
                 marginBottom: '12px'
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Entry Suggestion</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Show suggestion modal to substitute libero for player rotating to back row
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Entry Suggestion</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Show suggestion modal to substitute libero for player rotating to back row"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -3745,9 +3836,27 @@ export default function App() {
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Set Interval Duration</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Duration of break between sets 2 and 3
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Set 2-3 Interval Duration</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Duration of break between sets 2 and 3"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
@@ -3774,13 +3883,13 @@ export default function App() {
                     -
                   </button>
                   <span style={{
-                    minWidth: '50px',
+                    minWidth: '80px',
                     textAlign: 'center',
                     fontFamily: 'monospace',
                     fontSize: '14px',
                     fontWeight: 600
                   }}>
-                    {Math.floor(setIntervalDuration / 60)}:{(setIntervalDuration % 60).toString().padStart(2, '0')}
+                    {Math.floor(setIntervalDuration / 60)}' {(setIntervalDuration % 60).toString().padStart(2, '0')}''
                   </span>
                   <button
                     onClick={() => {
@@ -3817,9 +3926,27 @@ export default function App() {
                 borderRadius: '8px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Keyboard Shortcuts</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Use keyboard keys to control scoring and actions (configure in Scoreboard)
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Keyboard Shortcuts</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Use keyboard keys to control scoring and actions (configure in Scoreboard)"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -3865,42 +3992,91 @@ export default function App() {
                 borderRadius: '8px',
                 marginBottom: '12px'
               }}>
-                <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '8px' }}>Screen Mode</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
-                  Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape.
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Mode</div>
+                  <div
+                    style={{
+                      position: 'relative',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'help'
+                    }}
+                    title="Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape."
+                  >
+                    i
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => {
-                        if (mode === 'tablet' || mode === 'smartphone') {
-                          enterDisplayMode(mode)
-                        } else {
-                          if (mode === 'desktop') {
-                            exitDisplayMode()
+                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => {
+                    const modeDescriptions = {
+                      desktop: 'Full layout with court visualization',
+                      tablet: 'Scaled-down layout optimized for 768-1024px screens',
+                      smartphone: 'Compact 3-column layout without court, optimized for <768px screens'
+                    }
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => {
+                          if (mode === 'tablet' || mode === 'smartphone') {
+                            enterDisplayMode(mode)
                           } else {
-                            setDisplayMode(mode)
-                            localStorage.setItem('displayMode', mode)
+                            if (mode === 'desktop') {
+                              exitDisplayMode()
+                            } else {
+                              setDisplayMode(mode)
+                              localStorage.setItem('displayMode', mode)
+                            }
                           }
-                        }
-                      }}
-                      style={{
-                        padding: '8px 16px',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
-                        color: displayMode === mode ? '#fff' : 'var(--text)',
-                        border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textTransform: 'capitalize',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      {mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}
-                    </button>
-                  ))}
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                          color: displayMode === mode ? '#fff' : 'var(--text)',
+                          border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          textTransform: 'capitalize',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span>{mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}</span>
+                        {modeDescriptions[mode] && (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.2)',
+                              color: displayMode === mode ? '#fff' : 'rgba(255, 255, 255, 0.7)',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              cursor: 'help'
+                            }}
+                            title={modeDescriptions[mode]}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            i
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
                 {displayMode !== 'desktop' && displayMode !== 'auto' && (
                   <div style={{ marginTop: '12px' }}>
@@ -3923,21 +4099,6 @@ export default function App() {
                 )}
               </div>
 
-              <div style={{
-                padding: '12px 16px',
-                background: 'rgba(59, 130, 246, 0.1)',
-                borderRadius: '8px',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.8)'
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: '4px' }}>Mode descriptions:</div>
-                <ul style={{ margin: '0', paddingLeft: '16px', lineHeight: '1.6' }}>
-                  <li><b>Desktop:</b> Full layout with court visualization</li>
-                  <li><b>Tablet:</b> Scaled-down layout optimized for 768-1024px screens</li>
-                  <li><b>Smartphone:</b> Compact 3-column layout without court, optimized for &lt;768px screens</li>
-                </ul>
-              </div>
 
               {/* Screen Always On Toggle */}
               <div style={{
@@ -3950,9 +4111,27 @@ export default function App() {
                 marginTop: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Screen Always On</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Prevent screen from sleeping during scoring
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Always On</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Prevent screen from sleeping during scoring"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -4060,23 +4239,6 @@ export default function App() {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
-              <button
-                onClick={() => setHomeOptionsModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Close
-              </button>
-            </div>
             
             <div style={{ 
               marginTop: '24px', 
