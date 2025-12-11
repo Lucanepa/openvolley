@@ -136,6 +136,82 @@ export default function App() {
     return saved === 'true' // default false
   })
 
+  // Wake lock refs and state
+  const wakeLockRef = useRef(null)
+  const noSleepVideoRef = useRef(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    const enableNoSleep = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          console.log('[WakeLock] Screen wake lock acquired (App)')
+          setWakeLockActive(true)
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] Screen wake lock released (App)')
+            if (!wakeLockRef.current) setWakeLockActive(false)
+          })
+        }
+      } catch (err) { console.log('[WakeLock] Native wake lock failed:', err.message) }
+      try {
+        if (!noSleepVideoRef.current) {
+          const video = document.createElement('video')
+          video.setAttribute('playsinline', '')
+          video.setAttribute('loop', '')
+          video.setAttribute('muted', '')
+          video.style.cssText = 'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0.01;pointer-events:none;'
+          video.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAAhmcmVlAAAACG1kYXQAAAAfAgAABQAJJMAAkMAAKQAAH0AAOMAAH0AAOAAAAB9GABtB'
+          document.body.appendChild(video)
+          noSleepVideoRef.current = video
+        }
+        await noSleepVideoRef.current.play()
+        console.log('[NoSleep] Video playing for keep-awake (App)')
+      } catch (err) { console.log('[NoSleep] Video fallback failed:', err.message) }
+    }
+    const handleInteraction = async () => { await enableNoSleep() }
+    enableNoSleep()
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+    const handleVisibilityChange = async () => { if (document.visibilityState === 'visible') await enableNoSleep() }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => {}); wakeLockRef.current = null }
+      if (noSleepVideoRef.current) { noSleepVideoRef.current.pause(); noSleepVideoRef.current.remove(); noSleepVideoRef.current = null }
+    }
+  }, [])
+
+  const reEnableWakeLock = useCallback(async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
+        wakeLockRef.current = await navigator.wakeLock.request('screen')
+        console.log('[WakeLock] Re-acquired wake lock (App)')
+        setWakeLockActive(true)
+        wakeLockRef.current.addEventListener('release', () => console.log('[WakeLock] Released (App)'))
+        return true
+      }
+    } catch (err) { console.log('[WakeLock] Failed to re-acquire:', err.message) }
+    return false
+  }, [])
+
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      if (wakeLockRef.current) { try { await wakeLockRef.current.release(); wakeLockRef.current = null } catch (e) {} }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled (App)')
+    } else {
+      const success = await reEnableWakeLock()
+      if (!success) setWakeLockActive(true)
+      console.log('[WakeLock] Manually enabled (App)')
+    }
+  }, [wakeLockActive, reEnableWakeLock])
+
   // Log backend configuration on mount
   useEffect(() => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL
@@ -3861,6 +3937,50 @@ export default function App() {
                   <li><b>Tablet:</b> Scaled-down layout optimized for 768-1024px screens</li>
                   <li><b>Smartphone:</b> Compact 3-column layout without court, optimized for &lt;768px screens</li>
                 </ul>
+              </div>
+
+              {/* Screen Always On Toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px',
+                marginTop: '12px'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Screen Always On</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                    Prevent screen from sleeping during scoring
+                  </div>
+                </div>
+                <button
+                  onClick={toggleWakeLock}
+                  style={{
+                    width: '52px',
+                    height: '28px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: wakeLockActive ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                    marginLeft: '16px'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '10px',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '4px',
+                    left: wakeLockActive ? '28px' : '4px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
               </div>
             </div>
 

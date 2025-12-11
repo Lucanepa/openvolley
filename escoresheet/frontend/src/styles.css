@@ -1867,12 +1867,333 @@
     .show-on-small {
       display: inline;
     }
-    
+
     .show-on-large {
       display: none;
     }
-    
+
     .hide-on-small {
       display: none;
+    }
+  }
+
+  /* ===========================================
+     RESPONSIVE STYLES FOR ALL COMPONENTS
+     < 768px = smartphone
+     768-1024px = tablet
+     > 1024px = desktop
+     =========================================== */
+
+  /* Global responsive adjustments */
+  @media (max-width: 1024px) {
+    /* Tablet and smaller */
+    .container {
+      padding: 16px 12px;
+    }
+
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 16px; }
+
+    /* Modal responsive */
+    .modal-content {
+      padding: 12px !important;
+    }
+
+    /* Buttons */
+    button {
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+
+    /* Form inputs */
+    input, select, textarea {
+      font-size: 14px;
+      padding: 8px 10px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    /* Smartphone */
+    .container {
+      padding: 12px 8px;
+    }
+
+    h1 { font-size: 20px; }
+    h2 { font-size: 16px; }
+    h3 { font-size: 14px; }
+
+    /* Buttons */
+    button {
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
+    /* Form inputs */
+    input, select, textarea {
+      font-size: 13px;
+      padding: 6px 8px;
+    }
+
+    /* Roster tables */
+    .roster-table th,
+    .roster-table td {
+      padding: 6px 4px;
+      font-size: 11px;
+    }
+
+    .roster-table {
+      font-size: 11px;
+    }
+
+    /* Coin toss responsive */
+    .coin-toss-number,
+    .coin-toss-name,
+    .coin-toss-dob {
+      padding: 4px !important;
+      font-size: 11px !important;
+    }
+  }
+
+  /* MatchSetup responsive */
+  @media (max-width: 1024px) {
+    .match-setup-grid {
+      grid-template-columns: 1fr !important;
+      gap: 12px !important;
+    }
+
+    .match-setup-section {
+      padding: 12px !important;
+    }
+
+    .match-setup-header {
+      flex-direction: column;
+      gap: 8px;
+      text-align: center;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .match-setup-section {
+      padding: 8px !important;
+    }
+
+    .match-setup-row {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+
+    .match-setup-input {
+      width: 100% !important;
+    }
+  }
+
+  /* MatchEnd responsive */
+  @media (max-width: 1024px) {
+    .match-end-grid {
+      grid-template-columns: 1fr !important;
+    }
+
+    .match-end-signatures {
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .signature-box {
+      width: 100% !important;
+      max-width: none !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .match-end-section {
+      padding: 12px !important;
+    }
+
+    .match-end-score {
+      font-size: 36px !important;
+    }
+
+    .match-end-team-name {
+      font-size: 14px !important;
+    }
+  }
+
+  /* SignaturePad responsive */
+  @media (max-width: 1024px) {
+    .signature-pad-container {
+      max-width: 100% !important;
+    }
+
+    .signature-pad canvas {
+      max-width: 100%;
+      height: auto !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .signature-pad-container {
+      padding: 8px !important;
+    }
+
+    .signature-pad-label {
+      font-size: 12px !important;
+    }
+  }
+
+  /* MenuList responsive */
+  @media (max-width: 1024px) {
+    .menu-list-dropdown {
+      min-width: 200px !important;
+    }
+
+    .menu-list-item {
+      padding: 10px 12px !important;
+      font-size: 13px !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .menu-list-dropdown {
+      min-width: 160px !important;
+      max-width: 90vw !important;
+    }
+
+    .menu-list-item {
+      padding: 8px 10px !important;
+      font-size: 12px !important;
+    }
+  }
+
+  /* RosterSetup responsive */
+  @media (max-width: 1024px) {
+    .roster-setup-grid {
+      grid-template-columns: 1fr !important;
+    }
+
+    .roster-setup-panel {
+      padding: 12px !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .roster-setup-panel {
+      padding: 8px !important;
+    }
+
+    .roster-setup-form {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+
+    .roster-setup-input {
+      width: 100% !important;
+    }
+  }
+
+  /* MatchEntry responsive */
+  @media (max-width: 1024px) {
+    .match-entry-grid {
+      grid-template-columns: 1fr !important;
+    }
+
+    .match-entry-section {
+      padding: 12px !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .match-entry-section {
+      padding: 8px !important;
+    }
+
+    .match-entry-row {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+  }
+
+  /* Coin Toss responsive */
+  @media (max-width: 1024px) {
+    .coin-toss-grid {
+      flex-direction: column !important;
+      gap: 16px !important;
+    }
+
+    .coin-toss-team {
+      width: 100% !important;
+    }
+
+    .coin-toss-signatures {
+      flex-direction: column;
+      gap: 16px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .coin-toss-section {
+      padding: 8px !important;
+    }
+
+    .coin-toss-option {
+      padding: 8px !important;
+      font-size: 12px !important;
+    }
+
+    .coin-toss-table th,
+    .coin-toss-table td {
+      padding: 4px !important;
+      font-size: 10px !important;
+    }
+  }
+
+  /* Flex utilities for responsive layouts */
+  @media (max-width: 768px) {
+    .flex-wrap-mobile {
+      flex-wrap: wrap !important;
+    }
+
+    .flex-col-mobile {
+      flex-direction: column !important;
+    }
+
+    .gap-sm-mobile {
+      gap: 8px !important;
+    }
+
+    .w-full-mobile {
+      width: 100% !important;
+    }
+
+    .text-center-mobile {
+      text-align: center !important;
+    }
+
+    .hidden-mobile {
+      display: none !important;
+    }
+  }
+
+  @media (min-width: 769px) {
+    .hidden-desktop {
+      display: none !important;
+    }
+  }
+
+  /* Touch-friendly tap targets */
+  @media (max-width: 768px) {
+    button,
+    .btn,
+    input[type="checkbox"],
+    input[type="radio"],
+    select {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    input[type="checkbox"],
+    input[type="radio"] {
+      width: 24px;
+      height: 24px;
     }
   }
