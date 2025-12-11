@@ -876,20 +876,23 @@ export default function App() {
       }
     }
     
-    // For home view (use currentOfficialMatch or matchStatus data)
-    if (!matchId && currentOfficialMatch) {
-      const homeTeamPromise = currentOfficialMatch.homeTeamId ? db.teams.get(currentOfficialMatch.homeTeamId) : Promise.resolve(null)
-      const awayTeamPromise = currentOfficialMatch.awayTeamId ? db.teams.get(currentOfficialMatch.awayTeamId) : Promise.resolve(null)
-      const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
-      return {
-        homeTeam,
-        awayTeam,
-        match: currentOfficialMatch
+    // For home view (use currentOfficialMatch or currentTestMatch)
+    if (!matchId) {
+      const matchToUse = currentOfficialMatch || currentTestMatch
+      if (matchToUse) {
+        const homeTeamPromise = matchToUse.homeTeamId ? db.teams.get(matchToUse.homeTeamId) : Promise.resolve(null)
+        const awayTeamPromise = matchToUse.awayTeamId ? db.teams.get(matchToUse.awayTeamId) : Promise.resolve(null)
+        const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
+        return {
+          homeTeam,
+          awayTeam,
+          match: matchToUse
+        }
       }
     }
     
     return null
-  }, [matchId, currentMatch, currentOfficialMatch])
+  }, [matchId, currentMatch, currentOfficialMatch, currentTestMatch])
 
   const restoredRef = useRef(false)
 
@@ -3070,7 +3073,7 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : !matchId && matchStatus && currentOfficialMatch ? (
+        ) : !matchId && matchStatus && (currentOfficialMatch || currentTestMatch) ? (
           <div style={{
             flex: '1 1 auto',
             display: 'flex',
@@ -3089,7 +3092,7 @@ export default function App() {
                 fontSize: 'clamp(12px, 1.2vw, 14px)',
                 fontWeight: 600,
                 background: 'rgba(255, 255, 255, 0.1)',
-                color: currentOfficialMatch.test ? '#fbbf24' : 'rgba(255, 255, 255, 0.9)',
+                color: (currentOfficialMatch || currentTestMatch)?.test ? '#fbbf24' : 'rgba(255, 255, 255, 0.9)',
                 border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: '6px',
                 cursor: 'pointer',
@@ -3107,7 +3110,10 @@ export default function App() {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
               }}
             >
-              <span>{currentOfficialMatch.test ? 'TEST MATCH' : `MATCH #${currentOfficialMatch.gameNumber || currentOfficialMatch.game_n || 'N/A'}`}</span>
+              <span>{(() => {
+                const match = currentOfficialMatch || currentTestMatch
+                return match?.test ? 'TEST MATCH' : `MATCH #${match?.gameNumber || match?.game_n || 'N/A'}`
+              })()}</span>
               <span style={{ fontSize: '10px', transition: 'transform 0.2s', transform: matchInfoMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                 ▼
               </span>
