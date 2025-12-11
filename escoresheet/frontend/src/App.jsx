@@ -862,21 +862,34 @@ export default function App() {
     }
   }, [currentMatch])
 
-  // Query for match info menu (teams for active match)
+  // Query for match info menu (teams for active match or home view)
   const matchInfoData = useLiveQuery(async () => {
-    if (!matchId || !currentMatch) return null
-    
-    const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
-    const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
-    
-    const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
-    
-    return {
-      homeTeam,
-      awayTeam,
-      match: currentMatch
+    // For active match
+    if (matchId && currentMatch) {
+      const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
+      const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
+      const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
+      return {
+        homeTeam,
+        awayTeam,
+        match: currentMatch
+      }
     }
-  }, [matchId, currentMatch])
+    
+    // For home view (use currentOfficialMatch or matchStatus data)
+    if (!matchId && currentOfficialMatch) {
+      const homeTeamPromise = currentOfficialMatch.homeTeamId ? db.teams.get(currentOfficialMatch.homeTeamId) : Promise.resolve(null)
+      const awayTeamPromise = currentOfficialMatch.awayTeamId ? db.teams.get(currentOfficialMatch.awayTeamId) : Promise.resolve(null)
+      const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
+      return {
+        homeTeam,
+        awayTeam,
+        match: currentOfficialMatch
+      }
+    }
+    
+    return null
+  }, [matchId, currentMatch, currentOfficialMatch])
 
   const restoredRef = useRef(false)
 
@@ -3009,7 +3022,7 @@ export default function App() {
               >
                 {/* Match Number */}
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
-                  Match {(currentMatch.gameNumber || currentMatch.game_n) ? (currentMatch.gameNumber || currentMatch.game_n) : 'Not set'}
+                  Match {(matchInfoData.match.gameNumber || matchInfoData.match.game_n) ? (matchInfoData.match.gameNumber || matchInfoData.match.game_n) : 'Not set'}
                 </div>
                 
                 {/* Teams */}
@@ -3021,19 +3034,20 @@ export default function App() {
                 
                 {/* Date and Time */}
                 <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>
-                  {currentMatch.scheduledAt ? (
+                  {matchInfoData.match.scheduledAt ? (
                     (() => {
                       try {
-                        const date = new Date(currentMatch.scheduledAt)
-                        return date.toLocaleDateString('en-US', { 
-                          year: 'numeric', 
-                          month: 'short', 
-                          day: 'numeric',
+                        const date = new Date(matchInfoData.match.scheduledAt)
+                        return date.toLocaleDateString('en-CH', { 
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
                           hour: '2-digit',
-                          minute: '2-digit'
+                          minute: '2-digit',
+                          hour12: false
                         })
                       } catch {
-                        return currentMatch.scheduledAt
+                        return matchInfoData.match.scheduledAt
                       }
                     })()
                   ) : 'Not set'}
@@ -3045,66 +3059,130 @@ export default function App() {
                   textAlign: 'center',
                   padding: '6px 12px',
                   borderRadius: '4px',
-                  background: currentMatch.test ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                  color: currentMatch.test ? '#fbbf24' : '#fff',
+                  background: matchInfoData.match.test ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                  color: matchInfoData.match.test ? '#fbbf24' : '#fff',
                   fontWeight: 600,
-                  fontFamily: currentMatch.test ? 'inherit' : 'monospace',
-                  letterSpacing: currentMatch.test ? '0.5px' : '2px'
+                  fontFamily: matchInfoData.match.test ? 'inherit' : 'monospace',
+                  letterSpacing: matchInfoData.match.test ? '0.5px' : '2px'
                 }}>
-                  {currentMatch.test ? 'TEST' : (currentMatch.gamePin || 'N/A')}
+                  {matchInfoData.match.test ? 'TEST' : (matchInfoData.match.gamePin || 'N/A')}
                 </div>
               </div>
             )}
           </div>
-        ) : !matchId && matchStatus ? (
+        ) : !matchId && matchStatus && currentOfficialMatch ? (
           <div style={{
             flex: '1 1 auto',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            gap: '12px',
-            flexWrap: 'wrap'
+            position: 'relative'
           }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: 'clamp(11px, 1.2vw, 13px)',
-              color: 'rgba(255, 255, 255, 0.9)'
-            }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Current Match:</span>
-              <span style={{ fontWeight: 600 }}>
-                {matchStatus.homeTeam?.name || 'Home'} vs {matchStatus.awayTeam?.name || 'Away'}
-              </span>
-              <span style={{ 
-                padding: '2px 8px',
-                borderRadius: '4px',
+            <button
+              data-match-info-menu
+              onClick={(e) => {
+                e.stopPropagation()
+                setMatchInfoMenuOpen(!matchInfoMenuOpen)
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: 'clamp(12px, 1.2vw, 14px)',
+                fontWeight: 600,
                 background: 'rgba(255, 255, 255, 0.1)',
-                fontSize: 'clamp(10px, 1vw, 12px)'
-              }}>
-                {matchStatus.status}
-              </span>
-            </div>
-            {currentOfficialMatch?.gamePin && (
-              <div style={{
+                color: currentOfficialMatch.test ? '#fbbf24' : 'rgba(255, 255, 255, 0.9)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                fontSize: 'clamp(11px, 1.2vw, 13px)',
-                padding: '4px 10px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                borderRadius: '6px',
-                border: '1px solid rgba(255, 255, 255, 0.2)'
-              }}>
-                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: 'clamp(10px, 1vw, 11px)' }}>Game PIN:</span>
-                <span style={{ 
-                  fontFamily: 'monospace', 
-                  fontWeight: 700, 
-                  letterSpacing: '1px',
-                  color: '#fff'
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              }}
+            >
+              <span>{currentOfficialMatch.test ? 'TEST MATCH' : `MATCH #${currentOfficialMatch.gameNumber || currentOfficialMatch.game_n || 'N/A'}`}</span>
+              <span style={{ fontSize: '10px', transition: 'transform 0.2s', transform: matchInfoMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                ▼
+              </span>
+            </button>
+            
+            {/* Collapsible Match Info Menu */}
+            {matchInfoMenuOpen && matchInfoData && (
+              <div
+                data-match-info-menu
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  marginTop: '8px',
+                  padding: '12px 16px',
+                  background: 'rgba(0, 0, 0, 0.95)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  minWidth: '280px',
+                  zIndex: 1000,
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}
+              >
+                {/* Match Number */}
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
+                  Match {(matchInfoData.match.gameNumber || matchInfoData.match.game_n) ? (matchInfoData.match.gameNumber || matchInfoData.match.game_n) : 'Not set'}
+                </div>
+                
+                {/* Teams */}
+                <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.9)', textAlign: 'center', fontWeight: 500 }}>
+                  {(matchInfoData.homeTeam?.name && matchInfoData.awayTeam?.name) 
+                    ? `${matchInfoData.homeTeam.name} - ${matchInfoData.awayTeam.name}`
+                    : 'Not set'}
+                </div>
+                
+                {/* Date and Time */}
+                <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>
+                  {matchInfoData.match.scheduledAt ? (
+                    (() => {
+                      try {
+                        const date = new Date(matchInfoData.match.scheduledAt)
+                        return date.toLocaleDateString('en-CH', { 
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false
+                        })
+                      } catch {
+                        return matchInfoData.match.scheduledAt
+                      }
+                    })()
+                  ) : 'Not set'}
+                </div>
+                
+                {/* PIN or TEST */}
+                <div style={{ 
+                  fontSize: '13px', 
+                  textAlign: 'center',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  background: matchInfoData.match.test ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                  color: matchInfoData.match.test ? '#fbbf24' : '#fff',
+                  fontWeight: 600,
+                  fontFamily: matchInfoData.match.test ? 'inherit' : 'monospace',
+                  letterSpacing: matchInfoData.match.test ? '0.5px' : '2px'
                 }}>
-                  {currentOfficialMatch.gamePin}
-                </span>
+                  {matchInfoData.match.test ? 'TEST' : (matchInfoData.match.gamePin || 'N/A')}
+                </div>
               </div>
             )}
           </div>
@@ -3183,7 +3261,8 @@ export default function App() {
         overflowY: 'auto',
         overflowX: 'hidden',
         width: '100%',
-        maxWidth: '100%'
+        maxWidth: '100%',
+        padding: '8px 12px'
       }}>
         {showMatchSetup && matchId ? (
           <MatchSetup matchId={matchId} onStart={continueMatch} onReturn={returnToMatch} onGoHome={goHome} showCoinToss={showCoinToss} onCoinTossClose={() => setShowCoinToss(false)} />
