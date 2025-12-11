@@ -1522,14 +1522,15 @@
 
   /* Home View */
   .home-view {
-    padding: 10px;
+    padding: clamp(4px, 1vh, 10px);
     width: 80%;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 88vh;
+    height: calc(100vh - 40px);
+    max-height: calc(100vh - 40px);
     overflow: hidden;
     box-sizing: border-box;
   }
@@ -1539,60 +1540,26 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 24px;
+    gap: clamp(4px, 1.5vh, 16px);
     width: 100%;
-    max-height: 80%;
+    padding: clamp(4px, 1vh, 12px) 0;
+    box-sizing: border-box;
     overflow: hidden;
-  }
-
-  /* Responsive scaling for smaller screens */
-  @media (max-height: 700px) {
-    .home-view {
-      padding: 16px;
-    }
-    .home-content {
-      gap: 16px;
-    }
-    .home-title {
-      font-size: 24px !important;
-    }
-    .home-logo {
-      width: 120px !important;
-    }
-  }
-
-  @media (max-height: 550px) {
-    .home-view {
-      padding: 8px;
-    }
-    .home-content {
-      gap: 8px;
-    }
-    .home-title {
-      font-size: 18px !important;
-    }
-    .home-logo {
-      width: 80px !important;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .home-view {
-      width: 90%;
-      padding: 16px;
-    }
+    flex: 1;
+    min-height: 0;
   }
 
   .home-title {
-    font-size: 32px;
+    font-size: clamp(18px, 4vh, 32px);
     font-weight: 700;
     margin: 0;
     text-align: center;
     color: var(--text);
+    line-height: 1.2;
   }
 
   .home-subtitle {
-    font-size: 24px;
+    font-size: clamp(16px, 3vh, 24px);
     font-weight: 600;
     margin: 0;
     text-align: center;
@@ -1603,7 +1570,35 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 8px 0;
+    margin: clamp(4px, 1vh, 8px) 0;
+    width: clamp(100px, 20vw, 250px);
+  }
+
+  .home-logo img {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+  }
+
+  /* Responsive header elements */
+  @media (max-width: 480px) {
+    .fullscreen-btn-text {
+      display: none !important;
+    }
+    
+    .header-fullscreen-btn {
+      padding: 0 clamp(6px, 1.2vw, 10px) !important;
+      height: 38px !important;
+      min-width: 60px !important;
+      width: auto !important;
+      position: relative;
+    }
+    
+    .header-fullscreen-btn::after {
+      content: '⛶';
+      font-size: clamp(12px, 1.5vw, 14px);
+      display: inline-block;
+    }
   }
 
   .home-match-section {
