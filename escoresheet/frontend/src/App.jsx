@@ -3222,7 +3222,7 @@ export default function App() {
               cursor: 'pointer',
               transition: 'all 0.2s',
               minHeight: '20px',
-              height: 'auto',
+              height: '80%',
               minWidth: '60px',
               display: 'flex',
               alignItems: 'center',
