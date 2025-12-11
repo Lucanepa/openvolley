@@ -97,6 +97,7 @@ export default function App() {
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [matchInfoMenuOpen, setMatchInfoMenuOpen] = useState(false)
   // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
@@ -860,6 +861,22 @@ export default function App() {
       status
     }
   }, [currentMatch])
+
+  // Query for match info menu (teams for active match)
+  const matchInfoData = useLiveQuery(async () => {
+    if (!matchId || !currentMatch) return null
+    
+    const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
+    const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
+    
+    const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
+    
+    return {
+      homeTeam,
+      awayTeam,
+      match: currentMatch
+    }
+  }, [matchId, currentMatch])
 
   const restoredRef = useRef(false)
 
@@ -2883,13 +2900,17 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', width: 'auto', display: 'flex', flexDirection: 'column' }} onClick={(e) => {
+    <div style={{ position: 'relative', height: '100vh', width: '100%', maxWidth: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
       if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
         setShowConnectionMenu(false)
       }
       if (showDebugMenu && !e.target.closest('[data-debug-menu]')) {
         setShowDebugMenu(null)
+      }
+      // Close match info menu when clicking outside
+      if (matchInfoMenuOpen && !e.target.closest('[data-match-info-menu]')) {
+        setMatchInfoMenuOpen(false)
       }
     }}>
       {/* Global Header */}
@@ -2919,37 +2940,175 @@ export default function App() {
           />
         </div>
 
-        {/* Center: Match Type (only show when match is active and not on home view) */}
-        {(showMatchSetup || matchId) && currentMatch && (
+        {/* Center: Collapsible Match Info Menu or Match Status Banner */}
+        {(showMatchSetup || matchId) && currentMatch ? (
           <div style={{
             flex: '1 1 auto',
             display: 'flex',
             justifyContent: 'center',
-            alignItems: 'center'
+            alignItems: 'center',
+            position: 'relative'
           }}>
-            {currentMatch.test ? (
-              <span style={{
-                fontSize: '14px',
-                fontWeight: 700,
-                color: '#fbbf24',
-                textTransform: 'uppercase',
-                letterSpacing: '1px'
-              }}>
-                TEST MATCH
-              </span>
-            ) : (
-              <span style={{
-                fontSize: '14px',
+            <button
+              data-match-info-menu
+              onClick={(e) => {
+                e.stopPropagation()
+                setMatchInfoMenuOpen(!matchInfoMenuOpen)
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: 'clamp(12px, 1.2vw, 14px)',
                 fontWeight: 600,
-                color: 'rgba(255, 255, 255, 0.7)',
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: currentMatch.test ? '#fbbf24' : 'rgba(255, 255, 255, 0.9)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
-              }}>
-                MATCH #{currentMatch.gameNumber || currentMatch.game_n || 'N/A'}
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              }}
+            >
+              <span>{currentMatch.test ? 'TEST MATCH' : `MATCH #${currentMatch.gameNumber || currentMatch.game_n || 'N/A'}`}</span>
+              <span style={{ fontSize: '10px', transition: 'transform 0.2s', transform: matchInfoMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                ▼
               </span>
+            </button>
+            
+            {/* Collapsible Match Info Menu */}
+            {matchInfoMenuOpen && matchInfoData && (
+              <div
+                data-match-info-menu
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  marginTop: '8px',
+                  padding: '12px 16px',
+                  background: 'rgba(0, 0, 0, 0.95)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  minWidth: '280px',
+                  zIndex: 1000,
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}
+              >
+                {/* Match Number */}
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
+                  Match {(currentMatch.gameNumber || currentMatch.game_n) ? (currentMatch.gameNumber || currentMatch.game_n) : 'Not set'}
+                </div>
+                
+                {/* Teams */}
+                <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.9)', textAlign: 'center', fontWeight: 500 }}>
+                  {(matchInfoData.homeTeam?.name && matchInfoData.awayTeam?.name) 
+                    ? `${matchInfoData.homeTeam.name} - ${matchInfoData.awayTeam.name}`
+                    : 'Not set'}
+                </div>
+                
+                {/* Date and Time */}
+                <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>
+                  {currentMatch.scheduledAt ? (
+                    (() => {
+                      try {
+                        const date = new Date(currentMatch.scheduledAt)
+                        return date.toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      } catch {
+                        return currentMatch.scheduledAt
+                      }
+                    })()
+                  ) : 'Not set'}
+                </div>
+                
+                {/* PIN or TEST */}
+                <div style={{ 
+                  fontSize: '13px', 
+                  textAlign: 'center',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  background: currentMatch.test ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                  color: currentMatch.test ? '#fbbf24' : '#fff',
+                  fontWeight: 600,
+                  fontFamily: currentMatch.test ? 'inherit' : 'monospace',
+                  letterSpacing: currentMatch.test ? '0.5px' : '2px'
+                }}>
+                  {currentMatch.test ? 'TEST' : (currentMatch.gamePin || 'N/A')}
+                </div>
+              </div>
             )}
           </div>
-        )}
+        ) : !matchId && matchStatus ? (
+          <div style={{
+            flex: '1 1 auto',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: 'clamp(11px, 1.2vw, 13px)',
+              color: 'rgba(255, 255, 255, 0.9)'
+            }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Current Match:</span>
+              <span style={{ fontWeight: 600 }}>
+                {matchStatus.homeTeam?.name || 'Home'} vs {matchStatus.awayTeam?.name || 'Away'}
+              </span>
+              <span style={{ 
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                fontSize: 'clamp(10px, 1vw, 12px)'
+              }}>
+                {matchStatus.status}
+              </span>
+            </div>
+            {currentOfficialMatch?.gamePin && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: 'clamp(11px, 1.2vw, 13px)',
+                padding: '4px 10px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '6px',
+                border: '1px solid rgba(255, 255, 255, 0.2)'
+              }}>
+                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: 'clamp(10px, 1vw, 11px)' }}>Game PIN:</span>
+                <span style={{ 
+                  fontFamily: 'monospace', 
+                  fontWeight: 700, 
+                  letterSpacing: '1px',
+                  color: '#fff'
+                }}>
+                  {currentOfficialMatch.gamePin}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {/* Right: Version and Fullscreen */}
         <div style={{
@@ -2984,7 +3143,8 @@ export default function App() {
               borderRadius: '6px',
               cursor: 'pointer',
               transition: 'all 0.2s',
-              height: '12px',
+              minHeight: '20px',
+              height: 'auto',
               minWidth: '60px',
               display: 'flex',
               alignItems: 'center',
@@ -3007,21 +3167,24 @@ export default function App() {
         </div>
       </div>
 
-      <div className="container" style={{ flex: '1 1 auto', overflow: 'hidden', width: 'auto', height: 'calc(100vh - 40px)', maxHeight: 'calc(100vh - 40px)' }}>
-
-      {!matchId && matchStatus && (
-        <div className="match-status-banner">
-          <div className="match-status-content">
-            <span className="match-status-label">Current Match:</span>
-            <span className="match-status-teams">
-              {matchStatus.homeTeam?.name || 'Home'} vs {matchStatus.awayTeam?.name || 'Away'}
-            </span>
-            <span className="match-status-value">{matchStatus.status}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="panel">
+      <div className="container" style={{ 
+        flex: '1 1 0', 
+        minHeight: 0,
+        overflow: 'hidden', 
+        width: '100%', 
+        maxWidth: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative'
+      }}>
+      <div className="panel" style={{
+        flex: '1 1 auto',
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        width: '100%',
+        maxWidth: '100%'
+      }}>
         {showMatchSetup && matchId ? (
           <MatchSetup matchId={matchId} onStart={continueMatch} onReturn={returnToMatch} onGoHome={goHome} showCoinToss={showCoinToss} onCoinTossClose={() => setShowCoinToss(false)} />
         ) : showMatchEnd && matchId ? (
@@ -3116,7 +3279,7 @@ export default function App() {
                         }}
                         disabled={testMatchLoading}
                         style={{
-                          width: '180px',
+                          width: '100%',
                           padding: '12px 20px',
                           fontSize: '14px',
                           fontWeight: 600,

@@ -23,13 +23,13 @@ if (existsSync(certPath) && existsSync(keyPath)) {
   process.exit(0)
 }
 
-  try {
-    // Generate self-signed certificate using OpenSSL
-    // Valid for 365 days, for localhost, escoresheet.local, and 127.0.0.1
-    const command = `openssl req -x509 -newkey rsa:4096 -nodes -keyout "${keyPath}" -out "${certPath}" -days 365 -subj "/C=CH/ST=State/L=City/O=eScoresheet/CN=escoresheet.local" -addext "subjectAltName=DNS:localhost,DNS:*.localhost,DNS:escoresheet.local,DNS:*.escoresheet.local,IP:127.0.0.1,IP:::1"`
-    
-    execSync(command, { stdio: 'inherit' })
+try {
+  // Generate self-signed certificate using OpenSSL
+  // Valid for 365 days, for localhost, escoresheet.local, and 127.0.0.1
+  const command = `openssl req -x509 -newkey rsa:4096 -nodes -keyout "${keyPath}" -out "${certPath}" -days 365 -subj "/C=CH/ST=State/L=City/O=eScoresheet/CN=escoresheet.local" -addext "subjectAltName=DNS:localhost,DNS:*.localhost,DNS:escoresheet.local,DNS:*.escoresheet.local,IP:127.0.0.1,IP:::1"`
   
+  execSync(command, { stdio: 'inherit' })
+
   console.log('\n✅ Certificates generated successfully!')
   console.log(`   Certificate: ${certPath}`)
   console.log(`   Private Key: ${keyPath}\n`)
