@@ -8351,13 +8351,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       )}
 
       {/* Smartphone Mode Layout */}
-      {activeDisplayMode === 'smartphone' ? (
+      {activeDisplayMode === 'smartphone' ? (() => {
+        // Calculate timeout and substitution counts for current set
+        const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
+        const currentRightTeamKey = leftIsHome ? 'away' : 'home'
+        const currentSetIndex = data?.set?.index || 1
+
+        const leftTimeouts = (data?.events || []).filter(e =>
+          e.type === 'timeout' && e.setIndex === currentSetIndex && e.payload?.team === currentLeftTeamKey
+        ).length
+
+        const rightTimeouts = (data?.events || []).filter(e =>
+          e.type === 'timeout' && e.setIndex === currentSetIndex && e.payload?.team === currentRightTeamKey
+        ).length
+
+        const leftSubstitutions = (data?.events || []).filter(e =>
+          e.type === 'substitution' && e.setIndex === currentSetIndex && e.payload?.team === currentLeftTeamKey
+        ).length
+
+        const rightSubstitutions = (data?.events || []).filter(e =>
+          e.type === 'substitution' && e.setIndex === currentSetIndex && e.payload?.team === currentRightTeamKey
+        ).length
+
+        return (
         <div className="smartphone-layout" style={{
           display: 'flex',
           flexDirection: 'column',
           height: 'calc(100vh - 60px)',
+          width: '100vw',
+          maxWidth: '100%',
           background: 'var(--bg)',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          boxSizing: 'border-box'
         }}>
           {/* Header Row: Menu, Time, Scoresheet */}
           <div style={{
@@ -8422,7 +8447,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{
             display: 'flex',
             flex: 1,
-            overflow: 'hidden'
+            width: '100%',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            boxSizing: 'border-box'
           }}>
             {/* Left Team Column */}
             <div style={{
@@ -8432,7 +8460,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               padding: '8px',
               background: 'rgba(15, 23, 42, 0.4)',
               borderRight: '1px solid rgba(255,255,255,0.1)',
-              overflow: 'auto'
+              overflow: 'auto',
+              boxSizing: 'border-box',
+              minWidth: 0
             }}>
               <div style={{
                 background: leftTeam?.color || '#ef4444',
@@ -8632,7 +8662,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               flexDirection: 'column',
               padding: '8px',
-              overflow: 'auto'
+              overflow: 'auto',
+              boxSizing: 'border-box',
+              minWidth: 0,
+              alignItems: 'center',
+              justifyContent: 'flex-start'
             }}>
               {/* Set Counter */}
               <div style={{
@@ -8949,7 +8983,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               padding: '8px',
               background: 'rgba(15, 23, 42, 0.4)',
               borderLeft: '1px solid rgba(255,255,255,0.1)',
-              overflow: 'auto'
+              overflow: 'auto',
+              boxSizing: 'border-box',
+              minWidth: 0
             }}>
               <div style={{
                 background: rightTeam?.color || '#3b82f6',
@@ -9143,7 +9179,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
         </div>
-      ) : (
+        )
+      })() : (
       <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: '118vh' } : {}}>
         <aside className="team-controls">
           <div className="team-info">
