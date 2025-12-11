@@ -380,21 +380,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [matchId])
 
   // Screen size detection for display mode suggestions
-  // < 768px = smartphone, 768-1024px = tablet, > 1024px = desktop
+  // Improved detection: check both screen size and touch capability
+  // < 600px + touch = smartphone, 600-900px + touch = tablet, > 900px or no touch = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
+      const height = window.innerHeight
+      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
       let detected = 'desktop'
       let suggestion = null
 
-      if (width < 768) {
+      // Smartphone: narrow screen (<= 600px) with touch, or very narrow (<= 480px) even without touch
+      if ((width <= 600 && hasTouch) || width <= 480) {
         detected = 'smartphone'
         suggestion = 'smartphone'
-      } else if (width <= 1024) {
+      }
+      // Tablet: medium screen (600-900px) with touch
+      else if (width <= 900 && hasTouch) {
         detected = 'tablet'
         suggestion = 'tablet'
       }
-      // > 1024px = desktop (default)
+      // Desktop: > 900px OR no touch capability
+      // This ensures laptops are always desktop even if screen is narrower
 
       setDetectedDisplayMode(detected)
 
@@ -8373,31 +8380,54 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           e.type === 'substitution' && e.setIndex === currentSetIndex && e.payload?.team === currentRightTeamKey
         ).length
 
+        // Get current lineups for left and right teams
+        const leftTeamLineupState = getTeamLineupState(currentLeftTeamKey)
+        const rightTeamLineupState = getTeamLineupState(currentRightTeamKey)
+
+        const leftLineup = leftTeamLineupState.currentLineup ?
+          Object.entries(leftTeamLineupState.currentLineup).map(([position, number]) => ({ position, number })) :
+          []
+
+        const rightLineup = rightTeamLineupState.currentLineup ?
+          Object.entries(rightTeamLineupState.currentLineup).map(([position, number]) => ({ position, number })) :
+          []
+
+        // Determine who is serving
+        const leftServes = data?.set?.servingTeam === currentLeftTeamKey
+        const rightServes = data?.set?.servingTeam === currentRightTeamKey
+
+        // Get bench players for left and right teams
+        const leftBenchPlayers = leftTeamBench.benchPlayers || []
+        const rightBenchPlayers = rightTeamBench.benchPlayers || []
+
         return (
         <div className="smartphone-layout" style={{
           display: 'flex',
           flexDirection: 'column',
-          height: 'calc(100vh - 60px)',
-          width: '100vw',
-          maxWidth: '100%',
+          height: 'calc(100vh - 40px)',
+          width: '100%',
           background: 'var(--bg)',
           overflow: 'hidden',
-          boxSizing: 'border-box'
+          position: 'relative'
         }}>
-          {/* Header Row: Menu, Time, Scoresheet */}
+          {/* Fixed Header: Menu and Scoresheet buttons */}
           <div style={{
+            position: 'sticky',
+            top: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '8px 12px',
-            background: 'rgba(15, 23, 42, 0.8)',
-            borderBottom: '1px solid rgba(255,255,255,0.1)'
+            background: 'rgba(15, 23, 42, 0.95)',
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            zIndex: 10,
+            flexShrink: 0
           }}>
             <button
               onClick={() => setMenuModal(true)}
               style={{
                 padding: '8px 12px',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: 600,
                 background: '#22c55e',
                 color: '#000',
@@ -8408,9 +8438,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             >
               Menu
             </button>
-            <span style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'monospace' }}>
-              {formatTimestamp(now)}
-            </span>
+
+            {/* Set Counter - Center */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              fontSize: '16px',
+              fontWeight: 700
+            }}>
+              <span style={{ color: leftTeam?.color || '#ef4444' }}>
+                {setScore.left}
+              </span>
+              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>SETS</span>
+              <span style={{ color: rightTeam?.color || '#3b82f6' }}>
+                {setScore.right}
+              </span>
+            </div>
+
             <button
               onClick={async () => {
                 const match = data?.match
@@ -8430,7 +8475,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}
               style={{
                 padding: '8px 12px',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: 600,
                 background: '#22c55e',
                 color: '#000',
@@ -8439,7 +8484,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 cursor: 'pointer'
               }}
             >
-              Scoresheet
+              Sheet
             </button>
           </div>
 
@@ -8447,22 +8492,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{
             display: 'flex',
             flex: 1,
-            width: '100%',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            boxSizing: 'border-box'
+            minHeight: 0,
+            overflow: 'hidden'
           }}>
             {/* Left Team Column */}
             <div style={{
-              flex: '1 1 30%',
+              flex: '0 0 30%',
+              maxWidth: '30%',
               display: 'flex',
               flexDirection: 'column',
               padding: '8px',
               background: 'rgba(15, 23, 42, 0.4)',
               borderRight: '1px solid rgba(255,255,255,0.1)',
-              overflow: 'auto',
-              boxSizing: 'border-box',
-              minWidth: 0
+              overflow: 'auto'
             }}>
               <div style={{
                 background: leftTeam?.color || '#ef4444',
@@ -8658,48 +8700,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
             {/* Center Column */}
             <div style={{
-              flex: '1 1 40%',
+              flex: '0 0 40%',
+              maxWidth: '40%',
               display: 'flex',
               flexDirection: 'column',
               padding: '8px',
               overflow: 'auto',
-              boxSizing: 'border-box',
-              minWidth: 0,
-              alignItems: 'center',
-              justifyContent: 'flex-start'
+              alignItems: 'center'
             }}>
-              {/* Set Counter */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: '16px',
-                marginBottom: '8px'
-              }}>
-                <span style={{
-                  fontSize: '24px',
-                  fontWeight: 700,
-                  color: leftTeam?.color || '#ef4444'
-                }}>
-                  {leftIsHome ? homeSetsWon : awaySetsWon}
-                </span>
-                <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>SETS</span>
-                <span style={{
-                  fontSize: '24px',
-                  fontWeight: 700,
-                  color: rightTeam?.color || '#3b82f6'
-                }}>
-                  {leftIsHome ? awaySetsWon : homeSetsWon}
-                </span>
-              </div>
-
               {/* Score Counter */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
                 gap: '24px',
-                marginBottom: '12px'
+                marginBottom: '12px',
+                width: '100%'
               }}>
                 <span style={{
                   fontSize: '48px',
@@ -8723,7 +8739,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 display: 'flex',
                 gap: '8px',
                 marginBottom: '12px',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                width: '100%',
+                flexWrap: 'wrap'
               }}>
                 {/* Left Team Positions */}
                 <div style={{
@@ -8977,15 +8995,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
             {/* Right Team Column */}
             <div style={{
-              flex: '1 1 30%',
+              flex: '0 0 30%',
+              maxWidth: '30%',
               display: 'flex',
               flexDirection: 'column',
               padding: '8px',
               background: 'rgba(15, 23, 42, 0.4)',
               borderLeft: '1px solid rgba(255,255,255,0.1)',
-              overflow: 'auto',
-              boxSizing: 'border-box',
-              minWidth: 0
+              overflow: 'auto'
             }}>
               <div style={{
                 background: rightTeam?.color || '#3b82f6',
