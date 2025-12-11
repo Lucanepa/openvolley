@@ -56,7 +56,7 @@ export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
         {/* N.of the player Column */}
         <div className="flex flex-col flex-1">
           <div className="border-b border-black p-1 font-bold text-[9px] py-0.5 shrink-0" style={{height:'0.5cm'}}>
-            N.of the player
+            Player N.
           </div>
           {/* Score sub-header */}
           <div className="border-b border-black p-1 font-bold text-[9px] py-0.5 shrink-0" style={{height:'1cm'}}>
