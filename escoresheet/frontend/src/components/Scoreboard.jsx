@@ -12399,9 +12399,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Rally Start</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Ask for confirmation if "Start Rally" is pressed within {accidentalRallyStartDuration}s of awarding a point
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Rally Start</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title={`Ask for confirmation if "Start Rally" is pressed within ${accidentalRallyStartDuration}s of awarding a point`}
+                    >
+                      i
+                    </div>
                   </div>
                   {checkAccidentalRallyStart && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
@@ -12474,9 +12492,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Check Accidental Point Award</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Ask for confirmation if a point is awarded within {accidentalPointAwardDuration}s of starting the rally
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Point Award</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title={`Ask for confirmation if a point is awarded within ${accidentalPointAwardDuration}s of starting the rally`}
+                    >
+                      i
+                    </div>
                   </div>
                   {checkAccidentalPointAward && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
@@ -12549,9 +12585,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Manage Captain on Court</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Automatically track which player acts as captain when team captain is not on court
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Manage Captain on Court</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Automatically track which player acts as captain when team captain is not on court"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -12597,9 +12651,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Set Interval Duration</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Duration of interval between sets (default 3 minutes)
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Set Interval Duration</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Duration of interval between sets (default 3 minutes)"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
@@ -12627,12 +12699,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     −
                   </button>
                   <div style={{
-                    minWidth: '60px',
+                    minWidth: '80px',
                     textAlign: 'center',
                     fontSize: '14px',
                     fontWeight: 600
                   }}>
-                    {Math.floor(setIntervalDuration / 60)}:{String(setIntervalDuration % 60).padStart(2, '0')}
+                    {Math.floor(setIntervalDuration / 60)}' {String(setIntervalDuration % 60).padStart(2, '0')}''
                   </div>
                   <button
                     onClick={() => {
@@ -12671,9 +12743,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Must Exit Confirmation</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Show modal when libero must exit due to rotation to front row
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Must Exit Confirmation</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Show modal when libero must exit due to rotation to front row"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -12719,9 +12809,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Libero Entry Suggestion</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Show suggestion modal to substitute libero for player rotating to back row
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Entry Suggestion</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Show suggestion modal to substitute libero for player rotating to back row"
+                    >
+                      i
+                    </div>
                   </div>
                 </div>
                 <button
@@ -12767,9 +12875,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 marginBottom: '12px'
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Keyboard Shortcuts</div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-                    Use keyboard keys to control scoring and actions
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Keyboard Shortcuts</div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'help'
+                      }}
+                      title="Use keyboard keys to control scoring and actions"
+                    >
+                      i
+                    </div>
                   </div>
                   {keybindingsEnabled && (
                     <button
@@ -12833,42 +12959,91 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 borderRadius: '8px',
                 marginBottom: '12px'
               }}>
-                <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '8px' }}>Screen Mode</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
-                  Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape.
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Mode</div>
+                  <div
+                    style={{
+                      position: 'relative',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'help'
+                    }}
+                    title="Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape."
+                  >
+                    i
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => {
-                        if (mode === 'tablet' || mode === 'smartphone') {
-                          enterDisplayMode(mode)
-                        } else {
-                          if (mode === 'desktop') {
-                            exitDisplayMode()
+                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => {
+                    const modeDescriptions = {
+                      desktop: 'Full layout with court visualization',
+                      tablet: 'Scaled-down layout optimized for 768-1024px screens',
+                      smartphone: 'Compact 3-column layout without court, optimized for <768px screens'
+                    }
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => {
+                          if (mode === 'tablet' || mode === 'smartphone') {
+                            enterDisplayMode(mode)
                           } else {
-                            setDisplayMode(mode)
-                            localStorage.setItem('displayMode', mode)
+                            if (mode === 'desktop') {
+                              exitDisplayMode()
+                            } else {
+                              setDisplayMode(mode)
+                              localStorage.setItem('displayMode', mode)
+                            }
                           }
-                        }
-                      }}
-                      style={{
-                        padding: '8px 16px',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
-                        color: displayMode === mode ? '#fff' : 'var(--text)',
-                        border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textTransform: 'capitalize',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      {mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}
-                    </button>
-                  ))}
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                          color: displayMode === mode ? '#fff' : 'var(--text)',
+                          border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          textTransform: 'capitalize',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span>{mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}</span>
+                        {modeDescriptions[mode] && (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.2)',
+                              color: displayMode === mode ? '#fff' : 'rgba(255, 255, 255, 0.7)',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              cursor: 'help'
+                            }}
+                            title={modeDescriptions[mode]}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            i
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
                 {displayMode !== 'desktop' && displayMode !== 'auto' && (
                   <div style={{ marginTop: '12px' }}>
@@ -12891,21 +13066,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 )}
               </div>
 
-              <div style={{
-                padding: '12px 16px',
-                background: 'rgba(59, 130, 246, 0.1)',
-                borderRadius: '8px',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.8)'
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: '4px' }}>Mode descriptions:</div>
-                <ul style={{ margin: '0', paddingLeft: '16px', lineHeight: '1.6' }}>
-                  <li><b>Desktop:</b> Full layout with court visualization</li>
-                  <li><b>Tablet:</b> Scaled-down layout optimized for 768-1024px screens</li>
-                  <li><b>Smartphone:</b> Compact 3-column layout without court, optimized for &lt;768px screens</li>
-                </ul>
-              </div>
             </div>
 
             <div style={{ marginBottom: '24px' }}>
