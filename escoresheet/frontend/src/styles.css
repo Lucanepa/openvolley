@@ -236,7 +236,7 @@
   gap: 12px; 
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow: auto;
   box-sizing: border-box;
   min-width: 0;
 }
@@ -1531,7 +1531,7 @@
     justify-content: center;
     height: auto;
     max-height: calc(90vh - 40px);
-    overflow: hidden;
+    overflow: auto;
     box-sizing: border-box;
   }
 
@@ -1542,7 +1542,7 @@
     justify-content: center;
     width: auto;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: auto;
     flex: 1;
     min-height: 0;
   }
@@ -1588,8 +1588,8 @@
     
     .header-fullscreen-btn {
       padding: 0 clamp(6px, 1.2vw, 10px) !important;
-      height: 38px !important;
-      min-width: 60px !important;
+      height: auto !important;
+      min-width: auto !important;
       width: auto !important;
       position: relative;
     }

@@ -2956,7 +2956,7 @@ export default function App() {
 
       <div className="container" style={{ 
         minHeight: 0,
-        overflow: 'hidden', 
+        overflow: 'auto', 
         width: 'auto', 
         height: 'auto',
         maxWidth: 'calc(100% - 40px)',

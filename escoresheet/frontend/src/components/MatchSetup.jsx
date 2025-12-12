@@ -3636,20 +3636,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 4, marginTop: 8 }}
+              style={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', rowGap: 4, marginTop: 8 }}
             >
               <span>Date:</span>
-              <span>{formatDisplayDate(date) || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || 'Not set'}</span>
               <span>Time:</span>
-              <span>{formatDisplayTime(time) || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayTime(time) || 'Not set'}</span>
               <span>City:</span>
-              <span>{city || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={city}>{city || 'Not set'}</span>
               <span>Hall:</span>
-              <span>{hall || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hall}>{hall || 'Not set'}</span>
               <span>Game #:</span>
-              <span>{gameN || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gameN || 'Not set'}</span>
               <span>League:</span>
-              <span>{league || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={league}>{league || 'Not set'}</span>
             </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button></div>
@@ -3662,15 +3662,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <h3 style={{ margin: 0 }}>Match officials</h3>
               </div>
             </div>
-            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 4, marginTop: 8 }}>
-              <span>1st referee:</span>
-              <span>{formatOfficial(ref1Last, ref1First)}</span>
-              <span>2nd referee:</span>
-              <span>{formatOfficial(ref2Last, ref2First)}</span>
+            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', rowGap: 4, marginTop: 8 }}>
+              <span>1st ref:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
+              <span>2nd ref:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref2Last, ref2First)}>{formatOfficial(ref2Last, ref2First)}</span>
               <span>Scorer:</span>
-              <span>{formatOfficial(scorerLast, scorerFirst)}</span>
-              <span>Ass. Scorer:</span>
-              <span>{formatOfficial(asstLast, asstFirst)}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(scorerLast, scorerFirst)}>{formatOfficial(scorerLast, scorerFirst)}</span>
+              <span>Ass. Sc:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(asstLast, asstFirst)}>{formatOfficial(asstLast, asstFirst)}</span>
             </div>
             <ConnectionBanner
               team="referee"
@@ -3805,13 +3805,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             // /> */}
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
+              style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
             >
               <span>Players:</span>
               <span>{homeCounts.players}</span>
-              <span>o/w Libero(s):</span>
+              <span>Libero(s):</span>
               <span>{homeCounts.liberos}</span>
-              <span>Bench staff:</span>
+              <span>Bench:</span>
               <span>{homeCounts.bench}</span>
             </div>
           </div>
@@ -3941,13 +3941,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             />*/}
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 4, marginTop: 12 }}
+              style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
             >
               <span>Players:</span>
               <span>{awayCounts.players}</span>
-              <span>o/w Libero(s):</span>
+              <span>Libero(s):</span>
               <span>{awayCounts.liberos}</span>
-              <span>Bench staff:</span>
+              <span>Bench:</span>
               <span>{awayCounts.bench}</span>
             </div>
           </div>
