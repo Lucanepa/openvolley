@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ConnectionStatus from './ConnectionStatus'
 import changelog from '../CHANGELOG'
 
@@ -18,8 +18,103 @@ export default function MainHeader({
   toggleFullscreen
 }) {
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
+  const [editingSize, setEditingSize] = useState({ width: '', height: '' })
+  const [isEditing, setIsEditing] = useState(false)
   // Use changelog as source of truth (first entry = latest version)
   const currentVersion = changelog[0]?.version || '1.0.0'
+
+  // Track viewport dimensions
+  useEffect(() => {
+    const updateViewportSize = () => {
+      const newSize = {
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+      setViewportSize(newSize)
+      // Update editing values if not currently editing
+      if (!isEditing) {
+        setEditingSize({
+          width: newSize.width.toString(),
+          height: newSize.height.toString()
+        })
+      }
+    }
+
+    // Set initial size
+    const initialSize = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    }
+    setViewportSize(initialSize)
+    setEditingSize({
+      width: initialSize.width.toString(),
+      height: initialSize.height.toString()
+    })
+
+    // Update on resize
+    window.addEventListener('resize', updateViewportSize)
+    return () => window.removeEventListener('resize', updateViewportSize)
+  }, [isEditing])
+
+  // Handle viewport resize
+  const handleResizeViewport = () => {
+    const width = parseInt(editingSize.width)
+    const height = parseInt(editingSize.height)
+
+    if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+      try {
+        // Try to resize the window
+        // Note: window.resizeTo() only works if:
+        // 1. The window was opened by window.open() (popup)
+        // 2. In Electron apps (which this appears to be)
+        // 3. In some browser extensions
+        
+        // Set minimum sizes for safety
+        const minWidth = 300
+        const minHeight = 200
+        const safeWidth = Math.max(width, minWidth)
+        const safeHeight = Math.max(height, minHeight)
+        
+        if (typeof window.resizeTo === 'function') {
+          window.resizeTo(safeWidth, safeHeight)
+          // Update state after a brief delay to allow resize to complete
+          setTimeout(() => {
+            setViewportSize({
+              width: window.innerWidth,
+              height: window.innerHeight
+            })
+          }, 100)
+        } else {
+          // If resizeTo is not available, just update the display
+          setViewportSize({ width: safeWidth, height: safeHeight })
+        }
+      } catch (e) {
+        console.warn('Could not resize window:', e)
+        // Still update the display even if resize fails
+        setViewportSize({ width, height })
+      }
+    } else {
+      // Invalid input, revert to current size
+      setEditingSize({
+        width: viewportSize.width.toString(),
+        height: viewportSize.height.toString()
+      })
+    }
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleResizeViewport()
+    } else if (e.key === 'Escape') {
+      setEditingSize({
+        width: viewportSize.width.toString(),
+        height: viewportSize.height.toString()
+      })
+      setIsEditing(false)
+    }
+  }
 
   const renderMatchInfoMenu = (match, matchData) => {
     if (!matchData) return null
@@ -198,6 +293,86 @@ export default function MainHeader({
         gap: 'clamp(8px, 1.5vw, 12px)',
         flex: '0 0 auto'
       }}>
+        {/* Viewport Size Display - Editable */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: 'clamp(10px, 1.2vw, 12px)',
+          color: 'rgba(255, 255, 255, 0.6)',
+          whiteSpace: 'nowrap'
+        }}>
+          {isEditing ? (
+            <>
+              <input
+                type="number"
+                value={editingSize.width}
+                onChange={(e) => setEditingSize({ ...editingSize, width: e.target.value })}
+                onKeyDown={handleKeyDown}
+                onBlur={handleResizeViewport}
+                autoFocus
+                style={{
+                  width: '60px',
+                  fontSize: 'clamp(10px, 1.2vw, 12px)',
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  borderRadius: '4px',
+                  padding: '2px 4px',
+                  textAlign: 'center',
+                  outline: 'none'
+                }}
+              />
+              <span>×</span>
+              <input
+                type="number"
+                value={editingSize.height}
+                onChange={(e) => setEditingSize({ ...editingSize, height: e.target.value })}
+                onKeyDown={handleKeyDown}
+                onBlur={handleResizeViewport}
+                style={{
+                  width: '60px',
+                  fontSize: 'clamp(10px, 1.2vw, 12px)',
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  borderRadius: '4px',
+                  padding: '2px 4px',
+                  textAlign: 'center',
+                  outline: 'none'
+                }}
+              />
+            </>
+          ) : (
+            <span
+              onClick={() => {
+                setEditingSize({
+                  width: viewportSize.width.toString(),
+                  height: viewportSize.height.toString()
+                })
+                setIsEditing(true)
+              }}
+              style={{
+                cursor: 'pointer',
+                padding: '2px 4px',
+                borderRadius: '4px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+              }}
+              title="Click to edit and resize viewport"
+            >
+              {viewportSize.width} × {viewportSize.height}
+            </span>
+          )}
+        </div>
+        
         {/* Version with Changelog Menu */}
         <div style={{ position: 'relative' }}>
           <button

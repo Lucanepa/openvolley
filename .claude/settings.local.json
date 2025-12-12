@@ -20,7 +20,8 @@
       "Bash(npm run build:*)",
       "Bash(npx eslint:*)",
       "Bash(timeout 30 npm run build)",
-      "Bash(timeout 60 npm run build:*)"
+      "Bash(timeout 60 npm run build:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

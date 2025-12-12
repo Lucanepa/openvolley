@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import MatchSetup from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
+import CoinToss from './components/CoinToss'
 import MatchEnd from './components/MatchEnd'
 import Modal from './components/Modal'
 import GuideModal from './components/GuideModal'
@@ -1652,7 +1653,7 @@ export default function App() {
   const openMatchSetupView = () => setShowMatchSetup(true)
   
   const openCoinTossView = () => {
-    setShowMatchSetup(true)
+    setShowMatchSetup(false)
     setShowCoinToss(true)
   }
   
@@ -2976,15 +2977,30 @@ export default function App() {
         maxWidth: '100%',
         padding: '20px 20px'
       }}>
-        {showMatchSetup && matchId ? (
+        {showCoinToss && matchId ? (
+          <CoinToss
+            matchId={matchId}
+            onConfirm={() => {
+              setShowCoinToss(false)
+              // Match status is set to 'live' by CoinToss component
+            }}
+            onBack={() => {
+              setShowCoinToss(false)
+              setShowMatchSetup(true)
+            }}
+            onGoHome={goHome}
+          />
+        ) : showMatchSetup && matchId ? (
           <MatchSetup
             matchId={matchId}
             onStart={continueMatch}
             onReturn={returnToMatch}
             onGoHome={goHome}
             onOpenOptions={() => setHomeOptionsModal(true)}
-            showCoinToss={showCoinToss}
-            onCoinTossClose={() => setShowCoinToss(false)}
+            onOpenCoinToss={() => {
+              setShowMatchSetup(false)
+              setShowCoinToss(true)
+            }}
           />
         ) : showMatchEnd && matchId ? (
           <MatchEnd 
