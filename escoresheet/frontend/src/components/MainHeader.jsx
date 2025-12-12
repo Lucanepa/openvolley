@@ -18,7 +18,8 @@ export default function MainHeader({
   toggleFullscreen
 }) {
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
-  const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0'
+  // Use changelog as source of truth (first entry = latest version)
+  const currentVersion = changelog[0]?.version || '1.0.0'
 
   const renderMatchInfoMenu = (match, matchData) => {
     if (!matchData) return null
