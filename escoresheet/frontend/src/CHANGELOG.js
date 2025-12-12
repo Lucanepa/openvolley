@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.6.10',
+    date: '12.12.25',
+    changes: [
+      'Update styles and layout in MatchSetup, App, and MainHeader components for improved responsiveness'
+    ]
+  },
+  {
     version: '0.6.8',
     date: '12.12.25',
     changes: [
