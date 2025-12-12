@@ -509,8 +509,8 @@ export default function MainHeader({
           style={{
             padding: '2px 6px',
             width: 'auto',
-            height: '30px',
-            fontSize: '12px',
+            height: 'auto',
+            fontSize: 'clamp(8px, 1.2vw, 12px)',
             fontWeight: 600,
             background: 'rgba(255, 255, 255, 0.1)',
             color: '#fff',
