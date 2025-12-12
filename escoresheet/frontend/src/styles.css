@@ -1587,8 +1587,7 @@
     }
     
     .header-fullscreen-btn {
-      padding: 0 clamp(6px, 1.2vw, 10px) !important;
-      height: auto !important;
+      height: 80% !important;
       min-width: auto !important;
       width: auto !important;
       position: relative;
@@ -2182,13 +2181,19 @@
     input[type="checkbox"],
     input[type="radio"],
     select {
-      min-height: 44px;
-      min-width: 44px;
+      min-height: 10px;
+      min-width: 10px;
     }
 
     input[type="checkbox"],
     input[type="radio"] {
       width: 24px;
       height: 24px;
+    }
+
+    .header-fullscreen-btn {
+      min-height: unset !important;
+      min-width: unset !important;
+      height: 80% !important;
     }
   }

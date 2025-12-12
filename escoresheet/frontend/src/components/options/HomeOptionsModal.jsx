@@ -64,6 +64,10 @@ function ToggleSwitch({ value, onToggle }) {
       style={{
         width: '52px',
         height: '28px',
+        minHeight: '28px',
+        maxHeight: '28px',
+        padding: 0,
+        boxSizing: 'border-box',
         borderRadius: '14px',
         border: 'none',
         cursor: 'pointer',
@@ -95,9 +99,11 @@ function Row({ children, style }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '12px 16px',
+        padding: '8px 16px',
         background: 'rgba(255, 255, 255, 0.05)',
         borderRadius: '8px',
+        flexShrink: 0,
+        height: 'auto',
         ...style
       }}
     >

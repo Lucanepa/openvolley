@@ -97,8 +97,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
   const [serveB, setServeB] = useState(false)
 
   // UI state
-  const [showRosterA, setShowRosterA] = useState(false)
-  const [showRosterB, setShowRosterB] = useState(false)
+  const [rosterModal, setRosterModal] = useState(null) // 'teamA' | 'teamB' | null
   const [signatureMenuA, setSignatureMenuA] = useState(false)
   const [signatureMenuB, setSignatureMenuB] = useState(false)
   const [addPlayerModal, setAddPlayerModal] = useState(null)
@@ -523,8 +522,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         return an - bn
       })
 
-  const teamARosterEntries = sortRosterEntries(teamAInfo.roster)
-  const teamBRosterEntries = sortRosterEntries(teamBInfo.roster)
 
   // Volleyball images - responsive size
   const imageSize = '48px'
@@ -590,288 +587,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
             {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
 
-          {/* Team A Roster */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <h4 style={{ margin: 0, fontSize: '13px' }}>Roster</h4>
-                <button type="button" className="secondary" onClick={() => { setShowRosterA(!showRosterA); setShowRosterB(false) }} style={{ padding: '3px 6px', fontSize: '11px' }}>
-                  {showRosterA ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              {showRosterA && (
-                <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamA')} style={{ padding: '3px 6px', fontSize: '11px' }}>
-                  + Add
-                </button>
-              )}
-            </div>
-            {showRosterA && (
-              <table className="roster-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th style={{ width: '90px' }}>DOB</th>
-                    <th>Role</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamARosterEntries.map(({ player: p, index: originalIdx }) => (
-                    <tr key={`${teamA}-${originalIdx}`}>
-                      <td className="coin-toss-number" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="1" max="99"
-                            value={p.number ?? ''}
-                            onChange={e => {
-                              const val = e.target.value ? Number(e.target.value) : null
-                              if (val !== null && (val < 1 || val > 99)) return
-                              if (teamA === 'home') {
-                                const updated = [...homeRoster]
-                                updated[originalIdx] = { ...updated[originalIdx], number: val }
-                                setHomeRoster(updated)
-                              } else {
-                                const updated = [...awayRoster]
-                                updated[originalIdx] = { ...updated[originalIdx], number: val }
-                                setAwayRoster(updated)
-                              }
-                            }}
-                            style={{
-                              width: p.isCaptain ? '24px' : '28px',
-                              height: p.isCaptain ? '24px' : 'auto',
-                              padding: '0', margin: '0', background: 'transparent',
-                              border: p.isCaptain ? '2px solid var(--accent)' : 'none',
-                              borderRadius: p.isCaptain ? '50%' : '0',
-                              color: 'var(--text)', textAlign: 'center', fontSize: '12px',
-                              lineHeight: 'normal', verticalAlign: 'baseline'
-                            }}
-                          />
-                          {p.libero && (
-                            <span style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 700, lineHeight: '1' }}>
-                              {p.libero === 'libero1' ? 'L1' : 'L2'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="coin-toss-name" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', maxWidth: '150px' }}>
-                        <input
-                          type="text"
-                          value={`${p.lastName || ''} ${p.firstName || ''}`.trim() || ''}
-                          onChange={e => {
-                            const parts = e.target.value.split(' ').filter(p => p)
-                            const lastName = parts.length > 0 ? parts[0] : ''
-                            const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
-                            if (teamA === 'home') {
-                              const updated = [...homeRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
-                              setHomeRoster(updated)
-                            } else {
-                              const updated = [...awayRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
-                              setAwayRoster(updated)
-                            }
-                          }}
-                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                        />
-                      </td>
-                      <td className="coin-toss-dob" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
-                        <input
-                          type="date"
-                          value={p.dob ? formatDateToISO(p.dob) : ''}
-                          onChange={e => {
-                            const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
-                            if (teamA === 'home') {
-                              const updated = [...homeRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
-                              setHomeRoster(updated)
-                            } else {
-                              const updated = [...awayRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
-                              setAwayRoster(updated)
-                            }
-                          }}
-                          className="coin-toss-date-input"
-                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                        />
-                      </td>
-                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <select
-                            value={p.libero || ''}
-                            onChange={e => {
-                              const roster = teamA === 'home' ? homeRoster : awayRoster
-                              const setRoster = teamA === 'home' ? setHomeRoster : setAwayRoster
-                              const updated = [...roster]
-                              const oldValue = updated[originalIdx].libero
-                              updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-
-                              if (e.target.value === 'libero2') {
-                                const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
-                                if (!hasL1) {
-                                  updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
-                                }
-                              }
-
-                              if (oldValue === 'libero1' && !e.target.value) {
-                                const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
-                                if (l2Idx !== -1) {
-                                  updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                                }
-                              }
-
-                              setRoster(updated)
-                            }}
-                            style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0' }}
-                            className="coin-toss-select"
-                          >
-                            <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
-                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
-                              <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
-                            )}
-                            {!(teamA === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero2') && (
-                              <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
-                            )}
-                          </select>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-                            <input
-                              type="radio"
-                              name={`${teamA}-captain`}
-                              checked={p.isCaptain || false}
-                              onChange={e => {
-                                const roster = teamA === 'home' ? homeRoster : awayRoster
-                                const setRoster = teamA === 'home' ? setHomeRoster : setAwayRoster
-                                const updated = roster.map((player, idx) => ({
-                                  ...player,
-                                  isCaptain: idx === originalIdx ? e.target.checked : false
-                                }))
-                                setRoster(updated)
-                              }}
-                              style={{ width: '12px', height: '12px', margin: 0, accentColor: 'var(--accent)' }}
-                            />
-                            <span style={{ fontSize: '10px', fontWeight: 600 }}>C</span>
-                          </label>
-                        </div>
-                      </td>
-                      <td style={{ verticalAlign: 'middle', padding: '4px' }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setDeletePlayerModal({ team: 'teamA', index: originalIdx })}
-                          style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          title="Delete player"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          {/* Team A Roster Button */}
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setRosterModal('teamA')}
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+            >
+              Roster ({teamAInfo.roster.length})
+            </button>
           </div>
 
-          {/* Team A Bench Officials */}
-          {showRosterA && (() => {
-            const bench = teamA === 'home' ? benchHome : benchAway
-            const setBench = teamA === 'home' ? setBenchHome : setBenchAway
-            const sortedBench = sortBenchByHierarchy(bench)
-            return (
-              <div style={{ marginTop: 12, marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
-                  <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>Bench</h4>
-                  <button
-                    type="button" className="secondary"
-                    onClick={() => setBench([...bench, initBench('Coach')])}
-                    style={{ padding: '3px 6px', fontSize: '11px' }}
-                  >
-                    + Add
-                  </button>
-                </div>
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th>Role</th>
-                      <th>Name</th>
-                      <th style={{ width: '90px' }}>DOB</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedBench.map((official, idx) => {
-                      const originalIdx = bench.findIndex(b => b === official)
-                      return (
-                        <tr key={`${teamA}-bench-${originalIdx}`}>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                            <select
-                              value={official.role || ''}
-                              onChange={e => {
-                                const updated = [...bench]
-                                updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
-                                setBench(updated)
-                              }}
-                              className="coin-toss-select"
-                              style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0', width: '100%' }}
-                            >
-                              {BENCH_ROLES.map(role => (
-                                <option key={role.value} value={role.value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>
-                                  {role.label} - {role.fullLabel}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                            <input
-                              type="text"
-                              value={`${official.lastName || ''} ${official.firstName || ''}`.trim() || ''}
-                              onChange={e => {
-                                const parts = e.target.value.split(' ').filter(p => p)
-                                const lastName = parts.length > 0 ? parts[0] : ''
-                                const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
-                                const updated = [...bench]
-                                updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
-                                setBench(updated)
-                              }}
-                              style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                            />
-                          </td>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
-                            <input
-                              type="date"
-                              value={official.dob ? formatDateToISO(official.dob) : ''}
-                              onChange={e => {
-                                const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
-                                const updated = [...bench]
-                                updated[originalIdx] = { ...updated[originalIdx], dob: value }
-                                setBench(updated)
-                              }}
-                              className="coin-toss-date-input"
-                              style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                            />
-                          </td>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                            <button
-                              type="button" className="secondary"
-                              onClick={() => setBench(bench.filter((_, i) => i !== originalIdx))}
-                              style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                              title="Delete official"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
-          })()}
-
           {/* Team A Signatures */}
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: showRosterA ? '1px solid rgba(255,255,255,0.1)' : 'none', position: 'relative' }}>
+          <div style={{ marginTop: 16, paddingTop: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <button
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
@@ -883,10 +612,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
             </div>
             {signatureMenuA && (
               <div style={{
-                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                marginTop: '8px',
                 background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '8px', padding: '8px', zIndex: 100, marginTop: '4px',
-                display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '140px'
+                borderRadius: '8px', padding: '8px',
+                display: 'flex', flexDirection: 'column', gap: '6px'
               }}>
                 <button
                   onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
@@ -945,288 +674,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
             {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
 
-          {/* Team B Roster */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <h4 style={{ margin: 0, fontSize: '13px' }}>Roster</h4>
-                <button type="button" className="secondary" onClick={() => { setShowRosterB(!showRosterB); setShowRosterA(false) }} style={{ padding: '3px 6px', fontSize: '11px' }}>
-                  {showRosterB ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              {showRosterB && (
-                <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamB')} style={{ padding: '3px 6px', fontSize: '11px' }}>
-                  + Add
-                </button>
-              )}
-            </div>
-            {showRosterB && (
-              <table className="roster-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th style={{ width: '90px' }}>DOB</th>
-                    <th>Role</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamBRosterEntries.map(({ player: p, index: originalIdx }) => (
-                    <tr key={`${teamB}-${originalIdx}`}>
-                      <td className="coin-toss-number" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="1" max="99"
-                            value={p.number ?? ''}
-                            onChange={e => {
-                              const val = e.target.value ? Number(e.target.value) : null
-                              if (val !== null && (val < 1 || val > 99)) return
-                              if (teamB === 'home') {
-                                const updated = [...homeRoster]
-                                updated[originalIdx] = { ...updated[originalIdx], number: val }
-                                setHomeRoster(updated)
-                              } else {
-                                const updated = [...awayRoster]
-                                updated[originalIdx] = { ...updated[originalIdx], number: val }
-                                setAwayRoster(updated)
-                              }
-                            }}
-                            style={{
-                              width: p.isCaptain ? '24px' : '28px',
-                              height: p.isCaptain ? '24px' : 'auto',
-                              padding: '0', margin: '0', background: 'transparent',
-                              border: p.isCaptain ? '2px solid var(--accent)' : 'none',
-                              borderRadius: p.isCaptain ? '50%' : '0',
-                              color: 'var(--text)', textAlign: 'center', fontSize: '12px',
-                              lineHeight: 'normal', verticalAlign: 'baseline'
-                            }}
-                          />
-                          {p.libero && (
-                            <span style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 700, lineHeight: '1' }}>
-                              {p.libero === 'libero1' ? 'L1' : 'L2'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="coin-toss-name" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', maxWidth: '150px' }}>
-                        <input
-                          type="text"
-                          value={`${p.lastName || ''} ${p.firstName || ''}`.trim() || ''}
-                          onChange={e => {
-                            const parts = e.target.value.split(' ').filter(p => p)
-                            const lastName = parts.length > 0 ? parts[0] : ''
-                            const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
-                            if (teamB === 'home') {
-                              const updated = [...homeRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
-                              setHomeRoster(updated)
-                            } else {
-                              const updated = [...awayRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
-                              setAwayRoster(updated)
-                            }
-                          }}
-                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                        />
-                      </td>
-                      <td className="coin-toss-dob" style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
-                        <input
-                          type="date"
-                          value={p.dob ? formatDateToISO(p.dob) : ''}
-                          onChange={e => {
-                            const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
-                            if (teamB === 'home') {
-                              const updated = [...homeRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
-                              setHomeRoster(updated)
-                            } else {
-                              const updated = [...awayRoster]
-                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
-                              setAwayRoster(updated)
-                            }
-                          }}
-                          className="coin-toss-date-input"
-                          style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                        />
-                      </td>
-                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <select
-                            value={p.libero || ''}
-                            onChange={e => {
-                              const roster = teamB === 'home' ? homeRoster : awayRoster
-                              const setRoster = teamB === 'home' ? setHomeRoster : setAwayRoster
-                              const updated = [...roster]
-                              const oldValue = updated[originalIdx].libero
-                              updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-
-                              if (e.target.value === 'libero2') {
-                                const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
-                                if (!hasL1) {
-                                  updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
-                                }
-                              }
-
-                              if (oldValue === 'libero1' && !e.target.value) {
-                                const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
-                                if (l2Idx !== -1) {
-                                  updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                                }
-                              }
-
-                              setRoster(updated)
-                            }}
-                            style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0' }}
-                            className="coin-toss-select"
-                          >
-                            <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
-                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
-                              <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
-                            )}
-                            {!(teamB === 'home' ? homeRoster : awayRoster).some((player, idx) => idx !== originalIdx && player.libero === 'libero2') && (
-                              <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
-                            )}
-                          </select>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-                            <input
-                              type="radio"
-                              name={`${teamB}-captain`}
-                              checked={p.isCaptain || false}
-                              onChange={e => {
-                                const roster = teamB === 'home' ? homeRoster : awayRoster
-                                const setRoster = teamB === 'home' ? setHomeRoster : setAwayRoster
-                                const updated = roster.map((player, idx) => ({
-                                  ...player,
-                                  isCaptain: idx === originalIdx ? e.target.checked : false
-                                }))
-                                setRoster(updated)
-                              }}
-                              style={{ width: '12px', height: '12px', margin: 0, accentColor: 'var(--accent)' }}
-                            />
-                            <span style={{ fontSize: '10px', fontWeight: 600 }}>C</span>
-                          </label>
-                        </div>
-                      </td>
-                      <td style={{ verticalAlign: 'middle', padding: '4px' }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setDeletePlayerModal({ team: 'teamB', index: originalIdx })}
-                          style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          title="Delete player"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          {/* Team B Roster Button */}
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setRosterModal('teamB')}
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+            >
+              Roster ({teamBInfo.roster.length})
+            </button>
           </div>
 
-          {/* Team B Bench Officials */}
-          {showRosterB && (() => {
-            const bench = teamB === 'home' ? benchHome : benchAway
-            const setBench = teamB === 'home' ? setBenchHome : setBenchAway
-            const sortedBench = sortBenchByHierarchy(bench)
-            return (
-              <div style={{ marginTop: 12, marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
-                  <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>Bench</h4>
-                  <button
-                    type="button" className="secondary"
-                    onClick={() => setBench([...bench, initBench('Coach')])}
-                    style={{ padding: '3px 6px', fontSize: '11px' }}
-                  >
-                    + Add
-                  </button>
-                </div>
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th>Role</th>
-                      <th>Name</th>
-                      <th style={{ width: '90px' }}>DOB</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedBench.map((official, idx) => {
-                      const originalIdx = bench.findIndex(b => b === official)
-                      return (
-                        <tr key={`${teamB}-bench-${originalIdx}`}>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                            <select
-                              value={official.role || ''}
-                              onChange={e => {
-                                const updated = [...bench]
-                                updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
-                                setBench(updated)
-                              }}
-                              className="coin-toss-select"
-                              style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', borderRadius: '0', width: '100%' }}
-                            >
-                              {BENCH_ROLES.map(role => (
-                                <option key={role.value} value={role.value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>
-                                  {role.label} - {role.fullLabel}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                            <input
-                              type="text"
-                              value={`${official.lastName || ''} ${official.firstName || ''}`.trim() || ''}
-                              onChange={e => {
-                                const parts = e.target.value.split(' ').filter(p => p)
-                                const lastName = parts.length > 0 ? parts[0] : ''
-                                const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
-                                const updated = [...bench]
-                                updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
-                                setBench(updated)
-                              }}
-                              style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                            />
-                          </td>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px', width: '90px' }}>
-                            <input
-                              type="date"
-                              value={official.dob ? formatDateToISO(official.dob) : ''}
-                              onChange={e => {
-                                const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
-                                const updated = [...bench]
-                                updated[originalIdx] = { ...updated[originalIdx], dob: value }
-                                setBench(updated)
-                              }}
-                              className="coin-toss-date-input"
-                              style={{ width: '100%', padding: '0', margin: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', lineHeight: 'normal', verticalAlign: 'baseline', borderRadius: '0' }}
-                            />
-                          </td>
-                          <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
-                            <button
-                              type="button" className="secondary"
-                              onClick={() => setBench(bench.filter((_, i) => i !== originalIdx))}
-                              style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                              title="Delete official"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
-          })()}
-
           {/* Team B Signatures */}
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: showRosterB ? '1px solid rgba(255,255,255,0.1)' : 'none', position: 'relative' }}>
+          <div style={{ marginTop: 16, paddingTop: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <button
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
@@ -1238,10 +699,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
             </div>
             {signatureMenuB && (
               <div style={{
-                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                marginTop: '8px',
                 background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '8px', padding: '8px', zIndex: 100, marginTop: '4px',
-                display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '140px'
+                borderRadius: '8px', padding: '8px',
+                display: 'flex', flexDirection: 'column', gap: '6px'
               }}>
                 <button
                   onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
@@ -1275,6 +736,269 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           </button>
         )}
       </div>
+
+      {/* Roster Modal */}
+      {rosterModal && (() => {
+        const isTeamA = rosterModal === 'teamA'
+        const currentTeam = isTeamA ? teamA : teamB
+        const teamInfo = isTeamA ? teamAInfo : teamBInfo
+        const roster = currentTeam === 'home' ? homeRoster : awayRoster
+        const setRoster = currentTeam === 'home' ? setHomeRoster : setAwayRoster
+        const bench = currentTeam === 'home' ? benchHome : benchAway
+        const setBench = currentTeam === 'home' ? setBenchHome : setBenchAway
+        const sortedBench = sortBenchByHierarchy(bench)
+        const rosterEntries = sortRosterEntries(roster)
+
+        return (
+          <Modal
+            title={`${teamInfo.name} - Roster`}
+            open={true}
+            onClose={() => setRosterModal(null)}
+            width={600}
+          >
+            <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              {/* Players Section */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Players ({roster.length})</h4>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setAddPlayerModal(rosterModal)}
+                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                  >
+                    + Add Player
+                  </button>
+                </div>
+                <table className="roster-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Name</th>
+                      <th style={{ width: '90px' }}>DOB</th>
+                      <th>Role</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rosterEntries.map(({ player: p, index: originalIdx }) => (
+                      <tr key={`roster-${originalIdx}`}>
+                        <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="1" max="99"
+                              value={p.number ?? ''}
+                              onChange={e => {
+                                const val = e.target.value ? Number(e.target.value) : null
+                                if (val !== null && (val < 1 || val > 99)) return
+                                const updated = [...roster]
+                                updated[originalIdx] = { ...updated[originalIdx], number: val }
+                                setRoster(updated)
+                              }}
+                              style={{
+                                width: p.isCaptain ? '24px' : '28px',
+                                height: p.isCaptain ? '24px' : 'auto',
+                                padding: '0', margin: '0', background: 'transparent',
+                                border: p.isCaptain ? '2px solid var(--accent)' : 'none',
+                                borderRadius: p.isCaptain ? '50%' : '0',
+                                color: 'var(--text)', textAlign: 'center', fontSize: '12px'
+                              }}
+                            />
+                            {p.libero && (
+                              <span style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>
+                                {p.libero === 'libero1' ? 'L1' : 'L2'}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <input
+                            type="text"
+                            value={`${p.lastName || ''} ${p.firstName || ''}`.trim() || ''}
+                            onChange={e => {
+                              const parts = e.target.value.split(' ').filter(p => p)
+                              const lastName = parts.length > 0 ? parts[0] : ''
+                              const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
+                              const updated = [...roster]
+                              updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
+                              setRoster(updated)
+                            }}
+                            style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
+                          />
+                        </td>
+                        <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                          <input
+                            type="date"
+                            value={p.dob ? formatDateToISO(p.dob) : ''}
+                            onChange={e => {
+                              const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                              const updated = [...roster]
+                              updated[originalIdx] = { ...updated[originalIdx], dob: value }
+                              setRoster(updated)
+                            }}
+                            className="coin-toss-date-input"
+                            style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
+                          />
+                        </td>
+                        <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <select
+                              value={p.libero || ''}
+                              onChange={e => {
+                                const updated = [...roster]
+                                const oldValue = updated[originalIdx].libero
+                                updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
+                                if (e.target.value === 'libero2') {
+                                  const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
+                                  if (!hasL1) updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
+                                }
+                                if (oldValue === 'libero1' && !e.target.value) {
+                                  const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
+                                  if (l2Idx !== -1) updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                                }
+                                setRoster(updated)
+                              }}
+                              style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
+                              className="coin-toss-select"
+                            >
+                              <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
+                              {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
+                                <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
+                              )}
+                              {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero2') && (
+                                <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
+                              )}
+                            </select>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name={`${currentTeam}-captain-modal`}
+                                checked={p.isCaptain || false}
+                                onChange={e => {
+                                  const updated = roster.map((player, idx) => ({
+                                    ...player,
+                                    isCaptain: idx === originalIdx ? e.target.checked : false
+                                  }))
+                                  setRoster(updated)
+                                }}
+                                style={{ width: '12px', height: '12px', margin: 0, accentColor: 'var(--accent)' }}
+                              />
+                              <span style={{ fontSize: '10px', fontWeight: 600 }}>C</span>
+                            </label>
+                          </div>
+                        </td>
+                        <td style={{ verticalAlign: 'middle', padding: '4px' }}>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setDeletePlayerModal({ team: rosterModal, index: originalIdx })}
+                            style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bench Officials Section */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Bench Officials ({bench.length})</h4>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setBench([...bench, initBench('Coach')])}
+                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                  >
+                    + Add
+                  </button>
+                </div>
+                <table className="roster-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Role</th>
+                      <th>Name</th>
+                      <th style={{ width: '90px' }}>DOB</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedBench.map((official) => {
+                      const originalIdx = bench.findIndex(b => b === official)
+                      return (
+                        <tr key={`bench-${originalIdx}`}>
+                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                            <select
+                              value={official.role || ''}
+                              onChange={e => {
+                                const updated = [...bench]
+                                updated[originalIdx] = { ...updated[originalIdx], role: e.target.value }
+                                setBench(updated)
+                              }}
+                              className="coin-toss-select"
+                              style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', width: '100%' }}
+                            >
+                              {BENCH_ROLES.map(role => (
+                                <option key={role.value} value={role.value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+                                  {role.label} - {role.fullLabel}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                            <input
+                              type="text"
+                              value={`${official.lastName || ''} ${official.firstName || ''}`.trim() || ''}
+                              onChange={e => {
+                                const parts = e.target.value.split(' ').filter(p => p)
+                                const lastName = parts.length > 0 ? parts[0] : ''
+                                const firstName = parts.length > 1 ? parts.slice(1).join(' ') : ''
+                                const updated = [...bench]
+                                updated[originalIdx] = { ...updated[originalIdx], lastName, firstName }
+                                setBench(updated)
+                              }}
+                              style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
+                            />
+                          </td>
+                          <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                            <input
+                              type="date"
+                              value={official.dob ? formatDateToISO(official.dob) : ''}
+                              onChange={e => {
+                                const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                                const updated = [...bench]
+                                updated[originalIdx] = { ...updated[originalIdx], dob: value }
+                                setBench(updated)
+                              }}
+                              className="coin-toss-date-input"
+                              style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
+                            />
+                          </td>
+                          <td style={{ verticalAlign: 'middle', padding: '4px' }}>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => setBench(bench.filter((_, i) => i !== originalIdx))}
+                              style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {/* Add Player Modal */}
       {addPlayerModal && (() => {
