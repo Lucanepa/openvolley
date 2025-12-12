@@ -7,7 +7,7 @@ import RefereeSelector from './RefereeSelector'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 
-export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showCoinToss = false, onCoinTossClose }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, showCoinToss = false, onCoinTossClose }) {
   const [home, setHome] = useState('Home')
   const [away, setAway] = useState('Away')
 
@@ -3440,6 +3440,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   flex: 1,
                   padding: '12px',
                   fontSize: '14px',
+                  width: 'auto',
                   fontWeight: 600,
                   border: 'none',
                   borderRadius: '8px'
@@ -3840,6 +3841,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                   background: teamBInfo.color, 
                   color: isBrightColor(teamBInfo.color) ? '#000' : '#fff', 
                   flex: 1,
+                  width: 'auto',
                   padding: '12px',
                   fontSize: '14px',
                   fontWeight: 600,
@@ -4807,11 +4809,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
           </button>
         </div>
 
-        {onGoHome && (
-          <button className="secondary" onClick={onGoHome}>
-            Home
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {onOpenOptions && (
+            <button className="secondary" onClick={onOpenOptions}>
+              Options
+            </button>
+          )}
+          {onGoHome && (
+            <button className="secondary" onClick={onGoHome}>
+              Home
+            </button>
+          )}
+        </div>
       </div>
       <div className="grid-4">
         <div className="card" style={{ order: 1 }}>
