@@ -1849,7 +1849,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
 
   if (currentView === 'info') {
     return (
-      <div className="setup">
+      <MatchSetupInfoView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Match info</h2>
@@ -1997,13 +1997,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={() => setCurrentView('main')}>Confirm</button>
         </div>
-      </div>
+      </MatchSetupInfoView>
     )
   }
 
   if (currentView === 'officials') {
     return (
-      <div className="setup">
+      <MatchSetupOfficialsView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Match officials</h2>
@@ -2207,13 +2207,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             setCurrentView('main')
           }}>Confirm</button>
         </div>
-      </div>
+      </MatchSetupOfficialsView>
     )
   }
 
   if (currentView === 'home') {
     return (
-      <div className="setup">
+      <MatchSetupHomeTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Home team</h2>
@@ -2772,13 +2772,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             setCurrentView('main')
           }}>Confirm</button>
         </div>
-      </div>
+      </MatchSetupHomeTeamView>
     )
   }
 
   if (currentView === 'away') {
     return (
-      <div className="setup">
+      <MatchSetupAwayTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Away team</h2>
@@ -3338,7 +3338,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             setCurrentView('main')
           }}>Confirm</button>
         </div>
-      </div>
+      </MatchSetupAwayTeamView>
     )
   }
 
@@ -3404,7 +3404,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
     )
 
     return (
-      <div className="setup">
+      <MatchSetupCoinTossView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={() => {
             setCurrentView('main')
@@ -4507,7 +4507,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
             openSignature === 'away-captain' ? awayCaptainSignature : null
           }
         />
-      </div>
+      </MatchSetupCoinTossView>
     )
   }
 
@@ -4794,7 +4794,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
   }
 
   return (
-    <div className="setup">
+    <MatchSetupMainView>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>Match Setup</h2>
@@ -5855,6 +5855,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, showC
                openSignature === 'away-coach' ? 'Away Coach Signature' :
                openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
       />
-    </div>
+    </MatchSetupMainView>
   )
+}
+
+function MatchSetupMainView({ children }) {
+  return <div className="setup">{children}</div>
+}
+
+function MatchSetupInfoView({ children }) {
+  return <div className="setup">{children}</div>
+}
+
+function MatchSetupOfficialsView({ children }) {
+  return <div className="setup">{children}</div>
+}
+
+function MatchSetupHomeTeamView({ children }) {
+  return <div className="setup">{children}</div>
+}
+
+function MatchSetupAwayTeamView({ children }) {
+  return <div className="setup">{children}</div>
+}
+
+function MatchSetupCoinTossView({ children }) {
+  return <div className="setup">{children}</div>
 }
