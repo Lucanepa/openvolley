@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.6.8',
+    date: '12.12.25',
+    changes: [
+      'Enhance MatchSetup and App components for improved functionality'
+    ]
+  },
+  {
     version: '0.6.4',
     date: '12.12.25',
     changes: [
