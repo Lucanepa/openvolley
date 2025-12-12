@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.6.12',
+    date: '12.12.25',
+    changes: [
+      'Enhance HomeOptionsModal with tooltip functionality and improved layout'
+    ]
+  },
+  {
     version: '0.6.10',
     date: '12.12.25',
     changes: [

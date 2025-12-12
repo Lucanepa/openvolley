@@ -1292,13 +1292,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
   // Open scoresheet in a new window
   async function openScoresheet() {
-    const targetMatchId = pendingMatchId || matchId
-    if (!targetMatchId) {
+    if (!matchId) {
       alert('No match data available')
       return
     }
 
-    const matchData = await db.matches.get(targetMatchId)
+    const matchData = await db.matches.get(matchId)
     if (!matchData) {
       alert('Match not found')
       return
@@ -1317,8 +1316,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       : []
 
     // Get sets and events
-    const allSets = await db.sets.where('matchId').equals(targetMatchId).sortBy('index')
-    const allEvents = await db.events.where('matchId').equals(targetMatchId).sortBy('seq')
+    const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+    const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
 
     const scoresheetData = {
       match: matchData,
@@ -1352,16 +1351,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       }
     }
     
-    // Use matchId if pendingMatchId is not set
-    const targetMatchId = pendingMatchId || matchId
-    
-    if (!targetMatchId) {
+    if (!matchId) {
       console.error('[COIN TOSS] No match ID available')
       alert('Error: No match ID found')
       return
     }
-    
-    const matchData = await db.matches.get(targetMatchId)
+
+    const matchData = await db.matches.get(matchId)
     if (!matchData) {
       return
     }
@@ -1388,18 +1384,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       updateData.awayCaptainSignature = awayCaptainSignature
     }
 
-    const updateResult = await db.matches.update(targetMatchId, updateData)
+    const updateResult = await db.matches.update(matchId, updateData)
     
     // Check if coin toss event already exists
     const existingCoinTossEvent = await db.events
-      .where('matchId').equals(targetMatchId)
+      .where('matchId').equals(matchId)
       .and(e => e.type === 'coin_toss')
       .first()
     
     // Create coin_toss event with seq=1 if it doesn't exist
     if (!existingCoinTossEvent) {
       await db.events.add({
-        matchId: targetMatchId,
+        matchId: matchId,
         setIndex: 1, // Coin toss is before set 1
         type: 'coin_toss',
         payload: {
@@ -1415,13 +1411,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     }
     
     // Add match update to sync queue (only sync fields that exist in Supabase)
-    const updatedMatch = await db.matches.get(targetMatchId)
+    const updatedMatch = await db.matches.get(matchId)
     if (updatedMatch) {
       await db.sync_queue.add({
         resource: 'match',
         action: 'update',
         payload: {
-          id: String(targetMatchId),
+          id: String(matchId),
           status: updatedMatch.status || null,
           hall: updatedMatch.hall || null,
           city: updatedMatch.city || null,
@@ -1530,10 +1526,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     })
     
     // Create first set
-    const firstSetId = await db.sets.add({ matchId: targetMatchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
+    const firstSetId = await db.sets.add({ matchId: matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
     
     // Get match to check if it's a test match
-    const matchForSet = await db.matches.get(targetMatchId)
+    const matchForSet = await db.matches.get(matchId)
     const isTest = matchForSet?.test || false
     
     // Add first set to sync queue
@@ -1542,7 +1538,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       action: 'insert',
       payload: {
         external_id: String(firstSetId),
-        match_id: String(targetMatchId),
+        match_id: String(matchId),
         index: 1,
         home_points: 0,
         away_points: 0,
@@ -1555,7 +1551,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     })
     
     // Update match status to 'live' to indicate match has started
-    await db.matches.update(targetMatchId, { status: 'live' })
+    await db.matches.update(matchId, { status: 'live' })
     
     // Ensure all roster updates are committed before navigating
     // Force a small delay to ensure database updates are fully committed
@@ -1563,7 +1559,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     
     // Start the match - directly navigate to scoreboard
     // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
-    onStart(targetMatchId)
+    onStart(matchId)
   }
 
   // PDF file handlers - must be defined before conditional returns
