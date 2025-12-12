@@ -2970,11 +2970,11 @@ export default function App() {
       <div className="panel" style={{
         flex: '1 1 auto',
         minHeight: 0,
-        overflowY: 'auto',
+        overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto',
         overflowX: 'hidden',
         width: 'auto',
         maxWidth: '100%',
-        padding: '20px 20px'
+        padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '20px 20px'
       }}>
         {showCoinToss && matchId ? (
           <CoinToss

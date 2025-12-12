@@ -359,14 +359,16 @@
     .score { font-size: 30px; }
   }
 
-  /* Match record layout - FIXED dimensions to prevent layout shifts */
+  /* Match record layout - responsive with minimum 960x540 */
   .match-record {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    height: 100vh;
-    max-height: 100vh;
-    width: 1200px;
+    height: 100%;
+    max-height: 100%;
+    width: 100%;
+    max-width: 1200px;
+    min-width: 960px;
     overflow: hidden;
     box-sizing: border-box;
   }
@@ -383,6 +385,16 @@
     }
   }
 
+  /* Scale down for viewports smaller than 960px width */
+  @media (max-width: 960px) {
+    .match-record {
+      transform-origin: top center;
+      transform: scale(calc((100vw - 40px) / 960));
+      width: 960px;
+      min-width: 960px;
+    }
+  }
+
   /* Prevent layout shifts during gameplay */
   .match-record * {
     box-sizing: border-box;
@@ -395,9 +407,13 @@
     justify-content: space-between;
     gap: 12px;
     padding: 14px 16px;
-    background: rgba(15, 23, 42, 0.8);
+    background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    flex-shrink: 0;
   }
 
   @media (max-width: 1400px) {
@@ -756,23 +772,35 @@
     gap: 16px;
     grid-template-columns: 240px 1fr 240px;
     align-items: stretch;
+    flex: 1;
+    min-height: 0;
   }
 
   @media (max-width: 1400px) {
     .match-content {
       grid-template-columns: 220px 1fr 220px;
+      gap: 12px;
     }
   }
 
   @media (max-width: 1280px) {
     .match-content {
       grid-template-columns: 200px 1fr 200px;
+      gap: 10px;
     }
   }
 
-  @media (max-width: 1024px) {
+  @media (max-width: 1100px) {
     .match-content {
-      grid-template-columns: 1fr;
+      grid-template-columns: 180px 1fr 180px;
+      gap: 8px;
+    }
+  }
+
+  @media (max-width: 1000px) {
+    .match-content {
+      grid-template-columns: 160px 1fr 160px;
+      gap: 6px;
     }
   }
 
