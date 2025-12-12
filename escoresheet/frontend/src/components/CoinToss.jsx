@@ -526,8 +526,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
   const teamARosterEntries = sortRosterEntries(teamAInfo.roster)
   const teamBRosterEntries = sortRosterEntries(teamBInfo.roster)
 
-  // Volleyball images
-  const imageSize = '64px'
+  // Volleyball images - responsive size
+  const imageSize = '48px'
   const volleyballImage = (
     <div style={{
       width: imageSize, height: imageSize, display: 'flex',
@@ -545,7 +545,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       width: imageSize, height: imageSize, display: 'flex',
       alignItems: 'center', justifyContent: 'center', background:'transparent', flexShrink: 0
     }}>
-      <div style={{ width: '32px', height: '32px', background: 'transparent' }} />
+      <div style={{ width: '24px', height: '24px', background: 'transparent' }} />
     </div>
   )
 
@@ -565,44 +565,47 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 24, marginBottom: 24, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: 12, marginBottom: 24, alignItems: 'start' }}>
         {/* Team A */}
-        <div>
-          <h1 style={{ margin: 2, fontSize: '24px', fontWeight: 700, textAlign: 'center' }}>Team A</h1>
-          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, height: '48px' }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ margin: 2, fontSize: '20px', fontWeight: 700, textAlign: 'center' }}>Team A</h1>
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, minHeight: '40px' }}>
             <button
               type="button"
               style={{
                 background: teamAInfo.color,
                 color: isBrightColor(teamAInfo.color) ? '#000' : '#fff',
-                flex: 1, padding: '12px', fontSize: '14px', width: 'auto',
-                fontWeight: 600, border: 'none', borderRadius: '8px'
+                flex: 1, padding: '8px 12px', fontSize: '13px', width: '100%',
+                fontWeight: 600, border: 'none', borderRadius: '8px',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                minWidth: 0
               }}
+              title={teamAInfo.name}
             >
-              {teamAInfo.name}
+              {getDisplayName(teamAInfo.name, teamAInfo.shortName)}
             </button>
           </div>
 
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', height: '64px', alignItems: 'center', gap: 12 }}>
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', height: '48px', alignItems: 'center' }}>
             {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
 
           {/* Team A Roster */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <h4 style={{ margin: 0, fontSize: '14px' }}>Roster</h4>
-                <button type="button" className="secondary" onClick={() => setShowCoinTossRoster(!showCoinTossRoster)} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  {showCoinTossRoster ? 'Hide' : 'Show'}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <h4 style={{ margin: 0, fontSize: '13px' }}>Roster</h4>
+                <button type="button" className="secondary" onClick={() => { setShowRosterA(!showRosterA); setShowRosterB(false) }} style={{ padding: '3px 6px', fontSize: '11px' }}>
+                  {showRosterA ? 'Hide' : 'Show'}
                 </button>
               </div>
-              {showCoinTossRoster && (
-                <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamA')} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  Add Player
+              {showRosterA && (
+                <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamA')} style={{ padding: '3px 6px', fontSize: '11px' }}>
+                  + Add
                 </button>
               )}
             </div>
-            {showCoinTossRoster && (
+            {showRosterA && (
               <table className="roster-table">
                 <thead>
                   <tr>
@@ -732,7 +735,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                               <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
                             )}
                           </select>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
                             <input
                               type="radio"
                               name={`${teamA}-captain`}
@@ -746,17 +749,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                                 }))
                                 setRoster(updated)
                               }}
+                              style={{ width: '12px', height: '12px', margin: 0, accentColor: 'var(--accent)' }}
                             />
-                            <span style={{ fontSize: '11px', fontWeight: 600 }}>C</span>
+                            <span style={{ fontSize: '10px', fontWeight: 600 }}>C</span>
                           </label>
                         </div>
                       </td>
-                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                      <td style={{ verticalAlign: 'middle', padding: '4px' }}>
                         <button
                           type="button"
                           className="secondary"
                           onClick={() => setDeletePlayerModal({ team: 'teamA', index: originalIdx })}
-                          style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           title="Delete player"
                         >
                           🗑️
@@ -770,20 +774,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           </div>
 
           {/* Team A Bench Officials */}
-          {showCoinTossRoster && (() => {
+          {showRosterA && (() => {
             const bench = teamA === 'home' ? benchHome : benchAway
             const setBench = teamA === 'home' ? setBenchHome : setBenchAway
             const sortedBench = sortBenchByHierarchy(bench)
             return (
-              <div style={{ marginTop: 16, marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Bench Officials</h4>
+              <div style={{ marginTop: 12, marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
+                  <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>Bench</h4>
                   <button
                     type="button" className="secondary"
                     onClick={() => setBench([...bench, initBench('Coach')])}
-                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                    style={{ padding: '3px 6px', fontSize: '11px' }}
                   >
-                    Add Official
+                    + Add
                   </button>
                 </div>
                 <table className="roster-table">
@@ -867,67 +871,96 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           })()}
 
           {/* Team A Signatures */}
-          <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 24, paddingTop: 16, borderTop: showCoinTossRoster ? '2px solid rgba(255,255,255,0.1)' : 'none' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach')} className={`sign ${teamACoachSig ? 'signed' : ''}`}>Coach A Signature</button>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: showRosterA ? '1px solid rgba(255,255,255,0.1)' : 'none', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
+                className={`sign ${teamACoachSig && teamACaptainSig ? 'signed' : ''}`}
+                style={{ fontSize: '12px', padding: '6px 12px', minWidth: 'auto' }}
+              >
+                Sign A {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
+              </button>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <button onClick={() => setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain')} className={`sign ${teamACaptainSig ? 'signed' : ''}`}>Captain A Signature</button>
-            </div>
+            {signatureMenuA && (
+              <div style={{
+                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '8px', padding: '8px', zIndex: 100, marginTop: '4px',
+                display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '140px'
+              }}>
+                <button
+                  onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
+                  className={`sign ${teamACoachSig ? 'signed' : ''}`}
+                  style={{ fontSize: '11px', padding: '6px 10px' }}
+                >
+                  Coach {teamACoachSig ? '✓' : ''}
+                </button>
+                <button
+                  onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
+                  className={`sign ${teamACaptainSig ? 'signed' : ''}`}
+                  style={{ fontSize: '11px', padding: '6px 10px' }}
+                >
+                  Captain {teamACaptainSig ? '✓' : ''}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Middle buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', alignSelf: 'stretch' }}>
-          <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '30px' }}>
-            <button className="secondary" onClick={switchTeams} style={{ padding: '8px 16px' }}>
-              Switch Teams
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
+          <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '24px' }}>
+            <button className="secondary" onClick={switchTeams} style={{ padding: '6px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+              ⇄ Teams
             </button>
           </div>
-          <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <button className="secondary" onClick={switchServe} style={{ padding: '8px 16px' }}>
-              Switch Serve
+          <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button className="secondary" onClick={switchServe} style={{ padding: '6px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+              ⇄ Serve
             </button>
           </div>
         </div>
 
         {/* Team B */}
-        <div>
-          <h1 style={{ margin: 2, fontSize: '24px', fontWeight: 700, textAlign: 'center' }}>Team B</h1>
-          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, height: '48px' }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ margin: 2, fontSize: '20px', fontWeight: 700, textAlign: 'center' }}>Team B</h1>
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, minHeight: '40px' }}>
             <button
               type="button"
               style={{
                 background: teamBInfo.color,
                 color: isBrightColor(teamBInfo.color) ? '#000' : '#fff',
-                flex: 1, width: 'auto', padding: '12px', fontSize: '14px',
-                fontWeight: 600, border: 'none', borderRadius: '8px'
+                flex: 1, padding: '8px 12px', fontSize: '13px', width: '100%',
+                fontWeight: 600, border: 'none', borderRadius: '8px',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                minWidth: 0
               }}
+              title={teamBInfo.name}
             >
-              {teamBInfo.name}
+              {getDisplayName(teamBInfo.name, teamBInfo.shortName)}
             </button>
           </div>
 
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', height: '64px', alignItems: 'center', gap: 12 }}>
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', height: '48px', alignItems: 'center' }}>
             {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
 
           {/* Team B Roster */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <h4 style={{ margin: 0, fontSize: '14px' }}>Roster</h4>
-                <button type="button" className="secondary" onClick={() => setShowCoinTossRoster(!showCoinTossRoster)} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  {showCoinTossRoster ? 'Hide' : 'Show'}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <h4 style={{ margin: 0, fontSize: '13px' }}>Roster</h4>
+                <button type="button" className="secondary" onClick={() => { setShowRosterB(!showRosterB); setShowRosterA(false) }} style={{ padding: '3px 6px', fontSize: '11px' }}>
+                  {showRosterB ? 'Hide' : 'Show'}
                 </button>
               </div>
-              {showCoinTossRoster && (
-                <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamB')} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  Add Player
+              {showRosterB && (
+                <button type="button" className="secondary" onClick={() => setAddPlayerModal('teamB')} style={{ padding: '3px 6px', fontSize: '11px' }}>
+                  + Add
                 </button>
               )}
             </div>
-            {showCoinTossRoster && (
+            {showRosterB && (
               <table className="roster-table">
                 <thead>
                   <tr>
@@ -1057,7 +1090,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                               <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
                             )}
                           </select>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
                             <input
                               type="radio"
                               name={`${teamB}-captain`}
@@ -1071,17 +1104,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                                 }))
                                 setRoster(updated)
                               }}
+                              style={{ width: '12px', height: '12px', margin: 0, accentColor: 'var(--accent)' }}
                             />
-                            <span style={{ fontSize: '11px', fontWeight: 600 }}>C</span>
+                            <span style={{ fontSize: '10px', fontWeight: 600 }}>C</span>
                           </label>
                         </div>
                       </td>
-                      <td style={{ verticalAlign: 'middle', padding: '8px 8px 6px 8px' }}>
+                      <td style={{ verticalAlign: 'middle', padding: '4px' }}>
                         <button
                           type="button"
                           className="secondary"
                           onClick={() => setDeletePlayerModal({ team: 'teamB', index: originalIdx })}
-                          style={{ padding: '2px', fontSize: '12px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           title="Delete player"
                         >
                           🗑️
@@ -1095,20 +1129,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           </div>
 
           {/* Team B Bench Officials */}
-          {showCoinTossRoster && (() => {
+          {showRosterB && (() => {
             const bench = teamB === 'home' ? benchHome : benchAway
             const setBench = teamB === 'home' ? setBenchHome : setBenchAway
             const sortedBench = sortBenchByHierarchy(bench)
             return (
-              <div style={{ marginTop: 16, marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Bench Officials</h4>
+              <div style={{ marginTop: 12, marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
+                  <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>Bench</h4>
                   <button
                     type="button" className="secondary"
                     onClick={() => setBench([...bench, initBench('Coach')])}
-                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                    style={{ padding: '3px 6px', fontSize: '11px' }}
                   >
-                    Add Official
+                    + Add
                   </button>
                 </div>
                 <table className="roster-table">
@@ -1192,15 +1226,39 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           })()}
 
           {/* Team B Signatures */}
-          <div style={{ display: 'flex', flexDirection: 'row', gap: 16, marginTop: 24, paddingTop: 16, borderTop: showCoinTossRoster ? '2px solid rgba(255,255,255,0.1)' : 'none' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach')} 
-              className={`sign ${teamBCoachSig ? 'signed' : ''}`}>Coach B Signature</button>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: showRosterB ? '1px solid rgba(255,255,255,0.1)' : 'none', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
+                className={`sign ${teamBCoachSig && teamBCaptainSig ? 'signed' : ''}`}
+                style={{ fontSize: '12px', padding: '6px 12px', minWidth: 'auto' }}
+              >
+                Sign B {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
+              </button>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <button onClick={() => setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain')} 
-              className={`sign ${teamBCaptainSig ? 'signed' : ''}`}>Captain B Signature</button>
-            </div>
+            {signatureMenuB && (
+              <div style={{
+                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '8px', padding: '8px', zIndex: 100, marginTop: '4px',
+                display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '140px'
+              }}>
+                <button
+                  onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
+                  className={`sign ${teamBCoachSig ? 'signed' : ''}`}
+                  style={{ fontSize: '11px', padding: '6px 10px' }}
+                >
+                  Coach {teamBCoachSig ? '✓' : ''}
+                </button>
+                <button
+                  onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
+                  className={`sign ${teamBCaptainSig ? 'signed' : ''}`}
+                  style={{ fontSize: '11px', padding: '6px 10px' }}
+                >
+                  Captain {teamBCaptainSig ? '✓' : ''}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
