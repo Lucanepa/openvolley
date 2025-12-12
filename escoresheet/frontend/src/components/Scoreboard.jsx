@@ -7598,7 +7598,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   return (
     <div className="match-record">
-      <div className="match-toolbar">
+      <ScoreboardToolbar>
         <div className="toolbar-left">
           <button 
             className="secondary" 
@@ -7790,7 +7790,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             ]}
           />
         </div>
-      </div>
+      </ScoreboardToolbar>
 
       {/* Scoresheet Error Modal */}
       {scoresheetErrorModal && (
@@ -9199,7 +9199,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         )
       })() : (
       <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: '118vh' } : {}}>
-        <aside className="team-controls">
+        <ScoreboardTeamColumn side="left">
           <div className="team-info">
             <div
               style={{
@@ -9858,9 +9858,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               </div>
             )}
           </div>
-        </aside>
+        </ScoreboardTeamColumn>
 
-        <section className="court-wrapper">
+        <ScoreboardCourtColumn>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
             {/* SERVE indicator container - Left (fixed width) */}
             <div style={{
@@ -11111,9 +11111,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               })()}
             </div>
           </div>
-        </section>
+        </ScoreboardCourtColumn>
 
-        <aside className="team-controls">
+        <ScoreboardTeamColumn side="right">
           <div className="team-info">
             <div
               style={{
@@ -11772,7 +11772,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               </div>
             )}
           </div>
-        </aside>
+        </ScoreboardTeamColumn>
       </div>
       )}
 
@@ -19776,6 +19776,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       )}
     </div>
   )
+}
+
+function ScoreboardToolbar({ children }) {
+  return <div className="match-toolbar">{children}</div>
+}
+
+function ScoreboardTeamColumn({ side, children }) {
+  return (
+    <aside className="team-controls" data-side={side}>
+      {children}
+    </aside>
+  )
+}
+
+function ScoreboardCourtColumn({ children }) {
+  return <section className="court-wrapper">{children}</section>
 }
 
 function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, onClose, onSave }) {
