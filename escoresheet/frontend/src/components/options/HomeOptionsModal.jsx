@@ -1,25 +1,58 @@
+import { useState } from 'react'
 import Modal from '../Modal'
 
 function InfoDot({ title }) {
+  const [showTooltip, setShowTooltip] = useState(false)
+
   return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '16px',
-        height: '16px',
-        borderRadius: '50%',
-        background: 'rgba(255, 255, 255, 0.2)',
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontSize: '11px',
-        fontWeight: 600,
-        cursor: 'help'
-      }}
-      title={title}
-    >
-      i
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+      <div
+        onClick={(e) => {
+          e.stopPropagation()
+          setShowTooltip(!showTooltip)
+        }}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '16px',
+          height: '16px',
+          borderRadius: '50%',
+          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.2)',
+          color: 'rgba(255, 255, 255, 0.7)',
+          fontSize: '11px',
+          fontWeight: 600,
+          cursor: 'pointer'
+        }}
+        title={title}
+      >
+        i
+      </div>
+      {showTooltip && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            marginTop: '8px',
+            padding: '8px 12px',
+            background: '#1f2937',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '6px',
+            fontSize: '12px',
+            color: 'rgba(255,255,255,0.9)',
+            whiteSpace: 'normal',
+            width: 'max-content',
+            maxWidth: '250px',
+            zIndex: 10,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}
+        >
+          {title}
+        </div>
+      )}
     </div>
   )
 }
@@ -189,7 +222,7 @@ export default function HomeOptionsModal({
     >
       <div style={{ padding: '24px' }}>
         <Section title={null}>
-          <Row style={{ marginBottom: '12px' }}>
+          <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                 <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Rally Start</div>
@@ -233,7 +266,7 @@ export default function HomeOptionsModal({
             />
           </Row>
 
-          <Row style={{ marginBottom: '12px' }}>
+          <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                 <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Point Award</div>
