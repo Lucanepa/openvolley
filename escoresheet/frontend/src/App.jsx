@@ -9,6 +9,7 @@ import GuideModal from './components/GuideModal'
 import ConnectionStatus from './components/ConnectionStatus'
 import MainHeader from './components/MainHeader'
 import HomePage from './components/pages/HomePage'
+import HomeOptionsModal from './components/options/HomeOptionsModal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import mikasaVolleyball from './mikasa_v200w.png'
 import favicon from './favicon.png'
@@ -121,6 +122,10 @@ export default function App() {
   const [accidentalPointAwardDuration, setAccidentalPointAwardDuration] = useState(() => {
     const saved = localStorage.getItem('accidentalPointAwardDuration')
     return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
+    const saved = localStorage.getItem('manageCaptainOnCourt')
+    return saved === 'true' // default false
   })
   const [liberoExitConfirmation, setLiberoExitConfirmation] = useState(() => {
     const saved = localStorage.getItem('liberoExitConfirmation')
@@ -2918,7 +2923,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: 'relative', height: '100vh', width: '100%', maxWidth: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => {
+    <div style={{ position: 'relative', height: '100vh', width: 'auto', maxWidth: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
       if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
         setShowConnectionMenu(false)
@@ -2949,26 +2954,38 @@ export default function App() {
       />
 
       <div className="container" style={{ 
-        flex: '1 1 0', 
         minHeight: 0,
         overflow: 'hidden', 
-        width: '100%', 
-        maxWidth: '100%',
+        width: 'auto', 
+        height: 'auto',
+        maxWidth: 'calc(100% - 40px)',
         display: 'flex',
         flexDirection: 'column',
-        position: 'relative'
+        position: 'relative', 
+        justifyContent: 'center',
+        alignItems: 'center',
+        margin: '0 auto',
+        padding: '10px 20px'
       }}>
       <div className="panel" style={{
         flex: '1 1 auto',
         minHeight: 0,
-        overflowY: 'auto',
+        overflowY: 'hidden',
         overflowX: 'hidden',
-        width: '100%',
+        width: 'auto',
         maxWidth: '100%',
-        padding: '8px 12px'
+        padding: '20px 20px'
       }}>
         {showMatchSetup && matchId ? (
-          <MatchSetup matchId={matchId} onStart={continueMatch} onReturn={returnToMatch} onGoHome={goHome} showCoinToss={showCoinToss} onCoinTossClose={() => setShowCoinToss(false)} />
+          <MatchSetup
+            matchId={matchId}
+            onStart={continueMatch}
+            onReturn={returnToMatch}
+            onGoHome={goHome}
+            onOpenOptions={() => setHomeOptionsModal(true)}
+            showCoinToss={showCoinToss}
+            onCoinTossClose={() => setShowCoinToss(false)}
+          />
         ) : showMatchEnd && matchId ? (
           <MatchEnd 
             matchId={matchId} 
@@ -3190,834 +3207,43 @@ export default function App() {
       )}
 
       {/* Home Options Modal */}
-      {homeOptionsModal && (
-        <Modal
-          open={true}
-          title="Settings"
-          onClose={() => setHomeOptionsModal(false)}
-          width={500}
-        >
-          <div style={{ padding: '24px' }}>
-
-            {/* Match Options Section */}
-            <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              
-
-              {/* Check Accidental Rally Start Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Rally Start</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title={`Ask for confirmation if "Start Rally" is pressed within ${accidentalRallyStartDuration}s of awarding a point`}
-                    >
-                      i
-                    </div>
-                  </div>
-                  {checkAccidentalRallyStart && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={accidentalRallyStartDuration}
-                        onChange={(e) => {
-                          const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
-                          setAccidentalRallyStartDuration(val)
-                          localStorage.setItem('accidentalRallyStartDuration', String(val))
-                        }}
-                        style={{
-                          width: '50px',
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          background: 'rgba(255,255,255,0.1)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)',
-                          textAlign: 'center'
-                        }}
-                      />
-                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    const newValue = !checkAccidentalRallyStart
-                    setCheckAccidentalRallyStart(newValue)
-                    localStorage.setItem('checkAccidentalRallyStart', String(newValue))
-                  }}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: checkAccidentalRallyStart ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: checkAccidentalRallyStart ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-
-              {/* Check Accidental Point Award Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Point Award</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title={`Ask for confirmation if a point is awarded within ${accidentalPointAwardDuration}s of starting the rally`}
-                    >
-                      i
-                    </div>
-                  </div>
-                  {checkAccidentalPointAward && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={accidentalPointAwardDuration}
-                        onChange={(e) => {
-                          const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
-                          setAccidentalPointAwardDuration(val)
-                          localStorage.setItem('accidentalPointAwardDuration', String(val))
-                        }}
-                        style={{
-                          width: '50px',
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          background: 'rgba(255,255,255,0.1)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)',
-                          textAlign: 'center'
-                        }}
-                      />
-                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    const newValue = !checkAccidentalPointAward
-                    setCheckAccidentalPointAward(newValue)
-                    localStorage.setItem('checkAccidentalPointAward', String(newValue))
-                  }}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: checkAccidentalPointAward ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: checkAccidentalPointAward ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-
-              {/* Manage Captain on Court Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Manage Captain on Court</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title="Automatically track which player acts as captain when team captain is not on court"
-                    >
-                      i
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    const saved = localStorage.getItem('manageCaptainOnCourt')
-                    const newValue = saved !== 'true'
-                    localStorage.setItem('manageCaptainOnCourt', String(newValue))
-                    // Force re-render by closing and reopening modal
-                    setHomeOptionsModal(false)
-                    setTimeout(() => setHomeOptionsModal(true), 0)
-                  }}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: localStorage.getItem('manageCaptainOnCourt') === 'true' ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: localStorage.getItem('manageCaptainOnCourt') === 'true' ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-
-              {/* Libero Exit Confirmation Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Exit Confirmation</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title="Show confirmation modal when libero must exit after player rotation"
-                    >
-                      i
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    const newValue = !liberoExitConfirmation
-                    setLiberoExitConfirmation(newValue)
-                    localStorage.setItem('liberoExitConfirmation', String(newValue))
-                  }}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: liberoExitConfirmation ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: liberoExitConfirmation ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-
-              {/* Libero Entry Suggestion Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Entry Suggestion</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title="Show suggestion modal to substitute libero for player rotating to back row"
-                    >
-                      i
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    const newValue = !liberoEntrySuggestion
-                    setLiberoEntrySuggestion(newValue)
-                    localStorage.setItem('liberoEntrySuggestion', String(newValue))
-                  }}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: liberoEntrySuggestion ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: liberoEntrySuggestion ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-
-              {/* Set Interval Duration */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Set 2-3 Interval Duration</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title="Duration of break between sets 2 and 3"
-                    >
-                      i
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
-                  <button
-                    onClick={() => {
-                      const newVal = Math.max(60, setIntervalDuration - 15)
-                      setSetIntervalDuration(newVal)
-                      localStorage.setItem('setIntervalDuration', String(newVal))
-                    }}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'rgba(255,255,255,0.1)',
-                      color: 'var(--text)',
-                      fontSize: '18px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    -
-                  </button>
-                  <span style={{
-                    minWidth: '80px',
-                    textAlign: 'center',
-                    fontFamily: 'monospace',
-                    fontSize: '14px',
-                    fontWeight: 600
-                  }}>
-                    {Math.floor(setIntervalDuration / 60)}' {(setIntervalDuration % 60).toString().padStart(2, '0')}''
-                  </span>
-                  <button
-                    onClick={() => {
-                      const newVal = Math.min(600, setIntervalDuration + 15)
-                      setSetIntervalDuration(newVal)
-                      localStorage.setItem('setIntervalDuration', String(newVal))
-                    }}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'rgba(255,255,255,0.1)',
-                      color: 'var(--text)',
-                      fontSize: '18px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Keyboard Shortcuts Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Keyboard Shortcuts</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title="Use keyboard keys to control scoring and actions (configure in Scoreboard)"
-                    >
-                      i
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    const newValue = !keybindingsEnabled
-                    setKeybindingsEnabled(newValue)
-                    localStorage.setItem('keybindingsEnabled', String(newValue))
-                  }}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: keybindingsEnabled ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: keybindingsEnabled ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-            </div>
-
-            {/* Display Mode Section */}
-            <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Display Mode</h3>
-
-              <div style={{
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginBottom: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Mode</div>
-                  <div
-                    style={{
-                      position: 'relative',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '50%',
-                      background: 'rgba(255, 255, 255, 0.2)',
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'help'
-                    }}
-                    title="Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape."
-                  >
-                    i
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => {
-                    const modeDescriptions = {
-                      desktop: 'Full layout with court visualization',
-                      tablet: 'Scaled-down layout optimized for 768-1024px screens',
-                      smartphone: 'Compact 3-column layout without court, optimized for <768px screens'
-                    }
-                    return (
-                      <button
-                        key={mode}
-                        onClick={() => {
-                          if (mode === 'tablet' || mode === 'smartphone') {
-                            enterDisplayMode(mode)
-                          } else {
-                            if (mode === 'desktop') {
-                              exitDisplayMode()
-                            } else {
-                              setDisplayMode(mode)
-                              localStorage.setItem('displayMode', mode)
-                            }
-                          }
-                        }}
-                        style={{
-                          padding: '8px 16px',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
-                          color: displayMode === mode ? '#fff' : 'var(--text)',
-                          border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textTransform: 'capitalize',
-                          transition: 'all 0.2s',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <span>{mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}</span>
-                        {modeDescriptions[mode] && (
-                          <div
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: '14px',
-                              height: '14px',
-                              borderRadius: '50%',
-                              background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.2)',
-                              color: displayMode === mode ? '#fff' : 'rgba(255, 255, 255, 0.7)',
-                              fontSize: '10px',
-                              fontWeight: 600,
-                              cursor: 'help'
-                            }}
-                            title={modeDescriptions[mode]}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            i
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-                {displayMode !== 'desktop' && displayMode !== 'auto' && (
-                  <div style={{ marginTop: '12px' }}>
-                    <button
-                      onClick={exitDisplayMode}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        color: '#ef4444',
-                        border: '1px solid rgba(239, 68, 68, 0.4)',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Exit {displayMode} mode
-                    </button>
-                  </div>
-                )}
-              </div>
-
-
-              {/* Screen Always On Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                marginTop: '12px'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Always On</div>
-                    <div
-                      style={{
-                        position: 'relative',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'help'
-                      }}
-                      title="Prevent screen from sleeping during scoring"
-                    >
-                      i
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={toggleWakeLock}
-                  style={{
-                    width: '52px',
-                    height: '28px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: wakeLockActive ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
-                    position: 'relative',
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                    marginLeft: '16px'
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '4px',
-                    left: wakeLockActive ? '28px' : '4px',
-                    transition: 'left 0.2s'
-                  }} />
-                </button>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <button
-                onClick={() => {
-                  setHomeOptionsModal(false)
-                  setHomeGuideModal(true)
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  width: '100%',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                }}
-              >
-                <span style={{ fontSize: '20px' }}>?</span>
-                <span>Show Guide</span>
-              </button>
-            </div>
-            
-            {activeDisplayMode === 'desktop' && (
-              <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>Download Desktop App</h3>
-                {(() => {
-                  const releasesUrl = `https://github.com/Lucanepa/openvolley/releases`
-
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <a
-                        href={releasesUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          padding: '12px 16px',
-                          fontSize: '16px',
-                          fontWeight: 600,
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          color: 'var(--text)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          borderRadius: '8px',
-                          textDecoration: 'none',
-                          transition: 'all 0.2s',
-                          justifyContent: 'center'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                        }}
-                      >
-                        <span>📦 View Releases & Downloads</span>
-                        <span style={{ fontSize: '14px', opacity: 0.7 }}>→</span>
-                      </a>
-                    </div>
-                  )
-                })()}
-              </div>
-            )}
-
-            
-            <div style={{ 
-              marginTop: '24px', 
-              paddingTop: '24px', 
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-              textAlign: 'center',
-              fontSize: '12px',
-              color: 'var(--muted)'
-            }}>
-              Support: luca.canepa@gmail.com
-            </div>
-          </div>
-        </Modal>
-      )}
+      <HomeOptionsModal
+        open={homeOptionsModal}
+        onClose={() => setHomeOptionsModal(false)}
+        onOpenGuide={() => setHomeGuideModal(true)}
+        matchOptions={{
+          checkAccidentalRallyStart,
+          setCheckAccidentalRallyStart,
+          accidentalRallyStartDuration,
+          setAccidentalRallyStartDuration,
+          checkAccidentalPointAward,
+          setCheckAccidentalPointAward,
+          accidentalPointAwardDuration,
+          setAccidentalPointAwardDuration,
+          manageCaptainOnCourt,
+          setManageCaptainOnCourt,
+          liberoExitConfirmation,
+          setLiberoExitConfirmation,
+          liberoEntrySuggestion,
+          setLiberoEntrySuggestion,
+          setIntervalDuration,
+          setSetIntervalDuration,
+          keybindingsEnabled,
+          setKeybindingsEnabled
+        }}
+        displayOptions={{
+          displayMode,
+          setDisplayMode,
+          detectedDisplayMode,
+          activeDisplayMode,
+          enterDisplayMode,
+          exitDisplayMode
+        }}
+        wakeLock={{
+          wakeLockActive,
+          toggleWakeLock
+        }}
+      />
 
       {/* Home Guide Modal */}
       <GuideModal
