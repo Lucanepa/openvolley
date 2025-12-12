@@ -291,7 +291,8 @@ export default function MainHeader({
         display: 'flex',
         alignItems: 'center',
         gap: 'clamp(8px, 1.5vw, 12px)',
-        flex: '0 0 auto'
+        flex: '0 0 auto',
+        alignSelf: 'stretch'
       }}>
         {/* Viewport Size Display - Editable */}
         <div style={{
@@ -507,9 +508,12 @@ export default function MainHeader({
             toggleFullscreen()
           }}
           style={{
-            padding: '2px 6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 8px',
             width: 'auto',
-            height: 'auto',
+            height: '80%',
             fontSize: 'clamp(8px, 1.2vw, 12px)',
             fontWeight: 600,
             background: 'rgba(255, 255, 255, 0.1)',
