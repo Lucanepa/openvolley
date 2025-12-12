@@ -405,7 +405,9 @@ export default function RefereeApp() {
           <button
             onClick={toggleFullscreen}
             style={{
-              padding: '6px 12px',
+              padding: '2px 6px',
+              width: 'auto',
+              height: '40px',
               fontSize: '12px',
               fontWeight: 600,
               background: 'rgba(255, 255, 255, 0.1)',

@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import ConnectionStatus from './ConnectionStatus'
+import changelog from '../CHANGELOG'
 
 export default function MainHeader({
   connectionStatuses,
@@ -15,6 +17,9 @@ export default function MainHeader({
   isFullscreen,
   toggleFullscreen
 }) {
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false)
+  const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0'
+
   const renderMatchInfoMenu = (match, matchData) => {
     if (!matchData) return null
 
@@ -27,8 +32,7 @@ export default function MainHeader({
           top: '100%',
           left: '50%',
           transform: 'translateX(-50%)',
-          marginTop: '8px',
-          padding: '12px 16px',
+          padding: '8px 12px',
           background: 'rgba(0, 0, 0, 0.95)',
           border: '1px solid rgba(255, 255, 255, 0.2)',
           borderRadius: '8px',
@@ -102,7 +106,9 @@ export default function MainHeader({
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        position: 'relative'
+        position: 'relative',
+        width: 'auto',
+        height: '80%'
       }}>
         <button
           data-match-info-menu
@@ -111,7 +117,7 @@ export default function MainHeader({
             setMatchInfoMenuOpen(!matchInfoMenuOpen)
           }}
           style={{
-            padding: '6px 12px',
+            padding: '5px 12px',
             fontSize: 'clamp(12px, 1.2vw, 14px)',
             fontWeight: 600,
             background: 'rgba(255, 255, 255, 0.1)',
@@ -123,6 +129,11 @@ export default function MainHeader({
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
+            width: 'auto',
+            height: 'auto',
+            minHeight: '20px',  
+            minWidth: '100px',
+            maxHeight: '30px',
             textTransform: 'uppercase',
             letterSpacing: '0.5px'
           }}
@@ -186,13 +197,130 @@ export default function MainHeader({
         gap: 'clamp(8px, 1.5vw, 12px)',
         flex: '0 0 auto'
       }}>
-        {/* Version */}
-        <div className="header-version" style={{ 
-          fontSize: 'clamp(10px, 1.2vw, 12px)', 
-          color: 'rgba(255, 255, 255, 0.6)',
-          whiteSpace: 'nowrap'
-        }}>
-          Version {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0'}
+        {/* Version with Changelog Menu */}
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setVersionMenuOpen(!versionMenuOpen)
+            }}
+            style={{
+              fontSize: 'clamp(10px, 1.2vw, 12px)',
+              color: 'rgba(255, 255, 255, 0.6)',
+              whiteSpace: 'nowrap',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+            }}
+          >
+            <span>v{currentVersion}</span>
+            <span style={{
+              fontSize: '8px',
+              transition: 'transform 0.2s',
+              transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+            }}>
+              ▼
+            </span>
+          </button>
+
+          {/* Version Changelog Dropdown */}
+          {versionMenuOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '4px',
+                padding: '12px',
+                background: 'rgba(0, 0, 0, 0.95)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '8px',
+                minWidth: '280px',
+                maxWidth: '350px',
+                maxHeight: '400px',
+                overflowY: 'auto',
+                zIndex: 1000,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+              }}
+            >
+              <div style={{
+                fontSize: '14px',
+                fontWeight: 700,
+                color: '#fff',
+                marginBottom: '12px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+                paddingBottom: '8px'
+              }}>
+                Version History
+              </div>
+
+              {changelog.map((release, index) => (
+                <div
+                  key={release.version}
+                  style={{
+                    marginBottom: index < changelog.length - 1 ? '12px' : 0,
+                    paddingBottom: index < changelog.length - 1 ? '12px' : 0,
+                    borderBottom: index < changelog.length - 1 ? '1px solid rgba(255, 255, 255, 0.1)' : 'none'
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '6px'
+                  }}>
+                    <span style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: release.version === currentVersion ? '#4ade80' : '#fff'
+                    }}>
+                      v{release.version}
+                      {release.version === currentVersion && (
+                        <span style={{
+                          marginLeft: '6px',
+                          fontSize: '10px',
+                          background: 'rgba(74, 222, 128, 0.2)',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>
+                          Current
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                      {release.date}
+                    </span>
+                  </div>
+                  <ul style={{
+                    margin: 0,
+                    paddingLeft: '16px',
+                    fontSize: '12px',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    lineHeight: '1.5'
+                  }}>
+                    {release.changes.map((change, i) => (
+                      <li key={i} style={{ marginBottom: '2px' }}>{change}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         
         {/* Fullscreen Button */}
@@ -203,23 +331,16 @@ export default function MainHeader({
             toggleFullscreen()
           }}
           style={{
-            padding: '0 clamp(8px, 1.5vw, 16px)',
-            fontSize: 'clamp(10px, 1.2vw, 12px)',
+            padding: '2px 6px',
+            width: 'auto',
+            height: '30px',
+            fontSize: '12px',
             fontWeight: 600,
             background: 'rgba(255, 255, 255, 0.1)',
             color: '#fff',
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '6px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            minHeight: '20px',
-            height: '80%',
-            minWidth: '60px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            whiteSpace: 'nowrap',
-            width: 'auto'
+            cursor: 'pointer'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'

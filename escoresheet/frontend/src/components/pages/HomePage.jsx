@@ -16,7 +16,7 @@ export default function HomePage({
   return (
     <div className="home-view">
       <div className="home-content">
-        <h1 className="home-title" style={{ width: 'auto' }}>Openvolley eScoresheet Indoor</h1>
+        <h1 className="home-title" style={{ width: 'auto' }}>Openvolley eScoresheet</h1>
         <div className="home-logo">
           <img src={favicon} alt="Openvolley" />
         </div>
@@ -223,7 +223,7 @@ export default function HomePage({
               width: '180px'
             }}
           >
-            Settings
+            Options
           </button>
         </div>
       </div>

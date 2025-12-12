@@ -1523,15 +1523,14 @@
 
   /* Home View */
   .home-view {
-    padding: clamp(4px, 1vh, 10px);
-    width: 80%;
+    width: auto;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: calc(100vh - 40px);
-    max-height: calc(100vh - 40px);
+    height: auto;
+    max-height: calc(90vh - 40px);
     overflow: hidden;
     box-sizing: border-box;
   }
@@ -1541,9 +1540,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: clamp(4px, 1.5vh, 16px);
-    width: 100%;
-    padding: clamp(4px, 1vh, 12px) 0;
+    width: auto;
     box-sizing: border-box;
     overflow: hidden;
     flex: 1;
@@ -1554,6 +1551,7 @@
     font-size: clamp(18px, 4vh, 32px);
     font-weight: 700;
     margin: 0;
+    width: auto;
     text-align: center;
     color: var(--text);
     line-height: 1.2;
@@ -1563,6 +1561,7 @@
     font-size: clamp(16px, 3vh, 24px);
     font-weight: 600;
     margin: 0;
+    width: auto;
     text-align: center;
     color: var(--muted);
   }
@@ -1576,7 +1575,7 @@
   }
 
   .home-logo img {
-    width: 100%;
+    width: auto;
     height: auto;
     max-width: 100%;
   }
@@ -1603,7 +1602,7 @@
   }
 
   .home-match-section {
-    width: 100%;
+    width: auto;
     display: flex;
     justify-content: center;
   }
