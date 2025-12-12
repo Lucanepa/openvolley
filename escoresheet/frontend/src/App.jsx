@@ -2954,24 +2954,23 @@ export default function App() {
         toggleFullscreen={toggleFullscreen}
       />
 
-      <div className="container" style={{ 
+      <div className="container" style={{
+        flex: '1 1 auto',
         minHeight: 0,
-        overflow: 'auto', 
-        width: 'auto', 
-        height: 'auto',
+        width: 'auto',
         maxWidth: 'calc(100% - 40px)',
         display: 'flex',
         flexDirection: 'column',
-        position: 'relative', 
-        justifyContent: 'center',
+        position: 'relative',
         alignItems: 'center',
         margin: '0 auto',
-        padding: '10px 20px'
+        padding: '10px 20px',
+        overflow: 'hidden'
       }}>
       <div className="panel" style={{
         flex: '1 1 auto',
         minHeight: 0,
-        overflowY: 'hidden',
+        overflowY: 'auto',
         overflowX: 'hidden',
         width: 'auto',
         maxWidth: '100%',
