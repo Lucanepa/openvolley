@@ -3,10 +3,17 @@
 
 export const changelog = [
   {
-    version: '0.6.1',
-    date: '2024-12-12',
+    version: '0.6.2',
+    date: '12.12.24',
     changes: [
       'Added collapsible version menu with changelog',
+      'Auto-update changelog on commit'
+    ]
+  },
+  {
+    version: '0.6.1',
+    date: '12.12.24',
+    changes: [
       'Refactored MatchSetup and Scoreboard components for improved structure',
       'Improved responsive layout and styles',
       'Streamlined UI by removing Match Options Card'
@@ -14,7 +21,7 @@ export const changelog = [
   },
   {
     version: '0.5.0',
-    date: '2024-12-01',
+    date: '01.12.24',
     changes: [
       'Initial release with core scoring functionality',
       'Real-time match synchronization',
