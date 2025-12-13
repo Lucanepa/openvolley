@@ -61,6 +61,13 @@
     border-radius: 12px;
     padding: 2px;
   }
+
+  /* Laptop mode: allow overflow for scoreboard (960px - 1400px) */
+  @media (min-width: 961px) and (max-width: 1400px) {
+    .panel {
+      overflow-y: auto !important;
+    }
+  }
   
   .grid-4 {
     display: grid;
@@ -231,18 +238,26 @@
   button.danger { background: var(--danger); }
   button:disabled { opacity: .6; cursor: default; }
   
-  .setup { 
-  display: grid; 
-  gap: 12px; 
+  .setup {
+  display: grid;
+  gap: 12px;
   width: 100%;
-  max-width: 100%;
+  max-width: 800px;
   overflow: auto;
   box-sizing: border-box;
   min-width: 0;
+  padding: 16px;
+  margin: 0 auto;
 }
 .setup > * {
   min-width: 0;
   max-width: 100%;
+}
+/* Larger screens get wider setup */
+@media (min-width: 1400px) {
+  .setup {
+    max-width: 900px;
+  }
 }
   
   .form-grid {
