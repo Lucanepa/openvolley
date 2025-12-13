@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState } from 'react';
-import jsPDF from 'jspdf';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { SetFive } from './components/SetFive';
@@ -2026,315 +2025,36 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-const captureScreenshot = async () => {
-  if (!containerRef.current) return;
-
-  // Store current zoom level to restore later
+const handlePrint = () => {
+  // Store current zoom level and document title
   const savedZoomLevel = zoomLevel;
-  setZoomLevel(1); // Reset to 100% for capture
+  const originalTitle = document.title;
 
-  // Wait for React to apply the zoom change
-  await new Promise(resolve => setTimeout(resolve, 50));
+  // Generate filename for PDF (browsers use document title as default filename)
+  const matchNum = match?.gameNumber || match?.externalId || match?.game_n?.toString() || 'match';
+  const homeShort = match?.homeShortName || homeTeam?.name || 'Home';
+  const awayShort = match?.awayShortName || awayTeam?.name || 'Away';
+  const date = match?.scheduledAt
+    ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
+    : new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+  const filename = `${matchNum}_${sanitize(homeShort)}_${sanitize(awayShort)}_${date}`;
 
-  // Hide buttons temporarily
-  const buttonsContainer = buttonsContainerRef.current;
-  const originalDisplay = buttonsContainer?.style.display;
-  if (buttonsContainer) {
-    buttonsContainer.style.display = 'none';
-  }
-  
-  // Hide cursor - blur any focused element first to remove text cursor
-  const activeElement = document.activeElement as HTMLElement;
-  if (activeElement && activeElement.blur) {
-    activeElement.blur();
-  }
+  // Set document title to filename (browser uses this for PDF name)
+  document.title = filename;
 
-  // Add a global style to hide all cursors
-  const cursorHideStyle = document.createElement('style');
-  cursorHideStyle.id = 'screenshot-hide-cursor';
-  cursorHideStyle.textContent = '* { cursor: none !important; caret-color: transparent !important; }';
-  document.head.appendChild(cursorHideStyle);
+  // Reset zoom to 100% for printing
+  setZoomLevel(1);
 
-  const originalCursor = document.body.style.cursor;
-  document.body.style.cursor = 'none';
-  const originalPointerEvents = document.body.style.pointerEvents;
-  document.body.style.pointerEvents = 'none';
-  
-  // Get parent container and remove margins/padding
-  const container = containerRef.current;
-  const parentContainer = container.parentElement;
-  const originalParentStyle = {
-    padding: parentContainer?.style.padding || '',
-    margin: parentContainer?.style.margin || '',
-    backgroundColor: parentContainer?.style.backgroundColor || '',
-    display: parentContainer?.style.display || ''
-  };
-  
-  // Remove all padding/margins from parent and make it fill viewport
-  if (parentContainer) {
-    parentContainer.style.padding = '0';
-    parentContainer.style.margin = '0';
-    parentContainer.style.backgroundColor = '#ffffff';
-    parentContainer.style.display = 'flex';
-    parentContainer.style.justifyContent = 'center';
-    parentContainer.style.alignItems = 'center';
-    parentContainer.style.width = '100vw';
-    parentContainer.style.height = '100vh';
-    parentContainer.style.position = 'fixed';
-    parentContainer.style.top = '0';
-    parentContainer.style.left = '0';
-    parentContainer.style.zIndex = '9999';
-  }
-  
-  // Remove padding from container itself
-  const originalContainerPadding = container.style.padding;
-  const originalContainerMargin = container.style.margin;
-  const originalContainerBorder = container.style.border;
-  container.style.padding = '0';
-  container.style.margin = '0';
-  
-  // Add black border for cropping reference
-  container.style.border = '3px solid #000000';
-  
-  // Scroll to top
-  window.scrollTo(0, 0);
-  
-  // Wait for layout to update
-  await new Promise(resolve => setTimeout(resolve, 150));
-  
-  // Calculate zoom to fill entire viewport (no padding)
-  const containerRect = container.getBoundingClientRect();
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  
-  const zoomX = viewportWidth / containerRect.width;
-  const zoomY = viewportHeight / containerRect.height;
-  const zoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 100%
-  
-  // Store original transform (before try block so it's accessible in finally)
-  const originalTransform = container.style.transform;
-  const originalTransformOrigin = container.style.transformOrigin;
-  
-  // Apply zoom to fill viewport
-  container.style.transformOrigin = 'center center';
-  container.style.transform = `scale(${zoom})`;
-  
-  // Wait for transform to apply
-  await new Promise(resolve => setTimeout(resolve, 150));
-  
-  try {
-    // Use Screen Capture API to get actual browser screenshot with highest resolution
-    // Note: Browser will prompt for permission - this is a security feature and cannot be avoided
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { 
-        displaySurface: 'browser',
-        width: { ideal: 7680, max: 7680 }, // 8K resolution
-        height: { ideal: 4320, max: 4320 },
-        frameRate: { ideal: 30 }
-      } as any,
-      preferCurrentTab: true
-    } as any);
-    
-    // Create video element to capture frame
-    const video = document.createElement('video');
-    video.srcObject = stream;
-    await video.play();
-    
-    // Wait for video to be ready
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // Create canvas for the capture - since scoresheet fills viewport, capture full viewport
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get canvas context');
-    ctx.drawImage(video, 0, 0);
-    
-    // Stop the stream
-    stream.getTracks().forEach(track => track.stop());
-    
-    // Find the black border edges
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    
-    // Find top edge (first row with black pixels)
-    let top = 0;
-    for (let y = 0; y < canvas.height; y++) {
-      for (let x = 0; x < canvas.width; x++) {
-        const idx = (y * canvas.width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        // Check if pixel is black (or very dark)
-        if (r < 50 && g < 50 && b < 50) {
-          top = y;
-          break;
-        }
-      }
-      if (top > 0) break;
-    }
-    
-    // Find bottom edge (last row with black pixels)
-    let bottom = canvas.height;
-    for (let y = canvas.height - 1; y >= 0; y--) {
-      for (let x = 0; x < canvas.width; x++) {
-        const idx = (y * canvas.width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        if (r < 50 && g < 50 && b < 50) {
-          bottom = y;
-          break;
-        }
-      }
-      if (bottom < canvas.height) break;
-    }
-    
-    // Find left edge (first column with black pixels)
-    let left = 0;
-    for (let x = 0; x < canvas.width; x++) {
-      for (let y = 0; y < canvas.height; y++) {
-        const idx = (y * canvas.width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        if (r < 50 && g < 50 && b < 50) {
-          left = x;
-          break;
-        }
-      }
-      if (left > 0) break;
-    }
-    
-    // Find right edge (last column with black pixels)
-    let right = canvas.width;
-    for (let x = canvas.width - 1; x >= 0; x--) {
-      for (let y = 0; y < canvas.height; y++) {
-        const idx = (y * canvas.width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        if (r < 50 && g < 50 && b < 50) {
-          right = x;
-          break;
-        }
-      }
-      if (right < canvas.width) break;
-    }
-    
-    // Add small padding inside the border (skip the border itself)
-    const borderWidth = 3; // Match the border width
-    const cropX = left + borderWidth;
-    const cropY = top + borderWidth;
-    const cropWidth = right - left - (borderWidth * 2);
-    const cropHeight = bottom - top - (borderWidth * 2);
-    
-    // Create cropped canvas
-    const croppedCanvas = document.createElement('canvas');
-    croppedCanvas.width = cropWidth;
-    croppedCanvas.height = cropHeight;
-    const croppedCtx = croppedCanvas.getContext('2d');
-    if (!croppedCtx) throw new Error('Could not get cropped canvas context');
-    croppedCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-    
-    // Resize to A4 landscape (297mm x 210mm) at highest resolution
-    // A4 landscape at 600 DPI for maximum quality
-    const dpi = 600;
-    const a4Width = Math.round(297 * dpi / 25.4); // 297mm at 600 DPI = 7016px
-    const a4Height = Math.round(210 * dpi / 25.4); // 210mm at 600 DPI = 4961px
-    
-    // Calculate scaling to fit A4 while maintaining aspect ratio
-    const scaleX = a4Width / cropWidth;
-    const scaleY = a4Height / cropHeight;
-    const scale = Math.min(scaleX, scaleY);
-    
-    const finalWidth = Math.round(cropWidth * scale);
-    const finalHeight = Math.round(cropHeight * scale);
-    
-    // Create final canvas with A4 dimensions
-    const finalCanvas = document.createElement('canvas');
-    finalCanvas.width = a4Width;
-    finalCanvas.height = a4Height;
-    const finalCtx = finalCanvas.getContext('2d');
-    if (!finalCtx) throw new Error('Could not get final canvas context');
-    
-    // Fill with white background
-    finalCtx.fillStyle = '#ffffff';
-    finalCtx.fillRect(0, 0, a4Width, a4Height);
-    
-    // Center the image
-    const offsetX = (a4Width - finalWidth) / 2;
-    const offsetY = (a4Height - finalHeight) / 2;
-    
-    // Draw the resized image
-    finalCtx.drawImage(croppedCanvas, offsetX, offsetY, finalWidth, finalHeight);
-    
-    // Convert to PDF with highest quality
-    // Use PNG with maximum quality (quality parameter doesn't affect PNG, but we use 1.0 for clarity)
-    const imgData = finalCanvas.toDataURL('image/png', 1.0);
-    const pdf = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: 'a4'
-    });
-    
-    // Add image to PDF (A4 landscape is 297mm x 210mm) with highest quality
-    // PNG format already provides lossless compression
-    pdf.addImage(imgData, 'PNG', 0, 0, 297, 210);
-    
-    // Download the PDF with naming convention: matchn_homeshort_awayshort_date.pdf
-    const matchNum = match?.gameNumber || match?.externalId || match?.game_n?.toString() || 'match';
-    const homeShort = match?.homeShortName || homeTeam?.name || 'Home';
-    const awayShort = match?.awayShortName || awayTeam?.name || 'Away';
-    const date = match?.scheduledAt 
-      ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
-      : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    
-    // Sanitize team names (remove special characters, spaces, etc.)
-    const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-    const filename = `${matchNum}_${sanitize(homeShort)}_${sanitize(awayShort)}_${date}.pdf`;
-    pdf.save(filename);
-  } catch (error) {
-    console.error('Screenshot failed:', error);
-  } finally {
-    // Restore container styles
-    if (containerRef.current) {
-      containerRef.current.style.transform = originalTransform;
-      containerRef.current.style.transformOrigin = originalTransformOrigin;
-      containerRef.current.style.padding = originalContainerPadding;
-      containerRef.current.style.margin = originalContainerMargin;
-      containerRef.current.style.border = originalContainerBorder;
-    }
-    // Restore parent container styles
-    if (parentContainer) {
-      parentContainer.style.padding = originalParentStyle.padding;
-      parentContainer.style.margin = originalParentStyle.margin;
-      parentContainer.style.backgroundColor = originalParentStyle.backgroundColor;
-      parentContainer.style.display = originalParentStyle.display;
-      parentContainer.style.width = '';
-      parentContainer.style.height = '';
-      parentContainer.style.position = '';
-      parentContainer.style.top = '';
-      parentContainer.style.left = '';
-      parentContainer.style.zIndex = '';
-      parentContainer.style.justifyContent = '';
-      parentContainer.style.alignItems = '';
-    }
-    // Restore buttons visibility
-    if (buttonsContainer) {
-      buttonsContainer.style.display = originalDisplay || '';
-    }
-    // Restore cursor and remove the cursor hide style
-    const cursorStyle = document.getElementById('screenshot-hide-cursor');
-    if (cursorStyle) {
-      cursorStyle.remove();
-    }
-    document.body.style.cursor = originalCursor;
-    document.body.style.pointerEvents = originalPointerEvents;
-    // Restore zoom level
-    setZoomLevel(savedZoomLevel);
-  }
+  // Wait for zoom to apply, then print
+  setTimeout(() => {
+    window.print();
+    // Restore title and zoom after print dialog closes
+    setTimeout(() => {
+      document.title = originalTitle;
+      setZoomLevel(savedZoomLevel);
+    }, 500);
+  }, 100);
 };
 
   return (
@@ -2383,23 +2103,46 @@ const captureScreenshot = async () => {
             {isFullscreen ? '⤓' : '⤢'}
           </button>
 
-          {/* Save button */}
+          {/* Print / Save as PDF button */}
           <button
-            onClick={captureScreenshot}
+            onClick={handlePrint}
             className="bg-green-500 hover:bg-green-700 text-white px-3 py-1 rounded text-sm shadow"
+            title="Print or Save as PDF (use browser's Save as PDF option)"
           >
-            Save
+            Print / PDF
           </button>
         </div>
       </div>
+      <style>{`
+        @media print {
+          .scoresheet-container {
+            transform: scale(0.72) !important;
+            transform-origin: top center !important;
+            width: 410mm !important;
+            height: 287mm !important;
+            margin: 0 auto !important;
+          }
+          .scoresheet-scroll-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+            width: 297mm !important;
+            height: 210mm !important;
+            min-height: 0 !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: flex-start !important;
+          }
+        }
+      `}</style>
       <div
         ref={scrollContainerRef}
-        className="min-h-screen bg-gray-100 p-2 flex justify-center overflow-auto print:p-0 print:bg-white print:h-[297mm] print:w-[420mm] print:flex print:items-center print:justify-center print:overflow-hidden"
+        className="scoresheet-scroll-container min-h-screen bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white"
         style={{ touchAction: 'pan-x pan-y' }}
       >
         <div
           ref={containerRef}
-          className="w-[410mm] h-[287mm] bg-white shadow-xl print:shadow-none p-3 print:p-0 print:overflow-hidden print:m-auto print:w-[410mm] print:h-[287mm] print:box-border relative print:page-break-inside-avoid"
+          className="scoresheet-container w-[410mm] h-[287mm] bg-white shadow-xl print:shadow-none p-3 print:p-3 relative"
           style={{
             boxSizing: 'border-box',
             transform: `scale(${zoomLevel})`,
@@ -2407,7 +2150,7 @@ const captureScreenshot = async () => {
             transition: 'transform 0.2s ease'
           }}
         >
-        <div className="h-full print:overflow-hidden" style={{ padding: '5mm 5mm 5mm 5mm' }}>
+        <div className="h-full" style={{ padding: '5mm 5mm 5mm 5mm' }}>
             <div ref={headerRef}>
               <Header 
                 match={match}
