@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.7.1',
+    date: '13.12.25',
+    changes: [
+      'Update versioning and enhance print functionality in scoresheet'
+    ]
+  },
+  {
     version: '0.6.14',
     date: '12.12.25',
     changes: [
