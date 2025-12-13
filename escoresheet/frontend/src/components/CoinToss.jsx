@@ -36,10 +36,27 @@ function formatDateToDDMMYYYY(dateStr) {
 
 function formatDateToISO(dateStr) {
   if (!dateStr) return ''
-  const parts = dateStr.split('.')
+  // Handle both dot and slash separators (dd.mm.yyyy or dd/mm/yyyy)
+  const separator = dateStr.includes('/') ? '/' : '.'
+  const parts = dateStr.split(separator)
   if (parts.length !== 3) return dateStr
   const [day, month, year] = parts
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+}
+
+// Normalize DOB to dd.mm.yyyy format
+function normalizeDob(dob) {
+  if (!dob) return ''
+  // If already in ISO format (yyyy-mm-dd), convert to dd.mm.yyyy
+  if (dob.includes('-') && dob.length === 10 && dob.indexOf('-') === 4) {
+    const [year, month, day] = dob.split('-')
+    return `${day}.${month}.${year}`
+  }
+  // If using slashes (dd/mm/yyyy), convert to dots
+  if (dob.includes('/')) {
+    return dob.replace(/\//g, '.')
+  }
+  return dob
 }
 
 const getRoleOrder = (role) => {
@@ -168,7 +185,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
             number: p.number,
             lastName: p.lastName || (p.name ? p.name.split(' ')[0] : ''),
             firstName: p.firstName || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
-            dob: p.dob || '',
+            dob: normalizeDob(p.dob) || '',
             libero: p.libero || '',
             isCaptain: p.isCaptain || false
           })).sort((a, b) => (a.number || 999) - (b.number || 999)))
@@ -179,18 +196,27 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
             number: p.number,
             lastName: p.lastName || (p.name ? p.name.split(' ')[0] : ''),
             firstName: p.firstName || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
-            dob: p.dob || '',
+            dob: normalizeDob(p.dob) || '',
             libero: p.libero || '',
             isCaptain: p.isCaptain || false
           })).sort((a, b) => (a.number || 999) - (b.number || 999)))
         }
 
-        // Load bench officials
-        if (homeTeam?.benchOfficials?.length) {
-          setBenchHome(homeTeam.benchOfficials)
+        // Load bench officials - check match object first, then team
+        const homeBenchData = match.bench_home?.length ? match.bench_home : homeTeam?.benchOfficials
+        const awayBenchData = match.bench_away?.length ? match.bench_away : awayTeam?.benchOfficials
+
+        if (homeBenchData?.length) {
+          setBenchHome(homeBenchData.map(b => ({
+            ...b,
+            dob: normalizeDob(b.dob) || ''
+          })))
         }
-        if (awayTeam?.benchOfficials?.length) {
-          setBenchAway(awayTeam.benchOfficials)
+        if (awayBenchData?.length) {
+          setBenchAway(awayBenchData.map(b => ({
+            ...b,
+            dob: normalizeDob(b.dob) || ''
+          })))
         }
 
         // Load coin toss data if previously saved

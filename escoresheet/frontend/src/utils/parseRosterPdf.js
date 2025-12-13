@@ -7,9 +7,19 @@ export async function parseRosterPdf(file) {
   try {
     // Dynamic import of pdfjs-dist
     const pdfjsLib = await import('pdfjs-dist')
-    
-    // Set worker source
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+    // Set worker source - use unpkg which has reliable file structure for all versions
+    // Try multiple CDN sources for better reliability
+    const version = pdfjsLib.version
+    const cdnUrls = [
+      `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`,
+      `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`,
+      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`,
+      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.js`,
+    ]
+
+    // Use the first URL (unpkg with .mjs extension for v5.x)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = cdnUrls[0]
 
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise

@@ -21,9 +21,9 @@ export default function HomePage({
           <img src={favicon} alt="Openvolley" />
         </div>
 
-        <div className="home-match-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', maxWidth: '400px', margin: '0 auto', width: '100%', padding: '0 20px' }}>
+        <div className="home-match-section" style={{ margin: '0 auto', width: '100%' }}>
           {/* New Match Button with Collapsible Menu */}
-          <div style={{ width: '180px' }}>
+          <div style={{ width: '180px', position: 'relative' }}>
             <button
               onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
               style={{
@@ -54,16 +54,21 @@ export default function HomePage({
               <span style={{ transform: newMatchMenuOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
             </button>
 
-            {/* Collapsible Menu */}
+            {/* Collapsible Menu - Absolutely positioned to not affect other buttons */}
             {newMatchMenuOpen && (
               <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                width: '180px',
                 marginTop: '8px',
                 background: 'rgba(255, 255, 255, 0.05)',
                 borderRadius: '12px',
                 padding: '12px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px'
+                gap: '8px',
+                zIndex: 10
               }}>
                 <button
                   onClick={() => {
