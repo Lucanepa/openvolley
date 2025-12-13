@@ -178,6 +178,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const isVeryCompact = isLandscape
     ? (viewportWidth <= 800 || viewportHeight < 600)
     : (viewportHeight <= 800 || viewportWidth < 600)
+  // Laptop mode: between compact (960) and full desktop (1400) - smaller UI than full desktop
+  const isLaptopMode = !isCompactMode && viewportWidth > 960 && viewportWidth <= 1400
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
@@ -2605,7 +2607,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const renderScoreDisplay = useCallback(
     (style = {}) => (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
-        {/* Score display container - just the score, no balls */}
+        {/* Score display container - colon absolutely centered */}
         <div
           className="set-score-display"
           style={{
@@ -2613,23 +2615,40 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '5px 16px'
+            padding: '5px 16px',
+            letterSpacing: 0 // Reset letter-spacing from CSS to prevent colon offset
           }}
         >
-          {/* Left side: score - FIXED width to prevent colon movement */}
-          <div style={{ width: isCompactMode ? 60 : 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: isCompactMode ? '48px' : '90px', textAlign: 'right' }}>{pointsBySide.left}</span>
-          </div>
-          {/* Center colon - fixed width to stay centered */}
-          <span style={{ width: isCompactMode ? 20 : 30, textAlign: 'center', flexShrink: 0, fontSize: isCompactMode ? '36px' : 'inherit' }}>:</span>
-          {/* Right side: score - FIXED width to prevent colon movement */}
-          <div style={{ width: isCompactMode ? 60 : 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: isCompactMode ? '48px' : '90px', textAlign: 'left' }}>{pointsBySide.right}</span>
-          </div>
+          {/* Left side: score - right aligned, fixed width */}
+          <span style={{
+            display: 'inline-block',
+            width: isCompactMode ? '60px' : isLaptopMode ? '80px' : '100px',
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            textAlign: 'right',
+            letterSpacing: 0
+          }}>{pointsBySide.left}</span>
+          {/* Center colon - fixed width to stay perfectly centered */}
+          <span style={{
+            display: 'inline-block',
+            width: isCompactMode ? '20px' : isLaptopMode ? '24px' : '30px',
+            textAlign: 'center',
+            fontSize: isCompactMode ? '36px' : isLaptopMode ? '50px' : '70px',
+            letterSpacing: 0
+          }}>:</span>
+          {/* Right side: score - left aligned, fixed width */}
+          <span style={{
+            display: 'inline-block',
+            width: isCompactMode ? '60px' : isLaptopMode ? '80px' : '100px',
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            textAlign: 'left',
+            letterSpacing: 0
+          }}>{pointsBySide.right}</span>
         </div>
       </div>
     ),
-    [pointsBySide.left, pointsBySide.right, isCompactMode]
+    [pointsBySide.left, pointsBySide.right, isCompactMode, isLaptopMode]
   )
 
   const openManualLineup = useCallback(
@@ -7604,17 +7623,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         {/* Center: Set Counter fixed in center, Rally Status (left) and Last Action (right) on sides */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isCompactMode ? '80px 1fr 80px' : '1fr',
+          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isCompactMode ? '80px 1fr 80px' : '100px 1fr 100px') : '1fr',
           alignItems: 'center',
-          gap: isCompactMode ? '4px' : '16px',
+          gap: isCompactMode ? '4px' : '8px',
           flex: '1 1 auto'
         }}>
-          {/* Rally Status - Left of set counter (compact only) */}
-          {isCompactMode && (
+          {/* Rally Status - Left of set counter (compact and laptop) */}
+          {(isCompactMode || isLaptopMode) && (
             <div
               onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
               style={{
-                fontSize: rallyStatusExpanded ? '12px' : '10px',
+                fontSize: isCompactMode ? '10px' : '11px',
                 color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c',
                 cursor: 'pointer',
                 textAlign: 'right',
@@ -7666,8 +7685,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </span>
           </div>
 
-          {/* Last Action - Right of set counter (compact only) */}
-          {isCompactMode && (() => {
+          {/* Last Action - Right of set counter (compact and laptop) */}
+          {(isCompactMode || isLaptopMode) && (() => {
             if (!data?.events || data.events.length === 0) {
               return <div /> // Empty placeholder to maintain grid
             }
@@ -7734,7 +7753,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 <div
                   onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
                   style={{
-                    fontSize: '10px',
+                    fontSize: isCompactMode ? '10px' : '11px',
                     color: 'var(--muted)',
                     cursor: 'pointer',
                     textAlign: 'left',
@@ -10314,6 +10333,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       width: '40%',
                       height: '80%',
                       padding: '0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
                       fontSize: 'clamp(20px, 4vw, 32px)',
                       fontWeight: 700,
                       background: 'var(--accent)',
@@ -10325,7 +10349,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       animation: 'lineupFlash 1.5s ease-in-out infinite'
                     }}
                   >
-                    Line-up
+                    <span>Line-up</span>
+                    <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamALabel} - {teamAShortName}</span>
                   </button>
                 )}
                 {!rightTeamLineupSet && (
@@ -10341,6 +10366,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       width: '40%',
                       height: '80%',
                       padding: '0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
                       fontSize: 'clamp(20px, 4vw, 32px)',
                       fontWeight: 700,
                       background: 'var(--accent)',
@@ -10352,7 +10382,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       animation: 'lineupFlash 1.5s ease-in-out infinite'
                     }}
                   >
-                    Line-up
+                    <span>Line-up</span>
+                    <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamBLabel} - {teamBShortName}</span>
                   </button>
                 )}
               </>
@@ -11246,8 +11277,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       Undo
                     </button>
                   </div>
-                  {/* Rally status and last action - only show beneath rally controls in non-compact mode (compact mode shows in header) */}
-                  {!isCompactMode && (
+                  {/* Rally status and last action - only show beneath rally controls in full desktop mode (compact and laptop show in header) */}
+                  {!isCompactMode && !isLaptopMode && (
                   <div
                     style={{
                       marginTop: '8px',

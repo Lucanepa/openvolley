@@ -2984,7 +2984,13 @@ export default function App() {
         overflowX: 'hidden',
         width: 'auto',
         maxWidth: '100%',
-        padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px'
+        padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
+        // Vertical centering for CoinToss and MatchSetup screens
+        ...(showCoinToss || showMatchSetup ? {
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        } : {})
       }}>
         {showCoinToss && matchId ? (
           <CoinToss
