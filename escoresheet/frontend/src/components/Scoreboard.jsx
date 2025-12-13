@@ -73,6 +73,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [rightTeamSanctionsExpanded, setRightTeamSanctionsExpanded] = useState(false)
   const [leftTeamBenchExpanded, setLeftTeamBenchExpanded] = useState(false)
   const [rightTeamBenchExpanded, setRightTeamBenchExpanded] = useState(false)
+  // Main layout collapsible sections (collapsed by default on tablet)
+  const [leftMainBenchExpanded, setLeftMainBenchExpanded] = useState(false)
+  const [rightMainBenchExpanded, setRightMainBenchExpanded] = useState(false)
+  const [leftMainLiberosExpanded, setLeftMainLiberosExpanded] = useState(false)
+  const [rightMainLiberosExpanded, setRightMainLiberosExpanded] = useState(false)
+  const [leftMainOfficialsExpanded, setLeftMainOfficialsExpanded] = useState(false)
+  const [rightMainOfficialsExpanded, setRightMainOfficialsExpanded] = useState(false)
+  const [rallyStatusExpanded, setRallyStatusExpanded] = useState(false) // Toggle rally status/last action size
   const [accidentalRallyConfirmModal, setAccidentalRallyConfirmModal] = useState(null) // { onConfirm: function } | null
   const [accidentalPointConfirmModal, setAccidentalPointConfirmModal] = useState(null) // { team: 'home'|'away', onConfirm: function } | null
   const lastPointAwardedTimeRef = useRef(null) // Track when last point was awarded
@@ -159,6 +167,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string } | null
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
+  // Compact mode: landscape (width >= height) = width <= 960 OR height < 768
+  //               portrait (height > width) = height <= 960 OR width < 768
+  const isLandscape = viewportWidth >= viewportHeight
+  const isCompactMode = isLandscape
+    ? (viewportWidth <= 960 || viewportHeight < 768)
+    : (viewportHeight <= 960 || viewportWidth < 768)
+  const isVeryCompact = isLandscape
+    ? (viewportWidth <= 800 || viewportHeight < 600)
+    : (viewportHeight <= 800 || viewportWidth < 600)
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
@@ -424,6 +443,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     window.addEventListener('resize', checkScreenSize)
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [displayMode])
+
+  // Track viewport size for responsive layout
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
@@ -2576,64 +2605,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const renderScoreDisplay = useCallback(
     (style = {}) => (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
-        {/* Wrapper with ball on left/right OUTSIDE the score container */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Left ball - visible when left team is serving */}
-          <div style={{ width: 32, height: 32, flexShrink: 0 }}>
-            {leftServing && (
-              <img
-                src={mikasaVolleyball}
-                alt="Serving team"
-                style={{
-                  ...serveBallBaseStyle,
-                  width: 32,
-                  height: 32
-                }}
-              />
-            )}
+        {/* Score display container - just the score, no balls */}
+        <div
+          className="set-score-display"
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '5px 16px'
+          }}
+        >
+          {/* Left side: score - FIXED width to prevent colon movement */}
+          <div style={{ width: isCompactMode ? 60 : 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: isCompactMode ? '48px' : '90px', textAlign: 'right' }}>{pointsBySide.left}</span>
           </div>
-          
-          {/* Score display container */}
-          <div
-            className="set-score-display"
-            style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '5px 16px'
-            }}
-          >
-            {/* Left side: score - FIXED width to prevent colon movement */}
-            <div style={{ width: 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '90px', textAlign: 'right' }}>{pointsBySide.left}</span>
-            </div>
-            {/* Center colon - fixed width to stay centered */}
-            <span style={{ width: 30, textAlign: 'center', flexShrink: 0 }}>:</span>
-            {/* Right side: score - FIXED width to prevent colon movement */}
-            <div style={{ width: 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '90px', textAlign: 'left' }}>{pointsBySide.right}</span>
-            </div>
-          </div>
-          
-          {/* Right ball - visible when right team is serving */}
-          <div style={{ width: 32, height: 32, flexShrink: 0 }}>
-            {rightServing && (
-              <img
-                src={mikasaVolleyball}
-                alt="Serving team"
-                style={{
-                  ...serveBallBaseStyle,
-                  width: 32,
-                  height: 32
-                }}
-              />
-            )}
+          {/* Center colon - fixed width to stay centered */}
+          <span style={{ width: isCompactMode ? 20 : 30, textAlign: 'center', flexShrink: 0, fontSize: isCompactMode ? '36px' : 'inherit' }}>:</span>
+          {/* Right side: score - FIXED width to prevent colon movement */}
+          <div style={{ width: isCompactMode ? 60 : 100, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: isCompactMode ? '48px' : '90px', textAlign: 'left' }}>{pointsBySide.right}</span>
           </div>
         </div>
       </div>
     ),
-    [leftServing, rightServing, pointsBySide.left, pointsBySide.right, serveBallBaseStyle]
+    [pointsBySide.left, pointsBySide.right, isCompactMode]
   )
 
   const openManualLineup = useCallback(
@@ -7600,92 +7596,272 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   return (
     <div className="match-record">
       <ScoreboardToolbar>
-        <div className="toolbar-left">
-          <button 
-            className="secondary" 
-            onClick={() => (onOpenSetup ? onOpenSetup() : null)}
-            style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
-          >
-            Home
-          </button>
-          </div>
-          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span className="toolbar-clock">{formatTimestamp(now)}</span>
-            <div className="toolbar-divider" />
-            <button
-              className="secondary"
-              onClick={async () => {
-                try {
-                  const match = data?.match
-                  if (!match) {
-                    alert('No match data available')
-                    return
-                  }
+        {/* Left: Date/Time */}
+        <div className="toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
+          <span className="toolbar-clock" style={{ fontSize: isCompactMode ? '11px' : '14px' }}>{formatTimestamp(now)}</span>
+        </div>
 
-                  // Gather all match data for the scoresheet
-                  const allSets = data?.sets || []
-                  const allEvents = data?.events || []
-
-                  const scoresheetData = {
-                    match,
-                    homeTeam: data?.homeTeam,
-                    awayTeam: data?.awayTeam,
-                    homePlayers: data?.homePlayers || [],
-                    awayPlayers: data?.awayPlayers || [],
-                    sets: allSets,
-                    events: allEvents,
-                    sanctions: [] // TODO: Extract sanctions from events
-                  }
-
-                  // Store data in sessionStorage to pass to new window
-                  sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-
-                  // Open scoresheet in new window
-                  const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
-
-                  if (!scoresheetWindow) {
-                    alert('Please allow popups to view the scoresheet')
-                    return
-                  }
-
-                  // Set up error listener for scoresheet window
-                  const errorListener = (event) => {
-                    // Only accept messages from the scoresheet window
-                    if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                      setScoresheetErrorModal({
-                        error: event.data.error || 'Unknown error',
-                        details: event.data.details || event.data.stack || ''
-                      })
-                      window.removeEventListener('message', errorListener)
-                    }
-                  }
-
-                  window.addEventListener('message', errorListener)
-
-                  // Clean up listener after 30 seconds (scoresheet should load by then)
-                  setTimeout(() => {
-                    window.removeEventListener('message', errorListener)
-                  }, 30000)
-                } catch (error) {
-                  console.error('Error opening scoresheet:', error)
-                  setScoresheetErrorModal({
-                    error: 'Failed to open scoresheet',
-                    details: error.message || ''
-                  })
-                }
+        {/* Center: Set Counter fixed in center, Rally Status (left) and Last Action (right) on sides */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isCompactMode ? '80px 1fr 80px' : '1fr',
+          alignItems: 'center',
+          gap: isCompactMode ? '4px' : '16px',
+          flex: '1 1 auto'
+        }}>
+          {/* Rally Status - Left of set counter (compact only) */}
+          {isCompactMode && (
+            <div
+              onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
+              style={{
+                fontSize: rallyStatusExpanded ? '12px' : '10px',
+                color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c',
+                cursor: 'pointer',
+                textAlign: 'right',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontWeight: 600
               }}
-              style={{ background: '#22c55e', color: '#000', fontWeight: 600 }}
             >
-              📄 Scoresheet
-            </button>
-          </div>
-        <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
+            </div>
+          )}
 
-          
+          {/* Set Counter - Always centered */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: isCompactMode ? '6px' : '12px'
+          }}>
+            <span style={{
+              padding: isCompactMode ? '2px 6px' : '4px 10px',
+              borderRadius: '4px',
+              fontSize: isCompactMode ? '12px' : '16px',
+              fontWeight: 700,
+              background: leftTeam?.color || '#ef4444',
+              color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff'
+            }}>
+              {setScore?.left || 0}
+            </span>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              fontSize: isCompactMode ? '10px' : '14px'
+            }}>
+              <span style={{ color: 'var(--muted)', fontWeight: 600 }}>SET</span>
+              <span style={{ fontWeight: 700 }}>{data?.set?.index || 1}</span>
+            </div>
+            <span style={{
+              padding: isCompactMode ? '2px 6px' : '4px 10px',
+              borderRadius: '4px',
+              fontSize: isCompactMode ? '12px' : '16px',
+              fontWeight: 700,
+              background: rightTeam?.color || '#3b82f6',
+              color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff'
+            }}>
+              {setScore?.right || 0}
+            </span>
+          </div>
+
+          {/* Last Action - Right of set counter (compact only) */}
+          {isCompactMode && (() => {
+            if (!data?.events || data.events.length === 0) {
+              return <div /> // Empty placeholder to maintain grid
+            }
+            const allEvents = [...data.events].sort((a, b) => {
+              const aSeq = a.seq || 0
+              const bSeq = b.seq || 0
+              if (aSeq !== 0 || bSeq !== 0) return bSeq - aSeq
+              const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+              const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+              return bTime - aTime
+            })
+            let lastEvent = null
+            for (const e of allEvents) {
+              if (e.type === 'rally_start' || e.type === 'replay') continue
+              if (e.type === 'lineup') {
+                const hasInitial = e.payload?.isInitial === true
+                const hasSubstitution = e.payload?.fromSubstitution === true
+                if (!hasInitial && !hasSubstitution) continue
+              }
+              const desc = getActionDescription(e)
+              if (desc && desc !== 'Unknown action') {
+                lastEvent = e
+                break
+              }
+            }
+            if (!lastEvent) return <div /> // Empty placeholder to maintain grid
+            const fullDescription = getActionDescription(lastEvent)
+            // Simplified action type for compact display
+            const getSimpleActionType = (event) => {
+              switch (event.type) {
+                case 'point': return 'Point'
+                case 'timeout': return 'Timeout'
+                case 'substitution': return event.payload?.isExceptional ? 'Exc. substitution' : 'Substitution'
+                case 'libero_entry': return 'Libero entry'
+                case 'libero_exit': return 'Libero exit'
+                case 'libero_exchange': return 'Libero exchange'
+                case 'libero_unable': return 'Libero unable'
+                case 'sanction': {
+                  const sanctionType = event.payload?.sanctionType
+                  if (sanctionType === 'warning') return 'Warning'
+                  if (sanctionType === 'penalty') return 'Penalty'
+                  if (sanctionType === 'expulsion') return 'Expulsion'
+                  if (sanctionType === 'disqualification') return 'Disqualification'
+                  return 'Sanction'
+                }
+                case 'delay_sanction': {
+                  const delayType = event.payload?.sanctionType
+                  if (delayType === 'warning') return 'Delay warning'
+                  if (delayType === 'penalty') return 'Delay penalty'
+                  return 'Delay sanction'
+                }
+                case 'coin_toss': return 'Coin toss'
+                case 'set_start': return 'Set start'
+                case 'set_end': return 'Set end'
+                case 'lineup': return 'Line-up'
+                case 'forfait': return 'Forfait'
+                case 'injury': return 'Injury'
+                default: return event.type
+              }
+            }
+            const simpleAction = getSimpleActionType(lastEvent)
+            return (
+              <div style={{ position: 'relative' }}>
+                <div
+                  onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
+                  style={{
+                    fontSize: '10px',
+                    color: 'var(--muted)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <span style={{ opacity: 0.7 }}>Last action: </span>
+                  <span>{simpleAction}</span>
+                </div>
+                {/* Tooltip popup with full description */}
+                {rallyStatusExpanded && (
+                  <div
+                    onClick={() => setRallyStatusExpanded(false)}
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      marginTop: '4px',
+                      padding: '8px 12px',
+                      background: 'rgba(0, 0, 0, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      color: '#fff',
+                      whiteSpace: 'nowrap',
+                      zIndex: 1001,
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                    }}
+                  >
+                    {fullDescription}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* Right: Scoresheet, Menu (Home button moved to MainHeader) */}
+        <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isCompactMode ? '4px' : '12px' }}>
+          <button
+            className="secondary"
+            onClick={async () => {
+              try {
+                const match = data?.match
+                if (!match) {
+                  alert('No match data available')
+                  return
+                }
+
+                // Gather all match data for the scoresheet
+                const allSets = data?.sets || []
+                const allEvents = data?.events || []
+
+                const scoresheetData = {
+                  match,
+                  homeTeam: data?.homeTeam,
+                  awayTeam: data?.awayTeam,
+                  homePlayers: data?.homePlayers || [],
+                  awayPlayers: data?.awayPlayers || [],
+                  sets: allSets,
+                  events: allEvents,
+                  sanctions: [] // TODO: Extract sanctions from events
+                }
+
+                // Store data in sessionStorage to pass to new window
+                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+
+                // Open scoresheet in new window
+                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+
+                if (!scoresheetWindow) {
+                  alert('Please allow popups to view the scoresheet')
+                  return
+                }
+
+                // Set up error listener for scoresheet window
+                const errorListener = (event) => {
+                  // Only accept messages from the scoresheet window
+                  if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                    setScoresheetErrorModal({
+                      error: event.data.error || 'Unknown error',
+                      details: event.data.details || event.data.stack || ''
+                    })
+                    window.removeEventListener('message', errorListener)
+                  }
+                }
+
+                window.addEventListener('message', errorListener)
+
+                // Clean up listener after 30 seconds (scoresheet should load by then)
+                setTimeout(() => {
+                  window.removeEventListener('message', errorListener)
+                }, 30000)
+              } catch (error) {
+                console.error('Error opening scoresheet:', error)
+                setScoresheetErrorModal({
+                  error: 'Failed to open scoresheet',
+                  details: error.message || ''
+                })
+              }
+            }}
+            style={{
+              background: '#22c55e',
+              color: '#000',
+              fontWeight: 600,
+              padding: isCompactMode ? '4px 8px' : '8px 16px',
+              fontSize: isCompactMode ? '10px' : '14px'
+            }}
+          >
+            {isCompactMode ? '📄' : '📄'}
+          </button>
           <MenuList
-            buttonLabel="Menu"
+            buttonLabel="☰"
             buttonClassName="secondary"
-            buttonStyle={{ background: '#22c55e', color: '#000', fontWeight: 600, width: '160px', textAlign: 'center' }}
+            buttonStyle={{
+              background: '#22c55e',
+              color: '#000',
+              fontWeight: 600,
+              width: isCompactMode ? 'auto' : 'auto',
+              padding: isCompactMode ? '4px 8px' : '8px 16px',
+              fontSize: isCompactMode ? '14px' : '14px',
+              textAlign: 'center'
+            }}
+            showArrow={false}
             position="right"
             items={[
               {
@@ -8145,28 +8321,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
-      {/* Team Names Container */}
+      {/* Team Names Container - Hide on compact mode (info is now in toolbar) */}
+      {!isCompactMode && (
       <div style={{
         display: 'flex',
         alignItems: 'center',
         width: 'auto',
-        padding: '12px 16px',
+        padding: '8px 16px',
         background: 'rgba(15, 23, 42, 0.4)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
       }}>
-        {/* Left Team - 40% */}
+        {/* Left Team */}
         <div style={{
           flex: '1',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-end',
           gap: '8px',
-          paddingRight: '12px',
-          height: '100%'
+          paddingRight: '12px'
         }}>
-
           <span style={{
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: 600,
             color: 'var(--text)',
             lineHeight: '1.2'
@@ -8174,130 +8349,57 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {leftTeam.name || (leftIsHome ? 'Home' : 'Away')}
           </span>
           <div style={{
-            padding: '4px 10px',
-            borderRadius: '6px',
-            fontSize: '14px',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
             fontWeight: 700,
             background: leftTeam.color || '#ef4444',
-            color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
-            minWidth: '32px',
-            textAlign: 'center',
-            lineHeight: '1.2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff'
           }}>
             {teamALabel}
           </div>
         </div>
 
-        {/* Set Counter - 20% */}
+        {/* VS divider */}
         <div style={{
-          flex: '0 0 20%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          gap: '16px'
+          padding: '0 16px',
+          fontSize: '12px',
+          color: 'var(--muted)',
+          fontWeight: 600
         }}>
-          <div style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '16px',
-            fontWeight: 700,
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            color: 'var(--text)',
-            textAlign: 'center',
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            {setScore.left}
-          </div>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '2px'
-          }}>
-            <span style={{
-              fontSize: '20px',
-              fontWeight: 600,
-              color: 'var(--muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              lineHeight: '1'
-            }}>
-              SET
-            </span>
-            <span style={{
-              fontSize: '20px',
-              fontWeight: 700,
-              color: 'var(--text)',
-              lineHeight: '1'
-            }}>
-              {data?.set?.index || 1}
-            </span>
-          </div>
-          <div style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '16px',
-            fontWeight: 700,
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            color: 'var(--text)',
-            textAlign: 'center',
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            {setScore.right}
-          </div>
+          vs
         </div>
 
-        {/* Right Team - 40% */}
+        {/* Right Team */}
         <div style={{
           flex: '1',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-start',
           gap: '8px',
-          paddingLeft: '12px',
-          height: '100%'
+          paddingLeft: '12px'
         }}>
-          
           <div style={{
-            padding: '4px 10px',
-            borderRadius: '6px',
-            fontSize: '14px',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
             fontWeight: 700,
             background: rightTeam.color || '#3b82f6',
-            color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
-            minWidth: '32px',
-            textAlign: 'center',
-            lineHeight: '1.2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff'
           }}>
             {teamBLabel}
           </div>
           <span style={{
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: 600,
             color: 'var(--text)',
             lineHeight: '1.2'
           }}>
             {rightTeam.name || (leftIsHome ? 'Away' : 'Home')}
           </span>
-
         </div>
       </div>
+      )}
 
       {/* Display Mode Suggestion Banner */}
       {showDisplayModeSuggestion && displayModeSuggestion && (
@@ -9199,86 +9301,112 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </div>
         )
       })() : (
-      <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: '118vh' } : {}}>
+      <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: 'auto' } : {}}>
         <ScoreboardTeamColumn side="left">
-          <div className="team-info">
+          <div className="team-info" style={{ overflow: 'hidden' }}>
             <div
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '6px 12px',
+                padding: isCompactMode ? '4px 8px' : '6px 12px',
                 background: leftTeam.color || '#ef4444',
                 color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
                 borderRadius: '6px',
                 fontWeight: 600,
-                fontSize: '14px',
-                marginBottom: '8px'
+                fontSize: isCompactMode ? '11px' : '14px',
+                marginBottom: '8px',
+                maxWidth: '100%',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis'
               }}
             >
               <span>{teamALabel}</span>
               <span>-</span>
-              <span>{teamAShortName}</span>
-             
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{teamAShortName}</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <div 
+            <div
               onClick={() => {
-                const timeouts = getTimeoutDetails('left')
-                if (timeouts.length > 0) {
-                  setToSubDetailsModal({ type: 'timeout', side: 'left' })
+                if (isCompactMode) {
+                  // In compact mode, clicking calls timeout if available
+                  const canCallTimeout = getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                  if (canCallTimeout) {
+                    handleTimeout('left')
+                  }
+                } else {
+                  // In normal mode, clicking shows timeout details
+                  const timeouts = getTimeoutDetails('left')
+                  if (timeouts.length > 0) {
+                    setToSubDetailsModal({ type: 'timeout', side: 'left' })
+                  }
                 }
               }}
-              style={{ 
-                flex: 1, 
-                background: 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px', 
-                padding: '12px',
+              className="to-sub-counter"
+              style={{
+                flex: 1,
+                background: isCompactMode
+                  ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
+                    ? 'rgba(239, 68, 68, 0.2)'
+                    : 'rgba(34, 197, 94, 0.2)')
+                  : 'rgba(255, 255, 255, 0.05)',
+                borderRadius: isCompactMode ? '4px' : '8px',
+                padding: isCompactMode ? '6px' : '12px',
                 textAlign: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: getTimeoutDetails('left').length > 0 ? 'pointer' : 'default'
+                border: isCompactMode
+                  ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
+                    ? '1px solid rgba(239, 68, 68, 0.4)'
+                    : '1px solid rgba(34, 197, 94, 0.4)')
+                  : '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: isCompactMode
+                  ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer')
+                  : (getTimeoutDetails('left').length > 0 ? 'pointer' : 'default')
               }}
             >
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>TO</div>
-              <div style={{ 
-                fontSize: '24px', 
+              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>TO</div>
+              <div className="to-sub-value" style={{
+                fontSize: isCompactMode ? '16px' : '24px',
                 fontWeight: 700,
-                color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : 'inherit'
+                color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (isCompactMode && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
               }}>{getTimeoutsUsed('left')}</div>
             </div>
-            <div 
+            <div
               onClick={() => {
                 const subs = getSubstitutionDetails('left')
                 if (subs.length > 0) {
                   setToSubDetailsModal({ type: 'substitution', side: 'left' })
                 }
               }}
-              style={{ 
-                flex: 1, 
-                background: 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px', 
-                padding: '12px',
+              className="to-sub-counter"
+              style={{
+                flex: 1,
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: isCompactMode ? '4px' : '8px',
+                padding: isCompactMode ? '6px' : '12px',
                 textAlign: 'center',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
               }}
             >
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>SUB</div>
-              <div style={{ 
-                fontSize: '24px', 
+              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>SUB</div>
+              <div className="to-sub-value" style={{
+                fontSize: isCompactMode ? '16px' : '24px',
                 fontWeight: 700,
                 color: getSubstitutionsUsed('left') >= 6 ? '#ef4444' : getSubstitutionsUsed('left') >= 5 ? '#eab308' : 'inherit'
               }}>{getSubstitutionsUsed('left')}</div>
             </div>
           </div>
-          <button
-            onClick={() => handleTimeout('left')}
-            disabled={getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
-            style={{ width: '100%', marginBottom: '8px' }}
-          >
-            Time-out
-          </button>
+          {!isCompactMode && (
+            <button
+              onClick={() => handleTimeout('left')}
+              disabled={getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
+              style={{ width: '100%', marginBottom: '8px' }}
+            >
+              Time-out
+            </button>
+          )}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
             <button 
               onClick={() => handleLiberoOut('left')}
@@ -9391,11 +9519,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           
           
           {/* Bench Players, Liberos, and Bench Officials */}
-          <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ marginTop: isCompactMode ? '12px' : '24px', paddingTop: isCompactMode ? '12px' : '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
             {/* Bench Players */}
             {leftTeamBench.benchPlayers.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>Bench</h4>
+              <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <h4
+                  onClick={() => isCompactMode && setLeftMainBenchExpanded(!leftMainBenchExpanded)}
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    cursor: isCompactMode ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Bench</span>
+                  {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainBenchExpanded ? '▲' : '▼'}</span>}
+                </h4>
+                {(!isCompactMode || leftMainBenchExpanded) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {leftTeamBench.benchPlayers.map(player => {
                     const teamKey = leftIsHome ? 'home' : 'away'
@@ -9658,13 +9802,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                )}
               </div>
             )}
-            
+
             {/* Liberos */}
             {leftTeamBench.liberos.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>Liberos</h4>
+              <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <h4
+                  onClick={() => isCompactMode && setLeftMainLiberosExpanded(!leftMainLiberosExpanded)}
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    cursor: isCompactMode ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Liberos</span>
+                  {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainLiberosExpanded ? '▲' : '▼'}</span>}
+                </h4>
+                {(!isCompactMode || leftMainLiberosExpanded) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {leftTeamBench.liberos.map(player => {
                     const teamKey = leftIsHome ? 'home' : 'away'
@@ -9760,13 +9921,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                )}
               </div>
             )}
-            
+
             {/* Bench Officials */}
             {leftTeamBench.benchOfficials.length > 0 && (
               <div>
-                <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>Bench Officials</h4>
+                <h4
+                  onClick={() => isCompactMode && setLeftMainOfficialsExpanded(!leftMainOfficialsExpanded)}
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    cursor: isCompactMode ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Bench Officials</span>
+                  {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainOfficialsExpanded ? '▲' : '▼'}</span>}
+                </h4>
+                {(!isCompactMode || leftMainOfficialsExpanded) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {leftTeamBench.benchOfficials.map((official, idx) => {
                     const teamKey = leftIsHome ? 'home' : 'away'
@@ -9856,157 +10034,200 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                )}
+              </div>
+            )}
+
+            {/* Set Results Table - Left Team (compact mode only) */}
+            {isCompactMode && (
+              <div style={{ marginTop: '12px' }}>
+                {(() => {
+                  const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
+                  const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
+                  const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
+                  const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
+                  const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                  const currentSetIndex = data?.set?.index || 1
+                  const setsByIndex = new Map()
+                  allSets.forEach(set => {
+                    if (set.index <= currentSetIndex) {
+                      setsByIndex.set(set.index, set)
+                    }
+                  })
+                  const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+
+                  return (
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      fontSize: '8px'
+                    }}>
+                      <h4 style={{ margin: '0 0 4px', fontSize: '9px', fontWeight: 600, textAlign: 'center' }}>
+                        <span style={{
+                          padding: '1px 6px',
+                          borderRadius: '3px',
+                          fontSize: '8px',
+                          fontWeight: 700,
+                          background: leftTeamColor,
+                          color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                        }}>{leftTeamLabel}</span>
+                      </h4>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>S</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>P</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>W</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>Su</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>T</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleSets.map(set => {
+                            const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
+                            const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
+                            const won = leftPoints > rightPoints ? 1 : 0
+                            const substitutions = (data?.events || []).filter(e =>
+                              e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
+                            ).length
+                            const timeouts = (data?.events || []).filter(e =>
+                              e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
+                            ).length
+                            let rowColor = 'inherit'
+                            if (set.finished) {
+                              rowColor = won === 1 ? '#22c55e' : '#ef4444'
+                            }
+                            return (
+                              <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{set.index}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftPoints}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{won}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{substitutions}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{timeouts}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
               </div>
             )}
           </div>
         </ScoreboardTeamColumn>
 
         <ScoreboardCourtColumn>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
-            {/* SERVE indicator container - Left (fixed width) */}
+          {/* 3-column layout: Serve+Ball | Score | Ball+Serve - fixed width sides for perfect centering */}
+          <div style={{
+            position: 'relative',
+            display: 'grid',
+            gridTemplateColumns: isCompactMode ? '120px 1fr 120px' : '180px 1fr 180px',
+            alignItems: 'center',
+            gap: isCompactMode ? '4px' : '8px',
+            width: '100%'
+          }}>
+            {/* Column 1: Left - Serve indicator + Ball */}
             <div style={{
-              width: '100px',
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              flexShrink: 0
+              gap: isCompactMode ? '4px' : '8px'
             }}>
               {leftServing && (() => {
                 const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
                 if (!servingPlayer || !servingPlayer.number) return null
                 return (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '8px',
-                    zIndex: 10,
-                    pointerEvents: 'none'
-                  }}>
+                  <>
                     <div style={{
-                      fontSize: '24px',
-                      fontWeight: 700,
-                      color: 'var(--text)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '2px'
-                    }}>
-                      SERVE
-                    </div>
-                    <div style={{
-                      fontSize: '36px',
-                      fontWeight: 700,
-                      color: 'var(--accent)',
-                      width: '64px',
-                      height: '64px',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      background: 'rgba(34, 197, 94, 0.1)',
-                      border: '4px solid var(--accent)',
-                      borderRadius: '16px'
+                      gap: isCompactMode ? '2px' : '4px',
+                      zIndex: 10,
+                      pointerEvents: 'none'
                     }}>
-                      {servingPlayer.number}
+                      <div style={{
+                        fontSize: isCompactMode ? '20px' : '36px',
+                        fontWeight: 700,
+                        color: 'var(--text)',
+                        textTransform: 'uppercase',
+                        letterSpacing: isCompactMode ? '1px' : '2px'
+                      }}>
+                        SERVE
+                      </div>
+                      <div style={{
+                        fontSize: isCompactMode ? '32px' : '56px',
+                        fontWeight: 700,
+                        color: 'var(--accent)',
+                        width: isCompactMode ? '50px' : '80px',
+                        height: isCompactMode ? '50px' : '80px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(34, 197, 94, 0.1)',
+                        border: isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
+                        borderRadius: isCompactMode ? '8px' : '14px'
+                      }}>
+                        {servingPlayer.number}
+                      </div>
                     </div>
-                  </div>
+                    <img
+                      src={mikasaVolleyball}
+                      alt="Serving team"
+                      style={{
+                        ...serveBallBaseStyle,
+                        width: isCompactMode ? 32 : 48,
+                        height: isCompactMode ? 32 : 48
+                      }}
+                    />
+                  </>
                 )
               })()}
             </div>
 
-            <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            {/* Column 2: Score counter - Center */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
               <div className="set-summary">
                 <div className="set-info">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', width: '100%' }}>
-                    {/* Current score */}
                     {renderScoreDisplay({ margin: '0 auto' })}
                   </div>
                 </div>
-                <div style={{ marginTop: '4px' }}>
-                  <span className="summary-label">Rally status:</span>
-                  <span className="summary-value" style={{ color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c' }}>
-                    {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
-                  </span>
-                </div>
-                {/* Last action */}
-                {data?.events && data.events.length > 0 && (() => {
-                  // Find the last undoable event by sequence number
-                  const allEvents = [...data.events].sort((a, b) => {
-                    const aSeq = a.seq || 0
-                    const bSeq = b.seq || 0
-                    if (aSeq !== 0 || bSeq !== 0) {
-                      return bSeq - aSeq // Descending
-                    }
-                    // Fallback to timestamp
-                    const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-                    const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-                    return bTime - aTime
-                  })
-                  
-                  // Find events with valid descriptions
-                  let lastEvent = null
-                  for (const e of allEvents) {
-                    // Skip rally_start and replay from display
-                    if (e.type === 'rally_start' || e.type === 'replay') continue
-                    
-                    // For lineup events, only show initial or substitution
-                    if (e.type === 'lineup') {
-                      const hasInitial = e.payload?.isInitial === true
-                      const hasSubstitution = e.payload?.fromSubstitution === true
-                      if (!hasInitial && !hasSubstitution) continue
-                    }
-                    
-                    // Try to get description
-                    const desc = getActionDescription(e)
-                    if (desc && desc !== 'Unknown action') {
-                      lastEvent = e
-                      break
-                    }
-                  }
-                  
-                  if (!lastEvent) return null
-                  
-                  const description = getActionDescription(lastEvent)
-                  
-                  return (
-                    <div>
-                      <span className="summary-label">Last action:</span>
-                      <span className="summary-value" style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {description}
-                      </span>
-                    </div>
-                  )
-                })()}
               </div>
 
-              {/* 1st Referee - Between the court and Last action */}
-              {refereeConnectionEnabled && (() => {
+              {/* 1st Referee - Below the score (hidden in compact mode) */}
+              {!isCompactMode && refereeConnectionEnabled && (() => {
                 const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
                 const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}` : 'N/A'
-                const ref1Status = isReferee1Connected
-                const ref1StatusColor = ref1Status ? '#22c55e' : '#eab308'
-                
+
                 return (
                   <div style={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    marginTop: '8px',
-                    marginBottom: '0',
-                    zIndex: 10,
-                    gap: '8px'
+                    marginTop: '0px',
+                    marginBottom: '8px',
+                    zIndex: 10
                   }}>
-                    <div 
+                    <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '6px 12px',
+                        padding: isCompactMode ? '4px 8px' : '6px 12px',
                         background: 'rgba(255, 255, 255, 0.1)',
                         borderRadius: '6px',
                         border: '1px solid rgba(255, 255, 255, 0.2)'
                       }}
                     >
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                      <span style={{ fontSize: isCompactMode ? '8px' : '12px', fontWeight: 600, color: 'var(--text)' }}>
                         1<sup><small><small>st</small></small></sup> Ref: {ref1Name}
                       </span>
                     </div>
@@ -10015,58 +10236,67 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               })()}
             </div>
 
-            {/* SERVE indicator container - Right (fixed width) */}
+            {/* Column 3: Right - Ball + Serve indicator */}
             <div style={{
-              width: '100px',
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              flexShrink: 0
+              gap: isCompactMode ? '4px' : '8px'
             }}>
               {rightServing && (() => {
                 const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
                 if (!servingPlayer || !servingPlayer.number) return null
                 return (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '8px',
-                    zIndex: 10,
-                    pointerEvents: 'none'
-                  }}>
+                  <>
+                    <img
+                      src={mikasaVolleyball}
+                      alt="Serving team"
+                      style={{
+                        ...serveBallBaseStyle,
+                        width: isCompactMode ? 32 : 48,
+                        height: isCompactMode ? 32 : 48
+                      }}
+                    />
                     <div style={{
-                      fontSize: '24px',
-                      fontWeight: 700,
-                      color: 'var(--text)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '2px'
-                    }}>
-                      SERVE
-                    </div>
-                    <div style={{
-                      fontSize: '36px',
-                      fontWeight: 700,
-                      color: 'var(--accent)',
-                      width: '64px',
-                      height: '64px',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      background: 'rgba(34, 197, 94, 0.1)',
-                      border: '4px solid var(--accent)',
-                      borderRadius: '16px'
+                      gap: isCompactMode ? '2px' : '4px',
+                      zIndex: 10,
+                      pointerEvents: 'none'
                     }}>
-                      {servingPlayer.number}
+                      <div style={{
+                        fontSize: isCompactMode ? '20px' : '36px',
+                        fontWeight: 700,
+                        color: 'var(--text)',
+                        textTransform: 'uppercase',
+                        letterSpacing: isCompactMode ? '1px' : '2px'
+                      }}>
+                        SERVE
+                      </div>
+                      <div style={{
+                        fontSize: isCompactMode ? '32px' : '56px',
+                        fontWeight: 700,
+                        color: 'var(--accent)',
+                        width: isCompactMode ? '50px' : '80px',
+                        height: isCompactMode ? '50px' : '80px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(34, 197, 94, 0.1)',
+                        border: isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
+                        borderRadius: isCompactMode ? '8px' : '14px'
+                      }}>
+                        {servingPlayer.number}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )
               })()}
             </div>
           </div>
 
-          <div className="court" style={{ marginTop: '-14px', marginBottom: '-14px' }}>
+          <div className="court" style={{ marginTop: isCompactMode ? '4px' : '6px', marginBottom: isCompactMode ? '2px' : '4px' }}>
             <div className="court-attack-line court-attack-left" />
             <div className="court-attack-line court-attack-right" />
             {rallyStatus === 'idle' && isFirstRally && (
@@ -10797,8 +11027,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
 
-          {/* 2nd Referee - Between the court and rally-controls */}
-          {refereeConnectionEnabled && (() => {
+          {/* 2nd Referee - Between the court and rally-controls (hidden in compact mode) */}
+          {!isCompactMode && refereeConnectionEnabled && (() => {
             const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
             const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}` : 'N/A'
             const ref2Status = isReferee2Connected
@@ -10809,23 +11039,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                marginTop: '0.1px',
-                marginBottom: '0.1px',
+                marginTop: isCompactMode ? '2px' : '4px',
+                marginBottom: isCompactMode ? '2px' : '4px',
                 zIndex: 10,
-                gap: '8px'
               }}>
-                <div 
+                <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
+                    padding: isCompactMode ? '2px 6px' : '4px 10px',
                     background: 'rgba(255, 255, 255, 0.1)',
                     borderRadius: '6px',
                     border: '1px solid rgba(255, 255, 255, 0.2)'
                   }}
                 >
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                  <span style={{ fontSize: isCompactMode ? '8px' : '12px', fontWeight: 600, color: 'var(--text)' }}>
                     2<sup><small><small>nd</small></small></sup> Ref: {ref2Name}
                   </span>
                 </div>
@@ -10833,15 +11061,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             )
           })()}
 
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'stretch', 
-            gap: '16px',
+          <div style={{
+            display: 'flex',
+            alignItems: 'stretch',
+            gap: isCompactMode ? '8px' : '16px',
             width: '100%',
-            minHeight: '200px'
+            minHeight: isCompactMode ? '100px' : '200px'
           }}>
-            {/* Set Results Table - Left Team */}
-            <div style={{ 
+            {/* Set Results Table - Left Team (hidden in compact mode - shown in team column instead) */}
+            {!isCompactMode && (
+            <div style={{
               flex: '0 0 auto',
               display: 'flex',
               flexDirection: 'column',
@@ -10931,6 +11160,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 )
               })()}
             </div>
+            )}
 
             {/* Rally Controls - Center */}
             <div className="rally-controls" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -10962,7 +11192,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     fontWeight: 700,
                     color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
                     textAlign: 'center',
-                    marginBottom: '16px',
+                    marginBottom: '5px',
                     fontFamily: 'monospace'
                   }}>
                     {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
@@ -11016,12 +11246,78 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       Undo
                     </button>
                   </div>
+                  {/* Rally status and last action - only show beneath rally controls in non-compact mode (compact mode shows in header) */}
+                  {!isCompactMode && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <div style={{ fontSize: '12px' }}>
+                      <span className="summary-label">Rally status: </span>
+                      <span className="summary-value" style={{ color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c' }}>
+                        {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
+                      </span>
+                    </div>
+                    {/* Last action */}
+                    {data?.events && data.events.length > 0 && (() => {
+                      // Find the last undoable event by sequence number
+                      const allEvents = [...data.events].sort((a, b) => {
+                        const aSeq = a.seq || 0
+                        const bSeq = b.seq || 0
+                        if (aSeq !== 0 || bSeq !== 0) {
+                          return bSeq - aSeq // Descending
+                        }
+                        // Fallback to timestamp
+                        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+                        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+                        return bTime - aTime
+                      })
+
+                      // Find events with valid descriptions
+                      let lastEvent = null
+                      for (const e of allEvents) {
+                        // Skip rally_start and replay from display
+                        if (e.type === 'rally_start' || e.type === 'replay') continue
+
+                        // For lineup events, only show initial or substitution
+                        if (e.type === 'lineup') {
+                          const hasInitial = e.payload?.isInitial === true
+                          const hasSubstitution = e.payload?.fromSubstitution === true
+                          if (!hasInitial && !hasSubstitution) continue
+                        }
+
+                        // Try to get description
+                        const desc = getActionDescription(e)
+                        if (desc && desc !== 'Unknown action') {
+                          lastEvent = e
+                          break
+                        }
+                      }
+
+                      if (!lastEvent) return null
+
+                      const description = getActionDescription(lastEvent)
+
+                      return (
+                        <div style={{ fontSize: '12px' }}>
+                          <span className="summary-label">Last action: </span>
+                          <span className="summary-value" style={{ color: 'var(--muted)' }}>
+                            {description}
+                          </span>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  )}
                 </>
               )}
             </div>
 
-            {/* Set Results Table - Right Team */}
-            <div style={{ 
+            {/* Set Results Table - Right Team (hidden in compact mode - shown in team column instead) */}
+            {!isCompactMode && (
+            <div style={{
               flex: '0 0 auto',
               display: 'flex',
               flexDirection: 'column',
@@ -11111,88 +11407,115 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 )
               })()}
             </div>
+            )}
           </div>
         </ScoreboardCourtColumn>
 
         <ScoreboardTeamColumn side="right">
-          <div className="team-info">
+          <div className="team-info" style={{ overflow: 'hidden' }}>
             <div
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '6px 12px',
+                padding: isCompactMode ? '4px 8px' : '6px 12px',
                 background: rightTeam.color || '#3b82f6',
                 color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
                 borderRadius: '6px',
                 fontWeight: 600,
-                fontSize: '14px',
-                marginBottom: '8px'
+                fontSize: isCompactMode ? '11px' : '14px',
+                marginBottom: '8px',
+                maxWidth: '100%',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis'
               }}
             >
               <span>{teamBLabel}</span>
               <span>-</span>
-              <span>{teamBShortName}</span>
-             
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{teamBShortName}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <div 
+          <div style={{ display: 'flex', gap: isCompactMode ? '4px' : '8px', marginBottom: isCompactMode ? '4px' : '8px' }}>
+            <div
               onClick={() => {
-                const timeouts = getTimeoutDetails('right')
-                if (timeouts.length > 0) {
-                  setToSubDetailsModal({ type: 'timeout', side: 'right' })
+                if (isCompactMode) {
+                  // In compact mode, clicking calls timeout if available
+                  const canCallTimeout = getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                  if (canCallTimeout) {
+                    handleTimeout('right')
+                  }
+                } else {
+                  // In normal mode, clicking shows timeout details
+                  const timeouts = getTimeoutDetails('right')
+                  if (timeouts.length > 0) {
+                    setToSubDetailsModal({ type: 'timeout', side: 'right' })
+                  }
                 }
               }}
-              style={{ 
-                flex: 1, 
-                background: 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px', 
-                padding: '12px',
+              className="to-sub-counter"
+              style={{
+                flex: 1,
+                background: isCompactMode
+                  ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
+                    ? 'rgba(239, 68, 68, 0.2)'
+                    : 'rgba(34, 197, 94, 0.2)')
+                  : 'rgba(255, 255, 255, 0.05)',
+                borderRadius: isCompactMode ? '4px' : '8px',
+                padding: isCompactMode ? '6px' : '12px',
                 textAlign: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: getTimeoutDetails('right').length > 0 ? 'pointer' : 'default'
+                border: isCompactMode
+                  ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
+                    ? '1px solid rgba(239, 68, 68, 0.4)'
+                    : '1px solid rgba(34, 197, 94, 0.4)')
+                  : '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: isCompactMode
+                  ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer')
+                  : (getTimeoutDetails('right').length > 0 ? 'pointer' : 'default')
               }}
             >
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>TO</div>
-              <div style={{ 
-                fontSize: '24px', 
+              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>TO</div>
+              <div className="to-sub-value" style={{
+                fontSize: isCompactMode ? '16px' : '24px',
                 fontWeight: 700,
-                color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : 'inherit'
+                color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (isCompactMode && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
               }}>{getTimeoutsUsed('right')}</div>
             </div>
-            <div 
+            <div
               onClick={() => {
                 const subs = getSubstitutionDetails('right')
                 if (subs.length > 0) {
                   setToSubDetailsModal({ type: 'substitution', side: 'right' })
                 }
               }}
-              style={{ 
-                flex: 1, 
-                background: 'rgba(255, 255, 255, 0.05)', 
-                borderRadius: '8px', 
-                padding: '12px',
+              className="to-sub-counter"
+              style={{
+                flex: 1,
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: isCompactMode ? '4px' : '8px',
+                padding: isCompactMode ? '6px' : '12px',
                 textAlign: 'center',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
               }}
             >
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>SUB</div>
-              <div style={{ 
-                fontSize: '24px', 
+              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>SUB</div>
+              <div className="to-sub-value" style={{
+                fontSize: isCompactMode ? '16px' : '24px',
                 fontWeight: 700,
                 color: getSubstitutionsUsed('right') >= 6 ? '#ef4444' : getSubstitutionsUsed('right') >= 5 ? '#eab308' : 'inherit'
               }}>{getSubstitutionsUsed('right')}</div>
             </div>
           </div>
-          <button
-            onClick={() => handleTimeout('right')}
-            disabled={getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
-            style={{ width: '100%', marginBottom: '8px' }}
-          >
-            Time-out
-          </button>
+          {!isCompactMode && (
+            <button
+              onClick={() => handleTimeout('right')}
+              disabled={getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
+              style={{ width: '100%', marginBottom: '8px' }}
+            >
+              Time-out
+            </button>
+          )}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
             <button 
               onClick={() => handleLiberoOut('right')}
@@ -11305,11 +11628,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           
           
           {/* Bench Players, Liberos, and Bench Officials */}
-          <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ marginTop: isCompactMode ? '12px' : '24px', paddingTop: isCompactMode ? '12px' : '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
             {/* Bench Players */}
             {rightTeamBench.benchPlayers.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>Bench</h4>
+              <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <h4
+                  onClick={() => isCompactMode && setRightMainBenchExpanded(!rightMainBenchExpanded)}
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    cursor: isCompactMode ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Bench</span>
+                  {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainBenchExpanded ? '▲' : '▼'}</span>}
+                </h4>
+                {(!isCompactMode || rightMainBenchExpanded) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {rightTeamBench.benchPlayers.map(player => {
                     const teamKey = leftIsHome ? 'away' : 'home'
@@ -11572,13 +11911,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                )}
               </div>
             )}
-            
+
             {/* Liberos */}
             {rightTeamBench.liberos.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>Liberos</h4>
+              <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <h4
+                  onClick={() => isCompactMode && setRightMainLiberosExpanded(!rightMainLiberosExpanded)}
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    cursor: isCompactMode ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Liberos</span>
+                  {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainLiberosExpanded ? '▲' : '▼'}</span>}
+                </h4>
+                {(!isCompactMode || rightMainLiberosExpanded) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {rightTeamBench.liberos.map(player => {
                     const teamKey = leftIsHome ? 'away' : 'home'
@@ -11674,13 +12030,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                )}
               </div>
             )}
-            
+
             {/* Bench Officials */}
             {rightTeamBench.benchOfficials.length > 0 && (
               <div>
-                <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>Bench Officials</h4>
+                <h4
+                  onClick={() => isCompactMode && setRightMainOfficialsExpanded(!rightMainOfficialsExpanded)}
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    cursor: isCompactMode ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Bench Officials</span>
+                  {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainOfficialsExpanded ? '▲' : '▼'}</span>}
+                </h4>
+                {(!isCompactMode || rightMainOfficialsExpanded) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {rightTeamBench.benchOfficials.map((official, idx) => {
                     const teamKey = leftIsHome ? 'away' : 'home'
@@ -11770,6 +12143,86 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                )}
+              </div>
+            )}
+
+            {/* Set Results Table - Right Team (compact mode only) */}
+            {isCompactMode && (
+              <div style={{ marginTop: '12px' }}>
+                {(() => {
+                  const currentRightTeamKey = leftIsHome ? 'away' : 'home'
+                  const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
+                  const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
+                  const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
+                  const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                  const currentSetIndex = data?.set?.index || 1
+                  const setsByIndex = new Map()
+                  allSets.forEach(set => {
+                    if (set.index <= currentSetIndex) {
+                      setsByIndex.set(set.index, set)
+                    }
+                  })
+                  const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+
+                  return (
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      fontSize: '8px'
+                    }}>
+                      <h4 style={{ margin: '0 0 4px', fontSize: '9px', fontWeight: 600, textAlign: 'center' }}>
+                        <span style={{
+                          padding: '1px 6px',
+                          borderRadius: '3px',
+                          fontSize: '8px',
+                          fontWeight: 700,
+                          background: rightTeamColor,
+                          color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                        }}>{rightTeamLabel}</span>
+                      </h4>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>S</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>P</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>W</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>Su</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>T</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleSets.map(set => {
+                            const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
+                            const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
+                            const won = rightPoints > leftPoints ? 1 : 0
+                            const substitutions = (data?.events || []).filter(e =>
+                              e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
+                            ).length
+                            const timeouts = (data?.events || []).filter(e =>
+                              e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
+                            ).length
+                            let rowColor = 'inherit'
+                            if (set.finished) {
+                              rowColor = won === 1 ? '#22c55e' : '#ef4444'
+                            }
+                            return (
+                              <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{set.index}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightPoints}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{won}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{substitutions}</td>
+                                <td style={{ padding: '2px 1px', textAlign: 'center' }}>{timeouts}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
               </div>
             )}
           </div>
@@ -17416,13 +17869,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return (
             <Modal
               title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span>{teamName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
+                  <span style={{ fontSize: isCompactMode ? '10px' : 'inherit' }}>{teamName}</span>
                   <span
                     style={{
-                      padding: '4px 12px',
-                      borderRadius: '6px',
-                      fontSize: '14px',
+                      padding: isCompactMode ? '2px 6px' : '4px 12px',
+                      borderRadius: isCompactMode ? '4px' : '6px',
+                      fontSize: isCompactMode ? '8px' : '14px',
                       fontWeight: 700,
                       background: teamColor,
                       color: isBright ? '#000' : '#fff'
@@ -17434,27 +17887,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }
               open={true}
               onClose={cancelLiberoReentry}
-              width={400}
+              width={isCompactMode ? 200 : 400}
               hideCloseButton={true}
               position="custom"
               customStyle={modalStyle}
             >
-              <div style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              <div style={{ padding: isCompactMode ? '10px' : '24px', textAlign: 'center' }}>
+                <p style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px' }}>
                   Do you want to sub a libero in position I?
                 </p>
-                <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
-                  <div style={{ marginBottom: '16px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <div style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px', fontWeight: 600 }}>
+                  <div style={{ marginBottom: isCompactMode ? '6px' : '16px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
                     <span>OUT: # {liberoReentryModal.playerNumber}</span>
-                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
+                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↓</span>
                   </div>
 
                   {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                      <p style={{ marginBottom: '12px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                    <div style={{ marginBottom: isCompactMode ? '6px' : '16px' }}>
+                      <p style={{ marginBottom: isCompactMode ? '6px' : '12px', fontSize: isCompactMode ? '7px' : '14px', color: 'rgba(255,255,255,0.7)' }}>
                         Select libero to substitute in:
                       </p>
-                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: isCompactMode ? '6px' : '12px', justifyContent: 'center' }}>
                         {liberoReentryModal.availableLiberos.map((libero, index) => (
                           <div
                             key={`${libero.type}-${libero.number}`}
@@ -17465,7 +17918,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               })
                             }}
                             style={{
-                              padding: '16px 24px',
+                              padding: isCompactMode ? '6px 10px' : '16px 24px',
                               background: index === liberoReentryModal.selectedLiberoIndex
                                 ? 'var(--accent)'
                                 : 'rgba(255, 255, 255, 0.1)',
@@ -17475,38 +17928,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               border: index === liberoReentryModal.selectedLiberoIndex
                                 ? '2px solid var(--accent)'
                                 : '1px solid rgba(255, 255, 255, 0.2)',
-                              borderRadius: '8px',
+                              borderRadius: isCompactMode ? '4px' : '8px',
                               cursor: 'pointer',
                               fontWeight: 600,
-                              fontSize: '16px',
+                              fontSize: isCompactMode ? '8px' : '16px',
                               transition: 'all 0.2s ease',
-                              minWidth: '100px'
+                              minWidth: isCompactMode ? '50px' : '100px'
                             }}
                           >
                             <div>{libero.label}</div>
-                            <div style={{ fontSize: '20px', marginTop: '4px' }}>#{libero.number}</div>
+                            <div style={{ fontSize: isCompactMode ? '10px' : '20px', marginTop: isCompactMode ? '2px' : '4px' }}>#{libero.number}</div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
+                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↑</span>
                     <span>IN</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: isCompactMode ? '6px' : '12px', justifyContent: 'center' }}>
                   <button
                     onClick={confirmLiberoReentry}
                     style={{
-                      padding: '12px 24px',
-                      fontSize: '14px',
+                      padding: isCompactMode ? '6px 12px' : '12px 24px',
+                      fontSize: isCompactMode ? '8px' : '14px',
                       fontWeight: 600,
                       background: 'var(--accent)',
                       color: '#000',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: isCompactMode ? '4px' : '8px',
                       cursor: 'pointer'
                     }}
                   >
@@ -17515,13 +17968,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   <button
                     onClick={cancelLiberoReentry}
                     style={{
-                      padding: '12px 24px',
-                      fontSize: '14px',
+                      padding: isCompactMode ? '6px 12px' : '12px 24px',
+                      fontSize: isCompactMode ? '8px' : '14px',
                       fontWeight: 600,
                       background: 'rgba(255, 255, 255, 0.1)',
                       color: 'var(--text)',
                       border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '8px',
+                      borderRadius: isCompactMode ? '4px' : '8px',
                       cursor: 'pointer'
                     }}
                   >
@@ -18702,7 +19155,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
           modalStyle = {
             position: 'fixed',
-            left: teamIsLeft ? '20px' : `${window.innerWidth - 420}px`,
+            left: teamIsLeft ? '20px' : `${window.innerWidth - (isCompactMode ? 220 : 420)}px`,
             top: `${courtTop}px`,
             transform: 'none'
           }
@@ -18718,13 +19171,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return (
             <Modal
               title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span>{teamName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
+                  <span style={{ fontSize: isCompactMode ? '10px' : 'inherit' }}>{teamName}</span>
                   <span
                     style={{
-                      padding: '4px 12px',
-                      borderRadius: '6px',
-                      fontSize: '14px',
+                      padding: isCompactMode ? '2px 6px' : '4px 12px',
+                      borderRadius: isCompactMode ? '4px' : '6px',
+                      fontSize: isCompactMode ? '8px' : '14px',
                       fontWeight: 700,
                       background: teamColor,
                       color: isBright ? '#000' : '#fff'
@@ -18736,36 +19189,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }
               open={true}
               onClose={() => setLiberoRotationModal(null)}
-              width={400}
+              width={isCompactMode ? 200 : 400}
               position="custom"
               hideCloseButton={true}
               customStyle={modalStyle}
             >
-              <div style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              <div style={{ padding: isCompactMode ? '10px' : '24px', textAlign: 'center' }}>
+                <p style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px' }}>
                   The libero rotated to position IV and must leave the court.
                 </p>
-                <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
-                  <div style={{ marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <div style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px', fontWeight: 600 }}>
+                  <div style={{ marginBottom: isCompactMode ? '4px' : '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
                     <span>OUT: {liberoRotationModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoRotationModal.liberoNumber}</span>
-                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
+                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↓</span>
                   </div>
-                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
                     <span>IN: # {liberoRotationModal.playerNumber}</span>
-                    <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↑</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: isCompactMode ? '6px' : '12px', justifyContent: 'center' }}>
                   <button
                     onClick={() => setLiberoRotationModal(null)}
                     style={{
-                      padding: '12px 24px',
-                      fontSize: '14px',
+                      padding: isCompactMode ? '6px 12px' : '12px 24px',
+                      fontSize: isCompactMode ? '8px' : '14px',
                       fontWeight: 600,
                       background: 'var(--accent)',
                       color: '#000',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: isCompactMode ? '4px' : '8px',
                       cursor: 'pointer'
                     }}
                   >

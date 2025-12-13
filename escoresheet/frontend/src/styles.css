@@ -47,9 +47,9 @@
     user-select: text;
   }
   
-  .container { margin: 0 auto; padding: 12px 8px; }
+  .container { margin: 0 0 0 0; padding: 8px 8px; }
   
-  h1 { margin: 0 0 16px; font-size: 28px; }
+  h1 { margin: 0 0 12px; font-size: 28px; }
   h2 { margin: 0 0 12px; font-size: 20px; }
   h3 { margin: 0 0 12px; font-size: 18px; }
   p { color: var(--muted); }
@@ -59,7 +59,7 @@
     width: auto;
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 12px;
-    padding: 16px;
+    padding: 2px;
   }
   
   .grid-4 {
@@ -364,11 +364,11 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    height: 100%;
-    max-height: 100%;
+    height: 100vh;
     width: 100%;
     max-width: 1200px;
     min-width: 960px;
+    margin: 0 auto;
     overflow: hidden;
     box-sizing: border-box;
   }
@@ -401,11 +401,10 @@
   }
 
   .match-toolbar {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 220px 1fr 220px;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 16px;
     padding: 14px 16px;
     background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -418,14 +417,50 @@
 
   @media (max-width: 1400px) {
     .match-toolbar {
-      gap: 8px;
+      grid-template-columns: 220px 1fr 220px;
+      gap: 12px;
       padding: 10px 12px;
+    }
+  }
+
+  @media (max-width: 1280px) {
+    .match-toolbar {
+      grid-template-columns: 200px 1fr 200px;
+      gap: 10px;
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .match-toolbar {
+      grid-template-columns: 180px 1fr 180px;
+      gap: 8px;
+    }
+  }
+
+  @media (max-width: 1000px) {
+    .match-toolbar {
+      grid-template-columns: 120px 1fr 120px;
+      gap: 2px;
+    }
+  }
+
+  @media (max-width: 960px) {
+    .match-toolbar {
+      grid-template-columns: 140px 1fr 140px;
+      gap: 4px;
+      padding: 6px 8px;
+    }
+  }
+
+  @media (max-width: 800px) {
+    .match-toolbar {
+      grid-template-columns: 120px 1fr 120px;
+      gap: 3px;
     }
   }
 
   @media (max-height: 850px) {
     .match-toolbar {
-      gap: 6px;
       padding: 8px 10px;
     }
   }
@@ -770,37 +805,133 @@
   .match-content {
     display: grid;
     gap: 16px;
-    grid-template-columns: 240px 1fr 240px;
+    grid-template-columns: 1fr 3fr 1fr;
     align-items: stretch;
     flex: 1;
-    min-height: 0;
+    height: auto;
+    width: 100%;
   }
 
   @media (max-width: 1400px) {
     .match-content {
-      grid-template-columns: 220px 1fr 220px;
       gap: 12px;
+      height: auto;
     }
   }
 
   @media (max-width: 1280px) {
     .match-content {
-      grid-template-columns: 200px 1fr 200px;
-      gap: 10px;
+      gap: 2px;
     }
   }
 
   @media (max-width: 1100px) {
     .match-content {
-      grid-template-columns: 180px 1fr 180px;
-      gap: 8px;
+      gap: 2px;
+      height: auto;
     }
   }
 
   @media (max-width: 1000px) {
     .match-content {
-      grid-template-columns: 160px 1fr 160px;
-      gap: 6px;
+      gap: 2px;
+      height: auto;
+    }
+  }
+
+  /* Tablet compact mode: 960x540 and similar */
+  @media (max-width: 960px) {
+    .match-content {
+      gap: 4px;
+      height: auto;
+    }
+
+    .match-content .team-info {
+      padding-bottom: 6px;
+      margin-bottom: 4px;
+    }
+
+    /* Compact TO/SUB counters */
+    .match-content .to-sub-counter {
+      padding: 4px !important;
+      border-radius: 4px !important;
+    }
+
+    .match-content .to-sub-counter .to-sub-label {
+      font-size: 8px !important;
+      margin-bottom: 2px !important;
+    }
+
+    .match-content .to-sub-counter .to-sub-value {
+      font-size: 16px !important;
+    }
+
+    /* Compact buttons */
+    .match-content button {
+      padding: 4px 6px !important;
+      font-size: 10px !important;
+      border-radius: 4px !important;
+    }
+
+    /* Smaller score display */
+    .score-display-container .score-value {
+      font-size: clamp(40px, 8vw, 60px) !important;
+    }
+
+    /* Compact court */
+    .court-wrapper {
+      padding: 6px;
+      gap: 4px;
+      width: 100%;
+    }
+
+    .court {
+      aspect-ratio: 2/1;
+    }
+
+    .court-row {
+      padding: 12px 0;
+    }
+
+    .court-grid {
+      gap: 2px !important;
+    }
+
+    .court-grid .court-cell {
+      padding: 2px !important;
+      font-size: 10px !important;
+    }
+
+    /* Compact header */
+    .scoreboard-header-row {
+      padding: 4px 8px !important;
+      min-height: 32px !important;
+    }
+
+    .scoreboard-header-row .menu-btn-text {
+      display: none;
+    }
+
+    .scoreboard-header-row .menu-btn-icon {
+      display: inline;
+    }
+  }
+
+  /* Very small tablet: hide some elements by default */
+  @media (max-width: 800px) {
+    .match-content {
+      grid-template-columns: 1fr minmax(auto, 1fr) 1fr;
+      gap: 3px;
+    }
+
+    /* Make bench section collapsible by default */
+    .bench-section.collapsed {
+      max-height: 28px;
+      overflow: hidden;
+    }
+
+    .bench-section.collapsed .bench-players {
+      display: none;
     }
   }
 
@@ -811,10 +942,31 @@
     background: rgba(15, 23, 42, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
-    padding: 16px;
+    padding: 10px;
     width: min(100%, 240px);
-    max-width: 90%;
+    max-width: 100%;
     flex-shrink: 0;
+    overflow-y: auto;
+    height: 80vh;
+  }
+
+  /* Custom scrollbar for team controls */
+  .team-controls::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .team-controls::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+  }
+
+  .team-controls::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+  }
+
+  .team-controls::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
   }
 
   .team-header {
@@ -829,10 +981,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding-bottom: 12px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 5px;
   }
 
   .team-info h3 {
@@ -855,7 +1004,8 @@
 
   .court-wrapper {
     position: relative;
-    min-width: min(90%, 580px);
+    width: 100%;
+    height: 80vh;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -863,8 +1013,8 @@
     background: rgba(15, 23, 42, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
-    flex-shrink: 0;
-    flex-grow: 0;
+    flex-shrink: 1;
+    flex-grow: 1;
   }
 
   @media (max-width: 1400px) {
@@ -944,24 +1094,24 @@
 
   .summary-value {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 12px;
     white-space: nowrap;
   }
 
   .court {
     position: relative;
-    width: 100%;
-    aspect-ratio: 6 / 3;
+    width: var(--court-width,93%);
+    margin: 0 auto;
+    aspect-ratio: 2 / 1;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    border-radius: 16px;
+    border-radius:0px;
     background: linear-gradient(
       90deg,
       rgba(234, 179, 8, 0.12),
       rgba(234, 179, 8, 0.08)
     );
     border: 2px solid rgba(255, 255, 255, 0.08);
-    overflow: hidden;
   }
 
   .court-side {
@@ -980,7 +1130,7 @@
     top: 0;
     bottom: 0;
     left: 50%;
-    width: 8px;
+    width: 4px;
     transform: translateX(-50%);
     background: repeating-linear-gradient(
       to bottom,
@@ -1075,49 +1225,27 @@
     position: relative;
     width: 60px;
     height: 60px;
-    min-width: 48px;
-    min-height: 48px;
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.2);
     background: rgba(51, 65, 85, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 30px;
+    font-size: 35px;
     font-weight: 700;
     color: var(--text);
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
     flex-shrink: 0;
   }
 
-  /* Scale down for smaller laptops - FIXED sizes per breakpoint */
-  @media (max-width: 1400px) {
-    .court-player {
-      width: 40px;
-      height: 40px;
-      min-width: 40px;
-      min-height: 40px;
-      font-size: 15px;
-    }
-  }
-
-  @media (max-width: 1280px) {
-    .court-player {
-      width: 36px;
-      height: 36px;
-      min-width: 36px;
-      min-height: 36px;
-      font-size: 14px;
-    }
-  }
 
   @media (max-height: 850px) {
     .court-player {
-      width: 32px;
-      height: 32px;
-      min-width: 32px;
-      min-height: 32px;
-      font-size: 13px;
+      width: 54px;
+      height: 54px;
+        min-width: 54px;
+        min-height: 54px;
+      font-size: 30px;
     }
   }
 
@@ -1206,17 +1334,17 @@
   .rally-controls {
     display: flex;
     flex-direction: column;
-    gap: 12px;
     align-items: center;
     justify-content: center;
+    gap: 12px;
+    margin-top: -15px;
   }
 
   .rally-controls-row {
     display: flex;
-    gap: 24px;
     align-items: center;
     justify-content: center;
-    width: 100%;
+    width: 80%;
   }
 
   .rally-points {
@@ -1558,8 +1686,6 @@
     align-items: center;
     justify-content: center;
     height: auto;
-    max-height: calc(90vh - 40px);
-    overflow: auto;
     box-sizing: border-box;
   }
 
@@ -1570,7 +1696,6 @@
     justify-content: center;
     width: auto;
     box-sizing: border-box;
-    overflow: auto;
     flex: 1;
     min-height: 0;
   }
@@ -1600,12 +1725,13 @@
     justify-content: center;
     margin: clamp(4px, 1vh, 8px) 0;
     width: clamp(100px, 20vw, 250px);
+    aspect-ratio: 1/1;
   }
 
   .home-logo img {
     width: auto;
     height: auto;
-    max-width: 100%;
+    max-width: 80%;
   }
 
   /* Responsive header elements */
@@ -1632,6 +1758,30 @@
     width: auto;
     display: flex;
     justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* Landscape: buttons in a row */
+  @media (orientation: landscape) {
+    .home-match-section {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 12px;
+      max-width: 100%;
+      padding: 0 20px;
+    }
+  }
+
+  /* Portrait: buttons in a column */
+  @media (orientation: portrait) {
+    .home-match-section {
+      flex-direction: column;
+      max-width: 400px;
+      padding: 0 20px;
+    }
   }
 
   .home-match-section + .home-match-section {
@@ -1910,7 +2060,7 @@
   @media (max-width: 1024px) {
     /* Tablet and smaller */
     .container {
-      padding: 8px 6px;
+      padding: 6px 6px;
     }
 
     h1 { font-size: 24px; }
@@ -1938,7 +2088,7 @@
   @media (max-width: 768px) {
     /* Smartphone */
     .container {
-      padding: 6px 4px;
+      padding: 4px 4px;
     }
 
     h1 { font-size: 20px; }

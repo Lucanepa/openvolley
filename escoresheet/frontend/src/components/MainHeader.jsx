@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ConnectionStatus from './ConnectionStatus'
 import changelog from '../CHANGELOG'
 
@@ -15,14 +15,57 @@ export default function MainHeader({
   currentOfficialMatch,
   currentTestMatch,
   isFullscreen,
-  toggleFullscreen
+  toggleFullscreen,
+  offlineMode,
+  setOfflineMode,
+  onOpenSetup
 }) {
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [editingSize, setEditingSize] = useState({ width: '', height: '' })
   const [isEditing, setIsEditing] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const touchStartY = useRef(0)
+  const headerRef = useRef(null)
   // Use changelog as source of truth (first entry = latest version)
   const currentVersion = changelog[0]?.version || '1.0.0'
+
+  // Check if compact mode (viewport width <= 960px)
+  const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960
+
+  // Handle touch events for swipe to show/hide header in compact mode
+  useEffect(() => {
+    if (!isCompactMode) {
+      setIsCollapsed(false)
+      return
+    }
+
+    const handleTouchStart = (e) => {
+      touchStartY.current = e.touches[0].clientY
+    }
+
+    const handleTouchEnd = (e) => {
+      const touchEndY = e.changedTouches[0].clientY
+      const deltaY = touchEndY - touchStartY.current
+
+      // If touch started near top of screen (within 60px) and swiped down
+      if (touchStartY.current < 60 && deltaY > 30) {
+        setIsCollapsed(false)
+      }
+      // If touch started anywhere and swiped up significantly
+      else if (deltaY < -50 && !isCollapsed) {
+        setIsCollapsed(true)
+      }
+    }
+
+    document.addEventListener('touchstart', handleTouchStart)
+    document.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isCompactMode, isCollapsed])
 
   // Track viewport dimensions
   useEffect(() => {
@@ -198,13 +241,12 @@ export default function MainHeader({
 
     return (
       <div style={{
-        flex: '1 1 auto',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         position: 'relative',
         width: 'auto',
-        height: '80%'
+        height: '32px'
       }}>
         <button
           data-match-info-menu
@@ -253,40 +295,114 @@ export default function MainHeader({
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      height: '40px',
-      minHeight: '40px',
-      maxHeight: '40px',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '0 clamp(8px, 2vw, 20px)',
-      background: 'rgba(0, 0, 0, 0.2)',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-      flexShrink: 0,
-      gap: 'clamp(8px, 1.5vw, 16px)',
-      zIndex: 100,
-      position: 'sticky',
-      top: 0
-    }}>
-      {/* Left: Connection Status */}
-      <div style={{ flex: '0 0 auto' }}>
-        <ConnectionStatus
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-          position="left"
-          size="normal"
-        />
+    <>
+      {/* Collapsed header indicator - tap to expand */}
+      {isCompactMode && isCollapsed && (
+        <div
+          onClick={() => setIsCollapsed(false)}
+          style={{
+            position: 'sticky',
+            top: 0,
+            width: '100%',
+            height: '8px',
+            background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, transparent 100%)',
+            cursor: 'pointer',
+            zIndex: 999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-end',
+            paddingBottom: '2px'
+          }}
+        >
+          <div style={{
+            width: '40px',
+            height: '3px',
+            background: 'rgba(255, 255, 255, 0.4)',
+            borderRadius: '2px'
+          }} />
+        </div>
+      )}
+      <div
+        ref={headerRef}
+        style={{
+          display: 'flex',
+          height: isCompactMode && isCollapsed ? '0px' : '40px',
+          minHeight: isCompactMode && isCollapsed ? '0px' : '40px',
+          maxHeight: isCompactMode && isCollapsed ? '0px' : '40px',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: isCompactMode && isCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
+          background: 'rgba(0, 0, 0, 0.2)',
+          borderBottom: isCompactMode && isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+          flexShrink: 0,
+          gap: 'clamp(8px, 1.5vw, 16px)',
+          zIndex: 1000,
+          position: 'sticky',
+          top: isCompactMode && isCollapsed ? '-40px' : 0,
+          overflow: 'hidden',
+          transition: 'all 0.3s ease-in-out'
+        }}>
+      {/* Left: Online/Offline Toggle + Connection Status */}
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Online/Offline Toggle */}
+        <button
+          onClick={() => setOfflineMode(!offlineMode)}
+          title={offlineMode ? 'Switch to Online Mode' : 'Switch to Offline Mode'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '4px 8px',
+            fontSize: 'clamp(9px, 1.1vw, 11px)',
+            fontWeight: 600,
+            background: offlineMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+            color: offlineMode ? '#ef4444' : '#22c55e',
+            border: `1px solid ${offlineMode ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`,
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = offlineMode ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = offlineMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'
+          }}
+        >
+          <span style={{ fontSize: '12px' }}>{offlineMode ? '○' : '●'}</span>
+          <span>{offlineMode ? 'Offline' : 'Online'}</span>
+        </button>
+
+        {/* Connection Status - only show in online mode */}
+        {!offlineMode && (
+          <ConnectionStatus
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            position="left"
+            size="normal"
+          />
+        )}
       </div>
 
-      {/* Center: Collapsible Match Info Menu or Match Status Banner */}
-      {(showMatchSetup || matchId) && currentMatch ? (
-        renderMatchInfoButton(currentMatch)
-      ) : !matchId && matchStatus && (currentOfficialMatch || currentTestMatch) ? (
-        renderMatchInfoButton(currentOfficialMatch || currentTestMatch)
+      {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}
+      {((showMatchSetup || matchId) && currentMatch) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch)) ? (
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 101
+        }}>
+          {(showMatchSetup || matchId) && currentMatch ? (
+            renderMatchInfoButton(currentMatch)
+          ) : (
+            renderMatchInfoButton(currentOfficialMatch || currentTestMatch)
+          )}
+        </div>
       ) : null}
 
-      {/* Right: Version and Fullscreen */}
+      {/* Right: Home Button, Version and Fullscreen */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -294,6 +410,39 @@ export default function MainHeader({
         flex: '0 0 auto',
         alignSelf: 'stretch'
       }}>
+        {/* Home Button - only show when not on home screen */}
+        {matchId && onOpenSetup && (
+          <button
+            onClick={() => onOpenSetup()}
+            title="Back to Home"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '4px 10px',
+              fontSize: 'clamp(10px, 1.2vw, 12px)',
+              fontWeight: 600,
+              background: 'rgba(34, 197, 94, 0.2)',
+              color: '#22c55e',
+              border: '1px solid rgba(34, 197, 94, 0.4)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap',
+              gap: '4px'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
+            }}
+          >
+            <span>🏠</span>
+            <span>Home</span>
+          </button>
+        )}
+
         {/* Viewport Size Display - Editable */}
         <div style={{
           display: 'flex',
@@ -536,6 +685,7 @@ export default function MainHeader({
         </button>
       </div>
     </div>
+    </>
   )
 }
 

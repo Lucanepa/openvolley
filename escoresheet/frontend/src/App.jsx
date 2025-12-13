@@ -102,6 +102,10 @@ export default function App() {
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [matchInfoMenuOpen, setMatchInfoMenuOpen] = useState(false)
+  const [offlineMode, setOfflineMode] = useState(() => {
+    const saved = localStorage.getItem('offlineMode')
+    return saved === 'true'
+  })
   // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
@@ -2952,29 +2956,35 @@ export default function App() {
         currentTestMatch={currentTestMatch}
         isFullscreen={isFullscreen}
         toggleFullscreen={toggleFullscreen}
+        offlineMode={offlineMode}
+        setOfflineMode={(val) => {
+          setOfflineMode(val)
+          localStorage.setItem('offlineMode', val.toString())
+        }}
+        onOpenSetup={openMatchSetup}
       />
 
       <div className="container" style={{
-        flex: '1 1 auto',
         minHeight: 0,
+        flex: '1 1 auto',
         width: 'auto',
-        maxWidth: 'calc(100% - 40px)',
+        height: 'auto',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         alignItems: 'center',
         margin: '0 auto',
-        padding: '10px 20px',
+        padding: '5px',
         overflow: 'hidden'
       }}>
       <div className="panel" style={{
         flex: '1 1 auto',
-        minHeight: 0,
+        height: 'auto',
         overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto',
         overflowX: 'hidden',
         width: 'auto',
         maxWidth: '100%',
-        padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '20px 20px'
+        padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px'
       }}>
         {showCoinToss && matchId ? (
           <CoinToss
