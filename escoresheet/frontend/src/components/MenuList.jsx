@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 
-export default function MenuList({ 
+export default function MenuList({
   items = [],
   position = 'right', // 'left' | 'right' | 'center'
   buttonLabel = 'Menu',
   buttonStyle = {},
-  buttonClassName = ''
+  buttonClassName = '',
+  showArrow = true
 }) {
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef(null)
@@ -96,9 +97,11 @@ export default function MenuList({
         }}
       >
         {buttonLabel}
-        <span style={{ marginLeft: '6px', fontSize: '10px' }}>
-          {showMenu ? '▲' : '▼'}
-        </span>
+        {showArrow && (
+          <span style={{ marginLeft: '6px', fontSize: '10px' }}>
+            {showMenu ? '▲' : '▼'}
+          </span>
+        )}
       </button>
       
       {/* Menu List */}

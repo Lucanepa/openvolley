@@ -1969,10 +1969,73 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const positionBoxSet1Ref = useRef<HTMLDivElement>(null);
   const positionBoxSet5Ref = useRef<HTMLDivElement>(null);
   const buttonsContainerRef = useRef<HTMLDivElement>(null);
-  
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Zoom state for tablet/viewport control
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, 2));
+  const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, 0.3));
+  const resetZoom = () => setZoomLevel(1);
+
+  const fitToScreen = () => {
+    if (!containerRef.current) return;
+    // Get viewport dimensions (minus toolbar height ~50px)
+    const viewportWidth = window.innerWidth - 32; // padding
+    const viewportHeight = window.innerHeight - 70; // toolbar + padding
+    // Scoresheet is 410mm x 287mm, convert to px (1mm ≈ 3.78px at 96 DPI)
+    const scoresheetWidth = 410 * 3.78;
+    const scoresheetHeight = 287 * 3.78;
+    const zoomX = viewportWidth / scoresheetWidth;
+    const zoomY = viewportHeight / scoresheetHeight;
+    const optimalZoom = Math.min(zoomX, zoomY, 1);
+    setZoomLevel(Math.max(0.3, Math.round(optimalZoom * 100) / 100));
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (err) {
+      console.error('Fullscreen toggle failed:', err);
+    }
+  };
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // Auto-fit to screen on mount if viewport is smaller than scoresheet
+  useEffect(() => {
+    const viewportWidth = window.innerWidth;
+    const scoresheetWidth = 410 * 3.78; // ~1550px
+    if (viewportWidth < scoresheetWidth) {
+      fitToScreen();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 const captureScreenshot = async () => {
   if (!containerRef.current) return;
-  
+
+  // Store current zoom level to restore later
+  const savedZoomLevel = zoomLevel;
+  setZoomLevel(1); // Reset to 100% for capture
+
+  // Wait for React to apply the zoom change
+  await new Promise(resolve => setTimeout(resolve, 50));
+
   // Hide buttons temporarily
   const buttonsContainer = buttonsContainerRef.current;
   const originalDisplay = buttonsContainer?.style.display;
@@ -1980,7 +2043,18 @@ const captureScreenshot = async () => {
     buttonsContainer.style.display = 'none';
   }
   
-  // Hide cursor
+  // Hide cursor - blur any focused element first to remove text cursor
+  const activeElement = document.activeElement as HTMLElement;
+  if (activeElement && activeElement.blur) {
+    activeElement.blur();
+  }
+
+  // Add a global style to hide all cursors
+  const cursorHideStyle = document.createElement('style');
+  cursorHideStyle.id = 'screenshot-hide-cursor';
+  cursorHideStyle.textContent = '* { cursor: none !important; caret-color: transparent !important; }';
+  document.head.appendChild(cursorHideStyle);
+
   const originalCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
   const originalPointerEvents = document.body.style.pointerEvents;
@@ -2251,30 +2325,87 @@ const captureScreenshot = async () => {
     if (buttonsContainer) {
       buttonsContainer.style.display = originalDisplay || '';
     }
-    // Restore cursor
+    // Restore cursor and remove the cursor hide style
+    const cursorStyle = document.getElementById('screenshot-hide-cursor');
+    if (cursorStyle) {
+      cursorStyle.remove();
+    }
     document.body.style.cursor = originalCursor;
     document.body.style.pointerEvents = originalPointerEvents;
+    // Restore zoom level
+    setZoomLevel(savedZoomLevel);
   }
 };
 
   return (
     <>
-      <div ref={buttonsContainerRef} className="mb-2 flex justify-center items-center print:hidden w-full">
-    <div className="space-x-2">
-        <button 
+      <div ref={buttonsContainerRef} className="mb-2 flex justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
+        <div className="flex items-center space-x-2">
+          {/* Zoom controls */}
+          <button
+            onClick={zoomOut}
+            className="bg-gray-500 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm shadow"
+            title="Zoom Out"
+          >
+            −
+          </button>
+          <button
+            onClick={resetZoom}
+            className="bg-gray-500 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm shadow min-w-[50px]"
+            title="Reset Zoom (100%)"
+          >
+            {Math.round(zoomLevel * 100)}%
+          </button>
+          <button
+            onClick={fitToScreen}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm shadow"
+            title="Fit to Screen"
+          >
+            Fit
+          </button>
+          <button
+            onClick={zoomIn}
+            className="bg-gray-500 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm shadow"
+            title="Zoom In"
+          >
+            +
+          </button>
+
+          {/* Divider */}
+          <div className="w-px h-6 bg-gray-400 mx-2"></div>
+
+          {/* Fullscreen button */}
+          <button
+            onClick={toggleFullscreen}
+            className="bg-blue-500 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm shadow"
+            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          >
+            {isFullscreen ? '⤓' : '⤢'}
+          </button>
+
+          {/* Save button */}
+          <button
             onClick={captureScreenshot}
             className="bg-green-500 hover:bg-green-700 text-white px-3 py-1 rounded text-sm shadow"
-        >
+          >
             Save
-        </button>
-      
-    </div>
-</div>
-      <div className="min-h-screen bg-gray-100 p-2 flex justify-center print:p-0 print:bg-white print:h-[297mm] print:w-[420mm] print:flex print:items-center print:justify-center print:overflow-hidden">
-        <div 
+          </button>
+        </div>
+      </div>
+      <div
+        ref={scrollContainerRef}
+        className="min-h-screen bg-gray-100 p-2 flex justify-center overflow-auto print:p-0 print:bg-white print:h-[297mm] print:w-[420mm] print:flex print:items-center print:justify-center print:overflow-hidden"
+        style={{ touchAction: 'pan-x pan-y' }}
+      >
+        <div
           ref={containerRef}
-          className="w-[410mm] h-[287mm] bg-white shadow-xl print:shadow-none p-3 print:p-0 print:overflow-hidden print:m-auto print:w-[410mm] print:h-[287mm] print:box-border relative print:page-break-inside-avoid" 
-          style={{ boxSizing: 'border-box' }}
+          className="w-[410mm] h-[287mm] bg-white shadow-xl print:shadow-none p-3 print:p-0 print:overflow-hidden print:m-auto print:w-[410mm] print:h-[287mm] print:box-border relative print:page-break-inside-avoid"
+          style={{
+            boxSizing: 'border-box',
+            transform: `scale(${zoomLevel})`,
+            transformOrigin: 'top center',
+            transition: 'transform 0.2s ease'
+          }}
         >
         <div className="h-full print:overflow-hidden" style={{ padding: '5mm 5mm 5mm 5mm' }}>
             <div ref={headerRef}>

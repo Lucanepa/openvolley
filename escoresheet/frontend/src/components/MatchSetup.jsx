@@ -951,8 +951,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Date formatting helpers
   function formatDateToDDMMYYYY(dateStr) {
     if (!dateStr) return ''
-    // If already in DD/MM/YYYY format, return as-is
+    // If already in DD/MM/YYYY format (slashes), return as-is
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr
+    // If in DD.MM.YYYY format (dots), convert to slashes
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+      return dateStr.replace(/\./g, '/')
+    }
     // If in ISO format (YYYY-MM-DD), convert to DD/MM/YYYY
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       const [year, month, day] = dateStr.split('-')
@@ -973,9 +977,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     if (!dateStr) return ''
     // If already in ISO format (YYYY-MM-DD), return as-is
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
-    // If in DD/MM/YYYY format, convert to YYYY-MM-DD
+    // If in DD/MM/YYYY format (slashes), convert to YYYY-MM-DD
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
       const [day, month, year] = dateStr.split('/')
+      return `${year}-${month}-${day}`
+    }
+    // If in DD.MM.YYYY format (dots), convert to YYYY-MM-DD
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+      const [day, month, year] = dateStr.split('.')
       return `${year}-${month}-${day}`
     }
     // Try to parse as date
