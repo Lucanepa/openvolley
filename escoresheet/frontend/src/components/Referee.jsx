@@ -746,8 +746,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return (
       <div style={{
           position: 'relative',
-        width: 'clamp(44px, 10vw, 70px)',
-        height: 'clamp(44px, 10vw, 70px)',
+        width: 'clamp(50px, 12vw, 80px)',
+        height: 'clamp(50px, 12vw, 80px)',
         borderRadius: '0%',
         border: '1px solid rgba(255, 255, 255, 0.4)',
         background: isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
@@ -755,7 +755,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 'clamp(45px, 5vw, 50px)',
+        fontSize: 'clamp(50px, 5vw, 60px)',
         fontWeight: 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0

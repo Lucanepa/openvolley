@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.7.5',
+    date: '14.12.25',
+    changes: [
+      'Update Referee component and service worker revision'
+    ]
+  },
+  {
     version: '0.7.3',
     date: '14.12.25',
     changes: [
