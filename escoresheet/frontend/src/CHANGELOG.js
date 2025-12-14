@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.7.9',
+    date: '14.12.25',
+    changes: [
+      'Update settings and MainHeader component for improved functionality'
+    ]
+  },
+  {
     version: '0.7.7',
     date: '14.12.25',
     changes: [

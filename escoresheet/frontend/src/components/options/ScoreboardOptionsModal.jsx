@@ -138,6 +138,7 @@ export default function ScoreboardOptionsModal({
   onClose,
   onOpenGuide,
   onOpenKeybindings,
+  onOpenConnectionSetup,
   server,
   matchOptions,
   displayOptions
@@ -617,7 +618,37 @@ export default function ScoreboardOptionsModal({
           </Row>
         </Section>
 
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <button
+            onClick={() => {
+              onClose?.()
+              onOpenConnectionSetup?.()
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+              color: 'var(--text)',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              width: '100%',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
+            }}
+          >
+            <span style={{ fontSize: '20px' }}>📡</span>
+            <span>Setup Connections</span>
+          </button>
           <button
             onClick={() => {
               onClose?.()

@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { validatePin } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
+import { getServerStatus } from './utils/networkInfo'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
+import SimpleHeader from './components/SimpleHeader'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 export default function BenchApp() {
+  const [availableMatches, setAvailableMatches] = useState([])
+  const [loadingMatches, setLoadingMatches] = useState(false)
+  const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
   const [selectedTeam, setSelectedTeam] = useState(null) // 'home' or 'away'
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
@@ -14,6 +19,10 @@ export default function BenchApp() {
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    server: 'disconnected',
+    websocket: 'disconnected'
+  })
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -132,6 +141,53 @@ export default function BenchApp() {
     }
   }, [wakeLockActive])
 
+  // Load available matches on mount and periodically
+  useEffect(() => {
+    const loadMatches = async () => {
+      setLoadingMatches(true)
+      try {
+        const result = await listAvailableMatches()
+        if (result.success && result.matches) {
+          setAvailableMatches(result.matches)
+        }
+      } catch (err) {
+        console.error('Error loading matches:', err)
+      } finally {
+        setLoadingMatches(false)
+      }
+    }
+
+    loadMatches()
+    const interval = setInterval(loadMatches, 30000) // Refresh every 30 seconds
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Check connection status periodically
+  useEffect(() => {
+    const checkConnections = async () => {
+      try {
+        const serverStatus = await getServerStatus()
+        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
+
+        setConnectionStatuses({
+          server: serverStatus?.running ? 'connected' : 'disconnected',
+          websocket: matchId ? wsStatus : 'not_applicable'
+        })
+      } catch (err) {
+        setConnectionStatuses({
+          server: 'disconnected',
+          websocket: 'disconnected'
+        })
+      }
+    }
+
+    checkConnections()
+    const interval = setInterval(checkConnections, 5000) // Check every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [matchId])
+
   // Disconnect if connection is disabled
   useEffect(() => {
     if (match && selectedTeam) {
@@ -202,21 +258,20 @@ export default function BenchApp() {
       setError('')
     } else if (selectedTeam) {
       setSelectedTeam(null)
+    } else if (selectedMatch) {
+      setSelectedMatch(null)
+      setError('')
     }
   }
 
-  // Get team names from match data
-  const [homeTeamName, setHomeTeamName] = useState('Home Team')
-  const [awayTeamName, setAwayTeamName] = useState('Away Team')
+  const handleMatchSelect = (matchObj) => {
+    setSelectedMatch(matchObj)
+    setError('')
+  }
 
-  useEffect(() => {
-    if (match) {
-      // Team names will come from server data when we fetch full match data
-      // For now, use placeholders - will be updated when components fetch full data
-      setHomeTeamName('Home Team')
-      setAwayTeamName('Away Team')
-    }
-  }, [match])
+  // Get team names from selected match
+  const homeTeamName = selectedMatch?.homeTeamName || 'Home Team'
+  const awayTeamName = selectedMatch?.awayTeamName || 'Away Team'
 
   // If view is selected, show the appropriate component
   if (matchId && view) {
@@ -251,35 +306,12 @@ export default function BenchApp() {
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        {/* Header */}
-        <div style={{
-          padding: '12px 20px',
-          background: 'rgba(15, 23, 42, 0.6)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '16px', fontWeight: 600 }}>Team Bench</span>
-            <button
-              onClick={toggleWakeLock}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-                color: wakeLockActive ? '#22c55e' : '#fff',
-                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
-            >
-              {wakeLockActive ? '☀️ On' : '🌙 Off'}
-            </button>
-          </div>
-        </div>
+        <SimpleHeader
+          title="Team Dashboard"
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+        />
 
         <div style={{
           flex: 1,
@@ -308,10 +340,10 @@ export default function BenchApp() {
           }}>
             Select Option
           </h1>
-          <p style={{ 
-            fontSize: '14px', 
-            color: 'var(--muted)', 
-            marginBottom: '32px' 
+          <p style={{
+            fontSize: '14px',
+            color: 'var(--muted)',
+            marginBottom: '32px'
           }}>
             Select an option
           </p>
@@ -398,35 +430,13 @@ export default function BenchApp() {
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        {/* Header */}
-        <div style={{
-          padding: '12px 20px',
-          background: 'rgba(15, 23, 42, 0.6)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '16px', fontWeight: 600 }}>Team Bench</span>
-            <button
-              onClick={toggleWakeLock}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-                color: wakeLockActive ? '#22c55e' : '#fff',
-                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
-            >
-              {wakeLockActive ? '☀️ On' : '🌙 Off'}
-            </button>
-          </div>
-        </div>
+        <SimpleHeader
+          title="Team Dashboard"
+          subtitle={teamName}
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+        />
 
         <div style={{
           flex: 1,
@@ -551,82 +561,60 @@ export default function BenchApp() {
     )
   }
 
-  // Initial team selection
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      color: '#fff',
-      display: 'flex',
-      flexDirection: 'column',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-    }}>
-      {/* Header */}
+  // Team selection (after match is selected)
+  if (selectedMatch && !selectedTeam) {
+    return (
       <div style={{
-        padding: '12px 20px',
-        background: 'rgba(15, 23, 42, 0.6)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>Team Bench</span>
-          <button
-            onClick={toggleWakeLock}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: wakeLockActive ? '#22c55e' : '#fff',
-              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
-          >
-            {wakeLockActive ? '☀️ On' : '🌙 Off'}
-          </button>
-        </div>
-      </div>
-
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px'
-      }}>
-      <div style={{
-        background: 'var(--bg-secondary)',
-        borderRadius: '12px',
-        padding: '40px',
-        maxWidth: '500px',
-        width: '100%',
-        textAlign: 'center'
-      }}>
-        <img 
-          src={mikasaVolleyball} 
-          alt="Volleyball" 
-          style={{ width: '80px', height: '80px', marginBottom: '20px' }} 
+        <SimpleHeader
+          title="Team Bench"
+          subtitle={`Game ${selectedMatch.gameNumber}`}
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
         />
-        <h1 style={{ 
-          fontSize: '24px', 
-          fontWeight: 700, 
-          marginBottom: '12px' 
-        }}>
-          Team Bench
-        </h1>
-        <p style={{ 
-          fontSize: '14px', 
-          color: 'var(--muted)', 
-          marginBottom: '32px' 
-        }}>
-          Select your team
-        </p>
 
-        {availableMatches && availableMatches.length > 0 && (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+        <div style={{
+          background: 'var(--bg-secondary)',
+          borderRadius: '12px',
+          padding: '40px',
+          maxWidth: '500px',
+          width: '100%',
+          textAlign: 'center'
+        }}>
+          <img
+            src={mikasaVolleyball}
+            alt="Volleyball"
+            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
+          />
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            marginBottom: '12px'
+          }}>
+            Select Your Team
+          </h1>
+          <p style={{
+            fontSize: '14px',
+            color: 'var(--muted)',
+            marginBottom: '32px'
+          }}>
+            Game {selectedMatch.gameNumber}
+          </p>
+
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -672,14 +660,141 @@ export default function BenchApp() {
               {awayTeamName}
             </button>
           </div>
+
+          <button
+            onClick={handleBack}
+            style={{
+              marginTop: '24px',
+              width: '100%',
+              padding: '12px',
+              fontSize: '14px',
+              fontWeight: 500,
+              background: 'transparent',
+              color: 'var(--muted)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Back
+          </button>
+        </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Initial game selection
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+      color: '#fff',
+      display: 'flex',
+      flexDirection: 'column',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    }}>
+      <SimpleHeader
+        title="Team Bench"
+        wakeLockActive={wakeLockActive}
+        toggleWakeLock={toggleWakeLock}
+        connectionStatuses={connectionStatuses}
+      />
+
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px'
+      }}>
+      <div style={{
+        background: 'var(--bg-secondary)',
+        borderRadius: '12px',
+        padding: '40px',
+        maxWidth: '500px',
+        width: '100%',
+        textAlign: 'center'
+      }}>
+        <img
+          src={mikasaVolleyball}
+          alt="Volleyball"
+          style={{ width: '80px', height: '80px', marginBottom: '20px' }}
+        />
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: 700,
+          marginBottom: '12px'
+        }}>
+          Team Bench
+        </h1>
+        <p style={{
+          fontSize: '14px',
+          color: 'var(--muted)',
+          marginBottom: '32px'
+        }}>
+          Select a game to join
+        </p>
+
+        {loadingMatches ? (
+          <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Loading games...</p>
+        ) : availableMatches.length === 0 ? (
+          <div style={{
+            padding: '20px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '8px',
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: '14px'
+          }}>
+            No active games found. Make sure the main scoresheet is running.
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            maxHeight: '300px',
+            overflowY: 'auto'
+          }}>
+            {availableMatches.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => handleMatchSelect(m)}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'opacity 0.2s',
+                  textAlign: 'left'
+                }}
+                onMouseOver={(e) => e.target.style.opacity = '0.9'}
+                onMouseOut={(e) => e.target.style.opacity = '1'}
+              >
+                <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+                  Game {m.gameNumber}
+                </div>
+                <div style={{ fontSize: '14px', opacity: 0.8 }}>
+                  {m.homeTeamName || 'Home'} vs {m.awayTeamName || 'Away'}
+                </div>
+              </button>
+            ))}
+          </div>
         )}
 
-        {(!availableMatches || availableMatches.length === 0) && (
+        {error && (
           <p style={{
             fontSize: '14px',
-            color: 'var(--muted)'
+            color: '#ef4444',
+            marginTop: '16px'
           }}>
-            No active matches available
+            {error}
           </p>
         )}
       </div>
