@@ -13,6 +13,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [substitutionModal, setSubstitutionModal] = useState(null) // { team, teamName, position, playerIn, playerOut, isExceptional, timestamp }
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
 
+  // Flashing substitution state (like Scoreboard)
+  const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }]
+  const recentSubFlashTimeoutRef = useRef(null)
+
+  // Referee view dropdown state
+  const [refViewDropdownOpen, setRefViewDropdownOpen] = useState(false)
+
   // Connection state
   const [connectionStatuses, setConnectionStatuses] = useState({
     api: 'unknown',
@@ -271,6 +278,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           setTimeout(() => {
             setSubstitutionModal(null)
           }, 5000)
+
+          // Add player to recently substituted list for flashing effect
+          setRecentlySubstitutedPlayers(prev => [...prev, { team: _actionData.team, playerNumber: _actionData.playerIn, timestamp: Date.now() }])
+
+          // Clear the flash after 3 seconds
+          if (recentSubFlashTimeoutRef.current) {
+            clearTimeout(recentSubFlashTimeoutRef.current)
+          }
+          recentSubFlashTimeoutRef.current = setTimeout(() => {
+            setRecentlySubstitutedPlayers([])
+          }, 3000)
         } else if (_action === 'set_end') {
           // Start between-sets countdown
           setBetweenSetsCountdown({
@@ -549,7 +567,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Get sanctions for a player
   const getPlayerSanctions = useCallback((teamKey, playerNumber) => {
     if (!data?.events || !playerNumber) return []
-    
+
     return data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
@@ -557,7 +575,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     )
   }, [data?.events])
 
-  
   // Helper to determine if a color is bright
   const isBrightColor = (color) => {
     if (!color) return false
@@ -714,65 +731,73 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Player circle component - BIG responsive sizing with all indicators
   const PlayerCircle = ({ number, position, team, isServing }) => {
     if (!number) return null
-    
+
     const teamPlayers = team === 'home' ? data.homePlayers : data.awayPlayers
     const player = teamPlayers?.find(p => String(p.number) === String(number))
     const isLibero = player?.libero === 'libero1' || player?.libero === 'libero2'
     const shouldShowBall = position === 'I' && isServing
-    
+
+    // Check if this player was recently substituted in (for flashing effect)
+    const isRecentlySub = recentlySubstitutedPlayers.some(
+      sub => sub.team === team && String(sub.playerNumber) === String(number)
+    )
+
     // Get libero info - if this is a libero, show which player they replaced
     const liberoOnCourt = getLiberoOnCourt(team)
     const liberoReplacedPlayer = isLibero && liberoOnCourt?.playerNumber ? liberoOnCourt.playerNumber : null
-    
+
     // Get substitution info - if this player came in as a substitute
     const subInfo = !isLibero ? getSubstitutionInfo(team, number) : null
-    
+
     // Get sanctions for this player
     const sanctions = getPlayerSanctions(team, number)
     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-    
+
     // Determine what to show in top-right badge
     const topRightBadge = liberoReplacedPlayer || (subInfo?.replacedNumber) || null
     const isLiberoReplacementBadge = !!liberoReplacedPlayer
-    
+
     // Get libero label for bottom-left
     const liberoLabel = isLibero ? (player?.libero === 'libero1' ? 'L1' : 'L2') : null
     const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
     const displayLiberoLabel = isLibero ? (liberoCount === 1 ? 'L' : liberoLabel) : null
-    
+
     return (
       <div style={{
           position: 'relative',
-        width: 'clamp(50px, 12vw, 80px)',
-        height: 'clamp(50px, 12vw, 80px)',
+        width: 'fit-content',
+        aspectRatio: '1/1',
         borderRadius: '0%',
-        border: '1px solid rgba(255, 255, 255, 0.4)',
-        background: isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
-        color: isLibero ? '#000' : '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 'clamp(50px, 5vw, 60px)',
-        fontWeight: 700,
+        padding: '2px',
+        border: isRecentlySub ? '3px solid #dc2626' : '1px solid rgba(255, 255, 255, 0.4)',
+        background: isRecentlySub ? '#fef08a' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
+          color: isRecentlySub ? '#dc2626' : isLibero ? '#000' : '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 'clamp(33px, 9vw, 80px)',
+        fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
-        flexShrink: 0
+        flexShrink: 0,
+        animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined
       }}>
         {/* Serve ball indicator */}
         {shouldShowBall && (
-          <img 
-            src={mikasaVolleyball} 
-            alt="Ball" 
+          <img
+            src={mikasaVolleyball}
+            alt="Ball"
             style={{
               position: 'absolute',
-              left: team === leftTeam ? 'clamp(-60px, -10vw, -60px)' : 'auto',
-              right: team === rightTeam ? 'clamp(-60px, -10vw, -60px)' : 'auto',
+              // Position outside player box with 4px gap - responsive to box size
+              left: team === rightTeam ? 'calc(100% + 4px)' : 'auto',
+              right: team === leftTeam ? 'calc(100% + 4px)' : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
-              width: 'clamp(35px, 7vw, 45px)',
-              height: 'clamp(35px, 7vw, 45px)',
+              width: 'clamp(12px, 5vw, 40px)',
+              aspectRatio: '1/1',
               filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
             }}
           />
@@ -1118,7 +1143,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               cursor: 'pointer'
             }}
           >
-            {isFullscreen ? '⛶ Exit' : '⛶ Full'}
+            {isFullscreen ? '⛶ Exit' : '⛶'}
           </button>
           
           <button
@@ -1137,14 +1162,26 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           >
             {wakeLockActive ? '☀️ On' : '🌙 Off'}
           </button>
-              
-          <ConnectionStatus
-            connectionStatuses={connectionStatuses}
-            connectionDebugInfo={connectionDebugInfo}
-            position="right"
-            size="small"
-          />
-          
+
+          {!isMasterMode && (
+            <ConnectionStatus
+              connectionStatuses={connectionStatuses}
+              connectionDebugInfo={{
+                ...connectionDebugInfo,
+                match: {
+                  ...connectionDebugInfo?.match,
+                  matchId: matchId,
+                  homeTeam: data?.homeTeam?.name,
+                  awayTeam: data?.awayTeam?.name,
+                  gameNumber: data?.match?.gameNumber,
+                  currentSet: data?.currentSet?.index
+                }
+              }}
+              position="right"
+              size="small"
+            />
+          )}
+
           {isMasterMode && (
               <span style={{
               padding: '2px 8px',
@@ -1161,57 +1198,101 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
 
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <button
-            onClick={() => setRefereeView('1st')}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: refereeView === '1st' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
-              color: refereeView === '1st' ? '#000' : '#fff',
-              border: refereeView === '1st' ? 'none' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            1R
-          </button>
-          <button
-            onClick={() => setRefereeView('2nd')}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: refereeView === '2nd' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
-              color: refereeView === '2nd' ? '#000' : '#fff',
-              border: refereeView === '2nd' ? 'none' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            2R
-          </button>
+          {/* Collapsible 1R/2R Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setRefViewDropdownOpen(!refViewDropdownOpen)}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: 'var(--accent)',
+                color: '#000',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              {refereeView === '1st' ? '1R' : '2R'}
+              <span style={{ fontSize: '8px' }}>{refViewDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+            {refViewDropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '2px',
+                background: '#1a1a2e',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                zIndex: 1000,
+                minWidth: '50px'
+              }}>
+                <button
+                  onClick={() => { setRefereeView('1st'); setRefViewDropdownOpen(false); }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: refereeView === '1st' ? 'var(--accent)' : 'transparent',
+                    color: refereeView === '1st' ? '#000' : '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  1R
+                </button>
+                <button
+                  onClick={() => { setRefereeView('2nd'); setRefViewDropdownOpen(false); }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: refereeView === '2nd' ? 'var(--accent)' : 'transparent',
+                    color: refereeView === '2nd' ? '#000' : '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  2R
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Exit Button with Icon */}
           <button
             onClick={onExit}
             style={{
-              padding: '4px 10px',
-              fontSize: '11px',
+              padding: '4px 8px',
+              fontSize: '14px',
               fontWeight: 600,
               background: 'rgba(239, 68, 68, 0.2)',
               color: '#ef4444',
               border: '1px solid rgba(239, 68, 68, 0.4)',
               borderRadius: '4px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              lineHeight: 1
             }}
+            title="Exit"
           >
-            Exit
+            ✕
           </button>
         </div>
             </div>
 
       {/* SECTION 2: Score & Set Counter - 3 COLUMNS */}
-            <div style={{ 
-        flex: '1 1 auto',
+            <div style={{
+        flex: '0.5 0.5 auto',
         padding: '8px 0',
         background: 'rgba(0, 0, 0, 0.2)',
             display: 'flex',
@@ -1224,7 +1305,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }}>
         {/* LEFT COLUMN - Serve indicator (1/5) */}
               <div style={{
-          flex: '0 0 20%',
+          flex: '0 0 15%',
                 display: 'flex',
                 alignItems: 'center',
               justifyContent: 'center',
@@ -1261,7 +1342,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
         {/* MIDDLE COLUMN - Set & Score (3/5) */}
         <div style={{ 
-          flex: '0 0 60%',
+          flex: '0 0 70%',
           display: 'flex', 
           flexDirection: 'column', 
           alignItems: 'center', 
@@ -1270,13 +1351,39 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           minWidth: 0,
           overflow: 'hidden'
         }}>
-          {/* Set indicator row */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+          {/* Set indicator row: Full name (color) - A/B (color) - score - SET - score - A/B (color) - Full name (color) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
             justifyContent: 'center',
-            gap: 'clamp(8px, 2vw, 16px)'
+            gap: 'clamp(4px, 1vw, 8px)'
         }}>
+            {/* Left: Full name + A/B in color boxes */}
+            <div style={{
+              padding: 'clamp(2px, 0.5vw, 4px) clamp(6px, 1.5vw, 10px)',
+              background: leftColor,
+              color: isBrightColor(leftColor) ? '#000' : '#fff',
+              borderRadius: '4px',
+              fontSize: 'clamp(9px, 2vw, 13px)',
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: 'clamp(50px, 15vw, 100px)'
+            }}>
+              {leftTeamData?.name || 'Team'}
+            </div>
+            <div style={{
+              padding: 'clamp(2px, 0.5vw, 4px) clamp(6px, 1.5vw, 10px)',
+              background: leftColor,
+              color: isBrightColor(leftColor) ? '#000' : '#fff',
+              borderRadius: '4px',
+              fontSize: 'clamp(10px, 2.5vw, 16px)',
+              fontWeight: 700
+            }}>
+              {leftLabel}
+            </div>
+            {/* Set score left */}
             <div style={{
               padding: 'clamp(2px, 0.5vw, 4px) clamp(8px, 2vw, 14px)',
               background: 'rgba(255, 255, 255, 0.1)',
@@ -1286,23 +1393,50 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             }}>
               {leftSetScore}
             </div>
-                <div style={{
-            display: 'flex', 
-                  flexDirection: 'column',
+            {/* SET n */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center'
-          }}>
+            }}>
               <span style={{ fontSize: 'clamp(8px, 1.5vw, 11px)', color: 'var(--muted)', textTransform: 'uppercase' }}>SET</span>
               <span style={{ fontSize: 'clamp(16px, 3.5vw, 24px)', fontWeight: 700 }}>{data?.currentSet?.index || 1}</span>
-                </div>
-                  <div style={{
+            </div>
+            {/* Set score right */}
+            <div style={{
               padding: 'clamp(2px, 0.5vw, 4px) clamp(8px, 2vw, 14px)',
               background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: '6px',
               fontSize: 'clamp(14px, 3vw, 22px)',
               fontWeight: 700
-                  }}>
+            }}>
               {rightSetScore}
-              </div>
+            </div>
+            {/* Right: A/B + Full name in color boxes */}
+            <div style={{
+              padding: 'clamp(2px, 0.5vw, 4px) clamp(6px, 1.5vw, 10px)',
+              background: rightColor,
+              color: isBrightColor(rightColor) ? '#000' : '#fff',
+              borderRadius: '4px',
+              fontSize: 'clamp(10px, 2.5vw, 16px)',
+              fontWeight: 700
+            }}>
+              {rightLabel}
+            </div>
+            <div style={{
+              padding: 'clamp(2px, 0.5vw, 4px) clamp(6px, 1.5vw, 10px)',
+              background: rightColor,
+              color: isBrightColor(rightColor) ? '#000' : '#fff',
+              borderRadius: '4px',
+              fontSize: 'clamp(9px, 2vw, 13px)',
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: 'clamp(50px, 15vw, 100px)'
+            }}>
+              {rightTeamData?.name || 'Team'}
+            </div>
             </div>
             
           {/* Score row - perfectly centered colon */}
@@ -1323,29 +1457,33 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               minWidth: 0,
               overflow: 'hidden'
             }}>
-              {/* A/B box with team name below */}
+              {/* Ball indicator (if serving) + Score */}
                 <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 'clamp(6px, 2vw, 20px)'
               }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{
-                    padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 20px)',
-                    background: leftColor,
-                    color: isBrightColor(leftColor) ? '#000' : '#fff',
-                    borderRadius: '6px',
-                    fontSize: 'clamp(20px, 5vw, 40px)',
-                    fontWeight: 700
+                {/* Ball indicator for serving team */}
+                <div style={{
+                  width: 'clamp(30px, 8vw, 60px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
                 }}>
-                  {leftLabel}
-            </span>
-                  <span style={{ fontSize: 'clamp(9px, 1.5vw, 12px)', color: 'var(--muted)', marginTop: '2px' }}>
-                  {leftTeam === 'home' ? (data?.match?.homeShortName || leftTeamData?.name?.substring(0, 3).toUpperCase() || 'HOM') : (data?.match?.awayShortName || leftTeamData?.name?.substring(0, 3).toUpperCase() || 'AWY')}
-                </span>
+                  {leftServing && (
+                    <img
+                      src={mikasaVolleyball}
+                      alt="Serving"
+                      style={{
+                        width: 'clamp(24px, 6vw, 50px)',
+                        height: 'clamp(24px, 6vw, 50px)',
+                        filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+                      }}
+                    />
+                  )}
                 </div>
               <span style={{
-                  fontSize: 'clamp(36px, 12vw, 100px)',
+                  fontSize: 'clamp(48px, 18vw, 140px)',
             fontWeight: 800,
             color: 'var(--accent)',
                   lineHeight: 1,
@@ -1363,11 +1501,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              <span style={{ fontSize: 'clamp(28px, 10vw, 80px)', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
+              <span style={{ fontSize: 'clamp(35px, 14vw, 110px)', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
               </div>
 
             {/* Right team side */}
-                  <div style={{ 
+                  <div style={{
               flex: '1 1 0',
                     display: 'flex',
                     flexDirection: 'column',
@@ -1382,7 +1520,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 gap: 'clamp(6px, 2vw, 20px)'
             }}>
               <span style={{
-                  fontSize: 'clamp(36px, 12vw, 100px)',
+                  fontSize: 'clamp(48px, 18vw, 140px)',
                 fontWeight: 800,
                 color: 'var(--accent)',
                   lineHeight: 1,
@@ -1390,21 +1528,25 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       }}>
                 {rightScore}
               </span>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{
-                    padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 20px)',
-                    background: rightColor,
-                    color: isBrightColor(rightColor) ? '#000' : '#fff',
-                    borderRadius: '6px',
-                    fontSize: 'clamp(20px, 5vw, 40px)',
-                    fontWeight: 700
-                  }}>
-                  {rightLabel}
-                </span>
-                  <span style={{ fontSize: 'clamp(9px, 1.5vw, 12px)', color: 'var(--muted)', marginTop: '2px' }}>
-                  {rightTeam === 'home' ? (data?.match?.homeShortName || rightTeamData?.name?.substring(0, 3).toUpperCase() || 'HOM') : (data?.match?.awayShortName || rightTeamData?.name?.substring(0, 3).toUpperCase() || 'AWY')}
-                </span>
-                      </div>
+                {/* Ball indicator for serving team */}
+                <div style={{
+                  width: 'clamp(30px, 8vw, 60px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {rightServing && (
+                    <img
+                      src={mikasaVolleyball}
+                      alt="Serving"
+                      style={{
+                        width: 'clamp(24px, 6vw, 50px)',
+                        height: 'clamp(24px, 6vw, 50px)',
+                        filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+                      }}
+                    />
+                  )}
+                </div>
                       </div>
                       </div>
                     </div>
@@ -1412,7 +1554,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
         {/* RIGHT COLUMN - Serve indicator (1/5) */}
           <div style={{
-          flex: '0 0 20%',
+          flex: '0 0 15%',
               display: 'flex',
               alignItems: 'center',
           justifyContent: 'center', 
@@ -1475,7 +1617,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             top: 0,
             bottom: 0,
             left: '50%',
-                                  width: '6px', 
+            width: '6px', 
             transform: 'translateX(-50%)',
             background: 'repeating-linear-gradient(to bottom, rgba(248, 250, 252, 0.85), rgba(248, 250, 252, 0.85) 4px, rgba(148, 163, 184, 0.45) 4px, rgba(148, 163, 184, 0.45) 8px)',
             borderRadius: '3px',
@@ -1587,195 +1729,218 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
           </div>
 
-      {/* SECTION 4: Results & TO/SUB Counters - TWO ROWS */}
-        <div style={{
-        flex: '1 1 auto',
-        padding: '6px 12px',
-        background: 'rgba(0, 0, 0, 0.2)',
-          display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
+      {/* Team labels between court and TO/SUB */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '4px 16px',
+        background: 'rgba(0, 0, 0, 0.15)'
+      }}>
+        <span style={{
+          fontSize: 'clamp(12px, 3vw, 18px)',
+          fontWeight: 700,
+          color: leftColor,
+          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '45%'
         }}>
-        {/* ROW 1: TO/SUB Counters (1/3 height) */}
-          <div style={{
-          flex: '0 0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '4px 8px',
-          marginBottom: '6px'
-                }}>
-          {/* Left team TO/SUB - left aligned, same row */}
-                <div style={{
-                  display: 'flex',
-            flexDirection: 'row',
-            gap: '12px',
-            alignItems: 'center'
-          }}>
-            <div style={{
-              background: timeoutModal?.team === leftTeam ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              textAlign: 'center',
-              border: timeoutModal?.team === leftTeam ? '2px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.1)',
-              cursor: timeoutModal?.team === leftTeam ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-            onClick={() => timeoutModal?.team === leftTeam && setTimeoutModal(null)}
-                  >
-              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>TO</span>
-              {timeoutModal?.team === leftTeam ? (
-                <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--accent)' }}>
-                  {timeoutModal.countdown}"
-                </span>
-              ) : (
-                <span style={{
-                  fontSize: '20px',
-                  fontWeight: 700,
-                  color: leftStats.timeouts >= 2 ? '#ef4444' : 'inherit'
-                  }}>
-                  {leftStats.timeouts}
-                </span>
-              )}
-                  </div>
-                <div style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-                  display: 'flex',
-              alignItems: 'center',
-                  gap: '8px'
-                }}>
-              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>SUB</span>
-              <span style={{
-                fontSize: '20px',
-                  fontWeight: 700,
-                color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'inherit'
-                  }}>
-                {leftStats.substitutions}
-              </span>
-                  </div>
-          </div>
+          {leftTeamData?.name || 'Team'}
+        </span>
+        <span style={{
+          fontSize: 'clamp(12px, 3vw, 18px)',
+          fontWeight: 700,
+          color: rightColor,
+          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '45%'
+        }}>
+          {rightTeamData?.name || 'Team'}
+        </span>
+      </div>
 
-          {/* Right team TO/SUB - right aligned, same row */}
-                <div style={{
-                  display: 'flex',
-            flexDirection: 'row',
-                  gap: '12px',
-            alignItems: 'center'
-                    }}>
-                <div style={{
-              background: timeoutModal?.team === rightTeam ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              textAlign: 'center',
-              border: timeoutModal?.team === rightTeam ? '2px solid var(--accent)' : '1px solid rgba(255, 255, 255, 0.1)',
-              cursor: timeoutModal?.team === rightTeam ? 'pointer' : 'default',
-                  display: 'flex',
-              alignItems: 'center',
-                  gap: '8px'
-            }}
-            onClick={() => timeoutModal?.team === rightTeam && setTimeoutModal(null)}
-            >
-              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>TO</span>
-              {timeoutModal?.team === rightTeam ? (
-                <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--accent)' }}>
-                  {timeoutModal.countdown}"
-                </span>
-              ) : (
-                <span style={{
-                  fontSize: '20px',
-                  fontWeight: 700,
-                  color: rightStats.timeouts >= 2 ? '#ef4444' : 'inherit'
-                }}>
-                  {rightStats.timeouts}
-                </span>
-              )}
-                  </div>
-                <div style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-                  display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-                }}>
-              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>SUB</span>
-              <span style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'inherit'
-              }}>
-                {rightStats.substitutions}
-              </span>
-                  </div>
-                </div>
-        </div>
-
-        {/* ROW 2: Results table (2/3 height, full width) */}
-                <div style={{
+      {/* SECTION 4: Three Column Layout - TO/SUB | Info | TO/SUB */}
+        <div style={{
           flex: '1 1 auto',
-                  display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'flex-start',
-          overflow: 'auto'
-                }}>
+          padding: '6px 12px',
+          background: 'rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          flexDirection: 'row',
+          gap: '12px',
+          overflow: 'hidden'
+        }}>
+          {/* COLUMN 1: Left team TO/SUB counters - two column grid */}
           <div style={{
-            background: 'rgba(15, 23, 42, 0.6)',
-            border: '2px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '10px',
-            padding: '10px 16px',
-            width: '100%',
-            maxWidth: '500px'
+            flex: '1 1 0',
+            display: 'grid',
+            gridTemplateColumns: 'auto auto',
+            gap: 'clamp(4px, 0.5vw, 4px) clamp(4px, 1vw, 8px)',
+            justifyContent: 'center',
+            alignContent: 'center',
+            alignItems: 'center'
           }}>
-            <h4 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 700, textAlign: 'center' }}>
-              Results
-            </h4>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '15px' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>T</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>S</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, borderRight: '2px solid rgba(255,255,255,0.2)' }}>P</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, borderRight: '2px solid rgba(255,255,255,0.2)' }}>SET</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, borderLeft: '2px solid rgba(255,255,255,0.2)' }}>P</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>S</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>T</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.sets || []).filter(set => set.index <= (data?.currentSet?.index || 1)).map((set, idx) => {
-                  const setEvents = data?.events?.filter(e => e.setIndex === set.index) || []
-                  const leftSetPoints = leftTeam === 'home' ? set.homePoints : set.awayPoints
-                  const rightSetPoints = rightTeam === 'home' ? set.homePoints : set.awayPoints
-                  const leftSetTimeouts = setEvents.filter(e => e.type === 'timeout' && e.payload?.team === leftTeam).length
-                  const rightSetTimeouts = setEvents.filter(e => e.type === 'timeout' && e.payload?.team === rightTeam).length
-                  const leftSetSubs = setEvents.filter(e => e.type === 'substitution' && e.payload?.team === leftTeam).length
-                  const rightSetSubs = setEvents.filter(e => e.type === 'substitution' && e.payload?.team === rightTeam).length
-                  
-                  return (
-                    <tr key={set.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: '15px' }}>{leftSetTimeouts}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: '15px' }}>{leftSetSubs}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: '17px', fontWeight: 600, borderRight: '2px solid rgba(255,255,255,0.2)' }}>{leftSetPoints || 0}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, fontSize: '17px', borderRight: '2px solid rgba(255,255,255,0.2)' }}>{set.index}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: '17px', fontWeight: 600, borderLeft: '2px solid rgba(255,255,255,0.2)' }}>{rightSetPoints || 0}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: '15px' }}>{rightSetSubs}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: '15px' }}>{rightSetTimeouts}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-                </div>
+            <span style={{
+              fontSize: 'clamp(25px, 5vw, 50px)',
+              fontWeight: 700,
+              color: leftStats.timeouts >= 2 ? '#ef4444' : 'inherit',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '4px',
+              padding: '2px 4px',
+              background: 'rgba(255, 255, 255, 0.1)',
+            }}>
+              {leftStats.timeouts}
+            </span>
+            <span style={{ fontSize: 'clamp(25px, 5vw, 50px)', color: 'var(--muted)', textAlign: 'center' }}>TO</span>
+            <span style={{
+              fontSize: 'clamp(25px, 5vw, 50px)',
+              fontWeight: 700,
+              color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'inherit',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '4px',
+              padding: '2px 4px',
+              background: 'rgba(255, 255, 255, 0.1)',
+            }}>
+              {leftStats.substitutions}
+            </span>
+            <span style={{ fontSize: 'clamp(25px, 5vw, 50px)', color: 'var(--muted)', textAlign: 'center' }}>SUB</span>
+           
           </div>
-    </div>
+
+          {/* COLUMN 2: Information area (substitutions, TO, alerts, last action, rally status, countdowns) */}
+          <div style={{
+            flex: '1 1 auto',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            background: 'rgba(15, 23, 42, 0.4)',
+            borderRadius: '8px',
+            padding: '8px',
+            overflow: 'hidden'
+          }}>
+            {/* Show timeout countdown if active */}
+            {timeoutModal && (
+              <div style={{
+                textAlign: 'center',
+                padding: 'clamp(4px, 1vw, 8px)',
+                background: 'rgba(251, 191, 36, 0.2)',
+                borderRadius: '6px',
+                border: '2px solid var(--accent)',
+                marginBottom: 'clamp(4px, 1vw, 8px)',
+                width: '100%'
+              }}>
+                <div style={{ fontSize: 'clamp(10px, 2vw, 12px)', color: 'var(--muted)', marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>TIMEOUT</div>
+                <div style={{ fontSize: 'clamp(11px, 2.5vw, 14px)', fontWeight: 600 }}>
+                  {timeoutModal.team === 'home' ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home') : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')}
+                </div>
+                <div style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: 'var(--accent)' }}>
+                  {timeoutModal.countdown}"
+                </div>
+              </div>
+            )}
+
+            {/* Show between-sets countdown if active */}
+            {betweenSetsCountdown && betweenSetsCountdown.countdown > 0 && (
+              <div style={{
+                textAlign: 'center',
+                padding: 'clamp(4px, 1vw, 8px)',
+                background: 'rgba(34, 197, 94, 0.2)',
+                borderRadius: '6px',
+                border: '2px solid #22c55e',
+                marginBottom: 'clamp(4px, 1vw, 8px)',
+                width: '100%'
+              }}>
+                <div style={{ fontSize: 'clamp(10px, 2vw, 12px)', color: 'var(--muted)', marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>INTERVAL</div>
+                <div style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: '#22c55e' }}>
+                  {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+                </div>
+              </div>
+            )}
+
+            {/* Show substitution modal info if active */}
+            {substitutionModal && (
+              <div style={{
+                textAlign: 'center',
+                padding: 'clamp(4px, 1vw, 8px)',
+                background: 'rgba(59, 130, 246, 0.2)',
+                borderRadius: '6px',
+                border: '2px solid #3b82f6',
+                marginBottom: 'clamp(4px, 1vw, 8px)',
+                width: '100%'
+              }}>
+                <div style={{ fontSize: 'clamp(10px, 2vw, 12px)', color: 'var(--muted)', marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>
+                  {substitutionModal.isExceptional ? 'EXCEPTIONAL SUB' : 'SUBSTITUTION'}
+                </div>
+                <div style={{ fontSize: 'clamp(11px, 2.5vw, 14px)', fontWeight: 600, marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>
+                  {substitutionModal.teamName}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(6px, 2vw, 12px)' }}>
+                  <span style={{ color: '#ef4444', fontWeight: 700, fontSize: 'clamp(16px, 4vw, 20px)' }}>#{substitutionModal.playerOut}</span>
+                  <span style={{ color: 'rgba(255,255,255,0.5)' }}>→</span>
+                  <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 'clamp(16px, 4vw, 20px)' }}>#{substitutionModal.playerIn}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Default: Rally status / waiting */}
+            {!timeoutModal && !substitutionModal && (!betweenSetsCountdown || betweenSetsCountdown.countdown <= 0) && (
+              <div style={{
+                textAlign: 'center',
+                padding: 'clamp(4px, 1vw, 8px)',
+                color: 'var(--muted)',
+                fontSize: 'clamp(11px, 2.5vw, 14px)'
+              }}>
+                {data?.rallyStatus === 'in_play' ? (
+                  <div style={{ color: '#22c55e', fontWeight: 600 }}>Rally in progress...</div>
+                ) : (
+                  <div>Waiting for action</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* COLUMN 3: Right team TO/SUB counters - two column grid */}
+          <div style={{
+            flex: '1 1 0',
+            display: 'grid',
+            gridTemplateColumns: 'auto auto',
+            gap: 'clamp(4px, 0.5vw, 4px) clamp(4px, 1vw, 8px)',
+            justifyContent: 'center',
+            alignContent: 'center',
+            alignItems: 'center'
+          }}>
+            <span style={{ fontSize: 'clamp(25px, 5vw, 50px)', color: 'var(--muted)', textAlign: 'center' }}>TO</span>
+            <span style={{
+              fontSize: 'clamp(25px, 5vw, 50px)',
+              fontWeight: 700,
+              color: rightStats.timeouts >= 2 ? '#ef4444' : 'inherit',
+              marginLeft: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '4px',
+              padding: '2px 4px',
+              background: 'rgba(255, 255, 255, 0.1)',
+            }}>
+              {rightStats.timeouts}
+            </span>
+            <span style={{ fontSize: 'clamp(25px, 5vw, 50px)', color: 'var(--muted)', textAlign: 'center' }}>SUB</span>
+            <span style={{
+              fontSize: 'clamp(25px, 5vw, 50px)',
+              fontWeight: 700,
+              color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'inherit',
+              marginLeft: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '4px',
+              padding: '2px 4px',
+              background: 'rgba(255, 255, 255, 0.1)',
+            }}>
+              {rightStats.substitutions}
+            </span>
+          </div>
+        </div>
     </div>
   )
 }
