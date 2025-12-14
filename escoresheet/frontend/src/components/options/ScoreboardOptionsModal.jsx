@@ -268,11 +268,11 @@ export default function ScoreboardOptionsModal({
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
                       <span style={{ color: 'rgba(255,255,255,0.6)' }}>Referee: </span>
-                      {serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee.html`}
+                      {serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
                       <span style={{ color: 'rgba(255,255,255,0.6)' }}>Bench: </span>
-                      {serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench.html`}
+                      {serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
                       <span style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket: </span>

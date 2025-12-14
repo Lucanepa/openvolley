@@ -697,7 +697,7 @@ export default function HomeOptionsModal({
             fontSize: '11px',
             color: 'rgba(255,255,255,0.7)'
           }}>
-            <strong style={{ color: '#3b82f6' }}>Tip:</strong> For local network setup, use your device's IP address instead of app.openvolley.app (e.g., http://192.168.1.100:5173/referee.html)
+            <strong style={{ color: '#3b82f6' }}>Tip:</strong> For local network setup, use your device's IP address instead of app.openvolley.app (e.g., http://192.168.1.100:5173/referee)
           </div>
         </Section>
 

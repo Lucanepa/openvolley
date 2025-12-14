@@ -637,7 +637,7 @@ export default function MatchEnd({ matchId, onShowScoresheet, onGoHome }) {
                 sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
                 
                 // Open scoresheet in new window to use existing save PDF logic
-                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1600,height=1200')
+                const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1600,height=1200')
                 
                 if (!scoresheetWindow) {
                   throw new Error('Could not open scoresheet window. Please allow popups.')

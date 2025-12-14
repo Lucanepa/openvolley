@@ -6,31 +6,21 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 
-// Valid HTML pages for the app
+// Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
   '/',
   '/index.html',
-  '/referee.html',
-  '/scoresheet.html',
-  '/bench.html',
-  '/livescore.html',
-  '/upload_roster.html',
-  // Also allow without .html extension
   '/referee',
+  '/referee/',
   '/scoresheet',
+  '/scoresheet/',
   '/bench',
+  '/bench/',
   '/livescore',
-  '/upload_roster'
+  '/livescore/',
+  '/upload_roster',
+  '/upload_roster/'
 ]
-
-// Map non-.html routes to their .html counterparts
-const htmlRedirects = {
-  '/referee': '/referee.html',
-  '/scoresheet': '/scoresheet.html',
-  '/bench': '/bench.html',
-  '/livescore': '/livescore.html',
-  '/upload_roster': '/upload_roster.html'
-}
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -91,12 +81,6 @@ export default defineConfig({
               url.startsWith('/node_modules/') ||
               url.startsWith('/src/') ||
               url.includes('.')) {
-            return next()
-          }
-
-          // Redirect non-.html routes to their .html counterparts
-          if (htmlRedirects[url]) {
-            req.url = htmlRedirects[url] + (req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '')
             return next()
           }
 
@@ -262,11 +246,11 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: './index.html',
-        referee: './referee.html',
-        scoresheet: './scoresheet.html',
-        bench: './bench.html',
-        livescore: './livescore.html',
-        upload_roster: './upload_roster.html'
+        referee: './referee/index.html',
+        scoresheet: './scoresheet/index.html',
+        bench: './bench/index.html',
+        livescore: './livescore/index.html',
+        upload_roster: './upload_roster/index.html'
       },
       output: {
         // Avoid eval in production builds

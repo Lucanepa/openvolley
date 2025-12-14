@@ -125,6 +125,40 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS test BOOLEAN DEFAULT FALSE;
 ALTER TABLE sets ADD COLUMN IF NOT EXISTS test BOOLEAN DEFAULT FALSE;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS test BOOLEAN DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_sets_match_id ON sets(match_id);
+
+-- Team roster history table (for autocomplete/recall feature)
+-- Stores all players that have ever played for a team name (UNION)
+CREATE TABLE IF NOT EXISTS team_roster_history (
+  id BIGSERIAL PRIMARY KEY,
+  team_name TEXT NOT NULL,
+  short_name TEXT,
+  color TEXT,
+  player_number INTEGER,
+  player_first_name TEXT,
+  player_last_name TEXT,
+  player_dob TEXT,
+  match_id BIGINT REFERENCES matches(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Team officials history table
+-- Stores bench officials per team (latest is used when recalling)
+CREATE TABLE IF NOT EXISTS team_officials_history (
+  id BIGSERIAL PRIMARY KEY,
+  team_name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  dob TEXT,
+  match_id BIGINT REFERENCES matches(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for fast team name lookups
+CREATE INDEX IF NOT EXISTS idx_team_roster_history_name ON team_roster_history(team_name);
+CREATE INDEX IF NOT EXISTS idx_team_officials_history_name ON team_officials_history(team_name);
+CREATE INDEX IF NOT EXISTS idx_team_roster_history_created ON team_roster_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_officials_history_created ON team_officials_history(created_at DESC);
 ```
 
 ## 5. Set Up Row Level Security (RLS)
@@ -145,6 +179,12 @@ CREATE POLICY "Allow all operations" ON teams FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON players FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON sets FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON events FOR ALL USING (true);
+
+-- RLS for team history tables
+ALTER TABLE team_roster_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_officials_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations" ON team_roster_history FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON team_officials_history FOR ALL USING (true);
 ```
 
 ## 6. Test the Connection

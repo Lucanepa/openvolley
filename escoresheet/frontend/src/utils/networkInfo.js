@@ -163,10 +163,10 @@ export function buildAppUrls(localIP, port, protocol = 'http') {
   const baseUrl = `${protocol}://${localIP}:${port}`
   return {
     main: baseUrl,
-    referee: `${baseUrl}/referee.html`,
-    bench: `${baseUrl}/bench.html`,
-    livescore: `${baseUrl}/livescore.html`,
-    uploadRoster: `${baseUrl}/upload_roster.html`
+    referee: `${baseUrl}/referee`,
+    bench: `${baseUrl}/bench`,
+    livescore: `${baseUrl}/livescore`,
+    uploadRoster: `${baseUrl}/upload_roster`
   }
 }
 
@@ -203,9 +203,9 @@ export function buildCloudUrls(backendUrl) {
 
   return {
     main: baseUrl,
-    referee: `${baseUrl}/referee.html`,
-    bench: `${baseUrl}/bench.html`,
-    livescore: `${baseUrl}/livescore.html`,
-    uploadRoster: `${baseUrl}/upload_roster.html`
+    referee: `${baseUrl}/referee`,
+    bench: `${baseUrl}/bench`,
+    livescore: `${baseUrl}/livescore`,
+    uploadRoster: `${baseUrl}/upload_roster`
   }
 }
