@@ -739,6 +739,17 @@
     }
   }
 
+  @keyframes recentSubFlash {
+    0%, 100% {
+      background: #fef08a;
+      box-shadow: 0 0 10px rgba(254, 240, 138, 0.8);
+    }
+    50% {
+      background: #fde047;
+      box-shadow: 0 0 20px rgba(253, 224, 71, 1);
+    }
+  }
+
   @keyframes fadeIn {
     from {
       opacity: 0;
@@ -1700,7 +1711,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: auto;
+    flex: 1;
     box-sizing: border-box;
   }
 
@@ -1710,6 +1721,7 @@
     align-items: center;
     justify-content: center;
     width: auto;
+    height: auto;
     box-sizing: border-box;
     flex: 1;
     min-height: 0;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { findMatchByGameNumber, getMatchData, subscribeToMatchData } from './utils/serverDataSync'
 import mikasaVolleyball from './mikasa_v200w.png'
 
@@ -20,6 +20,7 @@ export default function LivescoreApp() {
   const [sidesSwitched, setSidesSwitched] = useState(false)
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -44,10 +45,17 @@ export default function LivescoreApp() {
     const enableNoSleep = async () => {
       try {
         if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) {
+            try { await wakeLockRef.current.release() } catch (e) {}
+          }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
           console.log('[WakeLock] Screen wake lock acquired (Livescore)')
+          setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
             console.log('[WakeLock] Screen wake lock released (Livescore)')
+            if (!wakeLockRef.current) {
+              setWakeLockActive(false)
+            }
           })
         }
       } catch (err) {
@@ -97,6 +105,39 @@ export default function LivescoreApp() {
       }
     }
   }, [])
+
+  // Toggle wake lock manually
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      // Disable wake lock
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release()
+          wakeLockRef.current = null
+        } catch (e) {}
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+      }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled')
+    } else {
+      // Enable wake lock
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          console.log('[WakeLock] Manually enabled')
+        }
+        if (noSleepVideoRef.current) {
+          await noSleepVideoRef.current.play()
+        }
+      } catch (err) {
+        console.log('[WakeLock] Failed to enable:', err.message)
+        setWakeLockActive(true) // Visual feedback even if API failed
+      }
+    }
+  }, [wakeLockActive])
 
   // Get gameId from URL (optional)
   useEffect(() => {
@@ -636,10 +677,28 @@ export default function LivescoreApp() {
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
-        <div style={{ fontSize: '18px', fontWeight: 600 }}>Live Scoring</div>
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '18px', fontWeight: 600 }}>Live Scoring</span>
+          <button
+            onClick={toggleWakeLock}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+              color: wakeLockActive ? '#22c55e' : '#fff',
+              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+          >
+            {wakeLockActive ? '☀️ On' : '🌙 Off'}
+          </button>
+        </div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
           gap: '16px',
           fontSize: '14px'
         }}>
@@ -701,10 +760,10 @@ export default function LivescoreApp() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '100px 20px',
+        padding: 'clamp(40px, 10vh, 100px) 20px',
         width: '100%',
         position: 'relative',
-        gap: '20px'
+        gap: 'clamp(10px, 3vw, 20px)'
       }}>
         {/* Left Team Score */}
         <div style={{
@@ -713,7 +772,7 @@ export default function LivescoreApp() {
           alignItems: 'center',
           gap: '12px',
           position: 'relative',
-          padding: '0 20px 0 44px',
+          padding: '0 clamp(10px, 3vw, 20px) 0 clamp(24px, 6vw, 44px)',
           flex: '0 1 auto',
           minWidth: 0
         }}>
@@ -722,10 +781,10 @@ export default function LivescoreApp() {
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '80px',
-                height: '80px',
+                width: 'clamp(40px, 10vw, 80px)',
+                height: 'clamp(40px, 10vw, 80px)',
                 position: 'absolute',
-                left: -50,
+                left: 'clamp(-30px, -7vw, -50px)',
                 top: '50%',
                 transform: 'translateY(-50%)',
                 filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
@@ -733,7 +792,7 @@ export default function LivescoreApp() {
             />
           )}
           <div style={{
-            fontSize: '200px',
+            fontSize: 'clamp(60px, 25vw, 200px)',
             fontWeight: 700,
             color: '#fff',
             lineHeight: '1',
@@ -742,7 +801,7 @@ export default function LivescoreApp() {
             {currentScore.left}
           </div>
           <div style={{
-            fontSize: '20px',
+            fontSize: 'clamp(12px, 3vw, 20px)',
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)',
             textTransform: 'uppercase'
@@ -753,7 +812,7 @@ export default function LivescoreApp() {
 
         {/* Separator - Always Centered */}
         <div style={{
-          fontSize: '200px',
+          fontSize: 'clamp(60px, 25vw, 200px)',
           fontWeight: 700,
           color: 'rgba(255, 255, 255, 0.5)',
           flexShrink: 0,
@@ -774,7 +833,7 @@ export default function LivescoreApp() {
           alignItems: 'center',
           gap: '12px',
           position: 'relative',
-          padding: '0 44px 0 20px',
+          padding: '0 clamp(24px, 6vw, 44px) 0 clamp(10px, 3vw, 20px)',
           flex: '0 1 auto',
           minWidth: 0
         }}>
@@ -783,10 +842,10 @@ export default function LivescoreApp() {
               src={mikasaVolleyball}
               alt="Serving team"
               style={{
-                width: '80px',
-                height: '80px',
+                width: 'clamp(40px, 10vw, 80px)',
+                height: 'clamp(40px, 10vw, 80px)',
                 position: 'absolute',
-                right: -50,
+                right: 'clamp(-30px, -7vw, -50px)',
                 top: '50%',
                 transform: 'translateY(-50%)',
                 filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
@@ -794,7 +853,7 @@ export default function LivescoreApp() {
             />
           )}
           <div style={{
-            fontSize: '200px',
+            fontSize: 'clamp(60px, 25vw, 200px)',
             fontWeight: 700,
             color: '#fff',
             lineHeight: '1',
@@ -803,7 +862,7 @@ export default function LivescoreApp() {
             {currentScore.right}
           </div>
           <div style={{
-            fontSize: '20px',
+            fontSize: 'clamp(12px, 3vw, 20px)',
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)',
             textTransform: 'uppercase'
@@ -818,13 +877,13 @@ export default function LivescoreApp() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px',
-        gap: '24px'
+        padding: 'clamp(10px, 3vh, 20px)',
+        gap: 'clamp(12px, 4vw, 24px)'
       }}>
         <div style={{
-          padding: '6px 12px',
+          padding: 'clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px)',
           borderRadius: '6px',
-          fontSize: '100px',
+          fontSize: 'clamp(40px, 12vw, 100px)',
           fontWeight: 700,
           background: 'rgba(255, 255, 255, 0.1)',
           border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -845,7 +904,7 @@ export default function LivescoreApp() {
           justifyContent: 'center'
         }}>
           <span style={{
-            fontSize: '100px',
+            fontSize: 'clamp(40px, 12vw, 100px)',
             fontWeight: 800,
             color: 'var(--text)',
             textTransform: 'uppercase',
@@ -853,11 +912,10 @@ export default function LivescoreApp() {
             gap: '10px',
             lineHeight: '1'
           }}>
-            SET 
-            
+            SET
           </span>
           <span style={{
-              fontSize: '100px',
+              fontSize: 'clamp(40px, 12vw, 100px)',
               fontWeight: 800,
               color: 'var(--text)',
               lineHeight: '1'
@@ -865,11 +923,11 @@ export default function LivescoreApp() {
               {data?.set?.index || 1}
             </span>
         </div>
-        
+
         <div style={{
-          padding: '6px 12px',
+          padding: 'clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px)',
           borderRadius: '6px',
-          fontSize: '100px',
+          fontSize: 'clamp(40px, 12vw, 100px)',
           fontWeight: 700,
           background: 'rgba(255, 255, 255, 0.1)',
           border: '1px solid rgba(255, 255, 255, 0.2)',

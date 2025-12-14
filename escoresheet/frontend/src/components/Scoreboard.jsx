@@ -10,7 +10,7 @@ import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
-export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss }) {
+export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { syncStatus } = useSyncQueue()
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
@@ -167,6 +167,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string } | null
+  const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }] - for flashing effect
+  const recentSubFlashTimeoutRef = useRef(null) // Timeout ref for clearing flash
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
   // Compact mode: landscape (width >= height) = width <= 960 OR height < 768
@@ -3152,6 +3154,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     await logEvent('rally_start')
     // Track when rally started (for accidental point award check)
     rallyStartTimeRef.current = Date.now()
+
+    // Clear the recently substituted players flash (rally starting clears it)
+    if (recentSubFlashTimeoutRef.current) {
+      clearTimeout(recentSubFlashTimeoutRef.current)
+    }
+    setRecentlySubstitutedPlayers([])
   }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration])
 
   const handleReplay = useCallback(async () => {
@@ -3294,6 +3302,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     setSetStartTimeModal(null)
 
+    // Trigger event backup for Safari/Firefox
+    onTriggerEventBackup?.('set_start')
+
     // Now actually start the rally
     await db.events.add({
       matchId,
@@ -3303,7 +3314,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: nextSeq2
     })
-  }, [setStartTimeModal, data?.set, matchId])
+  }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -3383,10 +3394,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       }
 
+      // Trigger event backup for Safari/Firefox (match end)
+      onTriggerEventBackup?.('match_end')
+
       // Only call onFinishSet for match end, not between sets
       // (Scoreboard now handles set creation internally)
       if (onFinishSet) onFinishSet(data.set)
     } else {
+      // Trigger event backup for Safari/Firefox (set end)
+      onTriggerEventBackup?.('set_end')
+
       // Start countdown immediately when set ends (not match end)
       // Reset dismissed flag and start countdown
       countdownDismissedRef.current = false
@@ -3507,7 +3524,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         status: 'queued'
       })
     }
-  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey])
+  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup])
 
   // Confirm set 5 side and service choices
   const confirmSet5SideService = useCallback(async (leftTeam, firstServe) => {
@@ -4535,7 +4552,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       team: timeoutModal.team,
       countdown: 30
     })
-  }, [timeoutModal, logEvent, sendActionToReferee])
+
+    // Trigger event backup for Safari/Firefox
+    onTriggerEventBackup?.('timeout')
+  }, [timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -5753,7 +5773,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     setSubstitutionConfirm(null)
     setLiberoDropdown(null) // Close libero dropdown when confirming substitution
-    
+
+    // Add player to recently substituted list for flashing effect
+    setRecentlySubstitutedPlayers(prev => [...prev, { team, playerNumber: playerIn, timestamp: Date.now() }])
+
+    // Clear the flash after 3 seconds (unless start rally is clicked first)
+    if (recentSubFlashTimeoutRef.current) {
+      clearTimeout(recentSubFlashTimeoutRef.current)
+    }
+    recentSubFlashTimeoutRef.current = setTimeout(() => {
+      setRecentlySubstitutedPlayers([])
+    }, 3000)
+
     // Send substitution action to referee to show modal
     const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home' : data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
     sendActionToReferee('substitution', {
@@ -10396,25 +10427,33 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                     const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
-                    
+
+                    // Check if this player was recently substituted in
+                    const isRecentlySub = recentlySubstitutedPlayers.some(
+                      sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
+                    )
+
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    
+
                     return (
-                      <div 
-                        key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`} 
-                        className="court-player"
+                      <div
+                        key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
+                        className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
                         onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
-                        style={{ 
+                        style={{
                           cursor: 'pointer',
                           transition: 'transform 0.2s',
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined,
-                          position: 'relative'
+                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          position: 'relative',
+                          animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                          fontWeight: isRecentlySub ? 900 : undefined,
+                          border: isRecentlySub ? '3px solid #dc2626' : undefined
                         }}
                         onMouseEnter={(e) => {
                             e.currentTarget.style.transform = 'scale(1.05)'
@@ -10553,24 +10592,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const teamSubstitutions = substitutionsUsed?.[leftTeamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                     const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
-                    
+
+                    // Check if this player was recently substituted in
+                    const isRecentlySub = recentlySubstitutedPlayers.some(
+                      sub => sub.team === leftTeamKey && String(sub.playerNumber) === String(player.number)
+                    )
+
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(leftTeamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    
+
                     return (
-                      <div 
-                        key={`${leftTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`} 
-                        className="court-player" 
-                        style={{ 
+                      <div
+                        key={`${leftTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
+                        className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
+                        style={{
                           position: 'relative',
                           cursor: player.number && player.number !== '' ? 'pointer' : 'default',
                           transition: 'transform 0.2s',
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined
+                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                          fontWeight: isRecentlySub ? 900 : undefined,
+                          border: isRecentlySub ? '3px solid #dc2626' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(leftTeamKey, player.position, player.number, e)}
                         onMouseEnter={(e) => {
@@ -10731,24 +10778,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                     const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
-                    
+
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    
+
+                    // Check if this player was recently substituted in
+                    const isRecentlySub = recentlySubstitutedPlayers.some(
+                      sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
+                    )
+
                     return (
-                      <div 
-                        key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`} 
+                      <div
+                        key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
                         className="court-player"
                         onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
-                        style={{ 
+                        style={{
                           cursor: 'pointer',
                           transition: 'transform 0.2s',
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined,
+                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                          fontWeight: isRecentlySub ? 900 : undefined,
+                          border: isRecentlySub ? '3px solid #dc2626' : undefined,
                           position: 'relative'
                         }}
                         onMouseEnter={(e) => {
@@ -10888,24 +10943,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const teamSubstitutions = substitutionsUsed?.[rightTeamKey] || 0
                     const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                     const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
-                    
+
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(rightTeamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    
+
+                    // Check if this player was recently substituted in
+                    const isRecentlySub = recentlySubstitutedPlayers.some(
+                      sub => sub.team === rightTeamKey && String(sub.playerNumber) === String(player.number)
+                    )
+
                     return (
-                      <div 
-                        key={`${rightTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`} 
-                        className="court-player" 
-                        style={{ 
+                      <div
+                        key={`${rightTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
+                        className="court-player"
+                        style={{
                           position: 'relative',
                           cursor: player.number && player.number !== '' ? 'pointer' : 'default',
                           transition: 'transform 0.2s',
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined
+                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                          fontWeight: isRecentlySub ? 900 : undefined,
+                          border: isRecentlySub ? '3px solid #dc2626' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(rightTeamKey, player.position, player.number, e)}
                         onMouseEnter={(e) => {

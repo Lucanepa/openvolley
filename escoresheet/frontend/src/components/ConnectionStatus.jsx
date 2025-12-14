@@ -96,10 +96,12 @@ export default function ConnectionStatus({
     if (status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing') {
       return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? 'Syncing' : 'Connected' }
     } else if (status === 'awaiting_match') {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Awaiting new match' }
+      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: 'Connected' }
     } else if (status === 'attention') {
-      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: 'Attention' }
-    } else if (status === 'disconnected' || status === 'no_match' || status === 'error' || status === 'offline') {
+      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: 'Error' }
+    } else if (status === 'no_match') {
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Ready' }
+    } else if (status === 'disconnected' || status === 'error' || status === 'offline') {
       return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? 'Error' : status === 'offline' ? 'Offline' : 'Disconnected' }
     } else if (status === 'not_configured' || status === 'not_applicable') {
       return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: 'Not Configured' }
@@ -227,8 +229,8 @@ export default function ConnectionStatus({
         }}></span>
         <span>
           {overallStatus === 'connected' ? 'Connected' : 
-           overallStatus === 'awaiting_match' ? 'Awaiting new match' : 
-           'Attention'}
+           overallStatus === 'awaiting_match' ? 'Ready' : 
+           'Error'}
         </span>
         <span style={{ fontSize: `${parseInt(currentSize.fontSize) - 2}px`, marginLeft: '4px' }}>
           {showConnectionMenu ? '▲' : '▼'}
@@ -277,13 +279,14 @@ export default function ConnectionStatus({
             }
             
             const isConnected = status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing'
+            const isReady = key === 'match' && status === 'no_match'
             const debugInfo = connectionDebugInfo[key]
             
             return (
               <div key={key} style={{ position: 'relative' }} data-debug-menu>
                 <div
                   onClick={(e) => {
-                    if (!isConnected) {
+                    if (!isConnected && !isReady) {
                       e.stopPropagation()
                       setShowDebugMenu(showDebugMenu === key ? null : key)
                     }
@@ -299,16 +302,16 @@ export default function ConnectionStatus({
                     background: itemStatusInfo.bg,
                     border: `1px solid ${itemStatusInfo.border}`,
                     borderRadius: '4px',
-                    cursor: !isConnected ? 'pointer' : 'default',
+                    cursor: (!isConnected && !isReady) ? 'pointer' : 'default',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    if (!isConnected) {
+                    if (!isConnected && !isReady) {
                       e.currentTarget.style.background = itemStatusInfo.bg.replace('0.2', '0.3')
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isConnected) {
+                    if (!isConnected && !isReady) {
                       e.currentTarget.style.background = itemStatusInfo.bg
                     }
                   }}
@@ -322,8 +325,8 @@ export default function ConnectionStatus({
                       borderRadius: '50%',
                       background: itemStatusInfo.dot
                     }}></span>
-                    <span>{displayText}</span>
-                    {!isConnected && (
+                    <span style={{ color: status === 'no_match' ? 'rgba(156, 163, 175, 1)' : 'inherit' }}>{displayText}</span>
+                    {!isConnected && !isReady && (
                       <span style={{ fontSize: '10px', marginLeft: '4px' }}>
                         {showDebugMenu === key ? '▲' : '▼'}
                       </span>
@@ -332,7 +335,7 @@ export default function ConnectionStatus({
                 </div>
                 
                 {/* Debug Menu - inline instead of absolute to avoid overflow */}
-                {!isConnected && showDebugMenu === key && debugInfo && (
+                {!isConnected && !isReady && showDebugMenu === key && debugInfo && (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
@@ -353,7 +356,7 @@ export default function ConnectionStatus({
                       color: '#ef4444',
                       fontSize: '12px'
                     }}>
-                      Debug Information
+                      Status Information
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.9)' }}>
                       <strong>Status:</strong> {(() => {

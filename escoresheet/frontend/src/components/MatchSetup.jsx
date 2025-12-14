@@ -7,8 +7,10 @@ import RefereeSelector from './RefereeSelector'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 
-export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const [home, setHome] = useState('Home')
+  // Match created popup state
+  const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin }
   const [away, setAway] = useState('Away')
 
   // Match info fields
@@ -1113,7 +1115,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       return
     }
 
-    const matchId = await db.matches.add({
+    // Auto-generate gamePin for official matches
+    const generatedGamePin = (() => {
+      const chars = '0123456789'
+      let pin = ''
+      for (let i = 0; i < 6; i++) {
+        pin += chars.charAt(Math.floor(Math.random() * chars.length))
+      }
+      return pin
+    })()
+
+    const createdMatchId = await db.matches.add({
       homeTeamId: homeId,
       awayTeamId: awayId,
       status: 'live',
@@ -1131,15 +1143,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
       game_n: gameN ? Number(gameN) : null,
       league,
-      gamePin: (() => {
-        // Auto-generate gamePin for official matches
-        const chars = '0123456789'
-        let pin = ''
-        for (let i = 0; i < 6; i++) {
-          pin += chars.charAt(Math.floor(Math.random() * chars.length))
-        }
-        return pin
-      })(), // Game PIN for official matches (not test matches)
+      gamePin: generatedGamePin, // Game PIN for official matches (not test matches)
       ...(() => {
         // Generate all three PINs together to ensure uniqueness
         const refPin = generatePinCode([])
@@ -1175,7 +1179,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         resource: 'match',
         action: 'insert',
         payload: {
-          external_id: String(matchId),
+          external_id: String(createdMatchId),
           home_team_id: String(homeId),
           away_team_id: String(awayId),
           status: 'live',
@@ -1284,7 +1288,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       return
     }
 
-    onOpenCoinToss()
+    // Show match created popup if online (has gamePin)
+    if (!offlineMode && generatedGamePin) {
+      setMatchCreatedModal({ matchId: createdMatchId, gamePin: generatedGamePin })
+    } else {
+      onOpenCoinToss()
+    }
     })
   }
 
@@ -4567,6 +4576,85 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 OK
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Match Created Modal - shows Match ID and PIN for recovery */}
+      {matchCreatedModal && (
+        <Modal
+          title="Match Created"
+          open={true}
+          onClose={() => {
+            setMatchCreatedModal(null)
+            onOpenCoinToss()
+          }}
+          width={450}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <div style={{
+              background: 'rgba(34, 197, 94, 0.1)',
+              border: '2px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ marginBottom: '16px' }}>
+                <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
+                  Match ID
+                </span>
+                <span style={{
+                  fontSize: '28px',
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: 'var(--accent)',
+                  letterSpacing: '2px'
+                }}>
+                  {matchCreatedModal.matchId}
+                </span>
+              </div>
+              <div>
+                <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
+                  Game PIN
+                </span>
+                <span style={{
+                  fontSize: '28px',
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: '#22c55e',
+                  letterSpacing: '4px'
+                }}>
+                  {matchCreatedModal.gamePin}
+                </span>
+              </div>
+            </div>
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255,255,255,0.8)',
+              marginBottom: '24px',
+              lineHeight: 1.5
+            }}>
+              Please save this information to recover the match if needed.
+            </p>
+            <button
+              onClick={() => {
+                setMatchCreatedModal(null)
+                onOpenCoinToss()
+              }}
+              style={{
+                padding: '14px 32px',
+                fontSize: '16px',
+                fontWeight: 600,
+                background: 'var(--accent)',
+                color: '#000',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              Continue to Coin Toss
+            </button>
           </div>
         </Modal>
       )}

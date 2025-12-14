@@ -1,0 +1,11 @@
+# SSL/TLS Certificates - NEVER commit these!
+*.pem
+*.key
+*.crt
+cert.pem
+key.pem
+
+# Environment files with secrets
+.env
+.env.local
+.env.production
