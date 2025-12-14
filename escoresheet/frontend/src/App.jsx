@@ -11,6 +11,7 @@ import ConnectionStatus from './components/ConnectionStatus'
 import MainHeader from './components/MainHeader'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
+import ConnectionSetupModal from './components/options/ConnectionSetupModal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import useAutoBackup from './hooks/useAutoBackup'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -67,6 +68,7 @@ export default function App() {
   const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
   const [homeGuideModal, setHomeGuideModal] = useState(false)
+  const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, isOnline } = useSyncQueue()
   const backup = useAutoBackup(matchId)
   const canUseSupabase = Boolean(supabase)
@@ -3424,6 +3426,7 @@ export default function App() {
         open={homeOptionsModal}
         onClose={() => setHomeOptionsModal(false)}
         onOpenGuide={() => setHomeGuideModal(true)}
+        onOpenConnectionSetup={() => setConnectionSetupModal(true)}
         matchOptions={{
           checkAccidentalRallyStart,
           setCheckAccidentalRallyStart,
@@ -3463,6 +3466,17 @@ export default function App() {
       <GuideModal
         open={homeGuideModal}
         onClose={() => setHomeGuideModal(false)}
+      />
+
+      {/* Connection Setup Modal */}
+      <ConnectionSetupModal
+        open={connectionSetupModal}
+        onClose={() => setConnectionSetupModal(false)}
+        matchId={matchId}
+        refereePin={currentMatch?.refereePin}
+        homeTeamPin={currentMatch?.homeTeamPin}
+        awayTeamPin={currentMatch?.awayTeamPin}
+        gameNumber={currentMatch?.gameNumber}
       />
 
       </div>

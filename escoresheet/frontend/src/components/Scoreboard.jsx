@@ -6,6 +6,7 @@ import GuideModal from './GuideModal'
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
+import ConnectionSetupModal from './options/ConnectionSetupModal'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -28,6 +29,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showSanctions, setShowSanctions] = useState(false)
   const [menuModal, setMenuModal] = useState(false)
   const [showOptionsInMenu, setShowOptionsInMenu] = useState(false)
+  const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const [localManageCaptainOnCourt, setLocalManageCaptainOnCourt] = useState(() => {
     // Load from localStorage, default to false
     const saved = localStorage.getItem('manageCaptainOnCourt')
@@ -12811,6 +12813,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           setShowOptionsInMenu(false)
           setKeybindingsModalOpen(true)
         }}
+        onOpenConnectionSetup={() => setConnectionSetupModal(true)}
         server={{
           isAvailable: typeof window !== 'undefined' && Boolean(window.electronAPI?.server),
           serverRunning,
@@ -12852,6 +12855,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       <GuideModal
         open={scoreboardGuideModal}
         onClose={() => setScoreboardGuideModal(false)}
+      />
+
+      {/* Connection Setup Modal */}
+      <ConnectionSetupModal
+        open={connectionSetupModal}
+        onClose={() => setConnectionSetupModal(false)}
+        matchId={matchId}
+        refereePin={data?.match?.refereePin}
+        homeTeamPin={data?.match?.homeTeamPin}
+        awayTeamPin={data?.match?.awayTeamPin}
+        gameNumber={data?.match?.gameNumber}
       />
 
       {/* Help & Video Guides Modal */}

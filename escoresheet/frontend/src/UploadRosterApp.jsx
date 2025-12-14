@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { findMatchByGameNumber, getMatchData, updateMatchData } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
+import { getServerStatus } from './utils/networkInfo'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
 import Modal from './components/Modal'
+import SimpleHeader from './components/SimpleHeader'
 
 // Date conversion helpers
 function formatDateToISO(dateStr) {
@@ -61,6 +63,13 @@ export default function UploadRosterApp() {
   const [parsedData, setParsedData] = useState(null) // { players: [], bench: [] }
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
+  const [availableMatches, setAvailableMatches] = useState([])
+  const [loadingMatches, setLoadingMatches] = useState(false)
+  const [selectedMatch, setSelectedMatch] = useState(null)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    server: 'disconnected',
+    websocket: 'not_applicable'
+  })
   const fileInputRef = useRef(null)
 
   // Wake lock refs and state
@@ -147,6 +156,121 @@ export default function UploadRosterApp() {
       }
     }
   }, [wakeLockActive])
+
+  // Load available matches on mount and periodically
+  useEffect(() => {
+    const loadMatches = async () => {
+      setLoadingMatches(true)
+      try {
+        const result = await listAvailableMatches()
+        if (result.success && result.matches) {
+          setAvailableMatches(result.matches)
+        }
+      } catch (err) {
+        console.error('Error loading matches:', err)
+      } finally {
+        setLoadingMatches(false)
+      }
+    }
+
+    loadMatches()
+    const interval = setInterval(loadMatches, 30000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Check connection status periodically
+  useEffect(() => {
+    const checkConnections = async () => {
+      try {
+        const serverStatus = await getServerStatus()
+        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
+
+        setConnectionStatuses({
+          server: serverStatus?.running ? 'connected' : 'disconnected',
+          websocket: wsStatus
+        })
+      } catch (err) {
+        setConnectionStatuses({
+          server: 'disconnected',
+          websocket: 'not_applicable'
+        })
+      }
+    }
+
+    checkConnections()
+    const interval = setInterval(checkConnections, 5000)
+
+    return () => clearInterval(interval)
+  }, [matchId])
+
+  // Handle match selection
+  const handleMatchSelect = async (match) => {
+    setSelectedMatch(match)
+    setGameNumber(String(match.gameNumber || match.id))
+
+    // Trigger the existing match status check
+    setMatchStatusCheck('checking')
+    try {
+      const matchData = await getMatchData(match.id)
+      if (matchData.success) {
+        const sets = matchData.sets || []
+        const events = matchData.events || []
+
+        // Check if match is finished
+        const isFinished = match.status === 'final' || (sets.length > 0 && sets.every(s => s.finished))
+
+        // Check if match has started
+        const hasActiveSet = sets.some(set => Boolean(
+          set.finished || set.startTime || set.homePoints > 0 || set.awayPoints > 0
+        ))
+        const hasEventActivity = events.some(event =>
+          ['set_start', 'rally_start', 'point'].includes(event.type)
+        )
+
+        if (isFinished) {
+          setMatchStatusCheck('invalid')
+          setValidationError('This match has already ended')
+          return
+        }
+
+        if (hasActiveSet || hasEventActivity) {
+          setMatchStatusCheck('invalid')
+          setValidationError('This match has already started. Roster cannot be uploaded.')
+          return
+        }
+
+        // Match is valid
+        setMatchStatusCheck('valid')
+        setMatch(match)
+        setMatchId(match.id)
+        if (matchData.homeTeam) setHomeTeam(matchData.homeTeam)
+        if (matchData.awayTeam) setAwayTeam(matchData.awayTeam)
+        setValidationError('')
+      } else {
+        setMatchStatusCheck('invalid')
+        setValidationError('Failed to load match data')
+      }
+    } catch (error) {
+      console.error('Error checking match:', error)
+      setMatchStatusCheck('invalid')
+      setValidationError('Error checking match status')
+    }
+  }
+
+  // Handle back to game selection
+  const handleBackToGames = () => {
+    setSelectedMatch(null)
+    setGameNumber('')
+    setTeam('home')
+    setUploadPin('')
+    setMatch(null)
+    setMatchId(null)
+    setHomeTeam(null)
+    setAwayTeam(null)
+    setValidationError('')
+    setMatchStatusCheck(null)
+  }
 
   // Check if match exists and is in setup (not started or finished)
   const checkMatchStatus = async (gameNum) => {
@@ -480,6 +604,7 @@ export default function UploadRosterApp() {
       setPdfError('')
       setParsedData(null)
       setMatchStatusCheck(null)
+      setSelectedMatch(null)
       setShowConfirmModal(false)
       
       if (fileInputRef.current) {
@@ -503,35 +628,12 @@ export default function UploadRosterApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       width: 'auto'
     }}>
-      {/* Header */}
-      <div style={{
-        padding: '12px 20px',
-        background: 'rgba(15, 23, 42, 0.6)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>Upload Roster</span>
-          <button
-            onClick={toggleWakeLock}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: wakeLockActive ? '#22c55e' : '#fff',
-              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
-          >
-            {wakeLockActive ? '☀️ On' : '🌙 Off'}
-          </button>
-        </div>
-      </div>
+      <SimpleHeader
+        title="Upload Roster"
+        wakeLockActive={wakeLockActive}
+        toggleWakeLock={toggleWakeLock}
+        connectionStatuses={connectionStatuses}
+      />
 
       <div style={{
         flex: 1,
@@ -548,149 +650,248 @@ export default function UploadRosterApp() {
           Upload Roster
         </h1>
 
-        {/* Input Form */}
-        {!parsedData && (
+        {/* Game Selection - Step 1 */}
+        {!parsedData && !selectedMatch && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            marginBottom: '32px',
+            alignItems: 'center',
+            maxWidth: '100%',
+            width: 'auto'
+          }}>
+            <p style={{
+              fontSize: '16px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              Select a game to upload roster
+            </p>
+
+            {loadingMatches ? (
+              <div style={{
+                padding: '20px',
+                color: 'rgba(255, 255, 255, 0.7)',
+                fontSize: '16px'
+              }}>
+                Loading available games...
+              </div>
+            ) : availableMatches.length > 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                width: '100%',
+                maxWidth: '400px'
+              }}>
+                {availableMatches.map((match) => (
+                  <button
+                    key={match.id}
+                    onClick={() => handleMatchSelect(match)}
+                    style={{
+                      padding: '16px 20px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '2px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '12px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: 'var(--accent)',
+                      marginBottom: '4px'
+                    }}>
+                      Game {match.gameNumber || match.id}
+                    </div>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: 500
+                    }}>
+                      {match.homeTeamName || 'Home'} vs {match.awayTeamName || 'Away'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{
+                padding: '20px',
+                color: 'rgba(255, 255, 255, 0.5)',
+                fontSize: '14px',
+                textAlign: 'center'
+              }}>
+                No active games found.<br />
+                Make sure a game is set up on the main scoresheet.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Team and PIN Selection - Step 2 */}
+        {!parsedData && selectedMatch && (
           <div
             style={{
               display: 'flex',
               flexDirection: 'column',
               gap: '20px',
               marginBottom: '32px',
-              alignItems: 'center',        // Center horizontally
+              alignItems: 'center',
               maxWidth: '100%',
-      width: 'auto'
+              width: 'auto'
             }}
           >
-            <div style={{maxWidth: '100%' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                Game Number
-              </label>
-              <input
-                type="text"
-                value={gameNumber}
-                onChange={(e) => {
-                  setGameNumber(e.target.value)
-                }}
-                placeholder="Enter game number"
-                style={{
-                  width: 'auto',
-                  padding: '12px',
-                  fontSize: '16px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: matchStatusCheck === 'invalid' 
-                    ? '1px solid #ef4444' 
-                    : matchStatusCheck === 'valid' 
-                    ? '1px solid #10b981' 
-                    : '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '6px',
-                  color: 'var(--text)',
-                  textAlign: 'center',
-                }}
-              />
-              {matchStatusCheck === 'checking' && (
-                <p style={{ color: 'var(--accent)', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
-                  Checking match...
-                </p>
-              )}
-              {matchStatusCheck === 'valid' && (
-                <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
-                  ✓ Match found and ready for roster upload
-                </p>
-              )}
-            </div>
+            <button
+              onClick={handleBackToGames}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: 'var(--text)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                alignSelf: 'flex-start'
+              }}
+            >
+              ← Back to Games
+            </button>
 
-            <div style={{ width: 320, maxWidth: '100%' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                Team
-              </label>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTeam('home')
-                    setValidationError('')
-                    setUploadPin('')
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: team === 'home' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
-                    color: team === 'home' ? '#000' : 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    width: 'auto',
-                  }}
-                >
-                  Home {homeTeam?.name && `(${homeTeam.name})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTeam('away')
-                    setValidationError('')
-                    setUploadPin('')
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: team === 'away' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
-                    color: team === 'away' ? '#000' : 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    width: 'auto',
-                  }}
-                >
-                  Away {awayTeam?.name && `(${awayTeam.name})`}
-                </button>
+            <div style={{
+              padding: '16px 24px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '8px',
+              textAlign: 'center',
+              marginBottom: '8px'
+            }}>
+              <div style={{ fontSize: '14px', color: 'var(--accent)', marginBottom: '4px' }}>
+                Game {selectedMatch.gameNumber || selectedMatch.id}
+              </div>
+              <div style={{ fontSize: '18px', fontWeight: 600 }}>
+                {homeTeam?.name || 'Home'} vs {awayTeam?.name || 'Away'}
               </div>
             </div>
 
-            <div style={{ width: 320, maxWidth: '100%' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                Upload PIN
-              </label>
-              <input
-                type="text"
-                value={uploadPin}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 6)
-                  setUploadPin(val)
-                }}
-                placeholder="Enter 6-digit upload PIN"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  fontSize: '18px',
-                  fontFamily: 'monospace',
-                  textAlign: 'center',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: isValid 
-                    ? '1px solid #10b981' 
-                    : validationError && uploadPin.length === 6
-                    ? '1px solid #ef4444'
-                    : '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '6px',
-                  color: 'var(--text)'
-                }}
-                maxLength={6}
-              />
-              {isValid && (
-                <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
-                  ✓ PIN verified
-                </p>
-              )}
-            </div>
+            {matchStatusCheck === 'checking' && (
+              <p style={{ color: 'var(--accent)', fontSize: '14px', margin: 0, textAlign: 'center' }}>
+                Checking match...
+              </p>
+            )}
 
-            {validationError && (
-              <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', width: 320, maxWidth: '100%' }}>
+            {matchStatusCheck === 'invalid' && validationError && (
+              <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', maxWidth: '300px' }}>
                 {validationError}
               </p>
+            )}
+
+            {matchStatusCheck === 'valid' && (
+              <>
+                <div style={{ width: 320, maxWidth: '100%' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                    Team
+                  </label>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTeam('home')
+                        setValidationError('')
+                        setUploadPin('')
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: team === 'home' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
+                        color: team === 'home' ? '#000' : 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        width: 'auto',
+                      }}
+                    >
+                      Home {homeTeam?.name && `(${homeTeam.name})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTeam('away')
+                        setValidationError('')
+                        setUploadPin('')
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: team === 'away' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
+                        color: team === 'away' ? '#000' : 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        width: 'auto',
+                      }}
+                    >
+                      Away {awayTeam?.name && `(${awayTeam.name})`}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ width: 320, maxWidth: '100%' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                    Upload PIN
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadPin}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6)
+                      setUploadPin(val)
+                    }}
+                    placeholder="Enter 6-digit upload PIN"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      fontSize: '18px',
+                      fontFamily: 'monospace',
+                      textAlign: 'center',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: isValid
+                        ? '1px solid #10b981'
+                        : validationError && uploadPin.length === 6
+                        ? '1px solid #ef4444'
+                        : '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'var(--text)'
+                    }}
+                    maxLength={6}
+                  />
+                  {isValid && (
+                    <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
+                      ✓ PIN verified
+                    </p>
+                  )}
+                </div>
+
+                {validationError && uploadPin.length === 6 && (
+                  <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', width: 320, maxWidth: '100%' }}>
+                    {validationError}
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}

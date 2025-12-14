@@ -27,7 +27,10 @@
       "Bash(timeout 5 node:*)",
       "Bash(npm ls:*)",
       "Bash(powershell:*)",
-      "Bash(timeout 15 npm run dev:*)"
+      "Bash(timeout 15 npm run dev:*)",
+      "Bash(del /f \"c:\\Users\\lcane\\Desktop\\openvolley\\nul\")",
+      "Bash(rm:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

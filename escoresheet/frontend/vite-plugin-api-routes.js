@@ -493,7 +493,21 @@ export function vitePluginApiRoutes(options = {}) {
           }
           return
         }
-        
+
+        // Get connection count
+        if (urlPath === '/server/connections') {
+          const subscriptionCounts = {}
+          for (const [matchId, subscribers] of matchSubscriptions.entries()) {
+            subscriptionCounts[matchId] = subscribers.size
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            totalClients: wsClients.size,
+            matchSubscriptions: subscriptionCounts
+          }))
+          return
+        }
+
         // List available matches (for game number dropdown) - check this BEFORE other /match/ routes
         if (urlPath === '/match/list' && req.method === 'GET') {
           const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {

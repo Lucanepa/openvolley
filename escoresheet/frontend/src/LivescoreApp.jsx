@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { findMatchByGameNumber, getMatchData, subscribeToMatchData } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
+import { getServerStatus } from './utils/networkInfo'
+import SimpleHeader from './components/SimpleHeader'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Helper function to determine if a color is bright
@@ -18,6 +20,12 @@ export default function LivescoreApp() {
   const [gameIdInput, setGameIdInput] = useState('')
   const [error, setError] = useState('')
   const [sidesSwitched, setSidesSwitched] = useState(false)
+  const [availableMatches, setAvailableMatches] = useState([])
+  const [loadingMatches, setLoadingMatches] = useState(false)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    server: 'disconnected',
+    websocket: 'disconnected'
+  })
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
@@ -138,6 +146,53 @@ export default function LivescoreApp() {
       }
     }
   }, [wakeLockActive])
+
+  // Load available matches on mount and periodically
+  useEffect(() => {
+    const loadMatches = async () => {
+      setLoadingMatches(true)
+      try {
+        const result = await listAvailableMatches()
+        if (result.success && result.matches) {
+          setAvailableMatches(result.matches)
+        }
+      } catch (err) {
+        console.error('Error loading matches:', err)
+      } finally {
+        setLoadingMatches(false)
+      }
+    }
+
+    loadMatches()
+    const interval = setInterval(loadMatches, 30000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Check connection status periodically
+  useEffect(() => {
+    const checkConnections = async () => {
+      try {
+        const serverStatus = await getServerStatus()
+        const wsStatus = gameId ? getWebSocketStatus(gameId) : 'not_applicable'
+
+        setConnectionStatuses({
+          server: serverStatus?.running ? 'connected' : 'disconnected',
+          websocket: gameId ? wsStatus : 'not_applicable'
+        })
+      } catch (err) {
+        setConnectionStatuses({
+          server: 'disconnected',
+          websocket: 'disconnected'
+        })
+      }
+    }
+
+    checkConnections()
+    const interval = setInterval(checkConnections, 5000)
+
+    return () => clearInterval(interval)
+  }, [gameId])
 
   // Get gameId from URL (optional)
   useEffect(() => {
@@ -478,11 +533,22 @@ export default function LivescoreApp() {
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+        flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
+        <SimpleHeader
+          title="Live Scoring"
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+        />
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
         <div style={{
           textAlign: 'center',
           maxWidth: '400px',
@@ -500,84 +566,95 @@ export default function LivescoreApp() {
             color: 'rgba(255, 255, 255, 0.7)',
             marginBottom: '32px'
           }}>
-            Enter the game number to view live scores
+            Select a game to view live scores
           </p>
-          <form onSubmit={handleGameIdSubmit} style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '16px'
-          }}>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={gameIdInput}
-              onChange={(e) => {
-                setGameIdInput(e.target.value)
-                setError('')
-              }}
-              placeholder="Game number"
-              style={{
-                padding: '16px',
-                fontSize: '18px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '2px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '8px',
-                color: '#fff',
-                textAlign: 'center',
-                outline: 'none',
-                transition: 'border-color 0.2s',
-                width: '100%',
-                maxWidth: '300px'
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)'
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-              }}
-              autoFocus
-            />
-            {error && (
-              <div style={{
-                padding: '12px',
-                background: 'rgba(239, 68, 68, 0.2)',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                borderRadius: '6px',
-                color: '#ff6b6b',
-                fontSize: '14px',
-                width: '100%',
-                maxWidth: '300px',
-                textAlign: 'center'
-              }}>
-                {error}
-              </div>
-            )}
-            <button
-              type="submit"
-              style={{
-                padding: '16px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s',
-                width: '100%',
-                maxWidth: '300px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = '0.9'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '1'
-              }}
-            >
-              View Game
-            </button>
-          </form>
+
+          {loadingMatches ? (
+            <div style={{
+              padding: '20px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontSize: '16px'
+            }}>
+              Loading available games...
+            </div>
+          ) : availableMatches.length > 0 ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              width: '100%'
+            }}>
+              {availableMatches.map((match) => (
+                <button
+                  key={match.id}
+                  onClick={() => {
+                    setGameId(match.id)
+                    setGameIdInput(String(match.id))
+                  }}
+                  style={{
+                    padding: '16px 20px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '2px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '12px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  }}
+                >
+                  <div style={{
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: 'var(--accent)',
+                    marginBottom: '4px'
+                  }}>
+                    Game {match.gameNumber || match.id}
+                  </div>
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: 500
+                  }}>
+                    {match.homeTeamName || 'Home'} vs {match.awayTeamName || 'Away'}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{
+              padding: '20px',
+              color: 'rgba(255, 255, 255, 0.5)',
+              fontSize: '14px',
+              textAlign: 'center'
+            }}>
+              No active games found.<br />
+              Make sure a game is in progress on the main scoresheet.
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              padding: '12px',
+              marginTop: '16px',
+              background: 'rgba(239, 68, 68, 0.2)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: '6px',
+              color: '#ff6b6b',
+              fontSize: '14px',
+              width: '100%',
+              textAlign: 'center'
+            }}>
+              {error}
+            </div>
+          )}
+        </div>
         </div>
       </div>
     )
@@ -591,11 +668,22 @@ export default function LivescoreApp() {
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+        flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
+        <SimpleHeader
+          title="Live Scoring"
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+        />
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
         <div style={{
           textAlign: 'center',
           maxWidth: '400px',
@@ -635,6 +723,7 @@ export default function LivescoreApp() {
             Enter Different Game Number
           </button>
         </div>
+        </div>
       </div>
     )
   }
@@ -646,16 +735,28 @@ export default function LivescoreApp() {
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+        flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
+        <SimpleHeader
+          title="Live Scoring"
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+        />
         <div style={{
-          textAlign: 'center',
-          fontSize: '18px'
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
         }}>
-          Loading...
+          <div style={{
+            textAlign: 'center',
+            fontSize: '18px'
+          }}>
+            Loading...
+          </div>
         </div>
       </div>
     )
@@ -668,52 +769,32 @@ export default function LivescoreApp() {
       color: '#fff',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
-      {/* Header */}
-      <div style={{
-        padding: '16px 20px',
-        background: 'rgba(15, 23, 42, 0.6)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '18px', fontWeight: 600 }}>Live Scoring</span>
-          <button
-            onClick={toggleWakeLock}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: wakeLockActive ? '#22c55e' : '#fff',
-              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
-          >
-            {wakeLockActive ? '☀️ On' : '🌙 Off'}
-          </button>
-        </div>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-          fontSize: '14px'
-        }}>
+      <SimpleHeader
+        title="Live Scoring"
+        subtitle={`Game: ${gameId}`}
+        wakeLockActive={wakeLockActive}
+        toggleWakeLock={toggleWakeLock}
+        connectionStatuses={connectionStatuses}
+        onBack={() => {
+          setGameId(null)
+          setGameIdInput('')
+          setError('')
+        }}
+        backLabel="Change Game"
+        rightContent={
           <button
             onClick={() => setSidesSwitched(!sidesSwitched)}
             style={{
-              padding: '8px 16px',
-              fontSize: '14px',
+              padding: '4px 10px',
+              fontSize: 'clamp(10px, 1.2vw, 12px)',
               fontWeight: 600,
               background: 'rgba(255, 255, 255, 0.1)',
               color: '#fff',
               border: '1px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '6px',
               cursor: 'pointer',
-              transition: 'background 0.2s'
+              transition: 'background 0.2s',
+              whiteSpace: 'nowrap'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
@@ -724,35 +805,8 @@ export default function LivescoreApp() {
           >
             Switch Sides
           </button>
-          <span style={{ color: 'var(--muted)' }}>Game ID: {gameId}</span>
-          <button
-            onClick={() => {
-              setGameId(null)
-              setGameIdInput('')
-              setError('')
-            }}
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'background 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            Change Game
-          </button>
-        </div>
-      </div>
+        }
+      />
 
 
       {/* Score Counter */}

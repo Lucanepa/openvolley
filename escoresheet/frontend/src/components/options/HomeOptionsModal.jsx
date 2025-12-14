@@ -175,6 +175,7 @@ export default function HomeOptionsModal({
   open,
   onClose,
   onOpenGuide,
+  onOpenConnectionSetup,
   matchOptions,
   displayOptions,
   wakeLock,
@@ -529,7 +530,37 @@ export default function HomeOptionsModal({
           </Row>
         </Section>
 
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <button
+            onClick={() => {
+              onClose?.()
+              onOpenConnectionSetup?.()
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+              color: 'var(--text)',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              width: '100%',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
+            }}
+          >
+            <span style={{ fontSize: '20px' }}>📡</span>
+            <span>Setup Connections</span>
+          </button>
           <button
             onClick={() => {
               onClose?.()
@@ -595,6 +626,80 @@ export default function HomeOptionsModal({
             </a>
           </Section>
         )}
+
+        <Section title="Environment">
+          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
+            Quick links to all app pages. Open in new tabs for multi-device setup.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[
+              { path: '/', name: 'Scoreboard', desc: 'Main scoring interface' },
+              { path: '/referee', name: 'Referee', desc: 'Referee Dashboard' },
+              { path: '/bench', name: 'Bench', desc: 'Team Dashboard tablet' },
+              { path: '/livescore', name: 'Livescore', desc: 'Public display' },
+              { path: '/upload_roster', name: 'Upload Roster', desc: 'Import team rosters from PDF/CSV' }
+            ].map(page => (
+              <a
+                key={page.path}
+                href={`https://app.openvolley.app${page.path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  color: 'var(--text)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>
+                    {page.name}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>
+                    {page.desc}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                  <code style={{
+                    fontSize: '10px',
+                    padding: '3px 6px',
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: '4px',
+                    color: 'rgba(255,255,255,0.6)'
+                  }}>
+                    {page.path === '/' ? '/' : page.path}
+                  </code>
+                  <span style={{ fontSize: '12px', opacity: 0.5 }}>↗</span>
+                </div>
+              </a>
+            ))}
+          </div>
+          <div style={{
+            marginTop: '12px',
+            padding: '10px 12px',
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            borderRadius: '6px',
+            fontSize: '11px',
+            color: 'rgba(255,255,255,0.7)'
+          }}>
+            <strong style={{ color: '#3b82f6' }}>Tip:</strong> For local network setup, use your device's IP address instead of app.openvolley.app (e.g., http://192.168.1.100:5173/referee.html)
+          </div>
+        </Section>
 
         {backup && (
           <Section title="Backup">
