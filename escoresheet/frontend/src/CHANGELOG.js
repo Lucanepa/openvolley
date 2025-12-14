@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.7.7',
+    date: '14.12.25',
+    changes: [
+      'Enhance Referee component with substitution flashing effect and layout adjustments'
+    ]
+  },
+  {
     version: '0.7.5',
     date: '14.12.25',
     changes: [

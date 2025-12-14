@@ -42,7 +42,10 @@ export default defineConfig({
   // For Electron, use './' for relative paths
   base: isElectron ? './' : (process.env.VITE_BASE_PATH || '/'),
   optimizeDeps: {
-    include: ['pdfjs-dist']
+    include: ['pdfjs-dist', 'react', 'react-dom']
+  },
+  resolve: {
+    dedupe: ['react', 'react-dom']
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion)

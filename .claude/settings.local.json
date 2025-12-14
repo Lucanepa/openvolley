@@ -24,7 +24,8 @@
       "Bash(dir:*)",
       "Bash(timeout 15 npm run build)",
       "Bash(cat:*)",
-      "Bash(timeout 5 node:*)"
+      "Bash(timeout 5 node:*)",
+      "Bash(npm ls:*)"
     ],
     "deny": [],
     "ask": []
