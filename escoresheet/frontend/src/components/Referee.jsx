@@ -125,19 +125,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         awayTeam: { name: 'Away Team', color: '#3b82f6' },
         homePlayers: [
           { number: 1 }, { number: 2 }, { number: 3 },
-          { number: 4 }, { number: 5 }, { number: 6 },
+          { number: 4 }, { number: 99 }, { number: 6 },
           { number: 7, libero: 'libero1' }
         ],
         awayPlayers: [
           { number: 11 }, { number: 12 }, { number: 13 },
-          { number: 14 }, { number: 15 }, { number: 16 },
+          { number: 54 }, { number: 15 }, { number: 16 },
           { number: 17, libero: 'libero1' }
         ],
         sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
         currentSet: { index: 1, homePoints: 12, awayPoints: 10, finished: false },
         events: [
-          { type: 'lineup', setIndex: 1, payload: { team: 'home', I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }},
-          { type: 'lineup', setIndex: 1, payload: { team: 'away', I: 11, II: 12, III: 13, IV: 14, V: 15, VI: 16 }}
+          { type: 'lineup', setIndex: 1, payload: { team: 'home', lineup: { I: 1, II: 2, III: 3, IV: 4, V: 99, VI: 6 } }},
+          { type: 'lineup', setIndex: 1, payload: { team: 'away', lineup: { I: 11, II: 12, III: 13, IV: 54, V: 15, VI: 16 } }}
         ]
       })
         }
@@ -380,24 +380,36 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Get lineup for current set - returns null for team if no lineup exists
   const lineup = useMemo(() => {
+    console.log('[Referee Lineup] data:', data)
+    console.log('[Referee Lineup] data.events:', data?.events)
+    console.log('[Referee Lineup] data.currentSet:', data?.currentSet)
+
     if (!data || !data.events || !data.currentSet) {
+      console.log('[Referee Lineup] Missing data, returning nulls')
       return { home: null, away: null }
     }
 
     const currentSetEvents = data.events.filter(
       e => (e.setIndex || 1) === (data.currentSet?.index || 1)
     )
+    console.log('[Referee Lineup] currentSetEvents:', currentSetEvents)
 
     const homeLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home')
     const awayLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away')
+    console.log('[Referee Lineup] homeLineupEvents:', homeLineupEvents)
+    console.log('[Referee Lineup] awayLineupEvents:', awayLineupEvents)
 
     const latestHomeLineup = homeLineupEvents[homeLineupEvents.length - 1]
     const latestAwayLineup = awayLineupEvents[awayLineupEvents.length - 1]
+    console.log('[Referee Lineup] latestHomeLineup:', latestHomeLineup)
+    console.log('[Referee Lineup] latestAwayLineup:', latestAwayLineup)
 
-    return {
+    const result = {
       home: latestHomeLineup?.payload?.lineup || null,
       away: latestAwayLineup?.payload?.lineup || null
     }
+    console.log('[Referee Lineup] RESULT:', result)
+    return result
   }, [data])
 
   // Calculate set scores
@@ -729,21 +741,21 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // Get libero label for bottom-left
     const liberoLabel = isLibero ? (player?.libero === 'libero1' ? 'L1' : 'L2') : null
     const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-    const displayLiberoLabel = liberoCount === 1 ? 'L' : liberoLabel
+    const displayLiberoLabel = isLibero ? (liberoCount === 1 ? 'L' : liberoLabel) : null
     
     return (
       <div style={{
           position: 'relative',
         width: 'clamp(44px, 10vw, 70px)',
         height: 'clamp(44px, 10vw, 70px)',
-        borderRadius: '50%',
-        border: '3px solid rgba(255, 255, 255, 0.4)',
+        borderRadius: '0%',
+        border: '1px solid rgba(255, 255, 255, 0.4)',
         background: isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
         color: isLibero ? '#000' : '#fff',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 'clamp(18px, 5vw, 28px)',
+        fontSize: 'clamp(45px, 5vw, 50px)',
         fontWeight: 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0
@@ -755,12 +767,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             alt="Ball" 
             style={{
               position: 'absolute',
-              left: team === leftTeam ? 'clamp(-38px, -10vw, -55px)' : 'auto',
-              right: team === rightTeam ? 'clamp(-38px, -10vw, -55px)' : 'auto',
+              left: team === leftTeam ? 'clamp(-60px, -10vw, -60px)' : 'auto',
+              right: team === rightTeam ? 'clamp(-60px, -10vw, -60px)' : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
-              width: 'clamp(24px, 6vw, 38px)',
-              height: 'clamp(24px, 6vw, 38px)',
+              width: 'clamp(35px, 7vw, 45px)',
+              height: 'clamp(35px, 7vw, 45px)',
               filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
             }}
           />
@@ -1501,7 +1513,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
           <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: '1.5fr 1fr',
               gap: 'clamp(4px, 2vw, 12px)',
               width: '100%',
               height: '100%',
@@ -1542,7 +1554,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               }}>
               <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: '1fr 1.5fr',
               gap: 'clamp(4px, 2vw, 12px)',
               width: '100%',
               height: '100%',
