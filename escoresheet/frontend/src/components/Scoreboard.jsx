@@ -7858,7 +7858,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
                 // Open scoresheet in new window
-                const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+                const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
                 if (!scoresheetWindow) {
                   alert('Please allow popups to view the scoresheet')
@@ -8626,7 +8626,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   sanctions: []
                 }
                 sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+                window.open('/scoresheet', '_blank', 'width=1200,height=900')
               }}
               style={{
                 padding: '8px 12px',

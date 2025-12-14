@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
+import TeamAutocomplete from './TeamAutocomplete'
+import { useTeamHistory } from '../hooks/useTeamHistory'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 
@@ -151,6 +153,80 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const awayTeamInputRef = useRef(null)
   const homeTeamMeasureRef = useRef(null)
   const awayTeamMeasureRef = useRef(null)
+
+  // Team history for autocomplete (online only)
+  const { isOnline: teamHistoryOnline, teamNames, fetchTeamHistory, saveTeamHistory, loading: teamHistoryLoading } = useTeamHistory()
+  const [loadingTeamHistory, setLoadingTeamHistory] = useState(false)
+
+  // Handler for when a team is selected from history dropdown
+  const handleSelectTeamFromHistory = useCallback(async (team, isHome) => {
+    if (!team?.name) return
+
+    setLoadingTeamHistory(true)
+    try {
+      const history = await fetchTeamHistory(team.name)
+
+      if (isHome) {
+        // Set team info
+        setHome(team.name)
+        if (history.shortName) setHomeShortName(history.shortName)
+        if (history.color) setHomeColor(history.color)
+
+        // Set players (UNION of all historical players)
+        if (history.players.length > 0) {
+          setHomeRoster(history.players.map(p => ({
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            dob: p.dob || '',
+            libero: '',
+            isCaptain: false
+          })))
+        }
+
+        // Set bench officials (latest)
+        if (history.officials.length > 0) {
+          setBenchHome(history.officials.map(o => ({
+            role: o.role,
+            firstName: o.firstName,
+            lastName: o.lastName,
+            dob: o.dob || ''
+          })))
+        }
+      } else {
+        // Away team
+        setAway(team.name)
+        if (history.shortName) setAwayShortName(history.shortName)
+        if (history.color) setAwayColor(history.color)
+
+        // Set players
+        if (history.players.length > 0) {
+          setAwayRoster(history.players.map(p => ({
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            dob: p.dob || '',
+            libero: '',
+            isCaptain: false
+          })))
+        }
+
+        // Set bench officials
+        if (history.officials.length > 0) {
+          setBenchAway(history.officials.map(o => ({
+            role: o.role,
+            firstName: o.firstName,
+            lastName: o.lastName,
+            dob: o.dob || ''
+          })))
+        }
+      }
+    } catch (error) {
+      console.error('Error loading team history:', error)
+    } finally {
+      setLoadingTeamHistory(false)
+    }
+  }, [fetchTeamHistory])
 
   // Server state
   const [serverRunning, setServerRunning] = useState(false)
@@ -1352,7 +1428,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
     // Open scoresheet in new window
-    const scoresheetWindow = window.open('/scoresheet.html', '_blank', 'width=1200,height=900')
+    const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
     if (!scoresheetWindow) {
       alert('Please allow popups to view the scoresheet')
@@ -1574,7 +1650,39 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     // Ensure all roster updates are committed before navigating
     // Force a small delay to ensure database updates are fully committed
     await new Promise(resolve => setTimeout(resolve, 100))
-    
+
+    // Save team history to Supabase for future autocomplete (official matches only)
+    if (!match?.test && teamHistoryOnline) {
+      try {
+        // Save home team history
+        if (home && home.trim() && homeRoster.length > 0) {
+          await saveTeamHistory(
+            home.trim(),
+            homeShortName || null,
+            homeColor || null,
+            homeRoster,
+            benchHome,
+            matchId
+          )
+        }
+
+        // Save away team history
+        if (away && away.trim() && awayRoster.length > 0) {
+          await saveTeamHistory(
+            away.trim(),
+            awayShortName || null,
+            awayColor || null,
+            awayRoster,
+            benchAway,
+            matchId
+          )
+        }
+      } catch (historyError) {
+        // Don't block match start if history save fails
+        console.error('Error saving team history:', historyError)
+      }
+    }
+
     // Start the match - directly navigate to scoreboard
     // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
     onStart(matchId)
@@ -3708,60 +3816,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%', flexWrap: 'wrap' }}>
                 {/* Team Name */}
                 <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Team Name</label>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <span
-                      ref={homeTeamMeasureRef}
-                      style={{
-                        position: 'absolute',
-                        visibility: 'hidden',
-                        whiteSpace: 'pre',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        letterSpacing: '0.01em',
-                        padding: '0 12px'
-                      }}
-                    >
-                      {home || 'Home team name'}
-                    </span>
-                    <input
-                      ref={homeTeamInputRef}
-                      type="text"
-                      value={home}
-                      onChange={e => {
-                        setHome(e.target.value)
-                        // Update width on change
-                        if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-                          homeTeamMeasureRef.current.textContent = e.target.value || 'Home team name'
-                          const measuredWidth = homeTeamMeasureRef.current.offsetWidth
-                          homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                        }
-                      }}
-                      placeholder="Home team name"
-                      style={{
-                        minWidth: '80px',
-                        width: 'auto',
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        background: 'rgba(15, 23, 42, 0.35)',
-                        color: 'var(--text)',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        letterSpacing: '0.01em',
-                        minHeight: 48,
-                        boxSizing: 'border-box',
-                        transition: 'width 0.1s ease'
-                      }}
-                      onFocus={() => {
-                        if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
-                          homeTeamMeasureRef.current.textContent = home || 'Home team name'
-                          const measuredWidth = homeTeamMeasureRef.current.offsetWidth
-                          homeTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                        }
-                      }}
-                    />
-                  </div>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>
+                    Team Name
+                    {teamHistoryOnline && teamNames.length > 0 && (
+                      <span style={{ marginLeft: 6, fontSize: '10px', color: 'rgba(59, 130, 246, 0.8)' }}>
+                        (select from history)
+                      </span>
+                    )}
+                  </label>
+                  <TeamAutocomplete
+                    value={home}
+                    onChange={setHome}
+                    onSelectTeam={(team) => handleSelectTeamFromHistory(team, true)}
+                    teamNames={teamNames}
+                    placeholder="Home team name"
+                    isOnline={teamHistoryOnline}
+                    measureRef={homeTeamMeasureRef}
+                    inputRef={homeTeamInputRef}
+                  />
+                  {loadingTeamHistory && (
+                    <div style={{ fontSize: '11px', color: 'rgba(59, 130, 246, 0.8)', marginTop: 4 }}>
+                      Loading team history...
+                    </div>
+                  )}
                 </div>
                 
                 {/* Short Name */}
@@ -3844,62 +3921,31 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%', flexWrap: 'wrap' }}>
                 {/* Team Name */}
                 <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Team Name</label>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <span
-                      ref={awayTeamMeasureRef}
-                      style={{
-                        position: 'absolute',
-                        visibility: 'hidden',
-                        whiteSpace: 'pre',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        letterSpacing: '0.01em',
-                        padding: '0 12px'
-                      }}
-                    >
-                      {away || 'Away team name'}
-                    </span>
-                    <input
-                      ref={awayTeamInputRef}
-                      type="text"
-                      value={away}
-                      onChange={e => {
-                        setAway(e.target.value)
-                        // Update width on change
-                        if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-                          awayTeamMeasureRef.current.textContent = e.target.value || 'Away team name'
-                          const measuredWidth = awayTeamMeasureRef.current.offsetWidth
-                          awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                        }
-                      }}
-                      placeholder="Away team name"
-                      style={{
-                        minWidth: '80px',
-                        width: 'auto',
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        background: 'rgba(15, 23, 42, 0.35)',
-                        color: 'var(--text)',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        letterSpacing: '0.01em',
-                        minHeight: 48,
-                        boxSizing: 'border-box',
-                        transition: 'width 0.1s ease'
-                      }}
-                      onFocus={() => {
-                        if (awayTeamMeasureRef.current && awayTeamInputRef.current) {
-                          awayTeamMeasureRef.current.textContent = away || 'Away team name'
-                          const measuredWidth = awayTeamMeasureRef.current.offsetWidth
-                          awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
-                        }
-                      }}
-                    />
-                  </div>
+                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>
+                    Team Name
+                    {teamHistoryOnline && teamNames.length > 0 && (
+                      <span style={{ marginLeft: 6, fontSize: '10px', color: 'rgba(59, 130, 246, 0.8)' }}>
+                        (select from history)
+                      </span>
+                    )}
+                  </label>
+                  <TeamAutocomplete
+                    value={away}
+                    onChange={setAway}
+                    onSelectTeam={(team) => handleSelectTeamFromHistory(team, false)}
+                    teamNames={teamNames}
+                    placeholder="Away team name"
+                    isOnline={teamHistoryOnline}
+                    measureRef={awayTeamMeasureRef}
+                    inputRef={awayTeamInputRef}
+                  />
+                  {loadingTeamHistory && (
+                    <div style={{ fontSize: '11px', color: 'rgba(59, 130, 246, 0.8)', marginTop: 4 }}>
+                      Loading team history...
+                    </div>
+                  )}
                 </div>
-                
+
                 {/* Short Name */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '90px', flexShrink: 0 }}>
                   <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Short</label>
@@ -4003,11 +4049,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                     </div>
                     <div>
                       <div style={{ color: 'rgba(255,255,255,0.6)' }}>Referee:</div>
-                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee.html`}</div>
+                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}</div>
                     </div>
                     <div>
                       <div style={{ color: 'rgba(255,255,255,0.6)' }}>Bench:</div>
-                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench.html`}</div>
+                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}</div>
                     </div>
                     <div>
                       <div style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket:</div>
