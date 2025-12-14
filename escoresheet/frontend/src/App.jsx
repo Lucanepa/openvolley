@@ -12,48 +12,25 @@ import MainHeader from './components/MainHeader'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import { useSyncQueue } from './hooks/useSyncQueue'
+import useAutoBackup from './hooks/useAutoBackup'
 import mikasaVolleyball from './mikasa_v200w.png'
 import favicon from './favicon.png'
 import {
   TEST_REFEREE_SEED_DATA,
   TEST_SCORER_SEED_DATA,
-  TEST_TEAM_SEED_DATA
+  TEST_TEAM_SEED_DATA,
+  TEST_MATCH_SEED_KEY,
+  TEST_MATCH_EXTERNAL_ID,
+  TEST_HOME_TEAM_EXTERNAL_ID,
+  TEST_AWAY_TEAM_EXTERNAL_ID,
+  TEST_MATCH_DEFAULTS,
+  TEST_HOME_BENCH,
+  TEST_AWAY_BENCH,
+  getNextTestMatchStartTime
 } from './constants/testSeeds'
 import { supabase } from './lib/supabaseClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-
-const TEST_MATCH_SEED_KEY = 'test-match-default'
-const TEST_MATCH_EXTERNAL_ID = 'test-match-default'
-const TEST_HOME_TEAM_EXTERNAL_ID = 'test-team-alpha'
-const TEST_AWAY_TEAM_EXTERNAL_ID = 'test-team-bravo'
-const TEST_MATCH_DEFAULTS = {
-  hall: 'Kantonsschule Wiedikon (Halle A)',
-  city: 'Zürich',
-  league: '3L B',
-  gameNumber: '123456'
-}
-
-const TEST_HOME_BENCH = [
-  { role: 'Coach', firstName: 'Marco', lastName: 'Frei', dob: '15/05/1975' },
-  { role: 'Assistant Coach 1', firstName: 'Jan', lastName: 'Widmer', dob: '21/09/1980' },
-  { role: 'Physiotherapist', firstName: 'Eva', lastName: 'Gerber', dob: '03/12/1985' }
-]
-
-const TEST_AWAY_BENCH = [
-  { role: 'Coach', firstName: 'Stefan', lastName: 'Keller', dob: '08/02/1976' },
-  { role: 'Assistant Coach 1', firstName: 'Lars', lastName: 'Brunner', dob: '27/07/1981' },
-  { role: 'Physiotherapist', firstName: 'Mia', lastName: 'Schmid', dob: '14/04/1987' }
-]
-
-function getNextTestMatchStartTime() {
-  const now = new Date()
-  const kickoff = new Date(now)
-  kickoff.setHours(20, 0, 0, 0)
-  if (kickoff <= now) {
-    kickoff.setDate(kickoff.getDate() + 1)
-  }
-  return kickoff.toISOString()
-}
+import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile } from './utils/backupManager'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -79,6 +56,11 @@ export default function App() {
   const [showMatchEnd, setShowMatchEnd] = useState(false)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [newMatchModal, setNewMatchModal] = useState(null)
+  const [restoreMatchModal, setRestoreMatchModal] = useState(false)
+  const [restoreMatchIdInput, setRestoreMatchIdInput] = useState('')
+  const [restorePin, setRestorePin] = useState('')
+  const [restoreError, setRestoreError] = useState('')
+  const [restoreLoading, setRestoreLoading] = useState(false)
   const [testMatchLoading, setTestMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
@@ -86,6 +68,7 @@ export default function App() {
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
   const [homeGuideModal, setHomeGuideModal] = useState(false)
   const { syncStatus, isOnline } = useSyncQueue()
+  const backup = useAutoBackup(matchId)
   const canUseSupabase = Boolean(supabase)
   const [serverStatus, setServerStatus] = useState(null)
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
@@ -3016,6 +2999,7 @@ export default function App() {
               setShowMatchSetup(false)
               setShowCoinToss(true)
             }}
+            offlineMode={offlineMode}
           />
         ) : showMatchEnd && matchId ? (
           <MatchEnd 
@@ -3043,6 +3027,7 @@ export default function App() {
             showDeleteMatchModal={showDeleteMatchModal}
             restartTestMatch={restartTestMatch}
             onOpenSettings={() => setHomeOptionsModal(true)}
+            onRestoreMatch={() => setRestoreMatchModal(true)}
           />
         ) : (
           <Scoreboard
@@ -3051,6 +3036,7 @@ export default function App() {
             onOpenSetup={openMatchSetup}
             onOpenMatchSetup={openMatchSetupView}
             onOpenCoinToss={openCoinTossView}
+            onTriggerEventBackup={backup.triggerEventBackup}
           />
         )}
       </div>
@@ -3100,6 +3086,202 @@ export default function App() {
                 }}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Restore Match Modal */}
+      {restoreMatchModal && (
+        <Modal
+          title="Restore Match"
+          open={true}
+          onClose={() => {
+            setRestoreMatchModal(false)
+            setRestoreMatchIdInput('')
+            setRestorePin('')
+            setRestoreError('')
+          }}
+          width={450}
+        >
+          <div style={{ padding: '24px' }}>
+            {/* Online mode - restore from cloud */}
+            {!offlineMode && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                  Restore from Cloud
+                </h3>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                    Match ID:
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={restoreMatchIdInput}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '')
+                      setRestoreMatchIdInput(value)
+                      setRestoreError('')
+                    }}
+                    placeholder="Enter Match ID"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      fontFamily: 'monospace',
+                      background: 'var(--bg)',
+                      border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                      borderRadius: '8px',
+                      color: 'var(--text)',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                    Game PIN:
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={restorePin}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '')
+                      if (value.length <= 6) {
+                        setRestorePin(value)
+                        setRestoreError('')
+                      }
+                    }}
+                    placeholder="000000"
+                    maxLength={6}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      fontSize: '20px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      letterSpacing: '4px',
+                      fontFamily: 'monospace',
+                      background: 'var(--bg)',
+                      border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                      borderRadius: '8px',
+                      color: 'var(--text)',
+                      outline: 'none'
+                    }}
+                  />
+                  {restoreError && (
+                    <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '8px' }}>{restoreError}</p>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!restoreMatchIdInput) {
+                      setRestoreError('Please enter a Match ID')
+                      return
+                    }
+                    if (restorePin.length !== 6) {
+                      setRestoreError('Please enter a 6-digit Game PIN')
+                      return
+                    }
+                    setRestoreLoading(true)
+                    setRestoreError('')
+                    try {
+                      const cloudData = await fetchMatchByPin(restorePin, restoreMatchIdInput)
+                      if (!cloudData) {
+                        setRestoreError('Match not found with this ID and PIN')
+                        setRestoreLoading(false)
+                        return
+                      }
+                      const newMatchId = await importMatchFromSupabase(cloudData)
+                      setRestoreMatchModal(false)
+                      setRestoreMatchIdInput('')
+                      setRestorePin('')
+                      setMatchId(newMatchId)
+                      setShowMatchSetup(true)
+                    } catch (err) {
+                      setRestoreError(err.message || 'Failed to restore match')
+                    } finally {
+                      setRestoreLoading(false)
+                    }
+                  }}
+                  disabled={restoreLoading || !restoreMatchIdInput || restorePin.length !== 6}
+                  style={{
+                    width: '100%',
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: restoreLoading || !restoreMatchIdInput || restorePin.length !== 6 ? 'rgba(59, 130, 246, 0.3)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: restoreLoading || !restoreMatchIdInput || restorePin.length !== 6 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {restoreLoading ? 'Restoring...' : 'Restore from Cloud'}
+                </button>
+              </div>
+            )}
+
+            {/* Divider if online */}
+            {!offlineMode && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                marginBottom: '24px'
+              }}>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+                <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>or</span>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+              </div>
+            )}
+
+            {/* Offline/File restore */}
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                Restore from Backup File
+              </h3>
+              <button
+                onClick={async () => {
+                  setRestoreLoading(true)
+                  setRestoreError('')
+                  try {
+                    const jsonData = await selectBackupFile()
+                    if (!jsonData) {
+                      setRestoreLoading(false)
+                      return // User cancelled
+                    }
+                    const newMatchId = await restoreMatchFromJson(jsonData)
+                    setRestoreMatchModal(false)
+                    setRestorePin('')
+                    setMatchId(newMatchId)
+                    setShowMatchSetup(true)
+                  } catch (err) {
+                    setRestoreError(err.message || 'Failed to restore from file')
+                  } finally {
+                    setRestoreLoading(false)
+                  }
+                }}
+                disabled={restoreLoading}
+                style={{
+                  width: '100%',
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: restoreLoading ? 'rgba(249, 115, 22, 0.3)' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {restoreLoading ? 'Restoring...' : 'Select Backup File'}
               </button>
             </div>
           </div>
@@ -3274,6 +3456,7 @@ export default function App() {
           wakeLockActive,
           toggleWakeLock
         }}
+        backup={backup}
       />
 
       {/* Home Guide Modal */}

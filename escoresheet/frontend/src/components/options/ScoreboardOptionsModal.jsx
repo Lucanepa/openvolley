@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Modal from '../Modal'
 
 function InfoDot({ title }) {
@@ -141,6 +142,40 @@ export default function ScoreboardOptionsModal({
   matchOptions,
   displayOptions
 }) {
+  const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
+
+  // Clear cache functions
+  const clearServiceWorkerCaches = async () => {
+    if ('caches' in window) {
+      const cacheNames = await caches.keys()
+      await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)))
+    }
+  }
+
+  const unregisterServiceWorkers = async () => {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(registrations.map(registration => registration.unregister()))
+    }
+  }
+
+  const executeClearCache = async (includeLocalStorage) => {
+    try {
+      await clearServiceWorkerCaches()
+      await unregisterServiceWorkers()
+
+      if (includeLocalStorage) {
+        localStorage.clear()
+      }
+
+      // Reload to apply changes
+      window.location.reload()
+    } catch (error) {
+      console.error('Error clearing cache:', error)
+      alert('Failed to clear cache: ' + error.message)
+    }
+  }
+
   if (!open) return null
 
   const {
@@ -614,6 +649,139 @@ export default function ScoreboardOptionsModal({
             <span>Show Guide</span>
           </button>
         </div>
+
+        <Section title="Cache Management" borderBottom={false}>
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>Clear Application Cache</div>
+              <InfoDot title="Clears service worker caches and optionally localStorage. Use if app behaves unexpectedly." />
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setClearCacheModal({ type: 'cache' })}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
+                }}
+              >
+                Clear Cache
+              </button>
+              <button
+                onClick={() => setClearCacheModal({ type: 'all' })}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: 'rgba(239, 68, 68, 0.4)',
+                  color: '#fff',
+                  border: '1px solid rgba(239, 68, 68, 0.6)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.5)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.4)'
+                }}
+              >
+                Clear All (includes settings)
+              </button>
+            </div>
+          </Row>
+        </Section>
+
+        {/* Clear Cache Confirmation Modal */}
+        {clearCacheModal && (
+          <div
+            onClick={() => setClearCacheModal(null)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#1f2937',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                padding: '24px',
+                maxWidth: '400px',
+                width: '90%'
+              }}
+            >
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+                Confirm Clear Cache
+              </h3>
+              <p style={{ margin: '0 0 16px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
+                {clearCacheModal.type === 'all'
+                  ? 'This will clear all cached data AND your settings. The page will reload after clearing.'
+                  : 'This will clear cached files. Your settings will be preserved. The page will reload after clearing.'
+                }
+              </p>
+              {clearCacheModal.type === 'all' && (
+                <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
+                  Warning: This will reset all your preferences to defaults.
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setClearCacheModal(null)}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => executeClearCache(clearCacheModal.type === 'all')}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: '#ef4444',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Clear {clearCacheModal.type === 'all' ? 'All' : 'Cache'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
           <button

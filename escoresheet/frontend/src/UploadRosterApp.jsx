@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { findMatchByGameNumber, getMatchData, updateMatchData } from './utils/serverDataSync'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -65,6 +66,7 @@ export default function UploadRosterApp() {
   // Wake lock refs and state
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -74,8 +76,12 @@ export default function UploadRosterApp() {
           if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
           console.log('[WakeLock] Screen wake lock acquired (UploadRoster)')
+          setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
             console.log('[WakeLock] Screen wake lock released (UploadRoster)')
+            if (!wakeLockRef.current) {
+              setWakeLockActive(false)
+            }
           })
         }
       } catch (err) { console.log('[WakeLock] Native wake lock failed:', err.message) }
@@ -109,6 +115,38 @@ export default function UploadRosterApp() {
     }
   }, [])
 
+  // Toggle wake lock manually
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      // Disable wake lock
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release()
+          wakeLockRef.current = null
+        } catch (e) {}
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+      }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled')
+    } else {
+      // Enable wake lock
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          console.log('[WakeLock] Manually enabled')
+        }
+        if (noSleepVideoRef.current) {
+          await noSleepVideoRef.current.play()
+        }
+      } catch (err) {
+        console.log('[WakeLock] Failed to enable:', err.message)
+        setWakeLockActive(true) // Visual feedback even if API failed
+      }
+    }
+  }, [wakeLockActive])
 
   // Check if match exists and is in setup (not started or finished)
   const checkMatchStatus = async (gameNum) => {
@@ -460,10 +498,45 @@ export default function UploadRosterApp() {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       width: 'auto'
     }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 20px',
+        background: 'rgba(15, 23, 42, 0.6)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '16px', fontWeight: 600 }}>Upload Roster</span>
+          <button
+            onClick={toggleWakeLock}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+              color: wakeLockActive ? '#22c55e' : '#fff',
+              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+          >
+            {wakeLockActive ? '☀️ On' : '🌙 Off'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{
+        flex: 1,
+        padding: '20px'
+      }}>
       <div style={{
         margin: '0 auto',
         background: 'var(--bg-secondary)',
@@ -1011,6 +1084,7 @@ export default function UploadRosterApp() {
             </div>
           </Modal>
         )}
+      </div>
       </div>
     </div>
   )

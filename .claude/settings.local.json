@@ -22,7 +22,9 @@
       "Bash(timeout 30 npm run build)",
       "Bash(timeout 60 npm run build:*)",
       "Bash(dir:*)",
-      "Bash(timeout 15 npm run build)"
+      "Bash(timeout 15 npm run build)",
+      "Bash(cat:*)",
+      "Bash(timeout 5 node:*)"
     ],
     "deny": [],
     "ask": []

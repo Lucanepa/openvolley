@@ -24,6 +24,11 @@ export default function MainHeader({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [editingSize, setEditingSize] = useState({ width: '', height: '' })
   const [isEditing, setIsEditing] = useState(false)
+  // WxH indicator hidden by default - can be toggled via settings if needed
+  const [showViewportSize] = useState(() => {
+    const saved = localStorage.getItem('showViewportSize')
+    return saved === 'true' // Default to hidden
+  })
   const [isCollapsed, setIsCollapsed] = useState(false)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
@@ -351,27 +356,54 @@ export default function MainHeader({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            gap: '6px',
             padding: '4px 8px',
             fontSize: 'clamp(9px, 1.1vw, 11px)',
             fontWeight: 600,
-            background: offlineMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+            background: 'transparent',
             color: offlineMode ? '#ef4444' : '#22c55e',
-            border: `1px solid ${offlineMode ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`,
+            border: 'none',
             borderRadius: '6px',
             cursor: 'pointer',
             transition: 'all 0.2s',
             whiteSpace: 'nowrap'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = offlineMode ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = offlineMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'
+            e.currentTarget.style.background = 'transparent'
           }}
         >
-          <span style={{ fontSize: '12px' }}>{offlineMode ? '○' : '●'}</span>
           <span>{offlineMode ? 'Offline' : 'Online'}</span>
+          {/* Toggle Switch */}
+          <div
+            style={{
+              position: 'relative',
+              width: '25px',
+              height: '15px',
+              borderRadius: '10px',
+              background: offlineMode ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)',
+              border: `1px solid ${offlineMode ? 'rgba(239, 68, 68, 0.5)' : 'rgba(34, 197, 94, 0.5)'}`,
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '2px'
+            }}
+          >
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                background: offlineMode ? '#ef4444' : '#22c55e',
+                transform: offlineMode ? 'translateX(0)' : 'translateX(9px)',
+                transition: 'all 0.3s ease',
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+              }}
+            />
+          </div>
         </button>
 
         {/* Connection Status - only show in online mode */}
@@ -443,85 +475,87 @@ export default function MainHeader({
           </button>
         )}
 
-        {/* Viewport Size Display - Editable */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          fontSize: 'clamp(10px, 1.2vw, 12px)',
-          color: 'rgba(255, 255, 255, 0.6)',
-          whiteSpace: 'nowrap'
-        }}>
-          {isEditing ? (
-            <>
-              <input
-                type="number"
-                value={editingSize.width}
-                onChange={(e) => setEditingSize({ ...editingSize, width: e.target.value })}
-                onKeyDown={handleKeyDown}
-                onBlur={handleResizeViewport}
-                autoFocus
-                style={{
-                  width: '60px',
-                  fontSize: 'clamp(10px, 1.2vw, 12px)',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  borderRadius: '4px',
-                  padding: '2px 4px',
-                  textAlign: 'center',
-                  outline: 'none'
+        {/* Viewport Size Display - Editable (hidden by default) */}
+        {showViewportSize && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: 'clamp(10px, 1.2vw, 12px)',
+            color: 'rgba(255, 255, 255, 0.6)',
+            whiteSpace: 'nowrap'
+          }}>
+            {isEditing ? (
+              <>
+                <input
+                  type="number"
+                  value={editingSize.width}
+                  onChange={(e) => setEditingSize({ ...editingSize, width: e.target.value })}
+                  onKeyDown={handleKeyDown}
+                  onBlur={handleResizeViewport}
+                  autoFocus
+                  style={{
+                    width: '60px',
+                    fontSize: 'clamp(10px, 1.2vw, 12px)',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '4px',
+                    padding: '2px 4px',
+                    textAlign: 'center',
+                    outline: 'none'
+                  }}
+                />
+                <span>×</span>
+                <input
+                  type="number"
+                  value={editingSize.height}
+                  onChange={(e) => setEditingSize({ ...editingSize, height: e.target.value })}
+                  onKeyDown={handleKeyDown}
+                  onBlur={handleResizeViewport}
+                  style={{
+                    width: '60px',
+                    fontSize: 'clamp(10px, 1.2vw, 12px)',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '4px',
+                    padding: '2px 4px',
+                    textAlign: 'center',
+                    outline: 'none'
+                  }}
+                />
+              </>
+            ) : (
+              <span
+                onClick={() => {
+                  setEditingSize({
+                    width: viewportSize.width.toString(),
+                    height: viewportSize.height.toString()
+                  })
+                  setIsEditing(true)
                 }}
-              />
-              <span>×</span>
-              <input
-                type="number"
-                value={editingSize.height}
-                onChange={(e) => setEditingSize({ ...editingSize, height: e.target.value })}
-                onKeyDown={handleKeyDown}
-                onBlur={handleResizeViewport}
                 style={{
-                  width: '60px',
-                  fontSize: 'clamp(10px, 1.2vw, 12px)',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  borderRadius: '4px',
+                  cursor: 'pointer',
                   padding: '2px 4px',
-                  textAlign: 'center',
-                  outline: 'none'
+                  borderRadius: '4px',
+                  transition: 'all 0.2s'
                 }}
-              />
-            </>
-          ) : (
-            <span
-              onClick={() => {
-                setEditingSize({
-                  width: viewportSize.width.toString(),
-                  height: viewportSize.height.toString()
-                })
-                setIsEditing(true)
-              }}
-              style={{
-                cursor: 'pointer',
-                padding: '2px 4px',
-                borderRadius: '4px',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
-              }}
-              title="Click to edit and resize viewport"
-            >
-              {viewportSize.width} × {viewportSize.height}
-            </span>
-          )}
-        </div>
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+                }}
+                title="Click to edit and resize viewport"
+              >
+                {viewportSize.width} × {viewportSize.height}
+              </span>
+            )}
+          </div>
+        )}
         
         {/* Version with Changelog Menu */}
         <div style={{ position: 'relative' }}>

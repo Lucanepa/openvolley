@@ -11,7 +11,8 @@ export default function HomePage({
   continueTestMatch,
   showDeleteMatchModal,
   restartTestMatch,
-  onOpenSettings
+  onOpenSettings,
+  onRestoreMatch
 }) {
   return (
     <div className="home-view">
@@ -21,9 +22,9 @@ export default function HomePage({
           <img src={favicon} alt="Openvolley" />
         </div>
 
-        <div className="home-match-section" style={{ margin: '0 auto', width: '100%' }}>
-          {/* New Match Button with Collapsible Menu */}
-          <div style={{ width: '180px', position: 'relative' }}>
+        <div className="home-match-section" style={{ margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          {/* New Match Button with Collapsible Menu - Separate row with higher z-index */}
+          <div style={{ position: 'relative', zIndex: 100 }}>
             <button
               onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
               style={{
@@ -54,7 +55,7 @@ export default function HomePage({
               <span style={{ transform: newMatchMenuOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
             </button>
 
-            {/* Collapsible Menu - Absolutely positioned to not affect other buttons */}
+            {/* Collapsible Menu - Absolutely positioned */}
             {newMatchMenuOpen && (
               <div style={{
                 position: 'absolute',
@@ -62,13 +63,15 @@ export default function HomePage({
                 left: 0,
                 width: '180px',
                 marginTop: '8px',
-                background: 'rgba(255, 255, 255, 0.05)',
+                background: 'rgba(30, 30, 40, 0.98)',
                 borderRadius: '12px',
                 padding: '12px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
-                zIndex: 10
+                zIndex: 101,
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
               }}>
                 <button
                   onClick={() => {
@@ -119,7 +122,9 @@ export default function HomePage({
             )}
           </div>
 
-          {/* Continue Match Button */}
+          {/* Other buttons row */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative', zIndex: 1 }}>
+            {/* Continue Match Button */}
           <button
             onClick={() => {
               if (currentOfficialMatch) {
@@ -195,6 +200,33 @@ export default function HomePage({
             Delete Match
           </button>
 
+          {/* Restore Match Button */}
+          <button
+            onClick={onRestoreMatch}
+            style={{
+              width: '180px',
+              padding: '16px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'transform 0.2s, box-shadow 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)'
+              e.currentTarget.style.boxShadow = '0 8px 16px rgba(249, 115, 22, 0.3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            Restore Match
+          </button>
+
           {/* Game PIN Display (if exists) */}
           {currentOfficialMatch?.gamePin && (
             <div style={{
@@ -211,6 +243,7 @@ export default function HomePage({
               </div>
             </div>
           )}
+          </div>
         </div>
 
         <div style={{ marginTop: '24px' }}>

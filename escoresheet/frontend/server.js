@@ -29,19 +29,42 @@ const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' 
 let httpsOptions = null
 
 if (useHttps) {
-  const certPath = process.env.SSL_CERT_PATH || join(__dirname, 'localhost.pem')
-  const keyPath = process.env.SSL_KEY_PATH || join(__dirname, 'localhost-key.pem')
-  
-  if (existsSync(certPath) && existsSync(keyPath)) {
-    httpsOptions = {
-      cert: readFileSync(certPath),
-      key: readFileSync(keyPath)
+  // Support for base64-encoded certificates (for Railway/cloud deployment)
+  if (process.env.SSL_CERT_BASE64 && process.env.SSL_KEY_BASE64) {
+    try {
+      httpsOptions = {
+        cert: Buffer.from(process.env.SSL_CERT_BASE64, 'base64').toString('utf-8'),
+        key: Buffer.from(process.env.SSL_KEY_BASE64, 'base64').toString('utf-8')
+      }
+      console.log('🔒 HTTPS enabled with base64-encoded certificates (cloud deployment)')
+    } catch (err) {
+      console.error('❌ Failed to decode base64 certificates:', err.message)
     }
-    console.log('🔒 HTTPS enabled with custom certificates')
   } else {
-    console.warn('⚠️  HTTPS requested but certificates not found. Falling back to HTTP.')
-    console.warn(`   Expected certificates at: ${certPath} and ${keyPath}`)
-    console.warn('   Run "npm run generate-certs" to create self-signed certificates for development')
+    // Look for Cloudflare origin certificates in project root first, then local
+    const certPath = process.env.SSL_CERT_PATH ||
+      (existsSync(join(__dirname, '..', '..', 'cert.pem'))
+        ? join(__dirname, '..', '..', 'cert.pem')  // C:\Users\lcane\Desktop\openvolley\cert.pem
+        : join(__dirname, 'localhost.pem'))
+    const keyPath = process.env.SSL_KEY_PATH ||
+      (existsSync(join(__dirname, '..', '..', 'key.pem'))
+        ? join(__dirname, '..', '..', 'key.pem')   // C:\Users\lcane\Desktop\openvolley\key.pem
+        : join(__dirname, 'localhost-key.pem'))
+
+    if (existsSync(certPath) && existsSync(keyPath)) {
+      httpsOptions = {
+        cert: readFileSync(certPath),
+        key: readFileSync(keyPath)
+      }
+      const isCloudflare = certPath.includes('cert.pem') && !certPath.includes('localhost')
+      console.log(`🔒 HTTPS enabled with ${isCloudflare ? 'Cloudflare Origin Certificate' : 'custom certificates'}`)
+      console.log(`   Certificate: ${certPath}`)
+      console.log(`   Private Key: ${keyPath}`)
+    } else {
+      console.warn('⚠️  HTTPS requested but certificates not found. Falling back to HTTP.')
+      console.warn(`   Expected certificates at: ${certPath} and ${keyPath}`)
+      console.warn('   Run "npm run generate-certs" to create self-signed certificates for development')
+    }
   }
 }
 

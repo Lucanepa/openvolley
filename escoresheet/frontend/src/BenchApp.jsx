@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { validatePin } from './utils/serverDataSync'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
@@ -13,6 +13,7 @@ export default function BenchApp() {
   const [match, setMatch] = useState(null)
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -37,10 +38,17 @@ export default function BenchApp() {
     const enableNoSleep = async () => {
       try {
         if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) {
+            try { await wakeLockRef.current.release() } catch (e) {}
+          }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
           console.log('[WakeLock] Screen wake lock acquired (Bench)')
+          setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
             console.log('[WakeLock] Screen wake lock released (Bench)')
+            if (!wakeLockRef.current) {
+              setWakeLockActive(false)
+            }
           })
         }
       } catch (err) {
@@ -90,6 +98,39 @@ export default function BenchApp() {
       }
     }
   }, [])
+
+  // Toggle wake lock manually
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      // Disable wake lock
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release()
+          wakeLockRef.current = null
+        } catch (e) {}
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+      }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled')
+    } else {
+      // Enable wake lock
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          console.log('[WakeLock] Manually enabled')
+        }
+        if (noSleepVideoRef.current) {
+          await noSleepVideoRef.current.play()
+        }
+      } catch (err) {
+        console.log('[WakeLock] Failed to enable:', err.message)
+        setWakeLockActive(true) // Visual feedback even if API failed
+      }
+    }
+  }, [wakeLockActive])
 
   // Disconnect if connection is disabled
   useEffect(() => {
@@ -207,11 +248,46 @@ export default function BenchApp() {
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+        flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
+        {/* Header */}
+        <div style={{
+          padding: '12px 20px',
+          background: 'rgba(15, 23, 42, 0.6)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '16px', fontWeight: 600 }}>Team Bench</span>
+            <button
+              onClick={toggleWakeLock}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+                color: wakeLockActive ? '#22c55e' : '#fff',
+                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+            >
+              {wakeLockActive ? '☀️ On' : '🌙 Off'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
         <div style={{
           background: 'var(--bg-secondary)',
           borderRadius: '12px',
@@ -220,17 +296,17 @@ export default function BenchApp() {
           width: '100%',
           textAlign: 'center'
         }}>
-          <img 
-            src={mikasaVolleyball} 
-            alt="Volleyball" 
-            style={{ width: '80px', height: '80px', marginBottom: '20px' }} 
+          <img
+            src={mikasaVolleyball}
+            alt="Volleyball"
+            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
-          <h1 style={{ 
-            fontSize: '24px', 
-            fontWeight: 700, 
-            marginBottom: '12px' 
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            marginBottom: '12px'
           }}>
-            Team Bench
+            Select Option
           </h1>
           <p style={{ 
             fontSize: '14px', 
@@ -304,6 +380,7 @@ export default function BenchApp() {
             Back
           </button>
         </div>
+        </div>
       </div>
     )
   }
@@ -318,11 +395,46 @@ export default function BenchApp() {
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+        flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
+        {/* Header */}
+        <div style={{
+          padding: '12px 20px',
+          background: 'rgba(15, 23, 42, 0.6)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '16px', fontWeight: 600 }}>Team Bench</span>
+            <button
+              onClick={toggleWakeLock}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+                color: wakeLockActive ? '#22c55e' : '#fff',
+                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+            >
+              {wakeLockActive ? '☀️ On' : '🌙 Off'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
         <div style={{
           background: 'var(--bg-secondary)',
           borderRadius: '12px',
@@ -331,15 +443,15 @@ export default function BenchApp() {
           width: '100%',
           textAlign: 'center'
         }}>
-          <img 
-            src={mikasaVolleyball} 
-            alt="Volleyball" 
-            style={{ width: '80px', height: '80px', marginBottom: '20px' }} 
+          <img
+            src={mikasaVolleyball}
+            alt="Volleyball"
+            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
-          <h1 style={{ 
-            fontSize: '24px', 
-            fontWeight: 700, 
-            marginBottom: '12px' 
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            marginBottom: '12px'
           }}>
             {teamName}
           </h1>
@@ -434,6 +546,7 @@ export default function BenchApp() {
             Back
           </button>
         </div>
+        </div>
       </div>
     )
   }
@@ -445,11 +558,46 @@ export default function BenchApp() {
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px',
+      flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 20px',
+        background: 'rgba(15, 23, 42, 0.6)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '16px', fontWeight: 600 }}>Team Bench</span>
+          <button
+            onClick={toggleWakeLock}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+              color: wakeLockActive ? '#22c55e' : '#fff',
+              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+          >
+            {wakeLockActive ? '☀️ On' : '🌙 Off'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px'
+      }}>
       <div style={{
         background: 'var(--bg-secondary)',
         borderRadius: '12px',
@@ -527,13 +675,14 @@ export default function BenchApp() {
         )}
 
         {(!availableMatches || availableMatches.length === 0) && (
-          <p style={{ 
-            fontSize: '14px', 
-            color: 'var(--muted)' 
+          <p style={{
+            fontSize: '14px',
+            color: 'var(--muted)'
           }}>
             No active matches available
           </p>
         )}
+      </div>
       </div>
     </div>
   )
