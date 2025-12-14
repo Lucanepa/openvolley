@@ -344,7 +344,7 @@ export default function MainHeader({
           zIndex: 1000,
           position: 'sticky',
           top: isCompactMode && isCollapsed ? '-40px' : 0,
-          overflow: 'hidden',
+          overflow: isCompactMode && isCollapsed ? 'hidden' : 'visible',
           transition: 'all 0.3s ease-in-out'
         }}>
       {/* Left: Online/Offline Toggle + Connection Status */}

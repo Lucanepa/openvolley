@@ -25,7 +25,9 @@
       "Bash(timeout 15 npm run build)",
       "Bash(cat:*)",
       "Bash(timeout 5 node:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(powershell:*)",
+      "Bash(timeout 15 npm run dev:*)"
     ],
     "deny": [],
     "ask": []
