@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { validatePin, listAvailableMatches } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import ConnectionStatus from './components/ConnectionStatus'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
+import changelog from './CHANGELOG'
 
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
@@ -22,6 +23,12 @@ export default function RefereeApp() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [serverConnected, setServerConnected] = useState(false)
   const [isMasterMode, setIsMasterMode] = useState(false)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
+  const wakeLockRef = useRef(null)
+
+  // Get current version from changelog
+  const currentVersion = changelog[0]?.version || '1.0.0'
+
   const [connectionStatuses, setConnectionStatuses] = useState({
     api: 'unknown',
     server: 'unknown',
@@ -221,6 +228,73 @@ export default function RefereeApp() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
+  // Wake lock - request on mount
+  useEffect(() => {
+    const enableWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) {
+            try { await wakeLockRef.current.release() } catch (e) {}
+          }
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          console.log('[WakeLock] Screen wake lock acquired (RefereeApp)')
+          setWakeLockActive(true)
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] Screen wake lock released (RefereeApp)')
+            if (!wakeLockRef.current) {
+              setWakeLockActive(false)
+            }
+          })
+        }
+      } catch (err) {
+        console.log('[WakeLock] Wake lock failed:', err.message)
+      }
+    }
+
+    enableWakeLock()
+
+    // Re-enable on visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        enableWakeLock()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {})
+        wakeLockRef.current = null
+      }
+    }
+  }, [])
+
+  // Toggle wake lock manually
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release()
+          wakeLockRef.current = null
+        } catch (e) {}
+      }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled')
+    } else {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          console.log('[WakeLock] Manually enabled')
+        }
+      } catch (err) {
+        console.log('[WakeLock] Failed to enable:', err.message)
+        setWakeLockActive(true)
+      }
+    }
+  }, [wakeLockActive])
+
   // Auto-connect on mount if we have stored credentials
   useEffect(() => {
     const storedMatchId = localStorage.getItem('refereeMatchId')
@@ -369,18 +443,31 @@ export default function RefereeApp() {
         flexShrink: 0,
         height: '40px'
       }}>
-         <div style={{ flex: '0 0 auto', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
-          Version {__APP_VERSION__ || '1.0.0'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '16px', fontWeight: 600 }}>Referee</span>
+          <button
+            onClick={toggleWakeLock}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+              color: wakeLockActive ? '#22c55e' : '#fff',
+              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+          >
+            {wakeLockActive ? '☀️ On' : '🌙 Off'}
+          </button>
         </div>
-        <div style={{ flex: '0 0 auto', minWidth: '80px' }}></div>
-        
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
           gap: '12px',
-          flex: '0 0 auto',
-          minWidth: '80px',
-          justifyContent: 'flex-end'
+          flex: '0 0 auto'
         }}>
           <ConnectionStatus
             connectionStatuses={connectionStatuses}
@@ -388,7 +475,7 @@ export default function RefereeApp() {
             position="right"
             size="normal"
           />
-          
+
           {availableMatches.length > 0 && (
             <div style={{
               fontSize: '12px',
@@ -401,13 +488,15 @@ export default function RefereeApp() {
               {availableMatches.length} {availableMatches.length === 1 ? 'game' : 'games'}
             </div>
           )}
-          
+
+          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+            v{currentVersion}
+          </div>
+
           <button
             onClick={toggleFullscreen}
             style={{
-              padding: '2px 6px',
-              width: 'auto',
-              height: '40px',
+              padding: '4px 10px',
               fontSize: '12px',
               fontWeight: 600,
               background: 'rgba(255, 255, 255, 0.1)',

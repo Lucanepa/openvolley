@@ -5,10 +5,6 @@ import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
 import { db } from '../db/db'
 
-// Court dimensions
-const COURT_WIDTH = 400
-const COURT_HEIGHT = 200
-
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -139,7 +135,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         ],
         sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
         currentSet: { index: 1, homePoints: 12, awayPoints: 10, finished: false },
-        events: []
+        events: [
+          { type: 'lineup', setIndex: 1, payload: { team: 'home', I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }},
+          { type: 'lineup', setIndex: 1, payload: { team: 'away', I: 11, II: 12, III: 13, IV: 14, V: 15, VI: 16 }}
+        ]
       })
         }
   }, [isMasterMode, data])
