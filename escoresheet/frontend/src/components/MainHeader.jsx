@@ -18,7 +18,8 @@ export default function MainHeader({
   toggleFullscreen,
   offlineMode,
   setOfflineMode,
-  onOpenSetup
+  onOpenSetup,
+  dashboardServer = null, // { enabled, dashboardCount, refereePin, onOpenOptions }
 }) {
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -414,6 +415,57 @@ export default function MainHeader({
             position="left"
             size="normal"
           />
+        )}
+
+        {/* Dashboard Server Indicator */}
+        {dashboardServer?.enabled && (
+          <button
+            onClick={dashboardServer.onOpenOptions}
+            title={`${dashboardServer.dashboardCount || 0} dashboard(s) connected${dashboardServer.refereePin ? ` | PIN: ${dashboardServer.refereePin}` : ''}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              fontSize: 'clamp(9px, 1.1vw, 11px)',
+              fontWeight: 600,
+              background: dashboardServer.dashboardCount > 0
+                ? 'rgba(34, 197, 94, 0.15)'
+                : 'rgba(255, 255, 255, 0.08)',
+              color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)',
+              border: `1px solid ${dashboardServer.dashboardCount > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.15)'}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = dashboardServer.dashboardCount > 0
+                ? 'rgba(34, 197, 94, 0.25)'
+                : 'rgba(255, 255, 255, 0.15)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = dashboardServer.dashboardCount > 0
+                ? 'rgba(34, 197, 94, 0.15)'
+                : 'rgba(255, 255, 255, 0.08)'
+            }}
+          >
+            <span style={{ fontSize: '12px' }}>&#128225;</span>
+            <span>{dashboardServer.dashboardCount || 0}</span>
+            {dashboardServer.refereePin && (
+              <span style={{
+                padding: '2px 6px',
+                background: 'rgba(59, 130, 246, 0.2)',
+                borderRadius: '4px',
+                fontSize: 'clamp(8px, 1vw, 10px)',
+                fontFamily: 'monospace',
+                color: '#3b82f6',
+                letterSpacing: '1px'
+              }}>
+                {dashboardServer.refereePin}
+              </span>
+            )}
+          </button>
         )}
       </div>
 

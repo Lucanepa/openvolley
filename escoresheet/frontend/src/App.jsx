@@ -14,6 +14,7 @@ import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectionSetupModal from './components/options/ConnectionSetupModal'
 import { useSyncQueue } from './hooks/useSyncQueue'
 import useAutoBackup from './hooks/useAutoBackup'
+import { useDashboardServer } from './hooks/useDashboardServer'
 import mikasaVolleyball from './mikasa_v200w.png'
 import favicon from './favicon.png'
 import {
@@ -72,6 +73,15 @@ export default function App() {
   const { syncStatus, isOnline } = useSyncQueue()
   const backup = useAutoBackup(matchId)
   const canUseSupabase = Boolean(supabase)
+
+  // Dashboard Server state
+  const [dashboardServerEnabled, setDashboardServerEnabled] = useState(
+    () => localStorage.getItem('dashboardServerEnabled') === 'true'
+  )
+  const dashboardServerData = useDashboardServer({
+    enabled: dashboardServerEnabled,
+    matchId: matchId
+  })
   const [serverStatus, setServerStatus] = useState(null)
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [connectionStatuses, setConnectionStatuses] = useState({
@@ -2947,6 +2957,12 @@ export default function App() {
           localStorage.setItem('offlineMode', val.toString())
         }}
         onOpenSetup={openMatchSetup}
+        dashboardServer={dashboardServerEnabled ? {
+          enabled: dashboardServerEnabled,
+          dashboardCount: dashboardServerData.dashboardCount,
+          refereePin: currentMatch?.refereePin,
+          onOpenOptions: () => setHomeOptionsModal(true)
+        } : null}
       />
 
       <div className="container" style={{
@@ -3460,6 +3476,21 @@ export default function App() {
           toggleWakeLock
         }}
         backup={backup}
+        dashboardServer={{
+          enabled: dashboardServerEnabled,
+          onToggle: () => {
+            const newValue = !dashboardServerEnabled
+            setDashboardServerEnabled(newValue)
+            localStorage.setItem('dashboardServerEnabled', String(newValue))
+          },
+          serverRunning: dashboardServerData.serverRunning,
+          connectionUrl: dashboardServerData.connectionUrl,
+          refereePin: currentMatch?.refereePin,
+          dashboardCount: dashboardServerData.dashboardCount,
+          refereeCount: dashboardServerData.refereeCount,
+          benchCount: dashboardServerData.benchCount,
+          connectedDashboards: dashboardServerData.connectedDashboards
+        }}
       />
 
       {/* Home Guide Modal */}

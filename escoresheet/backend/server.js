@@ -76,6 +76,48 @@ const server = createServer((req, res) => {
     return
   }
 
+  // Get detailed connection info for dashboard server UI
+  if (url.pathname === '/api/server/connections') {
+    const matchId = url.searchParams.get('matchId')
+
+    // Build client list (exclude WebSocket object and filter by matchId if provided)
+    const clients = []
+    connections.forEach((client) => {
+      // Skip if matchId filter is set and client is not in that match
+      if (matchId && String(client.matchId) !== String(matchId)) {
+        return
+      }
+      // Only include dashboard clients (referee, bench) - not scoreboard
+      if (client.role && client.role !== 'scoreboard') {
+        clients.push({
+          id: client.id,
+          ip: client.ip,
+          role: client.role,
+          team: client.team,
+          matchId: client.matchId,
+          connectedAt: client.connectedAt
+        })
+      }
+    })
+
+    // Count by role
+    const refereesCount = clients.filter(c => c.role === 'referee').length
+    const benchCount = clients.filter(c => c.role === 'bench').length
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      totalClients: connections.size,
+      dashboardClients: clients.length,
+      referees: refereesCount,
+      benches: benchCount,
+      clients,
+      matchSubscriptions: Object.fromEntries(
+        Array.from(rooms.entries()).map(([matchId, room]) => [matchId, room.clients.size])
+      )
+    }))
+    return
+  }
+
   res.writeHead(404)
   res.end('Not Found')
 })
@@ -104,18 +146,20 @@ const wss = new WebSocketServer({
 
 wss.on('connection', (ws, req) => {
   const clientId = Math.random().toString(36).substring(7)
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress
   const clientInfo = {
     ws,
     id: clientId,
+    ip: ip ? ip.replace('::ffff:', '') : 'unknown', // Clean up IPv6 prefix
     matchId: null,
     role: null, // 'scoreboard', 'referee', 'bench'
+    team: null, // 'home' or 'away' for bench clients
     connectedAt: new Date().toISOString()
   }
 
   connections.set(clientId, clientInfo)
 
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress
-  console.log(`✅ Client connected: ${clientId} from ${ip} (Total: ${connections.size})`)
+  console.log(`✅ Client connected: ${clientId} from ${clientInfo.ip} (Total: ${connections.size})`)
 
   // Send welcome message
   ws.send(JSON.stringify({
@@ -199,7 +243,7 @@ wss.on('connection', (ws, req) => {
 
 // Handle client joining a match room
 function handleJoinMatch(clientInfo, message) {
-  const { matchId, role, pin } = message
+  const { matchId, role, pin, team } = message
 
   if (!matchId) {
     clientInfo.ws.send(JSON.stringify({
@@ -217,6 +261,7 @@ function handleJoinMatch(clientInfo, message) {
   // Update client info
   clientInfo.matchId = matchId
   clientInfo.role = role || 'unknown'
+  clientInfo.team = team || null // 'home' or 'away' for bench clients
 
   // Create room if doesn't exist
   if (!rooms.has(matchId)) {

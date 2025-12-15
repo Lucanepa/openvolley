@@ -30,7 +30,8 @@
       "Bash(timeout 15 npm run dev:*)",
       "Bash(del /f \"c:\\Users\\lcane\\Desktop\\openvolley\\nul\")",
       "Bash(rm:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
