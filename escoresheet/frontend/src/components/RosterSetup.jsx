@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { getMatchData, subscribeToMatchData } from '../utils/serverDataSync'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
+import { db } from '../db/db'
 
-export default function RosterSetup({ matchId, team, onBack }) {
+export default function RosterSetup({ matchId, team, onBack, embedded = false }) {
   const [players, setPlayers] = useState([])
   const [benchOfficials, setBenchOfficials] = useState([])
   const [loading, setLoading] = useState(false)
@@ -11,6 +12,7 @@ export default function RosterSetup({ matchId, team, onBack }) {
   const fileInputRef = useRef(null)
 
   const [match, setMatch] = useState(null)
+  const [teamId, setTeamId] = useState(null)
 
   // Load match data from server
   useEffect(() => {
@@ -19,14 +21,38 @@ export default function RosterSetup({ matchId, team, onBack }) {
       return
     }
 
+    // Test mode: use mock data
+    if (matchId === -1) {
+      setMatch({
+        id: -1,
+        gameNumber: 999,
+        status: 'live'
+      })
+      setTeamId(-1) // Mock team ID for test mode
+      setPlayers([
+        { id: 1, number: 1, firstName: 'Test', lastName: 'Player 1', dob: '', libero: '', isCaptain: true },
+        { id: 2, number: 5, firstName: 'Test', lastName: 'Player 2', dob: '', libero: '', isCaptain: false },
+        { id: 3, number: 7, firstName: 'Test', lastName: 'Player 3', dob: '', libero: '', isCaptain: false },
+        { id: 4, number: 10, firstName: 'Test', lastName: 'Player 4', dob: '', libero: '', isCaptain: false },
+        { id: 5, number: 12, firstName: 'Test', lastName: 'Player 5', dob: '', libero: 'libero1', isCaptain: false },
+        { id: 6, number: 15, firstName: 'Test', lastName: 'Player 6', dob: '', libero: '', isCaptain: false }
+      ])
+      setBenchOfficials([
+        { role: 'Coach', firstName: 'Test', lastName: 'Coach', dob: '' },
+        { role: 'Assistant Coach 1', firstName: 'Test', lastName: 'Assistant', dob: '' }
+      ])
+      return
+    }
+
     const fetchData = async () => {
       try {
         const result = await getMatchData(matchId)
         if (result.success) {
           setMatch(result.match)
-          
+
           // Load players and bench officials
-          const teamId = team === 'home' ? result.match.homeTeamId : result.match.awayTeamId
+          const loadedTeamId = team === 'home' ? result.match.homeTeamId : result.match.awayTeamId
+          setTeamId(loadedTeamId)
           const teamPlayers = team === 'home' 
             ? (result.homePlayers || [])
             : (result.awayPlayers || [])
@@ -207,8 +233,8 @@ export default function RosterSetup({ matchId, team, onBack }) {
       // Update UI state immediately
       setBenchOfficials(importedBenchOfficials)
       
-      // Auto-save to database with overwrite mode
-      if (teamId && matchId) {
+      // Auto-save to database with overwrite mode (skip in test mode)
+      if (teamId && matchId && matchId !== -1 && teamId !== -1) {
         // Save immediately with overwrite flag
         const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
         for (const ep of existingPlayers) {
@@ -275,6 +301,12 @@ export default function RosterSetup({ matchId, team, onBack }) {
   const handleSave = async (overwrite = false) => {
     if (!teamId) {
       setError('Team ID not found')
+      return
+    }
+
+    // Skip database operations in test mode
+    if (matchId === -1 || teamId === -1) {
+      console.log('[Test Mode] Skipping database save')
       return
     }
 
@@ -569,9 +601,10 @@ export default function RosterSetup({ matchId, team, onBack }) {
                         value={player.number || ''}
                         onChange={(e) => handleUpdatePlayer(index, 'number', parseInt(e.target.value) || 0)}
                         style={{
-                          width: '60px',
+                          width: '40px',
                           padding: '6px',
                           fontSize: '14px',
+                          textAlign: 'center',
                           background: 'var(--bg-secondary)',
                           border: '1px solid rgba(255,255,255,0.2)',
                           borderRadius: '4px',

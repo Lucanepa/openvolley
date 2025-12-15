@@ -20,10 +20,13 @@ export default function BenchApp() {
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
+  const [testModeClicks, setTestModeClicks] = useState(0)
+  const testModeTimeoutRef = useRef(null)
   const [connectionStatuses, setConnectionStatuses] = useState({
     server: 'disconnected',
     websocket: 'disconnected'
   })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -171,14 +174,44 @@ export default function BenchApp() {
         const serverStatus = await getServerStatus()
         const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
 
+        const serverConnected = serverStatus?.running
         setConnectionStatuses({
-          server: serverStatus?.running ? 'connected' : 'disconnected',
+          server: serverConnected ? 'connected' : 'disconnected',
           websocket: matchId ? wsStatus : 'not_applicable'
         })
+
+        // Build debug info for disconnected services
+        const debugInfo = {}
+        if (!serverConnected) {
+          debugInfo.server = {
+            status: 'disconnected',
+            message: 'Cannot reach the scoresheet server',
+            details: 'Make sure the main scoresheet application is running and on the same network.'
+          }
+        }
+        if (matchId && wsStatus !== 'connected' && wsStatus !== 'not_applicable') {
+          debugInfo.websocket = {
+            status: wsStatus,
+            message: wsStatus === 'connecting' ? 'Attempting to connect...' : 'WebSocket connection lost',
+            details: wsStatus === 'disconnected'
+              ? 'Real-time updates are not available. The connection may have been interrupted or the match may have ended.'
+              : wsStatus === 'connecting'
+              ? 'Please wait while we establish a connection to the scoresheet.'
+              : 'Unknown WebSocket state. Try refreshing the page.'
+          }
+        }
+        setConnectionDebugInfo(debugInfo)
       } catch (err) {
         setConnectionStatuses({
           server: 'disconnected',
           websocket: 'disconnected'
+        })
+        setConnectionDebugInfo({
+          server: {
+            status: 'error',
+            message: 'Failed to check server status',
+            details: err.message || 'Network error occurred while checking connection.'
+          }
         })
       }
     }
@@ -250,6 +283,38 @@ export default function BenchApp() {
     setView(viewType)
   }
 
+  // Hidden test mode - 6 clicks on "No active game found"
+  const handleTestModeClick = useCallback(() => {
+    if (testModeTimeoutRef.current) {
+      clearTimeout(testModeTimeoutRef.current)
+    }
+
+    setTestModeClicks(prev => {
+      const newCount = prev + 1
+      if (newCount >= 6) {
+        // Create mock test match data
+        const testMatch = {
+          id: -1,
+          gameNumber: 999,
+          homeTeamName: 'Test Home',
+          awayTeamName: 'Test Away',
+          status: 'live'
+        }
+        setSelectedMatch(testMatch)
+        setMatchId(-1)
+        setMatch(testMatch)
+        setSelectedTeam('home')
+        return 0
+      }
+      return newCount
+    })
+
+    // Reset clicks after 2 seconds of no clicking
+    testModeTimeoutRef.current = setTimeout(() => {
+      setTestModeClicks(0)
+    }, 2000)
+  }, [])
+
   const handleBack = () => {
     if (view) {
       setView(null)
@@ -274,25 +339,55 @@ export default function BenchApp() {
   const homeTeamName = selectedMatch?.homeTeamName || 'Home Team'
   const awayTeamName = selectedMatch?.awayTeamName || 'Away Team'
 
-  // If view is selected, show the appropriate component
+  // If view is selected, show the appropriate component wrapped with SimpleHeader
   if (matchId && view) {
-    if (view === 'roster') {
-      return (
-        <RosterSetup 
-          matchId={matchId} 
-          team={selectedTeam}
+    const teamName = selectedTeam === 'home' ? homeTeamName : awayTeamName
+
+    return (
+      <div style={{
+        height: '100vh',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#fff',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        overflow: 'hidden'
+      }}>
+        <SimpleHeader
+          title={view === 'roster' ? 'Roster Setup' : teamName}
+          subtitle={view === 'match' ? `Game ${selectedMatch?.gameNumber || matchId}` : teamName}
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
           onBack={handleBack}
+          backLabel="Back"
         />
-      )
-    } else if (view === 'match') {
-      return (
-        <MatchEntry 
-          matchId={matchId} 
-          team={selectedTeam}
-          onBack={handleBack}
-        />
-      )
-    }
+
+        <div style={{
+          flex: 1,
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          {view === 'roster' ? (
+            <RosterSetup
+              matchId={matchId}
+              team={selectedTeam}
+              onBack={handleBack}
+              embedded={true}
+            />
+          ) : (
+            <MatchEntry
+              matchId={matchId}
+              team={selectedTeam}
+              onBack={handleBack}
+              embedded={true}
+            />
+          )}
+        </div>
+      </div>
+    )
   }
 
   // If PIN is correct, show view selection
@@ -312,6 +407,7 @@ export default function BenchApp() {
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         />
 
         <div style={{
@@ -437,6 +533,7 @@ export default function BenchApp() {
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         />
 
         <div style={{
@@ -574,11 +671,12 @@ export default function BenchApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Team Bench"
+          title="Team Dashboard"
           subtitle={`Game ${selectedMatch.gameNumber}`}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         />
 
         <div style={{
@@ -698,7 +796,7 @@ export default function BenchApp() {
       <UpdateBanner />
 
       <SimpleHeader
-        title="Team Bench"
+        title="Team Dashboard"
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
@@ -725,34 +823,50 @@ export default function BenchApp() {
           style={{ width: '80px', height: '80px', marginBottom: '20px' }}
         />
         <h1 style={{
-          fontSize: '24px',
-          fontWeight: 700,
-          marginBottom: '12px'
-        }}>
-          Team Bench
-        </h1>
-        <p style={{
-          fontSize: '14px',
-          color: 'var(--muted)',
-          marginBottom: '32px'
-        }}>
-          Select a game to join
-        </p>
+            fontSize: '32px',
+            fontWeight: 700,
+            marginBottom: '8px'
+          }}>
+            Team Dashboard
+          </h1>
 
         {loadingMatches ? (
           <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Loading games...</p>
         ) : availableMatches.length === 0 ? (
-          <div style={{
-            padding: '20px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: '8px',
-            color: 'rgba(255,255,255,0.8)',
-            fontSize: '14px'
-          }}>
-            No active games found. Make sure the main scoresheet is running.
+          <div
+            onClick={handleTestModeClick}
+            style={{
+              padding: '24px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '12px',
+              textAlign: 'center',
+              cursor: 'default',
+              userSelect: 'none'
+            }}
+          >
+            <div style={{
+              fontSize: '16px',
+              color: 'var(--muted)',
+              marginBottom: '8px'
+            }}>
+              No active game found
+            </div>
+            <div style={{
+              fontSize: '13px',
+              color: 'rgba(255, 255, 255, 0.4)'
+            }}>
+              Start a match on the main scoresheet to connect
+            </div>
           </div>
         ) : (
+          <>
+          <p style={{
+            fontSize: '14px',
+            color: 'var(--muted)',
+            marginBottom: '32px'
+          }}>
+            Select a game to join
+          </p>
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -789,6 +903,7 @@ export default function BenchApp() {
               </button>
             ))}
           </div>
+          </>
         )}
 
         {error && (

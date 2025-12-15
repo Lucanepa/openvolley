@@ -25,7 +25,9 @@ export default function RefereeApp() {
   const [serverConnected, setServerConnected] = useState(false)
   const [isMasterMode, setIsMasterMode] = useState(false)
   const [wakeLockActive, setWakeLockActive] = useState(false)
+  const [testModeClicks, setTestModeClicks] = useState(0)
   const wakeLockRef = useRef(null)
+  const testModeTimeoutRef = useRef(null)
 
   // Get current version from changelog
   const currentVersion = changelog[0]?.version || '1.0.0'
@@ -414,6 +416,30 @@ export default function RefereeApp() {
     }
   }, [match])
 
+  // Hidden test mode - 6 clicks on "No active game found"
+  const handleTestModeClick = useCallback(() => {
+    if (testModeTimeoutRef.current) {
+      clearTimeout(testModeTimeoutRef.current)
+    }
+
+    setTestModeClicks(prev => {
+      const newCount = prev + 1
+      if (newCount >= 6) {
+        // Trigger test/master mode
+        setIsMasterMode(true)
+        setMatchId(-1)
+        localStorage.setItem('refereeMasterMode', 'true')
+        return 0
+      }
+      return newCount
+    })
+
+    // Reset clicks after 2 seconds of no clicking
+    testModeTimeoutRef.current = setTimeout(() => {
+      setTestModeClicks(0)
+    }, 2000)
+  }, [])
+
   // Render Referee component if connected (either to match or in master mode)
   if (matchId) {
     return <Referee matchId={matchId} onExit={handleExit} isMasterMode={isMasterMode} />
@@ -518,6 +544,8 @@ export default function RefereeApp() {
       <div style={{
         flex: '1 1 auto',
         display: 'flex',
+        width: 'auto',
+        maxWidth: '100vw',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '20px',
@@ -527,7 +555,7 @@ export default function RefereeApp() {
           background: 'var(--bg-secondary)',
           borderRadius: '12px',
           padding: '40px',
-          width: '100%',
+          width: 'auto',
           textAlign: 'center'
         }}>
           <img 
@@ -535,10 +563,40 @@ export default function RefereeApp() {
             alt="Referee Icon" 
             style={{ width: 'auto', height: 'auto', marginBottom: '20px' }} 
           />
-          <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '12px' }}>
-            Referee<br />Dashboard
+          <h1 style={{ fontSize: '32px', fontWeight: 700, marginBottom: '12px' }}>
+            Referee Dashboard
           </h1>
 
+          {/* Show "no active game" when server is connected but no games available */}
+          {serverConnected && availableMatches.length === 0 && !loadingMatches ? (
+            <div
+              onClick={handleTestModeClick}
+              style={{
+                padding: '24px',
+                width: 'auto',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '12px',
+                textAlign: 'center',
+                cursor: 'default',
+                userSelect: 'none'
+              }}
+            >
+              <div style={{
+                fontSize: '16px',
+                width: 'auto',
+                color: 'var(--muted)',
+                marginBottom: '8px'
+              }}>
+                No active game found
+              </div>
+              <div style={{
+                fontSize: '13px',
+                color: 'rgba(255, 255, 255, 0.4)'
+              }}>
+                Start a match on the main scoresheet to connect
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handlePinSubmit} style={{
             display: 'flex',
             flexDirection: 'column',
@@ -575,11 +633,11 @@ export default function RefereeApp() {
                 >
                   Select game
                 </button>
-                
+
                 {selectedGameNumber && (() => {
                   const selected = availableMatches.find(m => String(m.gameNumber) === String(selectedGameNumber))
                   if (!selected) return null
-                  
+
                   return (
                     <div style={{
                       padding: '12px',
@@ -604,7 +662,9 @@ export default function RefereeApp() {
                 })()}
               </div>
             )}
-            
+
+            {/* Only show PIN input when offline OR when there are games */}
+            {(!serverConnected || availableMatches.length > 0) && (
             <div style={{ width: '80%', maxWidth: '280px' }}>
               <label style={{
                 display: 'block',
@@ -638,11 +698,9 @@ export default function RefereeApp() {
                   boxSizing: 'border-box'
                 }}
               />
-              <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '8px' }}>
-                Test PIN: 123456
-              </div>
             </div>
-            
+            )}
+
             {error && (
               <div style={{
                 width: 'auto',
@@ -657,6 +715,7 @@ export default function RefereeApp() {
               </div>
             )}
 
+            {(!serverConnected || availableMatches.length > 0) && (
             <button
               type="submit"
               disabled={isLoading}
@@ -675,7 +734,9 @@ export default function RefereeApp() {
             >
               {isLoading ? 'Connecting...' : 'Enter'}
             </button>
+            )}
           </form>
+          )}
         </div>
       </div>
       
