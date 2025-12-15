@@ -6,9 +6,26 @@ frontend/dist
 
 # Env
 frontend/.env
+.env
+.env.*
 
 # Mac/Windows
 .DS_Store
 Thumbs.db
 
+# Supabase SQL files (database schema - run manually)
+supabase/sql/*.sql
 
+# Build outputs
+*.exe
+*.dmg
+*.AppImage
+release/
+
+# IDE
+.idea
+*.swp
+*.swo
+
+# Logs
+*.log

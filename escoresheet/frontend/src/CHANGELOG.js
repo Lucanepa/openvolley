@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.4',
+    date: '15.12.25',
+    changes: [
+      'Remove obsolete SQL files for resetting test data and schema'
+    ]
+  },
+  {
     version: '0.8.2',
     date: '15.12.25',
     changes: [

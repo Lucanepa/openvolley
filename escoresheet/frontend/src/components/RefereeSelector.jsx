@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { db } from '../db/db'
+import { supabase } from '../lib/supabaseClient'
 
 /**
- * Reusable RefereeSelector component for selecting referees from SVRZ database
+ * Reusable RefereeSelector component for selecting referees from history
+ * Uses Supabase referee_history table for suggestions
  * @param {boolean} open - Whether dropdown is open
  * @param {function} onClose - Function to call when closing
  * @param {function} onSelect - Function to call when a referee is selected: (referee) => void
@@ -14,56 +15,43 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
   const [loading, setLoading] = useState(false)
   const dropdownRef = useRef(null)
 
-  // Load referees from database
+  // Load referees from Supabase history
   useEffect(() => {
     if (open) {
       loadReferees()
     }
   }, [open])
 
-  // Update position when dropdown opens
-  useEffect(() => {
-    if (open && dropdownRef.current && position.element) {
-      const updatePosition = () => {
-        const rect = position.element.getBoundingClientRect()
-        if (rect && dropdownRef.current) {
-          dropdownRef.current.style.left = `${rect.right + 10}px`
-          dropdownRef.current.style.top = `${rect.top + rect.height / 2}px`
-          dropdownRef.current.style.transform = 'translateY(-50%)'
-        }
-      }
-      // Use requestAnimationFrame to ensure element is rendered
-      requestAnimationFrame(updatePosition)
-      const interval = setInterval(updatePosition, 100)
-      return () => clearInterval(interval)
-    }
-  }, [open, position])
-
   const loadReferees = async () => {
     setLoading(true)
     try {
-      const allReferees = await db.referees.orderBy('lastName').toArray()
-      
-      // Deduplicate referees by lastName + firstName (case-insensitive)
-      // Keep the first occurrence (or the one with the most complete data)
-      const uniqueRefereesMap = new Map()
-      allReferees.forEach(ref => {
-        const key = `${(ref.lastName || '').toLowerCase().trim()}_${(ref.firstName || '').toLowerCase().trim()}`
-        if (!uniqueRefereesMap.has(key)) {
-          uniqueRefereesMap.set(key, ref)
-        } else {
-          // If duplicate found, keep the one with more complete data (has email, phone, level, etc.)
-          const existing = uniqueRefereesMap.get(key)
-          const existingCompleteness = (existing.email ? 1 : 0) + (existing.phone ? 1 : 0) + (existing.level ? 1 : 0)
-          const newCompleteness = (ref.email ? 1 : 0) + (ref.phone ? 1 : 0) + (ref.level ? 1 : 0)
-          if (newCompleteness > existingCompleteness) {
-            uniqueRefereesMap.set(key, ref)
-          }
-        }
-      })
-      
-      const uniqueReferees = Array.from(uniqueRefereesMap.values())
-      console.log(`[RefereeSelector] Loaded ${uniqueReferees.length} unique referees (from ${allReferees.length} total)`)
+      if (!supabase) {
+        console.log('[RefereeSelector] Supabase not available')
+        setReferees([])
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('referee_history')
+        .select('first_name, last_name, country, dob, created_at')
+        .order('last_name', { ascending: true })
+
+      if (error) {
+        console.error('Error loading referees from history:', error)
+        setReferees([])
+        return
+      }
+
+      // Data is already unique due to unique index, just map to expected format
+      const uniqueReferees = (data || []).map(ref => ({
+        id: `${ref.last_name}_${ref.first_name}`.toLowerCase(),
+        firstName: ref.first_name || '',
+        lastName: ref.last_name || '',
+        country: ref.country || 'CHE',
+        dob: ref.dob || ''
+      }))
+
+      console.log(`[RefereeSelector] Loaded ${uniqueReferees.length} unique referees from history`)
       setReferees(uniqueReferees)
     } catch (error) {
       console.error('Error loading referees:', error)
@@ -76,24 +64,14 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
   // Filter and sort referees
   const filteredReferees = useMemo(() => {
     if (!searchQuery.trim()) {
-      return referees.sort((a, b) => {
-        const aName = `${a.lastName || ''}, ${a.firstName || ''}`
-        const bName = `${b.lastName || ''}, ${b.firstName || ''}`
-        return aName.localeCompare(bName)
-      })
+      return referees
     }
 
     const query = searchQuery.toLowerCase()
-    return referees
-      .filter(ref => {
-        const fullName = `${ref.lastName || ''} ${ref.firstName || ''}`.toLowerCase()
-        return fullName.includes(query)
-      })
-      .sort((a, b) => {
-        const aName = `${a.lastName || ''}, ${a.firstName || ''}`
-        const bName = `${b.lastName || ''}, ${b.firstName || ''}`
-        return aName.localeCompare(bName)
-      })
+    return referees.filter(ref => {
+      const fullName = `${ref.lastName || ''} ${ref.firstName || ''}`.toLowerCase()
+      return fullName.includes(query)
+    })
   }, [referees, searchQuery])
 
   // Update dropdown position when open
@@ -111,8 +89,8 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
         dropdownRef.current.style.transform = 'translateY(-50%)'
         dropdownRef.current.style.zIndex = '1000'
       } else if (element) {
-        const rect = typeof element.getBoundingClientRect === 'function' 
-          ? element.getBoundingClientRect() 
+        const rect = typeof element.getBoundingClientRect === 'function'
+          ? element.getBoundingClientRect()
           : null
         if (rect) {
           dropdownRef.current.style.position = 'fixed'
@@ -136,7 +114,6 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
       }
     }
 
-    // Update immediately and on window resize/scroll
     updatePosition()
     const interval = setInterval(updatePosition, 100)
     window.addEventListener('resize', updatePosition)
@@ -167,6 +144,8 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
 
   if (!open) return null
 
+  const isOnline = !!supabase
+
   return (
     <>
       {/* Backdrop */}
@@ -183,12 +162,12 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
         onClick={onClose}
       />
       {/* Dropdown */}
-      <div 
+      <div
         ref={dropdownRef}
         style={{
           position: 'fixed',
           zIndex: 1000
-        }} 
+        }}
         className="modal-wrapper-roll-down"
       >
         <div
@@ -206,6 +185,17 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
             flexDirection: 'column'
           }}
         >
+          {/* Header */}
+          <div style={{
+            padding: '4px 8px 8px',
+            fontSize: '11px',
+            color: 'rgba(255,255,255,0.5)',
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            marginBottom: '8px'
+          }}>
+            {isOnline ? 'Select from history (Supabase)' : 'Offline - no history available'}
+          </div>
+
           {/* Search Input */}
           <input
             type="text"
@@ -220,7 +210,8 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
               border: '1px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '4px',
               color: '#fff',
-              fontSize: '14px'
+              fontSize: '14px',
+              boxSizing: 'border-box'
             }}
             autoFocus
           />
@@ -228,18 +219,22 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
           {/* Referees List */}
           <div style={{
             overflowY: 'auto',
-            maxHeight: '320px',
+            maxHeight: '280px',
             display: 'flex',
             flexDirection: 'column',
             gap: '4px'
           }}>
-            {loading ? (
+            {!isOnline ? (
+              <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
+                Connect to internet to see referee history
+              </div>
+            ) : loading ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
                 Loading...
               </div>
             ) : filteredReferees.length === 0 ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                {searchQuery ? 'No referees found' : 'No referees available'}
+                {searchQuery ? 'No referees found' : 'No referee history yet. Enter referees manually and they will be saved for future matches.'}
               </div>
             ) : (
               filteredReferees.map((referee) => (
@@ -258,7 +253,10 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                     fontSize: '14px',
                     textAlign: 'left',
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
@@ -269,7 +267,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                     e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
                   }}
                 >
-                  {referee.lastName}, {referee.firstName}
+                  <span>{referee.lastName}, {referee.firstName}</span>
                 </button>
               ))
             )}
