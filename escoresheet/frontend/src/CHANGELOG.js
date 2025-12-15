@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.7.11',
+    date: '14.12.25',
+    changes: [
+      'Add team history tables and enhance match setup with autocomplete feature'
+    ]
+  },
+  {
     version: '0.7.9',
     date: '14.12.25',
     changes: [

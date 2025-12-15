@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import Modal from '../Modal'
+import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -179,9 +180,20 @@ export default function HomeOptionsModal({
   matchOptions,
   displayOptions,
   wakeLock,
-  backup = null // Optional backup props from useAutoBackup
+  backup = null, // Optional backup props from useAutoBackup
+  dashboardServer = null // Optional dashboard server props from useDashboardServer
 }) {
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
+  const [copyFeedback, setCopyFeedback] = useState(null)
+
+  // Handle copy with feedback
+  const handleCopy = useCallback(async (text, label) => {
+    const result = await copyToClipboard(text)
+    if (result.success) {
+      setCopyFeedback(label)
+      setTimeout(() => setCopyFeedback(null), 2000)
+    }
+  }, [])
 
   // Clear cache functions
   const clearServiceWorkerCaches = async () => {
@@ -529,6 +541,231 @@ export default function HomeOptionsModal({
             <ToggleSwitch value={wakeLockActive} onToggle={toggleWakeLock} />
           </Row>
         </Section>
+
+        {dashboardServer && (
+          <Section title="Dashboard Server">
+            <Row style={{ marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable Dashboards</div>
+                <InfoDot title="Allow referee and bench tablets to connect via local network (LAN). No internet required." />
+              </div>
+              <ToggleSwitch
+                value={dashboardServer.enabled}
+                onToggle={dashboardServer.onToggle}
+              />
+            </Row>
+
+            {dashboardServer.enabled && (
+              <>
+                {/* Server Status */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  marginBottom: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>Server Status</span>
+                    <span style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      color: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
+                    }}>
+                      <span style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
+                      }} />
+                      {dashboardServer.serverRunning ? 'Running' : 'Not Running'}
+                    </span>
+                  </div>
+
+                  {dashboardServer.serverRunning && dashboardServer.connectionUrl && (
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                          Connect dashboards to:
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <code style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            background: 'rgba(0,0,0,0.3)',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            fontFamily: 'monospace',
+                            color: '#22c55e',
+                            wordBreak: 'break-all'
+                          }}>
+                            {dashboardServer.connectionUrl}
+                          </code>
+                          <button
+                            onClick={() => handleCopy(dashboardServer.connectionUrl, 'URL')}
+                            style={{
+                              padding: '10px 14px',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              background: copyFeedback === 'URL' ? '#22c55e' : 'rgba(255,255,255,0.1)',
+                              border: 'none',
+                              borderRadius: '6px',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {copyFeedback === 'URL' ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {dashboardServer.refereePin && (
+                        <div style={{ marginBottom: '12px' }}>
+                          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                            Referee PIN:
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <code style={{
+                              padding: '10px 16px',
+                              background: 'rgba(59, 130, 246, 0.2)',
+                              borderRadius: '6px',
+                              fontSize: '20px',
+                              fontFamily: 'monospace',
+                              fontWeight: 700,
+                              color: '#3b82f6',
+                              letterSpacing: '2px'
+                            }}>
+                              {dashboardServer.refereePin}
+                            </code>
+                            <button
+                              onClick={() => handleCopy(dashboardServer.refereePin, 'PIN')}
+                              style={{
+                                padding: '10px 14px',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                background: copyFeedback === 'PIN' ? '#22c55e' : 'rgba(255,255,255,0.1)',
+                                border: 'none',
+                                borderRadius: '6px',
+                                color: '#fff',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {copyFeedback === 'PIN' ? 'Copied!' : 'Copy'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* QR Code */}
+                      <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                        <img
+                          src={generateQRCodeUrl(`${dashboardServer.connectionUrl}/referee`, 120)}
+                          alt="Referee Dashboard QR"
+                          style={{ background: '#fff', padding: 6, borderRadius: 6 }}
+                        />
+                        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
+                          Scan to open Referee Dashboard
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {!dashboardServer.serverRunning && (
+                    <div style={{
+                      padding: '12px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.8)'
+                    }}>
+                      <strong style={{ color: '#ef4444' }}>Server not detected.</strong>
+                      <br />
+                      Start the backend server with: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
+                    </div>
+                  )}
+                </div>
+
+                {/* Connected Dashboards */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
+                    Connected Dashboards
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    padding: '16px',
+                    background: 'rgba(0,0,0,0.2)',
+                    borderRadius: '8px'
+                  }}>
+                    <span style={{
+                      fontSize: '36px',
+                      fontWeight: 700,
+                      color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'rgba(255,255,255,0.3)'
+                    }}>
+                      {dashboardServer.dashboardCount || 0}
+                    </span>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>
+                        {dashboardServer.dashboardCount === 1 ? 'dashboard' : 'dashboards'} connected
+                      </div>
+                      {dashboardServer.dashboardCount > 0 && (
+                        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                          {dashboardServer.refereeCount || 0} referee, {dashboardServer.benchCount || 0} bench
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Individual clients list */}
+                  {dashboardServer.connectedDashboards?.length > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                      {dashboardServer.connectedDashboards.map((client, idx) => (
+                        <div
+                          key={client.id || idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.03)',
+                            borderRadius: '6px',
+                            marginBottom: idx < dashboardServer.connectedDashboards.length - 1 ? '6px' : 0
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: '#22c55e'
+                            }} />
+                            <span style={{ fontSize: '13px', fontWeight: 600, textTransform: 'capitalize' }}>
+                              {client.role}
+                              {client.team && ` (${client.team})`}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                            {client.ip}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </Section>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <button
