@@ -31,7 +31,8 @@
       "Bash(del /f \"c:\\Users\\lcane\\Desktop\\openvolley\\nul\")",
       "Bash(rm:*)",
       "Bash(findstr:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(del \"C:\\Users\\lcane\\.claude\\plans\\abundant-sleeping-island.md\")"
     ],
     "deny": [],
     "ask": []
