@@ -141,6 +141,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const homeFileInputRef = useRef(null)
   const awayFileInputRef = useRef(null)
 
+  // Upload mode toggle state (local or remote)
+  const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
+  const [awayUploadMode, setAwayUploadMode] = useState('local') // 'local' | 'remote'
+
   // Referee selector state
   const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
   const [refereeSelectorPosition, setRefereeSelectorPosition] = useState({})
@@ -2106,7 +2110,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
                 }}
               >
-                Choose from history
+                Database
               </button>
             </h4>
             <div className="row">
@@ -2123,8 +2127,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             padding: '16px',
             background: 'rgba(15, 23, 42, 0.2)'
           }}>
-            <h4 style={{ 
-              marginTop: 0, 
+            <h4 style={{
+              marginTop: 0,
               marginBottom: '12px',
               padding: '8px 12px',
               background: 'rgba(255, 255, 255, 0.1)',
@@ -2161,7 +2165,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
                 }}
               >
-                Choose from history
+                Database
               </button>
             </h4>
             <div className="row">
@@ -2178,15 +2182,46 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             padding: '16px',
             background: 'rgba(15, 23, 42, 0.2)'
           }}>
-            <h4 style={{ 
-              marginTop: 0, 
+            <h4 style={{
+              marginTop: 0,
               marginBottom: '12px',
               padding: '8px 12px',
               background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: '6px',
               fontSize: '16px',
-              fontWeight: 600
-            }}>Scorer</h4>
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>Scorer</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  setRefereeSelectorPosition({ element: e.currentTarget })
+                  setShowRefereeSelector('scorer')
+                }}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
+                }}
+              >
+                Database
+              </button>
+            </h4>
             <div className="row">
               <div className="field"><label>Last Name</label><input className="w-name capitalize" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
               <div className="field"><label>First Name</label><input className="w-name capitalize" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
@@ -2233,6 +2268,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               setRef2Last(referee.lastName || '')
               setRef2Country(referee.country || 'CHE')
               setRef2Dob(referee.dob || '01.01.1900')
+            } else if (showRefereeSelector === 'scorer') {
+              setScorerFirst(referee.firstName || '')
+              setScorerLast(referee.lastName || '')
+              setScorerCountry(referee.country || 'CHE')
+              setScorerDob(referee.dob || '01.01.1900')
             }
           }}
           position={refereeSelectorPosition}
@@ -2270,7 +2310,78 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        <h1>Roster</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h1 style={{ margin: 0 }}>Roster</h1>
+            {/* Local/Remote Toggle */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              padding: '2px',
+              gap: '2px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setHomeUploadMode('local')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: homeUploadMode === 'local' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  color: homeUploadMode === 'local' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                  border: homeUploadMode === 'local' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Local
+              </button>
+              <button
+                type="button"
+                onClick={() => setHomeUploadMode('remote')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: homeUploadMode === 'remote' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  color: homeUploadMode === 'remote' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                  border: homeUploadMode === 'remote' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Remote
+              </button>
+            </div>
+          </div>
+          {/* Player Stats */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            <span style={{ fontWeight: 600 }}>
+              {homeRoster.length} player{homeRoster.length !== 1 ? 's' : ''}
+            </span>
+            <span style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+              ({homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length} libero)
+            </span>
+            {homeRoster.find(p => p.isCaptain) && (
+              <>
+                <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>•</span>
+                <span style={{ fontWeight: 600, color: '#f59e0b' }}>
+                  Captain #{homeRoster.find(p => p.isCaptain)?.number || '?'}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
         {homeRoster.length < 14 && (
           <div style={{ 
             border: '1px solid rgba(255, 255, 255, 0.2)', 
@@ -2321,20 +2432,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
         )}
         {/* Upload Methods for Home Team */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '12px',
-          marginBottom: '12px'
-        }}>
+        <div style={{ marginBottom: '12px' }}>
           {/* Local Upload */}
+          {homeUploadMode === 'local' && (
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)'
           }}>
-            <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Local Upload</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <input
                 ref={homeFileInputRef}
@@ -2375,15 +2481,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               )}
             </div>
           </div>
+          )}
 
           {/* Remote Upload */}
+          {homeUploadMode === 'remote' && (
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)'
           }}>
-            <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Remote Upload</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -2559,6 +2666,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               )}
             </div>
           </div>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {homeRoster.map((p, i) => (
@@ -2835,8 +2943,79 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        <h1>Roster</h1>
-             
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h1 style={{ margin: 0 }}>Roster</h1>
+            {/* Local/Remote Toggle */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              padding: '2px',
+              gap: '2px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setAwayUploadMode('local')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: awayUploadMode === 'local' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  color: awayUploadMode === 'local' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                  border: awayUploadMode === 'local' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Local
+              </button>
+              <button
+                type="button"
+                onClick={() => setAwayUploadMode('remote')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: awayUploadMode === 'remote' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  color: awayUploadMode === 'remote' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                  border: awayUploadMode === 'remote' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Remote
+              </button>
+            </div>
+          </div>
+          {/* Player Stats */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            <span style={{ fontWeight: 600 }}>
+              {awayRoster.length} player{awayRoster.length !== 1 ? 's' : ''}
+            </span>
+            <span style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+              ({awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length} libero)
+            </span>
+            {awayRoster.find(p => p.isCaptain) && (
+              <>
+                <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>•</span>
+                <span style={{ fontWeight: 600, color: '#f59e0b' }}>
+                  Captain #{awayRoster.find(p => p.isCaptain)?.number || '?'}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
         {awayRoster.length < 14 && (
           <div style={{ 
             border: '1px solid rgba(255, 255, 255, 0.2)', 
@@ -2886,20 +3065,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
         )}
         {/* Upload Methods for Away Team */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '12px',
-          marginBottom: '12px'
-        }}>
+        <div style={{ marginBottom: '12px' }}>
           {/* Local Upload */}
+          {awayUploadMode === 'local' && (
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)'
           }}>
-            <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Local Upload</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <input
                 ref={awayFileInputRef}
@@ -2940,15 +3114,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               )}
             </div>
           </div>
+          )}
 
           {/* Remote Upload */}
+          {awayUploadMode === 'remote' && (
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)'
           }}>
-            <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Remote Upload</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -3124,8 +3299,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               )}
             </div>
           </div>
+          )}
         </div>
-   
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {awayRoster.map((p, i) => (
             <div key={`a-${i}`} className="row" style={{ alignItems: 'center' }}>
