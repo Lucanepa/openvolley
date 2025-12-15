@@ -58,7 +58,7 @@ export default function UpdateBanner({ showClearDataOption = false }) {
             onChange={(e) => setClearData(e.target.checked)}
             style={{ cursor: 'pointer' }}
           />
-          <span>Clear all local data</span>
+          <span>Clear data</span>
         </label>
       )}
 
