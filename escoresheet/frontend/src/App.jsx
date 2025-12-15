@@ -700,69 +700,6 @@ export default function App() {
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
 
-  // Auto-import referees from JSON to database on app load
-  useEffect(() => {
-    const importRefereesToDatabase = async () => {
-      try {
-        // Check if referees already exist in database
-        const existingCount = await db.referees.count()
-        if (existingCount > 0) {
-          // Referees already imported, skip
-          return
-        }
-
-        // Fetch referees from JSON
-        const response = await fetch('/referees_svrz.json')
-        if (!response.ok) {
-          console.log('[App] Referees JSON not available, skipping import')
-          return
-        }
-
-        const referees = await response.json()
-        if (!Array.isArray(referees) || referees.length === 0) {
-          console.log('[App] Referees JSON is empty, skipping import')
-          return
-        }
-
-        // Import referees to database - deduplicate by seedKey
-        const refereesToProcess = referees
-          .filter(ref => ref.lastname && ref.firstname)
-          .map(ref => ({
-            seedKey: `${ref.lastname}_${ref.firstname}`.toLowerCase().replace(/\s+/g, '_'),
-            lastName: ref.lastname.trim(),
-            firstName: ref.firstname.trim(),
-            country: 'CHE',
-            dob: '01.01.1900',
-            level: ref.level || null,
-            email: ref.email || null,
-            phone: ref.phonen || null,
-            createdAt: new Date().toISOString()
-          }))
-
-        // Get existing referees by seedKey to avoid duplicates
-        const existingReferees = await db.referees.toArray()
-        const existingSeedKeys = new Set(existingReferees.map(r => r.seedKey?.toLowerCase()))
-        
-        // Only add referees that don't already exist
-        const refereesToAdd = refereesToProcess.filter(ref => {
-          const seedKey = ref.seedKey?.toLowerCase()
-          return seedKey && !existingSeedKeys.has(seedKey)
-        })
-
-        if (refereesToAdd.length > 0) {
-          await db.referees.bulkAdd(refereesToAdd)
-          console.log(`[App] Imported ${refereesToAdd.length} new referees to database (${refereesToProcess.length - refereesToAdd.length} duplicates skipped)`)
-        } else {
-          console.log(`[App] All ${refereesToProcess.length} referees already exist in database`)
-        }
-      } catch (error) {
-        console.error('[App] Error importing referees:', error)
-        // Don't show error to user, just log it
-      }
-    }
-
-    importRefereesToDatabase()
-  }, [])
 
   const currentTestMatch = useLiveQuery(async () => {
     try {

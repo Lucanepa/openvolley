@@ -141,10 +141,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const homeFileInputRef = useRef(null)
   const awayFileInputRef = useRef(null)
 
-  // Referee JSON import state
-  const [refereeJsonLoading, setRefereeJsonLoading] = useState(false)
-  const [refereeJsonError, setRefereeJsonError] = useState('')
-  
   // Referee selector state
   const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
   const [refereeSelectorPosition, setRefereeSelectorPosition] = useState({})
@@ -1721,51 +1717,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     }
   }
 
-  // Load and import referees from JSON
-  const handleRefereeJsonImport = async () => {
-    setRefereeJsonLoading(true)
-    setRefereeJsonError('')
-
-    try {
-      const response = await fetch('/referees_svrz.json')
-      if (!response.ok) {
-        throw new Error(`Failed to load referees JSON: ${response.statusText}`)
-      }
-
-      const referees = await response.json()
-      
-      if (!Array.isArray(referees) || referees.length === 0) {
-        throw new Error('JSON file appears to be empty or invalid')
-      }
-
-      // Import first referee from first entry
-      const firstReferee = referees[0]
-      if (firstReferee && firstReferee.lastname && firstReferee.firstname) {
-        setRef1Last(firstReferee.lastname.trim())
-        setRef1First(firstReferee.firstname.trim())
-        setRef1Country('CHE')
-        setRef1Dob('01.01.1900')
-      }
-
-      // Import second referee from second entry if available
-      if (referees.length > 1) {
-        const secondReferee = referees[1]
-        if (secondReferee && secondReferee.lastname && secondReferee.firstname) {
-          setRef2Last(secondReferee.lastname.trim())
-          setRef2First(secondReferee.firstname.trim())
-          setRef2Country('CHE')
-          setRef2Dob('01.01.1900')
-        }
-      }
-
-      setRefereeJsonLoading(false)
-    } catch (error) {
-      console.error('Error loading referee JSON:', error)
-      setRefereeJsonError(`Failed to load referees: ${error.message}`)
-      setRefereeJsonLoading(false)
-    }
-  }
-
   // PDF upload handlers - must be defined before conditional returns
   const handleHomePdfUpload = async (file) => {
     if (!file) return
@@ -2155,7 +2106,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
                 }}
               >
-                Choose from SVRZ database
+                Choose from history
               </button>
             </h4>
             <div className="row">
@@ -2210,7 +2161,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
                 }}
               >
-                Choose from SVRZ database
+                Choose from history
               </button>
             </h4>
             <div className="row">
