@@ -159,9 +159,12 @@ export default defineConfig({
       }
     },
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.png'],
       workbox: {
+        // Don't skip waiting automatically - let user choose when to update
+        skipWaiting: false,
+        clientsClaim: true,
         // Network-first strategy for API calls, cache-first for assets
         runtimeCaching: [
           {

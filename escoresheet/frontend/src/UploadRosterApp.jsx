@@ -6,6 +6,7 @@ import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
+import UpdateBanner from './components/UpdateBanner'
 
 // Date conversion helpers
 function formatDateToISO(dateStr) {
@@ -628,6 +629,8 @@ export default function UploadRosterApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       width: 'auto'
     }}>
+      <UpdateBanner />
+
       <SimpleHeader
         title="Upload Roster"
         wakeLockActive={wakeLockActive}

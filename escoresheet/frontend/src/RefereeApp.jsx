@@ -3,6 +3,7 @@ import { validatePin, listAvailableMatches } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import ConnectionStatus from './components/ConnectionStatus'
+import UpdateBanner from './components/UpdateBanner'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
 import changelog from './CHANGELOG'
@@ -432,6 +433,8 @@ export default function RefereeApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       boxSizing: 'border-box'
     }}>
+      <UpdateBanner />
+
       {/* Header */}
       <div style={{
         display: 'flex',

@@ -4,6 +4,7 @@ import { getServerStatus } from './utils/networkInfo'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
 import SimpleHeader from './components/SimpleHeader'
+import UpdateBanner from './components/UpdateBanner'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 export default function BenchApp() {
@@ -694,6 +695,8 @@ export default function BenchApp() {
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
+      <UpdateBanner />
+
       <SimpleHeader
         title="Team Bench"
         wakeLockActive={wakeLockActive}

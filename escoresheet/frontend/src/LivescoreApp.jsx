@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import SimpleHeader from './components/SimpleHeader'
+import UpdateBanner from './components/UpdateBanner'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Helper function to determine if a color is bright
@@ -536,6 +537,8 @@ export default function LivescoreApp() {
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
+        <UpdateBanner />
+
         <SimpleHeader
           title="Live Scoring"
           wakeLockActive={wakeLockActive}
