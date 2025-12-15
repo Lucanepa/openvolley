@@ -10,9 +10,75 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+    paths:
+      - 'escoresheet/frontend/package.json'
 
 jobs:
+  # Check if major version changed (only for push to main, not tags)
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+      is_tag: ${{ steps.check.outputs.is_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit to compare
+
+      - name: Check version change
+        id: check
+        run: |
+          # If this is a tag push, always release
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${{ github.ref_name }}"
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Tag push detected: $VERSION - will release"
+            exit 0
+          fi
+
+          # If this is a manual dispatch, always release
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Manual dispatch: $VERSION - will release"
+            exit 0
+          fi
+
+          echo "is_tag=false" >> $GITHUB_OUTPUT
+
+          # Get current version from package.json
+          CURRENT_VERSION=$(cat escoresheet/frontend/package.json | grep '"version"' | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+          CURRENT_MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+
+          # Get previous version from the commit before
+          git show HEAD~1:escoresheet/frontend/package.json > /tmp/old_package.json 2>/dev/null || echo '{"version": "0.0.0"}' > /tmp/old_package.json
+          PREVIOUS_VERSION=$(cat /tmp/old_package.json | grep '"version"' | head -1 | sed 's/.*"version": "\(.*\)".*/\1/' || echo "0.0.0")
+          PREVIOUS_MAJOR=$(echo $PREVIOUS_VERSION | cut -d. -f1)
+
+          echo "Previous version: $PREVIOUS_VERSION (major: $PREVIOUS_MAJOR)"
+          echo "Current version: $CURRENT_VERSION (major: $CURRENT_MAJOR)"
+
+          # Check if major version changed
+          if [[ "$CURRENT_MAJOR" != "$PREVIOUS_MAJOR" ]]; then
+            echo "Major version changed from $PREVIOUS_MAJOR to $CURRENT_MAJOR - WILL RELEASE"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version=v$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "Major version unchanged ($CURRENT_MAJOR) - skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "version=v$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          fi
+
   build-windows:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +118,8 @@ jobs:
           retention-days: 30
 
   build-macos:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +160,8 @@ jobs:
           retention-days: 30
 
   build-linux:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,7 +202,7 @@ jobs:
           retention-days: 30
 
   release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [check-version, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -141,20 +211,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-      
+
       - name: Display artifacts
         run: |
           echo "Artifact structure:"
           find artifacts -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" | head -20
-      
+
       - name: Get version
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
+          # Use version from check-version job
+          VERSION="${{ needs.check-version.outputs.version }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
       
       - name: Create Release
@@ -191,5 +258,13 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.deb
             artifacts/**/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete old releases (keep last 3)
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 3
+          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
