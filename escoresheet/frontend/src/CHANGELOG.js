@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.6',
+    date: '15.12.25',
+    changes: [
+      'Implement UpdateBanner component across multiple apps and adjust Vite configuration for PWA updates'
+    ]
+  },
+  {
     version: '0.8.4',
     date: '15.12.25',
     changes: [
