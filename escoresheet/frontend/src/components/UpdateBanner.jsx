@@ -1,5 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import useServiceWorker from '../hooks/useServiceWorker'
+import { changelog } from '../CHANGELOG'
+
+// Get current version from changelog (first entry is newest/current)
+const currentVersion = changelog[0]?.version || 'unknown'
 
 /**
  * Banner that shows when a new version of the app is available
@@ -8,6 +12,17 @@ import useServiceWorker from '../hooks/useServiceWorker'
 export default function UpdateBanner({ showClearDataOption = false }) {
   const { needRefresh, updateServiceWorker, dismissUpdate } = useServiceWorker()
   const [clearData, setClearData] = useState(false)
+  const [newVersion, setNewVersion] = useState(null)
+
+  // Fetch the new version from server when update is detected
+  useEffect(() => {
+    if (needRefresh) {
+      fetch(`/version.json?t=${Date.now()}`)
+        .then(res => res.json())
+        .then(data => setNewVersion(data.version))
+        .catch(() => setNewVersion(null))
+    }
+  }, [needRefresh])
 
   if (!needRefresh) return null
 
@@ -40,7 +55,7 @@ export default function UpdateBanner({ showClearDataOption = false }) {
           <polyline points="7 10 12 15 17 10" />
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
-        <span>New version available!</span>
+        <span>{currentVersion} → {newVersion || 'New version'} available!</span>
       </div>
 
       {showClearDataOption && (

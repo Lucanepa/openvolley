@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.8',
+    date: '15.12.25',
+    changes: [
+      'Implement test mode activation across multiple components for development and debugging purposes'
+    ]
+  },
+  {
     version: '0.8.6',
     date: '15.12.25',
     changes: [
