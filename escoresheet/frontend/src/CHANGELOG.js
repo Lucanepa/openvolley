@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.2',
+    date: '15.12.25',
+    changes: [
+      'Enhance GitHub Actions workflow for version checking and release management'
+    ]
+  },
+  {
     version: '0.7.11',
     date: '14.12.25',
     changes: [

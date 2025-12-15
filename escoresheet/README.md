@@ -1,58 +1,36 @@
-# Open eScoresheet (PWA + Supabase)
+# Openvolley eScoresheet
 
-An offline-first, installable volleyball e-scoresheet. Works fully offline (IndexedDB). When online, it can sync to Supabase (Pro-ready). Licensed GPL-3.0.
+Offline-first volleyball e-scoresheet. Works fully offline with optional cloud sync.
 
-## Quick start
+## Quick Start
 
 ```bash
-# 1) Clone
-git clone https://github.com/<you>/escoresheet.git
-cd escoresheet/frontend
-
-# 2) Configure
-cp .env.example .env
-# set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
-
-# 3) Run locally
-npm i
+cd frontend
+npm install
 npm run dev
-
-# 4) Build
-npm run build
 ```
 
-Open [http://localhost:5173](http://localhost:5173) during dev. The app is a PWA; you can "Install" it from your browser.
+Open http://localhost:5173
 
-## Deploy (GitHub Pages)
+## Build Desktop App
 
-1. Push this repo to GitHub.
-2. Ensure `.github/workflows/deploy.yml` is committed.
-3. Add a `CNAME` file to `frontend/dist` during deployment containing your subdomain (e.g. `app.yourdomain.org`). The provided workflow handles this if you set `PAGES_CNAME`.
-4. In GitHub → Settings → Pages → Source: "GitHub Actions".
+```bash
+npm run electron:build:win    # Windows
+npm run electron:build:mac    # macOS
+npm run electron:build:linux  # Linux
+```
 
-### Custom domain via Squarespace
+## Documentation
 
-Add DNS records in Squarespace:
+- **User Guide**: [frontend/public/USER_GUIDE.md](./frontend/public/USER_GUIDE.md)
 
-* **CNAME**: `app` → `<your-username>.github.io`
-* (Optional) apex stays on Squarespace for the marketing site.
-* (Optional) **CNAME**: `api` → `<your-project-ref>.supabase.co` then set a custom domain in Supabase.
+## Tech Stack
 
-## Supabase (optional sync)
-
-* Create a new project and run the SQL from `supabase/sql/schema.sql`.
-* Enable Realtime on `matches`, `sets`, `events` if you want live updates.
-* Add `https://app.<domain>` to Auth → Redirect URLs (if using auth later).
-
-## Tech
-
-* React + Vite + PWA
-* IndexedDB (Dexie)
-* jsPDF (export)
-* Supabase JS client (optional online sync)
+- React + Vite + PWA
+- IndexedDB (Dexie) for offline storage
+- Supabase for cloud sync (optional)
+- Electron for desktop builds
 
 ## License
 
-GPL-3.0 — free forever; derivatives must remain open.
-
-
+GPL-3.0
