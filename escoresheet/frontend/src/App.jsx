@@ -33,6 +33,7 @@ import {
 import { supabase } from './lib/supabaseClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile } from './utils/backupManager'
+import UpdateBanner from './components/UpdateBanner'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -2968,7 +2969,9 @@ export default function App() {
             }}
           />
         ) : !matchId ? (
-          <HomePage
+          <>
+            <UpdateBanner showClearDataOption={true} />
+            <HomePage
             favicon={favicon}
             newMatchMenuOpen={newMatchMenuOpen}
             setNewMatchMenuOpen={setNewMatchMenuOpen}
@@ -2983,7 +2986,8 @@ export default function App() {
             restartTestMatch={restartTestMatch}
             onOpenSettings={() => setHomeOptionsModal(true)}
             onRestoreMatch={() => setRestoreMatchModal(true)}
-          />
+            />
+          </>
         ) : (
           <Scoreboard
             matchId={matchId}
