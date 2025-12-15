@@ -30,6 +30,8 @@ export default function LivescoreApp() {
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
+  const [testModeClicks, setTestModeClicks] = useState(0)
+  const testModeTimeoutRef = useRef(null)
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -526,6 +528,46 @@ export default function LivescoreApp() {
     }
   }, [gameId, data, dataError, loading])
 
+  // Handle test mode activation (6 clicks on "No active game found")
+  const handleTestModeClick = useCallback(() => {
+    if (testModeTimeoutRef.current) {
+      clearTimeout(testModeTimeoutRef.current)
+    }
+
+    setTestModeClicks(prev => {
+      const newCount = prev + 1
+      if (newCount >= 6) {
+        // Activate test mode with mock data
+        const testData = {
+          match: {
+            id: -1,
+            gameNumber: 999,
+            status: 'live',
+            firstServe: 'home',
+            coinTossTeamA: 'home',
+            coinTossTeamB: 'away'
+          },
+          homeTeam: { name: 'Test Home', color: '#ef4444' },
+          awayTeam: { name: 'Test Away', color: '#3b82f6' },
+          homePlayers: [],
+          awayPlayers: [],
+          sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+          events: [{ type: 'point', setIndex: 1, payload: { team: 'home' }, ts: Date.now() }],
+          set: { index: 1, homePoints: 12, awayPoints: 10, finished: false }
+        }
+        setGameId(-1)
+        setData(testData)
+        console.log('[Test Mode] Activated with mock data')
+        return 0
+      }
+      return newCount
+    })
+
+    testModeTimeoutRef.current = setTimeout(() => {
+      setTestModeClicks(0)
+    }, 2000)
+  }, [])
+
   // Show input form if no gameId is set
   if (!gameId) {
     return (
@@ -557,6 +599,11 @@ export default function LivescoreApp() {
           maxWidth: '400px',
           width: '100%'
         }}>
+           <img
+          src={mikasaVolleyball}
+          alt="Volleyball"
+          style={{ width: '80px', height: '80px', marginBottom: '20px' }}
+        />
           <h1 style={{
             fontSize: '32px',
             fontWeight: 700,
@@ -564,13 +611,6 @@ export default function LivescoreApp() {
           }}>
             Live Scoring
           </h1>
-          <p style={{
-            fontSize: '16px',
-            color: 'rgba(255, 255, 255, 0.7)',
-            marginBottom: '32px'
-          }}>
-            Select a game to view live scores
-          </p>
 
           {loadingMatches ? (
             <div style={{
@@ -581,6 +621,14 @@ export default function LivescoreApp() {
               Loading available games...
             </div>
           ) : availableMatches.length > 0 ? (
+            <>
+            <p style={{
+              fontSize: '16px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '32px'
+            }}>
+              Select a game to view live scores
+            </p>
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -630,15 +678,26 @@ export default function LivescoreApp() {
                 </button>
               ))}
             </div>
+            </>
           ) : (
-            <div style={{
-              padding: '20px',
-              color: 'rgba(255, 255, 255, 0.5)',
-              fontSize: '14px',
-              textAlign: 'center'
-            }}>
-              No active games found.<br />
-              Make sure a game is in progress on the main scoresheet.
+            <div
+              onClick={handleTestModeClick}
+              style={{
+                padding: '24px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '12px',
+                textAlign: 'center',
+                cursor: 'default',
+                userSelect: 'none'
+              }}
+            >
+              <div style={{
+                fontSize: '16px',
+                color: 'var(--muted)',
+                marginBottom: '8px'
+              }}>
+                No active game found
+              </div>
             </div>
           )}
 

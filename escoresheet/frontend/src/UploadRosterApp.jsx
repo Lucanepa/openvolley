@@ -78,6 +78,10 @@ export default function UploadRosterApp() {
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
 
+  // Test mode state
+  const [testModeClicks, setTestModeClicks] = useState(0)
+  const testModeTimeoutRef = useRef(null)
+
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
     const enableNoSleep = async () => {
@@ -619,6 +623,44 @@ export default function UploadRosterApp() {
 
   const isValid = match && matchId && uploadPin && (team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin) === uploadPin
 
+  // Handle test mode activation (6 clicks on "No active games found")
+  const handleTestModeClick = useCallback(() => {
+    if (testModeTimeoutRef.current) {
+      clearTimeout(testModeTimeoutRef.current)
+    }
+
+    setTestModeClicks(prev => {
+      const newCount = prev + 1
+      if (newCount >= 6) {
+        // Activate test mode with mock data
+        const testMatch = {
+          id: -1,
+          gameNumber: 999,
+          status: 'setup',
+          homeTeamName: 'Test Home',
+          awayTeamName: 'Test Away',
+          homeTeamUploadPin: '123456',
+          awayTeamUploadPin: '654321'
+        }
+        setSelectedMatch(testMatch)
+        setGameNumber('999')
+        setMatch(testMatch)
+        setMatchId(-1)
+        setHomeTeam({ name: 'Test Home', color: '#ef4444' })
+        setAwayTeam({ name: 'Test Away', color: '#3b82f6' })
+        setMatchStatusCheck('valid')
+        setValidationError('')
+        console.log('[Test Mode] Activated with mock data')
+        return 0
+      }
+      return newCount
+    })
+
+    testModeTimeoutRef.current = setTimeout(() => {
+      setTestModeClicks(0)
+    }, 2000)
+  }, [])
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -730,14 +772,18 @@ export default function UploadRosterApp() {
                 ))}
               </div>
             ) : (
-              <div style={{
-                padding: '20px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                fontSize: '14px',
-                textAlign: 'center'
-              }}>
-                No active games found.<br />
-                Make sure a game is set up on the main scoresheet.
+              <div
+                onClick={handleTestModeClick}
+                style={{
+                  padding: '20px',
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  fontSize: '14px',
+                  textAlign: 'center',
+                  cursor: 'default',
+                  userSelect: 'none'
+                }}
+              >
+                No active games found
               </div>
             )}
           </div>

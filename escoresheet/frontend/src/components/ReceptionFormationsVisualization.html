@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volleyball Reception Formations - P1 to P6</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #22c55e;
+        }
+        .description {
+            text-align: center;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 30px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .formations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .formation-card {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .formation-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .formation-title .setter-pos {
+            background: #8b5cf6;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .court {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background: linear-gradient(180deg, rgba(234, 179, 8, 0.15), rgba(234, 179, 8, 0.08));
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            position: relative;
+            margin-bottom: 15px;
+        }
+        /* Net at top */
+        .net {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: repeating-linear-gradient(to right, rgba(248, 250, 252, 0.85), rgba(248, 250, 252, 0.85) 8px, rgba(148, 163, 184, 0.45) 8px, rgba(148, 163, 184, 0.45) 16px);
+        }
+        /* 3m line */
+        .attack-line {
+            position: absolute;
+            top: 33.33%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .attack-line::after {
+            content: '3m line';
+            position: absolute;
+            right: 5px;
+            top: -15px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        /* End line */
+        .end-line {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        /* Player circle */
+        .player {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            transform: translate(-50%, -50%);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            background: rgba(65, 66, 68, 0.9);
+        }
+        .player.setter {
+            background: #8b5cf6;
+            border-color: #a78bfa;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+        }
+        .player .position-label {
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            width: 20px;
+            height: 20px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .legend {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+        .notes {
+            margin-top: 15px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+        }
+        .notes strong {
+            color: #22c55e;
+        }
+        /* Zones for reference */
+        .zone-labels {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+        .zone-label {
+            position: absolute;
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.25);
+        }
+        .zone-label.net { top: 5%; left: 50%; transform: translateX(-50%); }
+    </style>
+</head>
+<body>
+    <h1>Volleyball Reception Formations</h1>
+    <p class="description">
+        These are the standard reception formations based on where the Setter (S) is in the rotation (P1-P6).<br>
+        View from: <strong>Behind the end line</strong> (looking towards net). Net is at TOP.
+    </p>
+
+    <div class="formations-grid">
+        <!-- P1: Setter in Position I (back right) -->
+        <div class="formation-card">
+            <div class="formation-title">
+                <span class="setter-pos">P1</span>
+                Setter in Position I (Back Right)
+            </div>
+            <div class="court">
+                <div class="net"></div>
+                <div class="attack-line"></div>
+                <div class="end-line"></div>
+                <div class="zone-labels">
+                    <span class="zone-label net">NET</span>
+                </div>
+
+                <!-- P1 Formation:
+                    - I (Setter): back right corner
+                    - II: next to setter, on its top-left corner (moved higher and more right)
+                    - III: on 3m line, middle
+                    - IV: on 3m line, left
+                    - V: bottom left (moved higher)
+                    - VI: between II and V
+                -->
+                <div class="player setter" style="top: 88%; left: 88%;">
+                    <span class="position-label">I</span>
+                    S
+                </div>
+                <div class="player" style="top: 70%; left: 80%;">
+                    <span class="position-label">II</span>
+                    2
+                </div>
+                <div class="player" style="top: 28%; left: 50%;">
+                    <span class="position-label">III</span>
+                    3
+                </div>
+                <div class="player" style="top: 28%; left: 15%;">
+                    <span class="position-label">IV</span>
+                    4
+                </div>
+                <div class="player" style="top: 80%; left: 15%;">
+                    <span class="position-label">V</span>
+                    5
+                </div>
+                <div class="player" style="top: 78%; left: 50%;">
+                    <span class="position-label">VI</span>
+                    6
+                </div>
+            </div>
+            <div class="notes">
+                <strong>P1:</strong> Setter (I) in back right corner. II next to setter (top-left of I). III and IV on attack line. V bottom left. VI between II and V.
+            </div>
+        </div>
+
+        <!-- P2: Setter in Position II (front right) -->
+        <div class="formation-card">
+            <div class="formation-title">
+                <span class="setter-pos">P2</span>
+                Setter in Position II (Front Right)
+            </div>
+            <div class="court">
+                <div class="net"></div>
+                <div class="attack-line"></div>
+                <div class="end-line"></div>
+
+                <!-- P2 Formation:
+                    - II (Setter): at net, right
+                    - III: on 3m line, middle
+                    - IV, VI, I: on same horizontal line
+                    - V: in back between IV and VI (beneath them)
+                -->
+                <div class="player" style="top: 70%; left: 85%;">
+                    <span class="position-label">I</span>
+                    1
+                </div>
+                <div class="player setter" style="top: 12%; left: 88%;">
+                    <span class="position-label">II</span>
+                    S
+                </div>
+                <div class="player" style="top: 28%; left: 50%;">
+                    <span class="position-label">III</span>
+                    3
+                </div>
+                <div class="player" style="top: 70%; left: 15%;">
+                    <span class="position-label">IV</span>
+                    4
+                </div>
+                <div class="player" style="top: 88%; left: 40%;">
+                    <span class="position-label">V</span>
+                    5
+                </div>
+                <div class="player" style="top: 70%; left: 50%;">
+                    <span class="position-label">VI</span>
+                    6
+                </div>
+            </div>
+            <div class="notes">
+                <strong>P2:</strong> Setter (II) at net right. IV, VI, I on same line. V in back between IV and VI (beneath them). III on 3m line.
+            </div>
+        </div>
+
+        <!-- P3: Setter in Position III (front middle) -->
+        <div class="formation-card">
+            <div class="formation-title">
+                <span class="setter-pos">P3</span>
+                Setter in Position III (Front Middle)
+            </div>
+            <div class="court">
+                <div class="net"></div>
+                <div class="attack-line"></div>
+                <div class="end-line"></div>
+
+                <!-- P3 Formation:
+                    - III (Setter): at net, middle (20px lower)
+                    - II: front right at net
+                    - IV: 30px higher
+                    - V, I: 20px higher, V 20px to the right
+                    - VI: behind (closer to end line), between V and I
+                -->
+                <div class="player" style="top: 70%; left: 82%;">
+                    <span class="position-label">I</span>
+                    1
+                </div>
+                <div class="player" style="top: 12%; left: 82%;">
+                    <span class="position-label">II</span>
+                    2
+                </div>
+                <div class="player setter" style="top: 13%; left: 50%;">
+                    <span class="position-label">III</span>
+                    S
+                </div>
+                <div class="player" style="top: 67%; left: 15%;">
+                    <span class="position-label">IV</span>
+                    4
+                </div>
+                <div class="player" style="top: 70%; left: 45%;">
+                    <span class="position-label">V</span>
+                    5
+                </div>
+                <div class="player" style="top: 88%; left: 60%;">
+                    <span class="position-label">VI</span>
+                    6
+                </div>
+            </div>
+            <div class="notes">
+                <strong>P3:</strong> Setter (III) at net middle. II at net right. IV dropped back. VI, V and I on same line (VI more towards end line).
+            </div>
+        </div>
+
+        <!-- P4: Setter in Position IV (front left) -->
+        <div class="formation-card">
+            <div class="formation-title">
+                <span class="setter-pos">P4</span>
+                Setter in Position IV (Front Left)
+            </div>
+            <div class="court">
+                <div class="net"></div>
+                <div class="attack-line"></div>
+                <div class="end-line"></div>
+
+                <!-- P4 Formation:
+                    - IV (Setter): at net left corner
+                    - III: diagonally between IV and II
+                    - I: in the corner (lower right)
+                    - II, V, VI: on one line in the middle
+                -->
+                <div class="player" style="top: 88%; left: 88%;">
+                    <span class="position-label">I</span>
+                    1
+                </div>
+                <div class="player" style="top: 70%; left: 35%;">
+                    <span class="position-label">II</span>
+                    2
+                </div>
+                <div class="player" style="top: 40%; left: 25%;">
+                    <span class="position-label">III</span>
+                    3
+                </div>
+                <div class="player setter" style="top: 12%; left: 15%;">
+                    <span class="position-label">IV</span>
+                    S
+                </div>
+                <div class="player" style="top: 70%; left: 55%;">
+                    <span class="position-label">V</span>
+                    5
+                </div>
+                <div class="player" style="top: 70%; left: 75%;">
+                    <span class="position-label">VI</span>
+                    6
+                </div>
+            </div>
+            <div class="notes">
+                <strong>P4:</strong> Setter (IV) at net left. III on IV's bottom-right. II on III's bottom-right. V, VI, I spread in back.
+            </div>
+        </div>
+
+        <!-- P5: Setter in Position V (back left) -->
+        <div class="formation-card">
+            <div class="formation-title">
+                <span class="setter-pos">P5</span>
+                Setter in Position V (Back Left)
+            </div>
+            <div class="court">
+                <div class="net"></div>
+                <div class="attack-line"></div>
+                <div class="end-line"></div>
+
+                <!-- P5 Formation:
+                    - V (Setter): closer to IV, penetrating (moved more to the right)
+                    - IV: at net left corner
+                    - II: at net right
+                    - III, VI, I: more or less on same line
+                -->
+                <div class="player" style="top: 75%; left: 82%;">
+                    <span class="position-label">I</span>
+                    1
+                </div>
+                <div class="player" style="top: 12%; left: 85%;">
+                    <span class="position-label">II</span>
+                    2
+                </div>
+                <div class="player" style="top: 75%; left: 35%;">
+                    <span class="position-label">III</span>
+                    3
+                </div>
+                <div class="player" style="top: 12%; left: 15%;">
+                    <span class="position-label">IV</span>
+                    4
+                </div>
+                <div class="player setter" style="top: 42%; left: 33%;">
+                    <span class="position-label">V</span>
+                    S
+                </div>
+                <div class="player" style="top: 75%; left: 58%;">
+                    <span class="position-label">VI</span>
+                    6
+                </div>
+            </div>
+            <div class="notes">
+                <strong>P5:</strong> Setter (V) closer to IV, penetrating. II and IV at net. III, VI, I on same line.
+            </div>
+        </div>
+
+        <!-- P6: Setter in Position VI (back middle) -->
+        <div class="formation-card">
+            <div class="formation-title">
+                <span class="setter-pos">P6</span>
+                Setter in Position VI (Back Middle)
+            </div>
+            <div class="court">
+                <div class="net"></div>
+                <div class="attack-line"></div>
+                <div class="end-line"></div>
+
+                <!-- P6 Formation:
+                    - VI (Setter): closer to III, penetrating
+                    - III: at net middle
+                    - II: a bit more towards 3m line
+                    - IV, V, I: on same line (IV slightly higher)
+                -->
+                <div class="player" style="top: 78%; left: 82%;">
+                    <span class="position-label">I</span>
+                    1
+                </div>
+                <div class="player" style="top: 25%; left: 82%;">
+                    <span class="position-label">II</span>
+                    2
+                </div>
+                <div class="player" style="top: 12%; left: 50%;">
+                    <span class="position-label">III</span>
+                    3
+                </div>
+                <div class="player" style="top: 72%; left: 18%;">
+                    <span class="position-label">IV</span>
+                    4
+                </div>
+                <div class="player" style="top: 78%; left: 44%;">
+                    <span class="position-label">V</span>
+                    5
+                </div>
+                <div class="player setter" style="top: 42%; left: 59%;">
+                    <span class="position-label">VI</span>
+                    S
+                </div>
+            </div>
+            <div class="notes">
+                <strong>P6:</strong> Setter (VI) closer to III, penetrating. III at net. II towards 3m line. IV, V, I on same line (IV slightly higher).
+            </div>
+        </div>
+    </div>
+
+    <div style="max-width: 800px; margin: 40px auto; padding: 20px; background: rgba(0, 0, 0, 0.3); border-radius: 12px;">
+        <h2 style="margin-bottom: 15px; color: #22c55e;">Position Reference</h2>
+        <div class="legend" style="justify-content: flex-start; flex-direction: column; align-items: flex-start;">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #8b5cf6;"></div>
+                <span><strong>S</strong> = Setter (highlighted in purple)</span>
+            </div>
+            <div class="legend-item" style="margin-top: 10px;">
+                <span><strong>Position numbers (I-VI)</strong> = Rotation positions, shown in small badge</span>
+            </div>
+            <div class="legend-item" style="margin-top: 10px;">
+                <span><strong>P1-P6</strong> = Which rotation the setter is in (P1 = setter in position I, etc.)</span>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 25px; margin-bottom: 10px; color: #fbbf24;">Court Zones (viewed from behind end line)</h3>
+        <pre style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-size: 12px; overflow-x: auto;">
+┌─────────────────────────────────────┐
+│              NET (top)              │
+├─────────────────────────────────────┤
+│                                     │
+│   FRONT ROW (attacking zone)        │
+│   IV (left)  III (mid)  II (right)  │
+│                                     │
+├ ─ ─ ─ ─ ─ ─ 3m LINE ─ ─ ─ ─ ─ ─ ─ ─┤
+│                                     │
+│   BACK ROW (defensive zone)         │
+│   V (left)   VI (mid)   I (right)   │
+│                                     │
+└─────────────────────────────────────┘
+              END LINE
+        </pre>
+
+        <h3 style="margin-top: 25px; margin-bottom: 10px; color: #fbbf24;">Please Review</h3>
+        <p style="color: rgba(255,255,255,0.7); font-size: 14px;">
+            Please check if these formations match what you had in mind. Refresh the page to see updates.
+            Let me know if any positions need further adjustment!
+        </p>
+    </div>
+</body>
+</html>

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { getMatchData, subscribeToMatchData, updateMatchData } from '../utils/serverDataSync'
+import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
-export default function MatchEntry({ matchId, team, onBack }) {
+export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
@@ -12,8 +13,8 @@ export default function MatchEntry({ matchId, team, onBack }) {
 
   // Send heartbeat to indicate bench connection is active (only if connection is enabled)
   useEffect(() => {
-    if (!matchId || !team) return
-    
+    if (!matchId || !team || matchId === -1) return // Skip in test mode
+
     const checkAndStartHeartbeat = async () => {
       const match = await db.matches.get(matchId)
       if (!match) return null
@@ -47,12 +48,14 @@ export default function MatchEntry({ matchId, team, onBack }) {
     
     return () => {
       if (interval) clearInterval(interval)
-      // Clear heartbeat on unmount
-      const heartbeatField = team === 'home' 
-        ? 'lastHomeTeamHeartbeat' 
-        : 'lastAwayTeamHeartbeat'
-      updateMatchData(matchId, { [heartbeatField]: null })
-        .catch(err => console.error('Failed to clear heartbeat:', err))
+      // Clear heartbeat on unmount (skip in test mode)
+      if (matchId !== -1) {
+        const heartbeatField = team === 'home'
+          ? 'lastHomeTeamHeartbeat'
+          : 'lastAwayTeamHeartbeat'
+        updateMatchData(matchId, { [heartbeatField]: null })
+          .catch(err => console.error('Failed to clear heartbeat:', err))
+      }
     }
   }, [matchId, team])
 
@@ -62,6 +65,42 @@ export default function MatchEntry({ matchId, team, onBack }) {
   useEffect(() => {
     if (!matchId) {
       setData(null)
+      return
+    }
+
+    // Test mode: use mock data
+    if (matchId === -1) {
+      setData({
+        match: {
+          id: -1,
+          gameNumber: 999,
+          status: 'live',
+          firstServe: 'home',
+          coinTossTeamA: 'home',
+          coinTossTeamB: 'away'
+        },
+        homeTeam: { name: 'Test Home', color: '#ef4444' },
+        awayTeam: { name: 'Test Away', color: '#3b82f6' },
+        set: { index: 1, homePoints: 12, awayPoints: 10, finished: false },
+        allSets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+        events: [],
+        homePlayers: [
+          { id: 1, number: 1, firstName: 'Test', lastName: 'Player 1' },
+          { id: 2, number: 5, firstName: 'Test', lastName: 'Player 2' },
+          { id: 3, number: 7, firstName: 'Test', lastName: 'Player 3' },
+          { id: 4, number: 10, firstName: 'Test', lastName: 'Player 4' },
+          { id: 5, number: 12, firstName: 'Test', lastName: 'Player 5' },
+          { id: 6, number: 15, firstName: 'Test', lastName: 'Player 6' }
+        ],
+        awayPlayers: [
+          { id: 7, number: 2, firstName: 'Test', lastName: 'Away 1' },
+          { id: 8, number: 4, firstName: 'Test', lastName: 'Away 2' },
+          { id: 9, number: 8, firstName: 'Test', lastName: 'Away 3' },
+          { id: 10, number: 11, firstName: 'Test', lastName: 'Away 4' },
+          { id: 11, number: 13, firstName: 'Test', lastName: 'Away 5' },
+          { id: 12, number: 16, firstName: 'Test', lastName: 'Away 6' }
+        ]
+      })
       return
     }
 
@@ -483,6 +522,19 @@ export default function MatchEntry({ matchId, team, onBack }) {
   }, [data?.events, team])
 
   if (!data || !teamInfo) {
+    if (embedded) {
+      return (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div>Loading...</div>
+        </div>
+      )
+    }
     return (
       <div style={{
         minHeight: '100vh',
@@ -530,73 +582,128 @@ export default function MatchEntry({ matchId, team, onBack }) {
 
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+      minHeight: embedded ? 'auto' : '100vh',
+      height: embedded ? '100%' : 'auto',
+      background: embedded ? 'transparent' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: '20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      padding: embedded ? '12px' : '20px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      flex: embedded ? 1 : 'none'
     }}>
       <div style={{
         maxWidth: '1200px',
         margin: '0 auto',
+        width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        gap: '20px'
+        gap: embedded ? '12px' : '20px',
+        flex: embedded ? 1 : 'none'
       }}>
-        {/* Header with Back button */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <button
-            onClick={onBack}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'rgba(255,255,255,0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            ← Back
-          </button>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>
-            {teamInfo.name}
-          </h1>
-          <div style={{ width: '100px' }}></div>
-        </div>
+        {/* Header with Back button - only show when not embedded */}
+        {!embedded && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <button
+              onClick={onBack}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: 'rgba(255,255,255,0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              ← Back
+            </button>
+            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>
+              {teamInfo.name}
+            </h1>
+            <div style={{ width: '100px' }}></div>
+          </div>
+        )}
 
         {/* Score Display */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '8px',
-          padding: '20px',
+          gap: embedded ? '4px' : '8px',
+          padding: embedded ? '12px' : '20px',
           background: 'rgba(255,255,255,0.05)',
-          borderRadius: '12px'
+          borderRadius: '12px',
+          flexShrink: 0
         }}>
+          {/* Current set points - team points bigger */}
           <div style={{
             display: 'inline-flex',
-            alignItems: 'center',
-            gap: '16px',
-            fontSize: '48px',
+            alignItems: 'baseline',
+            gap: embedded ? '8px' : '12px',
             fontWeight: 700
           }}>
-            <span>{points.team}</span>
-            <span style={{ fontSize: '32px', opacity: 0.5 }}>:</span>
-            <span>{points.opponent}</span>
+            <span style={{
+              fontSize: embedded ? '48px' : '64px',
+              color: '#fff'
+            }}>{points.team}</span>
+            <span style={{
+              fontSize: embedded ? '20px' : '28px',
+              opacity: 0.5,
+              alignSelf: 'center'
+            }}>:</span>
+            <span style={{
+              fontSize: embedded ? '28px' : '36px',
+              color: 'rgba(255,255,255,0.6)'
+            }}>{points.opponent}</span>
           </div>
+
+          {/* Set score with previous set results */}
           <div style={{
-            fontSize: '18px',
-            fontWeight: 600,
-            color: 'var(--muted)'
+            display: 'flex',
+            alignItems: 'center',
+            gap: embedded ? '12px' : '16px'
           }}>
-            Sets: {setScore.team} - {setScore.opponent}
+            {/* Previous set results */}
+            {data?.allSets?.filter(s => s.finished).length > 0 && (
+              <div style={{
+                display: 'flex',
+                gap: '6px',
+                fontSize: embedded ? '11px' : '13px',
+                color: 'rgba(255,255,255,0.5)'
+              }}>
+                {data.allSets.filter(s => s.finished).map((s, idx) => {
+                  const teamPts = team === 'home' ? s.homePoints : s.awayPoints
+                  const oppPts = team === 'home' ? s.awayPoints : s.homePoints
+                  const won = teamPts > oppPts
+                  return (
+                    <span key={idx} style={{
+                      padding: '2px 6px',
+                      background: won ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      border: `1px solid ${won ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                      borderRadius: '4px',
+                      color: won ? '#22c55e' : '#ef4444'
+                    }}>
+                      {teamPts}-{oppPts}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Current set counter */}
+            <div style={{
+              fontSize: embedded ? '14px' : '18px',
+              fontWeight: 600,
+              color: 'var(--muted)'
+            }}>
+              Sets: {setScore.team} - {setScore.opponent}
+            </div>
           </div>
         </div>
 
@@ -604,18 +711,22 @@ export default function MatchEntry({ matchId, team, onBack }) {
         <div style={{
           display: 'flex',
           flexDirection: teamSide === 'right' ? 'row' : 'column',
-          gap: '20px',
-          alignItems: teamSide === 'right' ? 'flex-start' : 'stretch'
+          gap: embedded ? '12px' : '20px',
+          alignItems: teamSide === 'right' ? 'flex-start' : 'stretch',
+          flex: embedded ? 1 : 'none',
+          minHeight: 0,
+          overflow: embedded ? 'auto' : 'visible'
         }}>
           {/* Court Display - Single Side */}
-          <div className="court" style={{ 
-            aspectRatio: '3 / 3', 
-            maxWidth: '600px',
-            width: teamSide === 'right' ? '50%' : '100%',
+          <div className="court" style={{
+            aspectRatio: '1 / 1',
+            maxWidth: embedded ? '350px' : '600px',
+            maxHeight: embedded ? 'calc(100vh - 280px)' : 'none',
+            width: teamSide === 'right' ? '50%' : (embedded ? '100%' : '100%'),
             margin: teamSide === 'right' ? '0' : '0 auto',
             gridTemplateColumns: '1fr',
             position: 'relative',
-            flexShrink: 0
+            flexShrink: embedded ? 1 : 0
           }}>
           {/* 3m line */}
           <div className="court-attack-line" style={{

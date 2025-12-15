@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from '../utils/serverDataSync'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import favicon from '../favicon.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
 import { db } from '../db/db'
@@ -19,6 +20,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Referee view dropdown state
   const [refViewDropdownOpen, setRefViewDropdownOpen] = useState(false)
+
+  // Advanced mode state for reception formations
+  const [advancedMode, setAdvancedMode] = useState({ left: false, right: false }) // Per-side advanced mode
+  const [setterNumber, setSetterNumber] = useState({ left: null, right: null }) // Per-side setter number
+  const [setterSelectionModal, setSetterSelectionModal] = useState(null) // 'left' | 'right' | null
+
+  // Reception mode: 'standard' (grid layout) or 'reception' (formation positions)
+  const [receptionMode, setReceptionMode] = useState({ left: 'standard', right: 'standard' })
+
+  // Custom formation positions (drag and drop adjustments) per set
+  const [customFormations, setCustomFormations] = useState({}) // { [setIndex]: { left: { [position]: { top, left } }, right: { ... } } }
+
+  // Dragging state for player repositioning
+  const [draggingPlayer, setDraggingPlayer] = useState(null) // { side: 'left'|'right', position: 'I'-'VI' }
+  const courtRef = useRef({ left: null, right: null })
+
+  // Timer ref for auto-revert to standard mode
+  const receptionModeTimerRef = useRef({ left: null, right: null })
 
   // Connection state
   const [connectionStatuses, setConnectionStatuses] = useState({
@@ -371,6 +390,111 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => clearInterval(timer)
   }, [timeoutModal])
 
+  // Track last point count to detect when points change (rally ends)
+  const lastPointsRef = useRef({ home: 0, away: 0 })
+
+  // Auto-revert reception mode to standard after rally starts (3 seconds after point)
+  useEffect(() => {
+    if (!data?.currentSet) return
+
+    const currentHomePoints = data.currentSet.homePoints || 0
+    const currentAwayPoints = data.currentSet.awayPoints || 0
+
+    const pointsChanged = currentHomePoints !== lastPointsRef.current.home ||
+                          currentAwayPoints !== lastPointsRef.current.away
+
+    // Update last points
+    lastPointsRef.current = { home: currentHomePoints, away: currentAwayPoints }
+
+    // If points changed (rally ended), start 3 second timer to revert to standard mode
+    if (pointsChanged) {
+      // Clear existing timers
+      if (receptionModeTimerRef.current.left) {
+        clearTimeout(receptionModeTimerRef.current.left)
+      }
+      if (receptionModeTimerRef.current.right) {
+        clearTimeout(receptionModeTimerRef.current.right)
+      }
+
+      // Start new timer for both sides if in reception mode
+      if (receptionMode.left === 'reception') {
+        receptionModeTimerRef.current.left = setTimeout(() => {
+          setReceptionMode(prev => ({ ...prev, left: 'standard' }))
+        }, 3000)
+      }
+      if (receptionMode.right === 'reception') {
+        receptionModeTimerRef.current.right = setTimeout(() => {
+          setReceptionMode(prev => ({ ...prev, right: 'standard' }))
+        }, 3000)
+      }
+    }
+
+    return () => {
+      if (receptionModeTimerRef.current.left) {
+        clearTimeout(receptionModeTimerRef.current.left)
+      }
+      if (receptionModeTimerRef.current.right) {
+        clearTimeout(receptionModeTimerRef.current.right)
+      }
+    }
+  }, [data?.currentSet?.homePoints, data?.currentSet?.awayPoints, receptionMode.left, receptionMode.right])
+
+  // Toggle reception mode for a side
+  const toggleReceptionMode = useCallback((side) => {
+    setReceptionMode(prev => ({
+      ...prev,
+      [side]: prev[side] === 'standard' ? 'reception' : 'standard'
+    }))
+  }, [])
+
+  // Handle drag start for player repositioning
+  const handleDragStart = useCallback((e, side, position) => {
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingPlayer({ side, position })
+  }, [])
+
+  // Handle drag over court
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  // Handle drop on court - save custom position
+  const handleDrop = useCallback((e, side) => {
+    e.preventDefault()
+    if (!draggingPlayer || draggingPlayer.side !== side) return
+
+    const courtEl = courtRef.current[side]
+    if (!courtEl) return
+
+    const rect = courtEl.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    // Convert to percentage
+    const leftPercent = (x / rect.width) * 100
+    const topPercent = (y / rect.height) * 100
+
+    // Clamp values to court bounds
+    const clampedLeft = Math.max(5, Math.min(95, leftPercent))
+    const clampedTop = Math.max(5, Math.min(95, topPercent))
+
+    const setIndex = data?.currentSet?.index || 1
+
+    setCustomFormations(prev => ({
+      ...prev,
+      [setIndex]: {
+        ...prev[setIndex],
+        [side]: {
+          ...prev[setIndex]?.[side],
+          [draggingPlayer.position]: { top: clampedTop, left: clampedLeft }
+        }
+      }
+    }))
+
+    setDraggingPlayer(null)
+  }, [draggingPlayer, data?.currentSet?.index])
+
   // Calculate statistics
   const stats = useMemo(() => {
     if (!data || !data.events || !data.currentSet) {
@@ -585,6 +709,114 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const brightness = (r * 299 + g * 587 + b * 114) / 1000
     return brightness > 155
   }
+
+  // Get setter position (P1-P6) based on current lineup
+  const getSetterPosition = useCallback((lineup, setterNum) => {
+    if (!lineup || !setterNum) return null
+    for (const [position, playerNum] of Object.entries(lineup)) {
+      if (String(playerNum) === String(setterNum)) {
+        // Convert position (I, II, III, IV, V, VI) to P number (1-6)
+        const posMap = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6 }
+        return posMap[position] || null
+      }
+    }
+    return null
+  }, [])
+
+  // Reception formation positions based on setter position (P1-P6)
+  // Positions are percentages: { top: %, left: % } from court perspective (net at top)
+  // These are for a SINGLE side court view - approved from visualization
+  const getReceptionFormation = useCallback((setterPos) => {
+    // Standard positions for when no advanced mode
+    const standard = {
+      I: { top: 85, left: 85 },   // Back right
+      II: { top: 15, left: 85 },  // Front right
+      III: { top: 15, left: 50 }, // Front middle
+      IV: { top: 15, left: 15 },  // Front left
+      V: { top: 85, left: 15 },   // Back left
+      VI: { top: 85, left: 50 }   // Back middle
+    }
+
+    if (!setterPos) return standard
+
+    // Reception formations based on setter position (approved from visualization)
+    const formations = {
+      // P1: Setter in position I (back right corner)
+      1: {
+        I: { top: 88, left: 88 },   // Setter: back right corner
+        II: { top: 70, left: 80 },  // Next to setter (top-left of I)
+        III: { top: 28, left: 50 }, // 3m line, middle
+        IV: { top: 28, left: 15 },  // 3m line, left
+        V: { top: 80, left: 15 },   // Bottom left
+        VI: { top: 78, left: 50 }   // Between II and V
+      },
+      // P2: Setter in position II (front right at net)
+      2: {
+        I: { top: 70, left: 85 },   // Back right area
+        II: { top: 12, left: 88 },  // Setter: at net, right
+        III: { top: 28, left: 50 }, // 3m line, middle
+        IV: { top: 70, left: 15 },  // Same line as I and VI
+        V: { top: 88, left: 40 },   // Back, beneath IV and VI
+        VI: { top: 70, left: 50 }   // Same line as IV and I
+      },
+      // P3: Setter in position III (front middle at net)
+      3: {
+        I: { top: 70, left: 82 },   // Back right
+        II: { top: 12, left: 82 },  // Front right at net
+        III: { top: 13, left: 50 }, // Setter: at net, middle
+        IV: { top: 67, left: 15 },  // Dropped back left
+        V: { top: 70, left: 45 },   // Back center-left
+        VI: { top: 88, left: 60 }   // Back, towards end line
+      },
+      // P4: Setter in position IV (front left at net)
+      4: {
+        I: { top: 88, left: 88 },   // Back right corner
+        II: { top: 70, left: 35 },  // Dropped back
+        III: { top: 40, left: 25 }, // Diagonally between IV and II
+        IV: { top: 12, left: 15 },  // Setter: at net, left
+        V: { top: 70, left: 55 },   // Back middle
+        VI: { top: 70, left: 75 }   // Back right area
+      },
+      // P5: Setter in position V (back left, penetrating)
+      5: {
+        I: { top: 75, left: 82 },   // Back right
+        II: { top: 12, left: 85 },  // Front right at net
+        III: { top: 75, left: 35 }, // Dropped back for passing
+        IV: { top: 12, left: 15 },  // Front left at net
+        V: { top: 42, left: 33 },   // Setter: back left, penetrating
+        VI: { top: 75, left: 58 }   // Back middle
+      },
+      // P6: Setter in position VI (back middle, penetrating)
+      6: {
+        I: { top: 78, left: 82 },   // Back right
+        II: { top: 25, left: 82 },  // Towards 3m line
+        III: { top: 12, left: 50 }, // At net, middle
+        IV: { top: 72, left: 18 },  // Dropped back left
+        V: { top: 78, left: 44 },   // Back center-left
+        VI: { top: 42, left: 59 }   // Setter: penetrating from back middle
+      }
+    }
+
+    return formations[setterPos] || standard
+  }, [])
+
+  // Get formation positions with custom overrides
+  const getFormationWithCustom = useCallback((side, setterPos) => {
+    const baseFormation = getReceptionFormation(setterPos)
+    const setIndex = data?.currentSet?.index || 1
+    const customPositions = customFormations[setIndex]?.[side]
+
+    if (!customPositions) return baseFormation
+
+    // Merge custom positions with base formation
+    const merged = { ...baseFormation }
+    for (const [pos, coords] of Object.entries(customPositions)) {
+      if (coords) {
+        merged[pos] = coords
+      }
+    }
+    return merged
+  }, [getReceptionFormation, customFormations, data?.currentSet?.index])
 
   // Re-enable wake lock (call this when entering fullscreen or on user interaction)
   const reEnableWakeLock = useCallback(async () => {
@@ -1080,16 +1312,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {substitutionModal.teamName || (substitutionModal.team === 'home' ? 'Home' : 'Away')}
               {substitutionModal.isExceptional && <span style={{ color: '#f59e0b', marginLeft: '8px' }}>(Exceptional)</span>}
             </div>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
               gap: '24px',
               fontSize: '48px',
               fontWeight: 700
           }}>
-            <div style={{ 
-              display: 'flex', 
+            <div style={{
+              display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center'
               }}>
@@ -1116,6 +1348,143 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   </div>
                 </div>
               )}
+
+      {/* Setter Selection Modal for Advanced Mode */}
+      {setterSelectionModal && (
+        <div
+          onClick={() => setSetterSelectionModal(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            cursor: 'pointer'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+              borderRadius: '24px',
+              padding: '32px',
+              textAlign: 'center',
+              border: '2px solid rgba(139, 92, 246, 0.5)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              minWidth: '320px',
+              maxWidth: '90vw',
+              maxHeight: '80vh',
+              overflow: 'auto'
+            }}
+          >
+            <div style={{
+              fontSize: '18px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '2px',
+              color: '#8b5cf6',
+              marginBottom: '8px'
+            }}>
+              🏐 Select Setter
+            </div>
+            <div style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '24px'
+            }}>
+              {setterSelectionModal === 'left' ? leftTeamData?.name : rightTeamData?.name}
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '12px',
+              marginBottom: '20px'
+            }}>
+              {(() => {
+                const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
+                const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
+                if (!teamLineup) return <div style={{ gridColumn: '1/-1', color: 'rgba(255,255,255,0.5)' }}>No lineup available</div>
+
+                return Object.entries(teamLineup).map(([position, playerNum]) => (
+                  <button
+                    key={position}
+                    onClick={() => {
+                      const side = setterSelectionModal
+                      setSetterNumber(prev => ({ ...prev, [side]: playerNum }))
+                      setAdvancedMode(prev => ({ ...prev, [side]: true }))
+                      setSetterSelectionModal(null)
+                    }}
+                    style={{
+                      padding: '16px 12px',
+                      fontSize: '20px',
+                      fontWeight: 700,
+                      background: String(playerNum) === String(currentSetter)
+                        ? 'rgba(139, 92, 246, 0.4)'
+                        : 'rgba(255, 255, 255, 0.1)',
+                      color: String(playerNum) === String(currentSetter) ? '#a78bfa' : '#fff',
+                      border: String(playerNum) === String(currentSetter)
+                        ? '2px solid #8b5cf6'
+                        : '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>{position}</span>
+                    <span>#{playerNum}</span>
+                  </button>
+                ))
+              })()}
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  const side = setterSelectionModal
+                  setAdvancedMode(prev => ({ ...prev, [side]: false }))
+                  setSetterNumber(prev => ({ ...prev, [side]: null }))
+                  setSetterSelectionModal(null)
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Exit Advanced
+              </button>
+              <button
+                onClick={() => setSetterSelectionModal(null)}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: '#fff',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
               
       {/* SECTION 1: Header - 40px */}
               <div style={{
@@ -1290,8 +1659,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
             </div>
 
-      {/* SECTION 2A: Set Counter Row */}
-      <div style={{ padding: 'clamp(6px, 1.5vw, 12px) clamp(8px, 2vw, 16px)', background: 'rgba(0, 0, 0, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', width: '100%' }}>
+      {/* Main content wrapper - percentage-based heights */}
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        minHeight: 0
+      }}>
+
+      {/* SECTION 2A: Set Counter Row - 10% */}
+      <div style={{ flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'rgba(0, 0, 0, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
         {/* Left: Team Name (centered in its space) + A/B */}
         <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
           <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0 }}>
@@ -1329,19 +1707,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
       </div>
 
-      {/* SECTION 2B: Score & Serve - 3 COLUMNS */}
+      {/* SECTION 2B: Score & Serve - 20% */}
       <div style={{
-        flex: '0.5 0.5 auto',
-        padding: '8px 0',
+        flex: '0 0 20%',
+        padding: '4px 0',
         background: 'rgba(0, 0, 0, 0.2)',
-            display: 'flex',
+        display: 'flex',
         flexDirection: 'row',
-            alignItems: 'center',
-          justifyContent: 'center',
+        alignItems: 'center',
+        justifyContent: 'center',
         width: '100%',
         maxWidth: '100%',
-        overflow: 'hidden'
-        }}>
+        overflow: 'hidden',
+        minHeight: 0
+      }}>
         {/* LEFT COLUMN - Serve indicator (1/5) */}
               <div style={{
           flex: '0 0 15%',
@@ -1532,15 +1911,95 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
             </div>
 
-      {/* SECTION 3: Court - responsive with aspect ratio */}
+      {/* SECTION 3: Court Area - 40% (includes advanced mode buttons) */}
+      <div style={{
+        flex: '0 0 40%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        minHeight: 0
+      }}>
+      {/* Advanced Mode Buttons - Above Court */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '2px 8px',
+        background: 'rgba(0, 0, 0, 0.15)',
+        flex: '0 0 auto'
+      }}>
+        {/* Left team advanced mode button - only show when receiving and 2R view */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          {refereeView === '2nd' && !leftServing && leftLineup && (
+            <button
+              onClick={() => setSetterSelectionModal('left')}
+              style={{
+                padding: '4px 12px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: advancedMode.left ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                color: advancedMode.left ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
+                border: advancedMode.left ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {advancedMode.left ? (
+                <>
+                  <span style={{ color: '#8b5cf6' }}>P{getSetterPosition(leftLineup, setterNumber.left) || '?'}</span>
+                  <span>#{setterNumber.left}</span>
+                </>
+              ) : (
+                '⚙️ Advanced'
+              )}
+            </button>
+          )}
+        </div>
+        {/* Right team advanced mode button - only show when receiving and 2R view */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          {refereeView === '2nd' && !rightServing && rightLineup && (
+            <button
+              onClick={() => setSetterSelectionModal('right')}
+              style={{
+                padding: '4px 12px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: advancedMode.right ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                color: advancedMode.right ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
+                border: advancedMode.right ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {advancedMode.right ? (
+                <>
+                  <span style={{ color: '#8b5cf6' }}>P{getSetterPosition(rightLineup, setterNumber.right) || '?'}</span>
+                  <span>#{setterNumber.right}</span>
+                </>
+              ) : (
+                '⚙️ Advanced'
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Court visualization - takes remaining space in 40% */}
         <div style={{
-        flex: '0 0 auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         padding: '4px 4px',
-        overflow: 'hidden'
-        }}>
+        overflow: 'hidden',
+        minHeight: 0
+      }}>
           <div style={{
           width: '100%',
           maxWidth: '800px',
@@ -1559,14 +2018,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             top: 0,
             bottom: 0,
             left: '50%',
-            width: '6px', 
+            width: '6px',
             transform: 'translateX(-50%)',
             background: 'repeating-linear-gradient(to bottom, rgba(248, 250, 252, 0.85), rgba(248, 250, 252, 0.85) 4px, rgba(148, 163, 184, 0.45) 4px, rgba(148, 163, 184, 0.45) 8px)',
             borderRadius: '3px',
             boxShadow: '0 0 10px rgba(241, 245, 249, 0.15)',
             zIndex: 2
           }} />
-          
+
           {/* Attack lines */}
         <div style={{
                           position: 'absolute',
@@ -1577,7 +2036,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             background: 'rgba(255, 255, 255, 0.15)',
             zIndex: 1
           }} />
-                        <div style={{ 
+                        <div style={{
                           position: 'absolute',
             top: 0,
             bottom: 0,
@@ -1588,303 +2047,490 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }} />
 
           {/* Left side */}
-          <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-            position: 'relative',
-            height: '100%'
-          }}>
-          <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1.5fr 1fr',
-              gap: 'clamp(4px, 2vw, 12px)',
-              width: '100%',
-              height: '100%',
-              padding: 'clamp(4px, 2vw, 12px)'
-          }}>
-              {/* Back row (V, VI, I) - left side of left court */}
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-around',
-                alignItems: 'center'
-            }}>
-                <PlayerCircle number={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} />
-                <PlayerCircle number={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} />
-                <PlayerCircle number={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} />
-            </div>
-              {/* Front row (IV, III, II) - right side of left court (near net) */}
-            <div style={{ 
-          display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-around',
-                alignItems: 'center'
-            }}>
-                <PlayerCircle number={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} />
-                <PlayerCircle number={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} />
-                <PlayerCircle number={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} />
-          </div>
-        </div>
-        </div>
-
-          {/* Right side */}
-        <div style={{
+          <div
+            ref={(el) => { courtRef.current.left = el }}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'left')}
+            style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-            position: 'relative',
-            height: '100%'
-              }}>
+              position: 'relative',
+              height: '100%'
+            }}
+          >
+            {/* Circular arrows toggle for reception mode - only show when in advanced mode and receiving */}
+            {advancedMode.left && !leftServing && (
+              <button
+                onClick={() => toggleReceptionMode('left')}
+                style={{
+                  position: 'absolute',
+                  bottom: '8px',
+                  left: '8px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: receptionMode.left === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.15)',
+                  border: receptionMode.left === 'reception' ? '2px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.3)',
+                  color: receptionMode.left === 'reception' ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '16px',
+                  zIndex: 10,
+                  transition: 'all 0.2s'
+                }}
+                title={receptionMode.left === 'reception' ? 'Switch to standard view' : 'Switch to reception formation'}
+              >
+                🔄
+              </button>
+            )}
+
+            {/* Standard grid layout when NOT in advanced mode OR when serving OR when in standard mode */}
+            {(!advancedMode.left || leftServing || receptionMode.left === 'standard') ? (
               <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1.5fr',
-              gap: 'clamp(4px, 2vw, 12px)',
-              width: '100%',
-              height: '100%',
-              padding: 'clamp(4px, 2vw, 12px)'
+                display: 'grid',
+                gridTemplateColumns: '1.5fr 1fr',
+                gap: 'clamp(4px, 2vw, 12px)',
+                width: '100%',
+                height: '100%',
+                padding: 'clamp(4px, 2vw, 12px)'
               }}>
-              {/* Front row (II, III, IV) - left side of right court (near net) */}
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                justifyContent: 'space-around',
-                alignItems: 'center'
+                {/* Back row (V, VI, I) - left side of left court */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-around',
+                  alignItems: 'center'
                 }}>
-                <PlayerCircle number={rightLineup?.II} position="II" team={rightTeam} isServing={rightServing} />
-                <PlayerCircle number={rightLineup?.III} position="III" team={rightTeam} isServing={rightServing} />
-                <PlayerCircle number={rightLineup?.IV} position="IV" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle number={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle number={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle number={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} />
                 </div>
-              {/* Back row (I, VI, V) - right side of right court */}
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                justifyContent: 'space-around',
-                alignItems: 'center'
+                {/* Front row (IV, III, II) - right side of left court (near net) */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-around',
+                  alignItems: 'center'
                 }}>
-                <PlayerCircle number={rightLineup?.I} position="I" team={rightTeam} isServing={rightServing} />
-                <PlayerCircle number={rightLineup?.VI} position="VI" team={rightTeam} isServing={rightServing} />
-                <PlayerCircle number={rightLineup?.V} position="V" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle number={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle number={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle number={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} />
                 </div>
               </div>
+            ) : (
+              /* Advanced mode + reception - absolute positioning for reception formations */
+              /* Court perspective: Net is on RIGHT side (towards center), end line on LEFT */
+              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                {(() => {
+                  const setterPos = getSetterPosition(leftLineup, setterNumber.left)
+                  const formation = getFormationWithCustom('left', setterPos)
+                  // For left court: Net is on right
+                  // formation gives top (from net) and left (from left side looking at net from behind)
+                  // For horizontal court with net in middle:
+                  // - top in formation = distance from net = maps to distance from RIGHT edge of left half
+                  // - left in formation = horizontal position = maps directly to vertical position
+                  //   (left side of court = top, right side = bottom)
+                  return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => {
+                    const coords = formation[pos]
+                    // Transform: formation top -> distance from net (right edge)
+                    // formation left -> vertical position (left=top, right=bottom)
+                    const rightPercent = coords.top // Distance from net
+                    const topPercent = 100 - coords.left // Invert: formation left (0) = bottom, left (100) = top
+                    return (
+                      <div
+                        key={pos}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, 'left', pos)}
+                        style={{
+                          position: 'absolute',
+                          right: `${rightPercent}%`,
+                          top: `${topPercent}%`,
+                          transform: 'translate(50%, -50%) scale(0.8)',
+                          zIndex: 3,
+                          cursor: 'grab'
+                        }}
+                      >
+                        <PlayerCircle number={leftLineup?.[pos]} position={pos} team={leftTeam} isServing={leftServing} />
+                      </div>
+                    )
+                  })
+                })()}
               </div>
-            </div>
+            )}
           </div>
 
-      {/* Team labels between court and TO/SUB */}
+          {/* Right side */}
+          <div
+            ref={(el) => { courtRef.current.right = el }}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'right')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+              height: '100%'
+            }}
+          >
+            {/* Circular arrows toggle for reception mode - only show when in advanced mode and receiving */}
+            {advancedMode.right && !rightServing && (
+              <button
+                onClick={() => toggleReceptionMode('right')}
+                style={{
+                  position: 'absolute',
+                  bottom: '8px',
+                  right: '8px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: receptionMode.right === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.15)',
+                  border: receptionMode.right === 'reception' ? '2px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.3)',
+                  color: receptionMode.right === 'reception' ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '16px',
+                  zIndex: 10,
+                  transition: 'all 0.2s'
+                }}
+                title={receptionMode.right === 'reception' ? 'Switch to standard view' : 'Switch to reception formation'}
+              >
+                🔄
+              </button>
+            )}
+
+            {/* Standard grid layout when NOT in advanced mode OR when serving OR when in standard mode */}
+            {(!advancedMode.right || rightServing || receptionMode.right === 'standard') ? (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1.5fr',
+                gap: 'clamp(4px, 2vw, 12px)',
+                width: '100%',
+                height: '100%',
+                padding: 'clamp(4px, 2vw, 12px)'
+              }}>
+                {/* Front row (II, III, IV) - left side of right court (near net) */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-around',
+                  alignItems: 'center'
+                }}>
+                  <PlayerCircle number={rightLineup?.II} position="II" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle number={rightLineup?.III} position="III" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle number={rightLineup?.IV} position="IV" team={rightTeam} isServing={rightServing} />
+                </div>
+                {/* Back row (I, VI, V) - right side of right court */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-around',
+                  alignItems: 'center'
+                }}>
+                  <PlayerCircle number={rightLineup?.I} position="I" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle number={rightLineup?.VI} position="VI" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle number={rightLineup?.V} position="V" team={rightTeam} isServing={rightServing} />
+                </div>
+              </div>
+            ) : (
+              /* Advanced mode + reception - absolute positioning for reception formations */
+              /* Court perspective: Net is on LEFT side (towards center), end line on RIGHT */
+              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                {(() => {
+                  const setterPos = getSetterPosition(rightLineup, setterNumber.right)
+                  const formation = getFormationWithCustom('right', setterPos)
+                  // For right court: Net is on left
+                  // formation gives top (from net) and left (from left side looking at net from behind)
+                  // For horizontal court with net in middle:
+                  // - top in formation = distance from net = maps to distance from LEFT edge of right half
+                  // - left in formation = horizontal position = maps to vertical position
+                  return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => {
+                    const coords = formation[pos]
+                    // Transform: formation top -> distance from net (left edge)
+                    // formation left -> vertical position (need to flip for right side view)
+                    const leftPercent = coords.top // Distance from net
+                    const topPercent = 100 - coords.left // Invert: formation left (0) = bottom, left (100) = top
+                    return (
+                      <div
+                        key={pos}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, 'right', pos)}
+                        style={{
+                          position: 'absolute',
+                          left: `${leftPercent}%`,
+                          top: `${topPercent}%`,
+                          transform: 'translate(-50%, -50%) scale(0.8)',
+                          zIndex: 3,
+                          cursor: 'grab'
+                        }}
+                      >
+                        <PlayerCircle number={rightLineup?.[pos]} position={pos} team={rightTeam} isServing={rightServing} />
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      </div>{/* End SECTION 3: Court Area - 40% */}
+
+      {/* SECTION 4: Teams with TO/SUB counters - 10% */}
       <div style={{
+        flex: '0 0 10%',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: '4px 16px',
-        background: 'rgba(0, 0, 0, 0.15)'
+        background: 'rgba(0, 0, 0, 0.15)',
+        gap: '8px',
+        minHeight: 0,
+        overflow: 'hidden'
       }}>
-        <span style={{
-          fontSize: 'clamp(12px, 3vw, 18px)',
-          fontWeight: 700,
-          color: leftColor,
-          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: '50%'
-        }}>
-          {leftTeamData?.name || 'Team'}
-        </span>
-        <span style={{
-          fontSize: 'clamp(12px, 3vw, 18px)',
-          fontWeight: 700,
-          color: rightColor,
-          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: '50%'
-        }}>
-          {rightTeamData?.name || 'Team'}
-        </span>
-      </div>
-
-      {/* SECTION 4: Three Column Layout - TO/SUB | Info | TO/SUB */}
+        {/* Left team - name centered, TO/SUB below */}
         <div style={{
-          flex: '1 1 auto',
-          padding: '6px 12px',
-          background: 'rgba(0, 0, 0, 0.2)',
+          flex: 1,
           display: 'flex',
-          flexDirection: 'row',
-          gap: '12px',
-          overflow: 'hidden'
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '6px'
         }}>
-          {/* COLUMN 1: Left team TO/SUB counters - two column grid */}
-          <div style={{
-            flex: '1 1 0',
-            display: 'grid',
-            gridTemplateColumns: 'auto auto',
-            gap: 'clamp(4px, 0.5vw, 4px) clamp(4px, 1vw, 8px)',
-            justifyContent: 'center',
-            alignContent: 'center',
-            alignItems: 'center'
+          <span style={{
+            fontSize: 'clamp(14px, 4vw, 22px)',
+            fontWeight: 700,
+            color: leftColor,
+            textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '100%',
+            textAlign: 'center'
           }}>
-            <span style={{
-              fontSize: 'clamp(10px, 20px, 40px)',
-              fontWeight: 700,
-              color: leftStats.timeouts >= 2 ? '#ef4444' : 'inherit',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '4px',
-              padding: '4px 8px',
-              textAlign: 'center',
-              background: 'rgba(255, 255, 255, 0.1)',
-            }}>
-              {leftStats.timeouts}
-            </span>
-            <span style={{ fontSize: 'clamp(20px, 4.5vw, 50px)', color: 'var(--muted)', textAlign: 'center', fontWeight: 700 }}>TO</span>
-            <span style={{
-              fontSize: 'clamp(10px, 20px, 40px)',
-              fontWeight: 700,
-              color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'inherit',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '4px',
-              padding: '4px 8px',
-              background: 'rgba(255, 255, 255, 0.1)',
-            }}>
-              {leftStats.substitutions}
-            </span>
-            <span style={{ fontSize:'clamp(10px, 20px, 40px)', color: 'var(--muted)', textAlign: 'center', fontWeight: 700 }}>SUB</span>
-           
-          </div>
-
-          {/* COLUMN 2: Information area (substitutions, TO, alerts, last action, rally status, countdowns) */}
+            {leftTeamData?.name || 'Team'}
+          </span>
           <div style={{
-            flex: '1 1 auto',
             display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            background: 'rgba(15, 23, 42, 0.4)',
-            borderRadius: '8px',
-            padding: '8px',
-            overflow: 'hidden'
+            gap: '16px',
+            fontSize: 'clamp(16px, 4vw, 24px)',
+            fontWeight: 700
           }}>
-            {/* Show timeout countdown if active */}
-            {timeoutModal && (
-              <div style={{
-                textAlign: 'center',
-                padding: 'clamp(4px, 1vw, 8px)',
-                background: 'rgba(251, 191, 36, 0.2)',
-                borderRadius: '6px',
-                border: '2px solid var(--accent)',
-                marginBottom: 'clamp(4px, 1vw, 8px)',
-                width: '100%'
-              }}>
-                <div style={{ fontSize: 'clamp(10px, 2vw, 12px)', color: 'var(--muted)', marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>TIMEOUT</div>
-                <div style={{ fontSize: 'clamp(11px, 2.5vw, 14px)', fontWeight: 600 }}>
-                  {timeoutModal.team === 'home' ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home') : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')}
-                </div>
-                <div style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: 'var(--accent)' }}>
-                  {timeoutModal.countdown}"
-                </div>
-              </div>
-            )}
-
-            {/* Show between-sets countdown if active */}
-            {betweenSetsCountdown && betweenSetsCountdown.countdown > 0 && (
-              <div style={{
-                textAlign: 'center',
-                padding: 'clamp(4px, 1vw, 8px)',
-                background: 'rgba(34, 197, 94, 0.2)',
-                borderRadius: '6px',
-                border: '2px solid #22c55e',
-                marginBottom: 'clamp(4px, 1vw, 8px)',
-                width: '100%'
-              }}>
-                <div style={{ fontSize: 'clamp(10px, 2vw, 12px)', color: 'var(--muted)', marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>INTERVAL</div>
-                <div style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: '#22c55e' }}>
-                  {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
-                </div>
-              </div>
-            )}
-
-            {/* Show substitution modal info if active */}
-            {substitutionModal && (
-              <div style={{
-                textAlign: 'center',
-                padding: 'clamp(4px, 1vw, 8px)',
-                background: 'rgba(59, 130, 246, 0.2)',
-                borderRadius: '6px',
-                border: '2px solid #3b82f6',
-                marginBottom: 'clamp(4px, 1vw, 8px)',
-                width: '100%'
-              }}>
-                <div style={{ fontSize: 'clamp(10px, 2vw, 12px)', color: 'var(--muted)', marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>
-                  {substitutionModal.isExceptional ? 'EXCEPTIONAL SUB' : 'SUBSTITUTION'}
-                </div>
-                <div style={{ fontSize: 'clamp(11px, 2.5vw, 14px)', fontWeight: 600, marginBottom: 'clamp(2px, 0.5vw, 4px)' }}>
-                  {substitutionModal.teamName}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(6px, 2vw, 12px)' }}>
-                  <span style={{ color: '#ef4444', fontWeight: 700, fontSize: 'clamp(16px, 4vw, 20px)' }}>#{substitutionModal.playerOut}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.5)' }}>→</span>
-                  <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 'clamp(16px, 4vw, 20px)' }}>#{substitutionModal.playerIn}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Default: Rally status / waiting */}
-            {!timeoutModal && !substitutionModal && (!betweenSetsCountdown || betweenSetsCountdown.countdown <= 0) && (
-              <div style={{
-                textAlign: 'center',
-                padding: 'clamp(4px, 1vw, 8px)',
-                color: 'var(--muted)',
-                fontSize: 'clamp(11px, 2.5vw, 14px)'
-              }}>
-                {data?.rallyStatus === 'in_play' ? (
-                  <div style={{ color: '#22c55e', fontWeight: 600 }}>Rally in progress...</div>
-                ) : (
-                  <div>Waiting for action</div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* COLUMN 3: Right team TO/SUB counters - two column grid */}
-          <div style={{
-            flex: '1 1 0',
-            display: 'grid',
-            gridTemplateColumns: 'auto auto',
-            gap: 'clamp(4px, 0.5vw, 4px) clamp(4px, 1vw, 8px)',
-            justifyContent: 'center',
-            alignContent: 'center',
-            alignItems: 'center'
-          }}>
-            <span style={{ fontSize:'clamp(10px, 20px, 40px)', color: 'var(--muted)', textAlign: 'center', fontWeight: 700 }}>TO</span>
             <span style={{
-              fontSize: 'clamp(10px, 20px, 40px)',
-              fontWeight: 700,
-              color: rightStats.timeouts >= 2 ? '#ef4444' : 'inherit',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '4px',
-              padding: '4px 8px',
-              textAlign: 'center',
-              background: 'rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
             }}>
-              {rightStats.timeouts}
+              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>TO</span>
+              <span style={{
+                background: 'rgba(255, 255, 255, 0.15)',
+                padding: '2px 10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                minWidth: '32px',
+                textAlign: 'center'
+              }}>{leftStats.timeouts}</span>
             </span>
-            <span style={{ fontSize:'clamp(10px, 20px, 40px)', color: 'var(--muted)', textAlign: 'center', fontWeight: 700 }}>SUB</span>
             <span style={{
-              fontSize: 'clamp(10px, 20px, 40px)',
-              fontWeight: 700,
-              color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'inherit',
-  
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '4px',
-              padding: '4px 8px',
-              textAlign: 'center',
-              background: 'rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
             }}>
-              {rightStats.substitutions}
+              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>SUB</span>
+              <span style={{
+                background: 'rgba(255, 255, 255, 0.15)',
+                padding: '2px 10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                minWidth: '32px',
+                textAlign: 'center'
+              }}>{leftStats.substitutions}</span>
             </span>
           </div>
         </div>
+
+        {/* Right team - name centered, TO/SUB below */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          <span style={{
+            fontSize: 'clamp(14px, 4vw, 22px)',
+            fontWeight: 700,
+            color: rightColor,
+            textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '100%',
+            textAlign: 'center'
+          }}>
+            {rightTeamData?.name || 'Team'}
+          </span>
+          <div style={{
+            display: 'flex',
+            gap: '16px',
+            fontSize: 'clamp(16px, 4vw, 24px)',
+            fontWeight: 700
+          }}>
+            <span style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: rightStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
+            }}>
+              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>TO</span>
+              <span style={{
+                background: 'rgba(255, 255, 255, 0.15)',
+                padding: '2px 10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                minWidth: '32px',
+                textAlign: 'center'
+              }}>{rightStats.timeouts}</span>
+            </span>
+            <span style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
+            }}>
+              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>SUB</span>
+              <span style={{
+                background: 'rgba(255, 255, 255, 0.15)',
+                padding: '2px 10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                minWidth: '32px',
+                textAlign: 'center'
+              }}>{rightStats.substitutions}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 5: Actions Area - 20% */}
+        <div style={{
+          flex: '0 0 20%',
+          padding: '6px 12px',
+          background: 'rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'hidden',
+          minHeight: 0
+        }}>
+          {/* Show timeout countdown if active */}
+          {timeoutModal && (
+            <div style={{
+              textAlign: 'center',
+              padding: 'clamp(8px, 2vw, 16px)',
+              background: 'rgba(251, 191, 36, 0.2)',
+              borderRadius: '8px',
+              border: '2px solid var(--accent)',
+              width: '100%',
+              maxWidth: '400px'
+            }}>
+              <div style={{ fontSize: 'clamp(12px, 3vw, 16px)', color: 'var(--muted)', marginBottom: 'clamp(4px, 1vw, 8px)' }}>TIMEOUT</div>
+              <div style={{ fontSize: 'clamp(14px, 3.5vw, 18px)', fontWeight: 600 }}>
+                {timeoutModal.team === 'home' ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home') : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')}
+              </div>
+              <div style={{ fontSize: 'clamp(32px, 8vw, 48px)', fontWeight: 800, color: 'var(--accent)' }}>
+                {timeoutModal.countdown}"
+              </div>
+            </div>
+          )}
+
+          {/* Show between-sets countdown if active */}
+          {betweenSetsCountdown && betweenSetsCountdown.countdown > 0 && (
+            <div style={{
+              textAlign: 'center',
+              padding: 'clamp(8px, 2vw, 16px)',
+              background: 'rgba(34, 197, 94, 0.2)',
+              borderRadius: '8px',
+              border: '2px solid #22c55e',
+              width: '100%',
+              maxWidth: '400px'
+            }}>
+              <div style={{ fontSize: 'clamp(12px, 3vw, 16px)', color: 'var(--muted)', marginBottom: 'clamp(4px, 1vw, 8px)' }}>INTERVAL</div>
+              <div style={{ fontSize: 'clamp(32px, 8vw, 48px)', fontWeight: 800, color: '#22c55e' }}>
+                {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+              </div>
+            </div>
+          )}
+
+          {/* Show substitution modal info if active */}
+          {substitutionModal && (
+            <div style={{
+              textAlign: 'center',
+              padding: 'clamp(8px, 2vw, 16px)',
+              background: 'rgba(59, 130, 246, 0.2)',
+              borderRadius: '8px',
+              border: '2px solid #3b82f6',
+              width: '100%',
+              maxWidth: '400px'
+            }}>
+              <div style={{ fontSize: 'clamp(12px, 3vw, 16px)', color: 'var(--muted)', marginBottom: 'clamp(4px, 1vw, 8px)' }}>
+                {substitutionModal.isExceptional ? 'EXCEPTIONAL SUB' : 'SUBSTITUTION'}
+              </div>
+              <div style={{ fontSize: 'clamp(14px, 3.5vw, 18px)', fontWeight: 600, marginBottom: 'clamp(4px, 1vw, 8px)' }}>
+                {substitutionModal.teamName}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(12px, 4vw, 24px)' }}>
+                <span style={{ color: '#ef4444', fontWeight: 700, fontSize: 'clamp(24px, 6vw, 36px)' }}>#{substitutionModal.playerOut}</span>
+                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 'clamp(20px, 5vw, 28px)' }}>→</span>
+                <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 'clamp(24px, 6vw, 36px)' }}>#{substitutionModal.playerIn}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Default: Show favicon when no action */}
+          {!timeoutModal && !substitutionModal && (!betweenSetsCountdown || betweenSetsCountdown.countdown <= 0) && (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              minHeight: 0,
+              overflow: 'hidden'
+            }}>
+              {data?.rallyStatus === 'in_play' ? (
+                <div style={{
+                  color: '#22c55e',
+                  fontWeight: 600,
+                  fontSize: 'clamp(18px, 5vw, 28px)',
+                  textAlign: 'center'
+                }}>
+                  Rally in progress...
+                </div>
+              ) : (
+                <img
+                  src={favicon}
+                  alt=""
+                  style={{
+                    maxHeight: '100%',
+                    maxWidth: '100%',
+                    width: 'auto',
+                    height: 'auto',
+                    objectFit: 'contain'
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>{/* End main content wrapper */}
     </div>
   )
 }
