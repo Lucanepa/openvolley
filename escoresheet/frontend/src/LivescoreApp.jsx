@@ -3,7 +3,9 @@ import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailabl
 import { getServerStatus } from './utils/networkInfo'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
+import TestModeControls from './components/TestModeControls'
 import mikasaVolleyball from './mikasa_v200w.png'
+import { Results } from '../scoresheet_pdf/components/FooterSection'
 
 // Helper function to determine if a color is bright
 const isBrightColor = (color) => {
@@ -513,14 +515,104 @@ export default function LivescoreApp() {
   const leftIsServing = currentServe === (leftIsHome ? 'home' : 'away')
   const rightIsServing = currentServe === (leftIsHome ? 'away' : 'home')
 
-  // Check if game exists and is in progress
+  // Calculate set results for Results component (when match ends)
+  const calculateSetResults = useMemo(() => {
+    if (!data) return []
+
+    const { match, sets, events } = data
+    const localTeamAKey = match?.coinTossTeamA || 'home'
+    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
+
+    const results = []
+    for (let setNum = 1; setNum <= 5; setNum++) {
+      const setInfo = sets?.find(s => s.index === setNum)
+      const setEvents = events?.filter(e => e.setIndex === setNum) || []
+
+      const isSetFinished = setInfo?.finished === true
+
+      const teamAPoints = isSetFinished
+        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+      const teamBPoints = isSetFinished
+        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+
+      const teamATimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBTimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamASubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBSubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamAPoints > teamBPoints ? 1 : 0)
+        : null
+      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamBPoints > teamAPoints ? 1 : 0)
+        : null
+
+      let duration = ''
+      if (isSetFinished && setInfo?.endTime) {
+        let start
+        if (setNum === 1 && match?.scheduledAt) {
+          start = new Date(match.scheduledAt)
+        } else if (setInfo?.startTime) {
+          start = new Date(setInfo.startTime)
+        } else {
+          start = new Date()
+        }
+        const end = new Date(setInfo.endTime)
+        const durationMs = end.getTime() - start.getTime()
+        const minutes = Math.floor(durationMs / 60000)
+        duration = minutes > 0 ? `${minutes}'` : ''
+      }
+
+      results.push({
+        setNumber: setNum,
+        teamATimeouts,
+        teamASubstitutions,
+        teamAWon,
+        teamAPoints,
+        teamBTimeouts,
+        teamBSubstitutions,
+        teamBWon,
+        teamBPoints,
+        duration
+      })
+    }
+    return results
+  }, [data])
+
+  // Match finished info
+  const isMatchFinished = useMemo(() => {
+    if (!data?.match) return false
+    return data.match.status === 'final' || setScore.home === 3 || setScore.away === 3
+  }, [data?.match, setScore])
+
+  const matchWinner = useMemo(() => {
+    if (!isMatchFinished || !data) return ''
+    return setScore.home > setScore.away
+      ? (data.homeTeam?.name || 'Home')
+      : (data.awayTeam?.name || 'Away')
+  }, [isMatchFinished, data, setScore])
+
+  const matchResult = useMemo(() => {
+    if (!isMatchFinished) return ''
+    return `3:${Math.min(setScore.home, setScore.away)}`
+  }, [isMatchFinished, setScore])
+
+  // Check if game exists and is in progress (don't set error for finished matches - we show results instead)
   useEffect(() => {
     if (gameId && data?.match) {
-      if (data.match.status === 'final') {
-        setError('Game not in progress or not existing')
-      } else {
-        setError('')
-      }
+      // Don't set error for finished matches - we'll show results
+      setError('')
     } else if (gameId && dataError) {
       setError(dataError)
     } else if (gameId && !data && !loading) {
@@ -722,8 +814,8 @@ export default function LivescoreApp() {
     )
   }
 
-  // Show error if game doesn't exist or is not in progress
-  if (error || !data?.match || data.match.status === 'final') {
+  // Show error if game doesn't exist (but not for finished matches)
+  if (error || !data?.match) {
     return (
       <div style={{
         minHeight: '100vh',
@@ -785,6 +877,123 @@ export default function LivescoreApp() {
             Enter Different Game Number
           </button>
         </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show results when match is finished
+  if (isMatchFinished) {
+    const teamAShortName = data.match?.coinTossTeamA === 'home'
+      ? (data.match?.homeShortName || data.homeTeam?.shortName || data.homeTeam?.name || 'Home')
+      : (data.match?.awayShortName || data.awayTeam?.shortName || data.awayTeam?.name || 'Away')
+    const teamBShortName = data.match?.coinTossTeamA === 'home'
+      ? (data.match?.awayShortName || data.awayTeam?.shortName || data.awayTeam?.name || 'Away')
+      : (data.match?.homeShortName || data.homeTeam?.shortName || data.homeTeam?.name || 'Home')
+
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#fff',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      }}>
+        <SimpleHeader
+          title="Match Finished"
+          wakeLockActive={wakeLockActive}
+          toggleWakeLock={toggleWakeLock}
+          connectionStatuses={connectionStatuses}
+          onBack={() => {
+            setGameId(null)
+            setGameIdInput('')
+            setError('')
+          }}
+          backLabel="Back"
+        />
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          gap: '24px'
+        }}>
+          {/* Match Ended Banner */}
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 500,
+            color: 'rgba(255, 255, 255, 0.7)',
+            textTransform: 'uppercase',
+            letterSpacing: '2px'
+          }}>
+            The match has ended
+          </div>
+
+          {/* Winner and Result */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              fontSize: '32px',
+              fontWeight: 700,
+              marginBottom: '8px'
+            }}>
+              {matchWinner}
+            </div>
+            <div style={{
+              fontSize: '48px',
+              fontWeight: 800,
+              color: 'var(--accent)'
+            }}>
+              {matchResult}
+            </div>
+          </div>
+
+          {/* Results Table */}
+          <div style={{
+            width: '100%',
+            maxWidth: '500px',
+            background: 'white',
+            borderRadius: '12px',
+            overflow: 'hidden'
+          }}>
+            <Results
+              teamAShortName={teamAShortName}
+              teamBShortName={teamBShortName}
+              setResults={calculateSetResults}
+              winner={matchWinner}
+              result={matchResult}
+            />
+          </div>
+
+          <button
+            onClick={() => {
+              setGameId(null)
+              setGameIdInput('')
+              setError('')
+            }}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'background 0.2s',
+              marginTop: '16px'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            Back to Games
+          </button>
         </div>
       </div>
     )
@@ -1057,6 +1266,34 @@ export default function LivescoreApp() {
           {setScore.right}
         </div>
       </div>
+
+      {/* Test Mode Controls - only shown in test mode */}
+      {(data?.match?.id === -1 || data?.match?.test === true) && (
+        <TestModeControls
+          matchId={data?.match?.id}
+          onRefresh={() => {
+            // Trigger a data refresh by re-fetching
+            if (gameId) {
+              getMatchData(gameId).then(result => {
+                if (result.success) {
+                  const currentSet = (result.sets || []).find(s => !s.finished) ||
+                                   (result.sets || []).sort((a, b) => b.index - a.index)[0]
+                  setData({
+                    match: result.match,
+                    homeTeam: result.homeTeam,
+                    awayTeam: result.awayTeam,
+                    homePlayers: result.homePlayers || [],
+                    awayPlayers: result.awayPlayers || [],
+                    sets: result.sets || [],
+                    events: result.events || [],
+                    set: currentSet
+                  })
+                }
+              })
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

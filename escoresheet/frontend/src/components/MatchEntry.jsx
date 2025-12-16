@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { getMatchData, subscribeToMatchData, updateMatchData } from '../utils/serverDataSync'
 import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { Results } from '../../scoresheet_pdf/components/FooterSection'
+import TestModeControls from './TestModeControls'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const [now, setNow] = useState(new Date())
@@ -245,6 +247,98 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     }
     return { team: teamWins, opponent: opponentWins }
   }, [data?.allSets, team])
+
+  // Check if match is finished
+  const isMatchFinished = useMemo(() => {
+    return setScore.team === 3 || setScore.opponent === 3
+  }, [setScore])
+
+  // Calculate set results for Results component
+  const calculateSetResults = useMemo(() => {
+    if (!data) return []
+
+    const { match, allSets, events } = data
+    const localTeamAKey = match?.coinTossTeamA || 'home'
+    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
+
+    const results = []
+    for (let setNum = 1; setNum <= 5; setNum++) {
+      const setInfo = allSets?.find(s => s.index === setNum)
+      const setEvents = events?.filter(e => e.setIndex === setNum) || []
+
+      const isSetFinished = setInfo?.finished === true
+
+      const teamAPoints = isSetFinished
+        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+      const teamBPoints = isSetFinished
+        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+
+      const teamATimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBTimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamASubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBSubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamAPoints > teamBPoints ? 1 : 0)
+        : null
+      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamBPoints > teamAPoints ? 1 : 0)
+        : null
+
+      let duration = ''
+      if (isSetFinished && setInfo?.endTime) {
+        let start
+        if (setNum === 1 && match?.scheduledAt) {
+          start = new Date(match.scheduledAt)
+        } else if (setInfo?.startTime) {
+          start = new Date(setInfo.startTime)
+        } else {
+          start = new Date()
+        }
+        const end = new Date(setInfo.endTime)
+        const durationMs = end.getTime() - start.getTime()
+        const minutes = Math.floor(durationMs / 60000)
+        duration = minutes > 0 ? `${minutes}'` : ''
+      }
+
+      results.push({
+        setNumber: setNum,
+        teamATimeouts,
+        teamASubstitutions,
+        teamAWon,
+        teamAPoints,
+        teamBTimeouts,
+        teamBSubstitutions,
+        teamBWon,
+        teamBPoints,
+        duration
+      })
+    }
+    return results
+  }, [data])
+
+  // Match finished info
+  const matchWinner = useMemo(() => {
+    if (!isMatchFinished || !data) return ''
+    const teamWon = setScore.team > setScore.opponent
+    return teamWon ? teamInfo.name : opponentInfo.name
+  }, [isMatchFinished, data, setScore, teamInfo, opponentInfo])
+
+  const matchResult = useMemo(() => {
+    if (!isMatchFinished) return ''
+    return `3:${Math.min(setScore.team, setScore.opponent)}`
+  }, [isMatchFinished, setScore])
 
   // Get timeouts used in current set
   const timeoutsUsed = useMemo(() => {
@@ -579,6 +673,98 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     })
   const position1Player = playersOnCourt.find(p => p.position === 'I')
   const showBall = isServing && position1Player
+
+  // Show results when match is finished
+  if (isMatchFinished) {
+    const teamAShortName = data?.match?.coinTossTeamA === 'home'
+      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+    const teamBShortName = data?.match?.coinTossTeamA === 'home'
+      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+
+    return (
+      <div style={{
+        minHeight: embedded ? 'auto' : '100vh',
+        height: embedded ? '100%' : 'auto',
+        background: embedded ? 'transparent' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#fff',
+        padding: embedded ? '12px' : '20px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '24px'
+      }}>
+        {/* Match Ended Banner */}
+        <div style={{
+          fontSize: '18px',
+          fontWeight: 500,
+          color: 'rgba(255, 255, 255, 0.7)',
+          textTransform: 'uppercase',
+          letterSpacing: '2px'
+        }}>
+          The match has ended
+        </div>
+
+        {/* Winner and Result */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontSize: '32px',
+            fontWeight: 700,
+            marginBottom: '8px'
+          }}>
+            {matchWinner}
+          </div>
+          <div style={{
+            fontSize: '48px',
+            fontWeight: 800,
+            color: 'var(--accent)'
+          }}>
+            {matchResult}
+          </div>
+        </div>
+
+        {/* Results Table */}
+        <div style={{
+          width: '100%',
+          maxWidth: '500px',
+          background: 'white',
+          borderRadius: '12px',
+          overflow: 'hidden'
+        }}>
+          <Results
+            teamAShortName={teamAShortName}
+            teamBShortName={teamBShortName}
+            setResults={calculateSetResults}
+            winner={matchWinner}
+            result={matchResult}
+          />
+        </div>
+
+        {!embedded && (
+          <button
+            onClick={onBack}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'background 0.2s',
+              marginTop: '16px'
+            }}
+          >
+            Back
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -1323,6 +1509,23 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         )}
         </div>
       </div>
+
+      {/* Test Mode Controls - only shown in test mode */}
+      {(matchId === -1 || data?.match?.test === true) && (
+        <TestModeControls
+          matchId={matchId}
+          onRefresh={() => {
+            // Force re-fetch data
+            if (matchId && matchId !== -1) {
+              getMatchData(matchId).then(result => {
+                if (result.success) {
+                  setData(result)
+                }
+              })
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

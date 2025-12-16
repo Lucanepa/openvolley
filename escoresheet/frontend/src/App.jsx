@@ -28,7 +28,9 @@ import {
   TEST_MATCH_DEFAULTS,
   TEST_HOME_BENCH,
   TEST_AWAY_BENCH,
-  getNextTestMatchStartTime
+  getNextTestMatchStartTime,
+  getTestHomeTeamShortName,
+  getTestAwayTeamShortName
 } from './constants/testSeeds'
 import { supabase } from './lib/supabaseClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
@@ -1791,6 +1793,7 @@ export default function App() {
 
     const homeTeamId = await db.teams.add({
       name: homeTeamData?.name || 'Home',
+      shortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
       color: homeTeamData?.color || '#3b82f6',
       seedKey: homeTeamData?.seed_key || TEST_HOME_TEAM_EXTERNAL_ID,
       externalId: homeTeamData?.external_id || TEST_HOME_TEAM_EXTERNAL_ID,
@@ -1801,6 +1804,7 @@ export default function App() {
 
     const awayTeamId = await db.teams.add({
       name: awayTeamData?.name || 'Away',
+      shortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
       color: awayTeamData?.color || '#ef4444',
       seedKey: awayTeamData?.seed_key || TEST_AWAY_TEAM_EXTERNAL_ID,
       externalId: awayTeamData?.external_id || TEST_AWAY_TEAM_EXTERNAL_ID,
@@ -2295,6 +2299,7 @@ export default function App() {
           const timestamp = new Date().toISOString()
           const teamId = await db.teams.add({
             name: definition.name,
+            shortName: definition.shortName,
             color: definition.color,
             seedKey: definition.seedKey,
             test: true,
@@ -2323,12 +2328,18 @@ export default function App() {
           team = {
             id: teamId,
             name: definition.name,
+            shortName: definition.shortName,
             color: definition.color,
             seedKey: definition.seedKey,
             test: true,
             createdAt: timestamp
           }
         } else {
+          // Update shortName if it doesn't match the seed definition
+          if (team.shortName !== definition.shortName) {
+            await db.teams.update(team.id, { shortName: definition.shortName })
+            team = { ...team, shortName: definition.shortName }
+          }
           const playerCount = await db.players.where('teamId').equals(team.id).count()
           if (playerCount === 0) {
             const timestamp = new Date().toISOString()
@@ -2605,6 +2616,8 @@ export default function App() {
         status: 'scheduled',
         homeTeamId: homeTeam.id,
         awayTeamId: awayTeam.id,
+        homeShortName: homeTeam.shortName,
+        awayShortName: awayTeam.shortName,
         hall: TEST_MATCH_DEFAULTS.hall,
         city: TEST_MATCH_DEFAULTS.city,
         league: TEST_MATCH_DEFAULTS.league,

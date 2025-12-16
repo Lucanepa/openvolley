@@ -5,6 +5,8 @@ import favicon from '../favicon.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
 import { db } from '../db/db'
+import { Results } from '../../scoresheet_pdf/components/FooterSection'
+import TestModeControls from './TestModeControls'
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
@@ -1150,6 +1152,187 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         
         {/* Player number */}
         {number}
+      </div>
+    )
+  }
+
+  // Check if match is finished
+  const isMatchFinished = setScore.home === 3 || setScore.away === 3
+
+  // Calculate set results for Results component
+  const calculateSetResults = useMemo(() => {
+    if (!data) return []
+
+    const { match, sets, events } = data
+    const localTeamAKey = match?.coinTossTeamA || 'home'
+    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
+
+    const results = []
+    for (let setNum = 1; setNum <= 5; setNum++) {
+      const setInfo = sets?.find(s => s.index === setNum)
+      const setEvents = events?.filter(e => e.setIndex === setNum) || []
+
+      const isSetFinished = setInfo?.finished === true
+
+      const teamAPoints = isSetFinished
+        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+      const teamBPoints = isSetFinished
+        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+
+      const teamATimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBTimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamASubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBSubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamAPoints > teamBPoints ? 1 : 0)
+        : null
+      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamBPoints > teamAPoints ? 1 : 0)
+        : null
+
+      let duration = ''
+      if (isSetFinished && setInfo?.endTime) {
+        let start
+        if (setNum === 1 && match?.scheduledAt) {
+          start = new Date(match.scheduledAt)
+        } else if (setInfo?.startTime) {
+          start = new Date(setInfo.startTime)
+        } else {
+          start = new Date()
+        }
+        const end = new Date(setInfo.endTime)
+        const durationMs = end.getTime() - start.getTime()
+        const minutes = Math.floor(durationMs / 60000)
+        duration = minutes > 0 ? `${minutes}'` : ''
+      }
+
+      results.push({
+        setNumber: setNum,
+        teamATimeouts,
+        teamASubstitutions,
+        teamAWon,
+        teamAPoints,
+        teamBTimeouts,
+        teamBSubstitutions,
+        teamBWon,
+        teamBPoints,
+        duration
+      })
+    }
+    return results
+  }, [data])
+
+  // Match finished info
+  const matchWinner = isMatchFinished && data
+    ? (setScore.home > setScore.away
+        ? (data.homeTeam?.name || 'Home')
+        : (data.awayTeam?.name || 'Away'))
+    : ''
+
+  const matchResult = isMatchFinished
+    ? `3:${Math.min(setScore.home, setScore.away)}`
+    : ''
+
+  // Show results when match is finished
+  if (isMatchFinished) {
+    const teamAShortName = data?.match?.coinTossTeamA === 'home'
+      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+    const teamBShortName = data?.match?.coinTossTeamA === 'home'
+      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+
+    return (
+      <div style={{
+        height: '100vh',
+        width: '100vw',
+        maxWidth: '800px',
+        margin: '0 auto',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#fff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '24px',
+        padding: '20px'
+      }}>
+        {/* Match Ended Banner */}
+        <div style={{
+          fontSize: '18px',
+          fontWeight: 500,
+          color: 'rgba(255, 255, 255, 0.7)',
+          textTransform: 'uppercase',
+          letterSpacing: '2px'
+        }}>
+          The match has ended
+        </div>
+
+        {/* Winner and Result */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontSize: '32px',
+            fontWeight: 700,
+            marginBottom: '8px'
+          }}>
+            {matchWinner}
+          </div>
+          <div style={{
+            fontSize: '48px',
+            fontWeight: 800,
+            color: 'var(--accent)'
+          }}>
+            {matchResult}
+          </div>
+        </div>
+
+        {/* Results Table */}
+        <div style={{
+          width: '100%',
+          maxWidth: '500px',
+          background: 'white',
+          borderRadius: '12px',
+          overflow: 'hidden'
+        }}>
+          <Results
+            teamAShortName={teamAShortName}
+            teamBShortName={teamBShortName}
+            setResults={calculateSetResults}
+            winner={matchWinner}
+            result={matchResult}
+          />
+        </div>
+
+        <button
+          onClick={onExit}
+          style={{
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: 600,
+            background: 'rgba(255, 255, 255, 0.1)',
+            color: '#fff',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+            marginTop: '16px'
+          }}
+        >
+          Exit
+        </button>
       </div>
     )
   }
@@ -2644,6 +2827,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           )}
         </div>
       </div>{/* End main content wrapper */}
+
+      {/* Test Mode Controls - only shown in test mode */}
+      {(matchId === -1 || data?.match?.test === true) && (
+        <TestModeControls
+          matchId={matchId}
+          onRefresh={() => {
+            // Force re-fetch data
+            if (matchId && matchId !== -1) {
+              getMatchData(matchId).then(result => {
+                if (result.success) {
+                  setData(result)
+                }
+              })
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
