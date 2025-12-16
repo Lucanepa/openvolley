@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import swissvolleyLogo from './swissvolleylogo.jpg';
 import favicon from '../../src/favicon.png';
 
+// 75% black border color
+const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
+
 interface HeaderProps {
   match?: any;
   homeTeam?: any;
@@ -23,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
   const timeStr = scheduledDate ? scheduledDate.toTimeString().slice(0, 5) : '';
 
   return (
-    <header className="border border-black p-0.5 mb-1 bg-white">
+    <header className="border p-0.5 mb-1 bg-white" style={borderColor75}>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-1 mb-1">
         <div className="flex items-center justify-center min-w-[140px]">
             {/* Swiss Volley Logo Section with Fallback */}
@@ -43,10 +46,10 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
         
         <div className="flex-1 w-full md:w-auto grid grid-cols-1 md:grid-cols-4 gap-0.5 text-xs min-w-0 overflow-hidden">
             {/* Match Type Block */}
-            <div className="border border-black p-2 min-w-0 overflow-hidden">
+            <div className="border p-2 min-w-0 overflow-hidden" style={borderColor75}>
                 <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {(match?.matchType === 'championship' || match?.match_type_1 === 'championship') && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -54,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <span className="text-[8px]">Championship</span>
                     </div>
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {(match?.matchType === 'cup' || match?.match_type_1 === 'cup') && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -62,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <span className="text-[8px]">Cup</span>
                     </div>
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {(match?.matchType === 'friendly' || match?.match_type_1 === 'friendly') && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -70,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <span className="text-[8px]">Friendly</span>
                     </div>
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {(match?.matchType === 'tournament' || match?.match_type_1 === 'tournament') && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -81,10 +84,10 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             </div>
             
             {/* Championship Type Block */}
-            <div className="border border-black p-2 min-w-0 overflow-hidden">
+            <div className="border p-2 min-w-0 overflow-hidden" style={borderColor75}>
                 <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {match?.championshipType === 'regional' && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -92,7 +95,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <span className="text-[8px]">Regional</span>
                     </div>
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {match?.championshipType === 'national' && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -100,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <span className="text-[8px]">National</span>
                     </div>
                     <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                        <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                             {match?.championshipType === 'international' && (
                                 <span className="text-[10px] font-bold leading-none">X</span>
                             )}
@@ -130,10 +133,10 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             </div>
             
             {/* Category Block */}
-            <div className="border border-black p-2 min-w-0 overflow-hidden">
+            <div className="border p-2 min-w-0 overflow-hidden" style={borderColor75}>
                 <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
-                         <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                         <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                              {(match?.category === 'men' || match?.match_type_2 === 'men') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
@@ -141,7 +144,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <span className="text-[8px]">Men</span>
                      </div>
                      <div className="flex items-center gap-0.5">
-                         <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                         <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                              {(match?.level === 'U23' || match?.match_type_3 === 'U23') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
@@ -149,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <span className="text-[8px]">U23</span>
                      </div>
                      <div className="flex items-center gap-0.5">
-                         <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                         <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                              {(match?.level === 'U17' || match?.match_type_3 === 'U17') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
@@ -157,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <span className="text-[8px]">U17</span>
                      </div>
                      <div className="flex items-center gap-0.5">
-                         <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                         <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                              {(match?.category === 'women' || match?.match_type_2 === 'women') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
@@ -165,7 +168,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <span className="text-[8px]">Women</span>
                      </div>
                      <div className="flex items-center gap-0.5">
-                         <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                         <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                              {(match?.level === 'U19' || match?.match_type_3 === 'U19') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
@@ -173,7 +176,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <span className="text-[8px]">U19</span>
                      </div>
                       <div className="flex items-center gap-0.5">
-                         <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative`}>
+                         <div className={`w-2.5 h-2.5 border bg-white flex items-center justify-center relative`} style={borderColor75}>
                              {(match?.level === 'other' || (match?.match_type_3 === 'other' && match?.match_type_3_other)) && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
@@ -195,7 +198,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
              </div>
 
             {/* Match ID Block */}
-             <div className="border border-black p-0.5 flex flex-col h-full text-xs justify-center min-w-0 overflow-hidden">
+             <div className="border p-0.5 flex flex-col h-full text-xs justify-center min-w-0 overflow-hidden" style={borderColor75}>
                 <div className="flex justify-between items-center pl-2 flex-1">
                     <span>League:</span>
                     <div className="w-1/2 text-center uppercase text-xs font-bold">{match?.league || ''}</div>
@@ -225,23 +228,23 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
       </div>
 
       {/* Teams and Location */}
-      <div className="grid grid-cols-12 gap-0 border-t border-black pt-1 mt-1 text-xs">
+      <div className="grid grid-cols-12 gap-0 border-t pt-1 mt-1 text-xs" style={borderColor75}>
         {/* Teams: 2/3rds width =8 cols */}
-        <div className="col-span-6 border-r order-black px-2 flex flex-col justify-between">
+        <div className="col-span-6 border-r px-2 flex flex-col justify-between" style={borderColor75}>
             <div className="w-full text-center mb-0.5">
                 <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
             </div>
              <div className="flex items-end gap-1 mb-0.5">
                  <div className="flex items-center gap-1 flex-1">
-                    <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? homeSide : ''}</div>
-                     <div className="w-full font-bold text-xs uppercase text-center bg-white pb-0.5">{homeTeam?.name || ''}</div>
+                    <div className="w-7 h-7 rounded-full border text-center font-bold text-base bg-white shrink-0 flex items-center justify-center" style={borderColor75}>{coinTossConfirmed ? homeSide : ''}</div>
+                     <div className="w-full font-bold text-[12px] uppercase text-center bg-white pb-0.5">{homeTeam?.name || ''}</div>
                  </div>
                  <div className="flex items-center h-full">
                      <span className="text-base font-bold">VS</span>
                  </div>
                  <div className="flex items-center gap-1 flex-1">
                      <div className="w-full font-bold text-xs uppercase text-center bg-white pb-0.5">{awayTeam?.name || ''}</div>
-                    <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? awaySide : ''}</div>
+                    <div className="w-7 h-7 rounded-full border text-center font-bold text-base bg-white shrink-0 flex items-center justify-center" style={borderColor75}>{coinTossConfirmed ? awaySide : ''}</div>
                  </div>
             </div>
         </div>
@@ -250,16 +253,16 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
         <div className="col-span-6 px-2 flex flex-col justify-center h-full">
             <div className="flex gap-1 w-full">
                 <div className="flex flex-col flex-[2]">
-                    <span className="text-[8px] text-gray-500">City/Country</span>
-                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">{match?.city || ''}</div>
+                    <span className="text-[12px] text-gray-500">City/Country</span>
+                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">{match?.city || ''}</div>
                 </div>
                 <div className="flex flex-col flex-[4]">
-                    <span className="text-[8px] text-gray-500">Hall/Gym</span>
-                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">{match?.hall || ''}</div>
+                    <span className="text-[12px] text-gray-500">Hall/Gym</span>
+                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">{match?.hall || ''}</div>
                 </div>
                 <div className="flex flex-col flex-[1.5]">
-                    <span className="text-[8px] text-gray-500">Date</span>
-                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">
+                    <span className="text-[12px] text-gray-500">Date</span>
+                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">
                       {(() => {
                         if (!dateStr) return '';
                         const date = new Date(dateStr);
@@ -272,8 +275,8 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                     </div>
                 </div>
                 <div className="flex flex-col flex-[1.5]">
-                    <span className="text-[8px] text-gray-500">Time</span>
-                    <div className="w-full bg-white text-[10px] pb-0.5 font-bold">{timeStr}</div>
+                    <span className="text-[12px] text-gray-500">Time</span>
+                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">{timeStr}</div>
                 </div>
             </div>
         </div>

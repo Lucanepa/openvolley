@@ -173,7 +173,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     let rightPointsInService = 0; // Points scored in current service
     let leftServiceStarted = false; // Has left team started serving?
     let rightServiceStarted = false; // Has right team started serving?
-    
+
+    // Track which team started receiving (position I box 1 will have X, so position I skips to box 2)
+    const leftStartedReceiving = firstServeTeam !== leftTeamKey;
+    const rightStartedReceiving = firstServeTeam !== rightTeamKey;
+
+    // Track who was serving BEFORE the last point (for end-of-set tick logic)
+    let serveTeamBeforeLastPoint: 'home' | 'away' = firstServeTeam as 'home' | 'away';
+
     // Initialize first serve - only create initial service round entry if there are point events
     // The tick mark should only appear when "start set" is confirmed (first point scored)
     const hasPointEvents = pointEvents.length > 0;
@@ -207,10 +214,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     }
     
     pointEvents.forEach((event, idx) => {
+      // Save who was serving BEFORE this point (for end-of-set logic)
+      serveTeamBeforeLastPoint = currentServeTeam;
+
       const scoringTeam = event.payload?.team as 'home' | 'away';
       const isLeftTeam = scoringTeam === leftTeamKey;
       const isRightTeam = scoringTeam === rightTeamKey;
-      
+
       // Update scores
       if (scoringTeam === 'home') {
         homeScore++;
@@ -225,7 +235,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         // Service was lost - record TEAM SCORE at time of service loss
         if (currentServeTeam === leftTeamKey && leftServiceStarted) {
           // Left team lost service - record their TEAM SCORE in service box
-          const boxNum = Math.floor(leftServiceRound / 6) + 1; // Box number (1-8)
+          let boxNum = Math.floor(leftServiceRound / 6) + 1; // Box number (1-8)
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (leftStartedReceiving && leftCurrentPosition === 0) {
+            boxNum++;
+          }
           // Get the team score at the time of service loss
           // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
           const teamScoreAtLoss = leftTeamKey === 'home' ? homeScore : awayScore;
@@ -263,7 +277,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             rightCurrentPosition = (rightCurrentPosition + 1) % 6;
             rightServiceRound++;
             // Create entry for the new position
-            const newBoxNum = Math.floor(rightServiceRound / 6) + 1;
+            let newBoxNum = Math.floor(rightServiceRound / 6) + 1;
+            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+            if (rightStartedReceiving && rightCurrentPosition === 0) {
+              newBoxNum++;
+            }
             rightServiceRounds.push({
               position: rightCurrentPosition,
               box: newBoxNum,
@@ -277,7 +295,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           rightPointsInService = 0;
         } else if (currentServeTeam === rightTeamKey && rightServiceStarted) {
           // Right team lost service - record their TEAM SCORE in service box
-          const boxNum = Math.floor(rightServiceRound / 6) + 1;
+          let boxNum = Math.floor(rightServiceRound / 6) + 1;
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (rightStartedReceiving && rightCurrentPosition === 0) {
+            boxNum++;
+          }
           // Get the team score at the time of service loss
           const teamScoreAtLoss = rightTeamKey === 'home' ? homeScore : awayScore;
 
@@ -313,7 +335,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             leftCurrentPosition = (leftCurrentPosition + 1) % 6;
             leftServiceRound++;
             // Create entry for the new position
-            const newBoxNum = Math.floor(leftServiceRound / 6) + 1;
+            let newBoxNum = Math.floor(leftServiceRound / 6) + 1;
+            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+            if (leftStartedReceiving && leftCurrentPosition === 0) {
+              newBoxNum++;
+            }
             leftServiceRounds.push({
               position: leftCurrentPosition,
               box: newBoxNum,
@@ -346,27 +372,47 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       const lastScoringTeam = lastPoint.payload?.team as 'home' | 'away';
       const isLastPointLeft = lastScoringTeam === leftTeamKey;
       const isLastPointRight = lastScoringTeam === rightTeamKey;
-      
+
       // Get final scores from setInfo (after all points have been scored)
-      const leftFinalScore = !isSwapped 
+      const leftFinalScore = !isSwapped
         ? (teamAKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0))
         : (teamBKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0));
       const rightFinalScore = !isSwapped
         ? (teamBKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0))
         : (teamAKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0));
-      
+
+      // DEBUG: Log end-of-set info
+      // Use serveTeamBeforeLastPoint to determine who was ACTUALLY serving when the last point was scored
+      // (currentServeTeam gets updated to the winner after each point, so it's always the winner at this point)
+      const winnerSide = isLastPointLeft ? 'LEFT' : 'RIGHT';
+      const loserSide = isLastPointLeft ? 'RIGHT' : 'LEFT';
+      const winnerScore = isLastPointLeft ? leftFinalScore : rightFinalScore;
+      const loserScore = isLastPointLeft ? rightFinalScore : leftFinalScore;
+      const winnerWasServing = (isLastPointLeft && serveTeamBeforeLastPoint === leftTeamKey) || (isLastPointRight && serveTeamBeforeLastPoint === rightTeamKey);
+
+      console.log(`\n========== SET ${setNumber} ENDED ==========`);
+      console.log(`Score: ${winnerSide} ${winnerScore} - ${loserScore} ${loserSide}`);
+      console.log(`serveTeamBeforeLastPoint: ${serveTeamBeforeLastPoint}, leftTeamKey: ${leftTeamKey}, rightTeamKey: ${rightTeamKey}`);
+      console.log(`Winner: ${winnerSide} team (${winnerWasServing ? 'was SERVING' : 'was RECEIVING'})`);
+      console.log(`Expected: Winner's service box should ${winnerWasServing ? 'BE TICKED (they served)' : 'NOT be ticked (won on receive)'}`);
+      console.log(`Loser (${loserSide}): Their last service round should be circled`);
+
       // Circle the last point for the winning team (team that scored the last point)
       if (isLastPointLeft) {
         // Left team won - circle their last point
-        if (currentServeTeam === leftTeamKey && leftServiceStarted) {
+        if (serveTeamBeforeLastPoint === leftTeamKey && leftServiceStarted) {
           // Left team was serving - find their CURRENT active service round (the one with null points)
-          const currentBoxNum = Math.floor(leftServiceRound / 6) + 1;
-          let activeServiceRound = leftServiceRounds.find(sr => 
-            sr.position === leftCurrentPosition && 
-            sr.box === currentBoxNum && 
+          let currentBoxNum = Math.floor(leftServiceRound / 6) + 1;
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (leftStartedReceiving && leftCurrentPosition === 0) {
+            currentBoxNum++;
+          }
+          let activeServiceRound = leftServiceRounds.find(sr =>
+            sr.position === leftCurrentPosition &&
+            sr.box === currentBoxNum &&
             sr.points === null
           );
-          
+
           if (activeServiceRound) {
             // Found the active service round - update with final score and circle
             activeServiceRound.points = leftFinalScore;
@@ -392,31 +438,51 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           // Left team won on receive - add final score for "the player who would have served"
           if (!leftServiceStarted) {
             // They never served - position I player "would have served"
+            // For receiving team, position I should be box 2 (box 1 has X)
             leftServiceRounds.push({
               position: 0, // Position I - the player who would have served
-              box: 1,
+              box: leftStartedReceiving ? 2 : 1, // Box 2 if receiving team (box 1 has X), otherwise box 1
               ticked: false, // No tick - they never actually served
               points: leftFinalScore,
               circled: true
             });
           } else {
-            // They served before but are receiving now - next rotation position "would have served"
-            const nextPosition = (leftCurrentPosition + 1) % 6;
-            const nextBox = Math.floor((leftServiceRound + 1) / 6) + 1;
-            leftServiceRounds.push({
-              position: nextPosition,
-              box: nextBox,
-              ticked: false, // No tick - they didn't actually serve from this position
-              points: leftFinalScore,
-              circled: true
-            });
+            // They served before but won on receive (sideout win)
+            // The sideout code already created an entry with ticked: true, points: null
+            // Find and update that entry instead of creating a new one
+            const lastServiceRound = leftServiceRounds[leftServiceRounds.length - 1];
+            if (lastServiceRound && lastServiceRound.points === null) {
+              // Update the entry created by sideout code
+              lastServiceRound.ticked = false; // No tick - they didn't actually serve from this position
+              lastServiceRound.points = leftFinalScore;
+              lastServiceRound.circled = true;
+            } else {
+              // Fallback: create entry if needed (shouldn't normally happen)
+              const nextPosition = (leftCurrentPosition + 1) % 6;
+              let nextBox = Math.floor((leftServiceRound + 1) / 6) + 1;
+              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+              if (leftStartedReceiving && nextPosition === 0) {
+                nextBox++;
+              }
+              leftServiceRounds.push({
+                position: nextPosition,
+                box: nextBox,
+                ticked: false, // No tick - they didn't actually serve from this position
+                points: leftFinalScore,
+                circled: true
+              });
+            }
           }
         }
       } else if (isLastPointRight) {
         // Right team won - circle their last point
-        if (currentServeTeam === rightTeamKey && rightServiceStarted) {
+        if (serveTeamBeforeLastPoint === rightTeamKey && rightServiceStarted) {
           // Right team was serving - find their CURRENT active service round (the one with null points)
-          const currentBoxNum = Math.floor(rightServiceRound / 6) + 1;
+          let currentBoxNum = Math.floor(rightServiceRound / 6) + 1;
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (rightStartedReceiving && rightCurrentPosition === 0) {
+            currentBoxNum++;
+          }
           let activeServiceRound = rightServiceRounds.find(sr => 
             sr.position === rightCurrentPosition && 
             sr.box === currentBoxNum && 
@@ -448,28 +514,44 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           // Right team won on receive - add final score for "the player who would have served"
           if (!rightServiceStarted) {
             // They never served - position I player "would have served"
+            // For receiving team, position I should be box 2 (box 1 has X)
             rightServiceRounds.push({
               position: 0, // Position I - the player who would have served
-              box: 1,
+              box: rightStartedReceiving ? 2 : 1, // Box 2 if receiving team (box 1 has X), otherwise box 1
               ticked: false, // No tick - they never actually served
               points: rightFinalScore,
               circled: true
             });
           } else {
-            // They served before but are receiving now - next rotation position "would have served"
-            const nextPosition = (rightCurrentPosition + 1) % 6;
-            const nextBox = Math.floor((rightServiceRound + 1) / 6) + 1;
-            rightServiceRounds.push({
-              position: nextPosition,
-              box: nextBox,
-              ticked: false, // No tick - they didn't actually serve from this position
-              points: rightFinalScore,
-              circled: true
-            });
+            // They served before but won on receive (sideout win)
+            // The sideout code already created an entry with ticked: true, points: null
+            // Find and update that entry instead of creating a new one
+            const lastServiceRound = rightServiceRounds[rightServiceRounds.length - 1];
+            if (lastServiceRound && lastServiceRound.points === null) {
+              // Update the entry created by sideout code
+              lastServiceRound.ticked = false; // No tick - they didn't actually serve from this position
+              lastServiceRound.points = rightFinalScore;
+              lastServiceRound.circled = true;
+            } else {
+              // Fallback: create entry if needed (shouldn't normally happen)
+              const nextPosition = (rightCurrentPosition + 1) % 6;
+              let nextBox = Math.floor((rightServiceRound + 1) / 6) + 1;
+              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+              if (rightStartedReceiving && nextPosition === 0) {
+                nextBox++;
+              }
+              rightServiceRounds.push({
+                position: nextPosition,
+                box: nextBox,
+                ticked: false, // No tick - they didn't actually serve from this position
+                points: rightFinalScore,
+                circled: true
+              });
+            }
           }
         }
       }
-      
+
       // Circle the last point for the losing team as well
       // The losing team's service is "closed" - just circle their last service round
       if (isLastPointLeft) {
@@ -493,6 +575,21 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           lastLeftServiceRound.circled = true;
         }
       }
+
+      // DEBUG: Log final service rounds after end-of-set processing
+      const leftCircled = leftServiceRounds.filter(sr => sr.circled);
+      const rightCircled = rightServiceRounds.filter(sr => sr.circled);
+
+      console.log(`\n--- LEFT team final circled service rounds ---`);
+      leftCircled.forEach(sr => {
+        console.log(`  Position ${sr.position} (${['I','II','III','IV','V','VI'][sr.position]}), Box ${sr.box}: ${sr.points} pts, ticked=${sr.ticked}, circled=${sr.circled}`);
+      });
+
+      console.log(`\n--- RIGHT team final circled service rounds ---`);
+      rightCircled.forEach(sr => {
+        console.log(`  Position ${sr.position} (${['I','II','III','IV','V','VI'][sr.position]}), Box ${sr.box}: ${sr.points} pts, ticked=${sr.ticked}, circled=${sr.circled}`);
+      });
+      console.log(`==========================================\n`);
     }
 
     } catch (error) {
@@ -596,6 +693,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     // For Set 5, track when court change happens (when any team reaches 8 points)
     const isSet5 = setNumber === 5;
     let courtChangeHappened = false;
+    let leftScoreAtCourtChange = 0; // Track left team's score at the moment of court change
+    let rightScoreAtCourtChange = 0; // Track right team's score at the moment of court change
     
     // Track timeouts
     // For Set 5, split left team timeouts into before/after court change
@@ -639,6 +738,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         // Check if court change has happened (Set 5: when any team reaches 8 points)
         if (isSet5 && !courtChangeHappened && (currentHomeScore >= 8 || currentAwayScore >= 8)) {
           courtChangeHappened = true;
+          // Store scores at the moment of court change
+          leftScoreAtCourtChange = leftTeamKey === 'home' ? currentHomeScore : currentAwayScore;
+          rightScoreAtCourtChange = rightTeamKey === 'home' ? currentHomeScore : currentAwayScore;
         }
       } else if (event.type === 'timeout') {
         const timeoutTeam = event.payload?.team as 'home' | 'away';
@@ -653,13 +755,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           
           if (isSet5) {
             // For Set 5, split by court change
-            // Panel 1: timeouts when left team has < 8 points
-            // Panel 3: timeouts when left team has >= 8 points OR when court change has happened
-            // If timeout happens when left < 8 but court change already happened, it goes to both panels
-            if (leftScore < 8) {
+            // Panel 1: timeouts BEFORE court change happened
+            // Panel 3: timeouts AFTER court change happened
+            // Use the courtChangeHappened flag, not leftScore comparison
+            if (!courtChangeHappened) {
               leftTimeoutsList_Before.push(timeoutStr);
-            }
-            if (leftScore >= 8 || courtChangeHappened) {
+            } else {
               leftTimeoutsList_After.push(timeoutStr);
             }
           } else {
@@ -706,11 +807,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           const rightScore = rightTeamKey === 'home' ? currentHomeScore : currentAwayScore;
           
           // For Set 5, determine which Map to use based on court change
-          // Substitution goes to Panel 3 (After) if leftScore >= 8 OR court change has happened (any team >= 8)
+          // Substitution goes to Panel 3 (After) if court change has happened
           // Otherwise goes to Panel 1 (Before)
-          // Note: If leftScore < 8 but court change happened (rightScore >= 8), it should still go to After
-          const targetMap = isSet5 
-            ? ((leftScore >= 8 || courtChangeHappened) ? leftSubsByPlayer_After : leftSubsByPlayer_Before)
+          const targetMap = isSet5
+            ? (courtChangeHappened ? leftSubsByPlayer_After : leftSubsByPlayer_Before)
             : leftSubsByPlayer;
           
           // Check if this is a return substitution (playerIn was previously substituted out)
@@ -851,10 +951,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           leftTimeoutsList[0] || '',
           leftTimeoutsList[1] || ''
         ];
+    // For Panel 3, include ALL timeouts (before + after court change combined)
+    const allLeftTimeouts = [...leftTimeoutsList_Before, ...leftTimeoutsList_After].filter(t => t);
     const leftTimeouts_After: [string, string] = isSet5
       ? [
-          leftTimeoutsList_After[0] || '',
-          leftTimeoutsList_After[1] || ''
+          allLeftTimeouts[0] || '',
+          allLeftTimeouts[1] || ''
         ]
       : ['', ''];
     const rightTimeouts: [string, string] = [
@@ -974,6 +1076,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
       leftSubs,
       leftSubs_After: isSet5 ? leftSubs_After : undefined,
       rightSubs,
+      leftScoreAtCourtChange: isSet5 ? leftScoreAtCourtChange : 0,
+      rightScoreAtCourtChange: isSet5 ? rightScoreAtCourtChange : 0,
       currentServer: hasBeenPlayed ? {
         team: currentServeTeam,
         position: currentServePosition,
@@ -1453,27 +1557,20 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const set5MarkedPointsTeamOnRight = set5LeftTeamIsB ? set5MarkedPointsTeamA : set5MarkedPointsTeamB;
   
   // Split points for the team that changes sides (left team)
-  // Panel 1 (1-8 column): Points 1-8 scored before change
-  const markedPointsLeftTeam_Left = set5MarkedPointsTeamOnLeft.filter(p => p <= 8); // Points 1-8 on left panel
-  // Panel 3 (1-30 column): Points continue from where they left off
-  // If 5 points were scored before change, Panel 3 starts ticking from point 6 onwards
-  // So we need to map points 9+ to start from (9 - 8 + pointsBeforeChange) = (1 + pointsBeforeChange)
-  // But actually, we want to tick point 6, 7, 8, etc. in Panel 3, which means:
-  // - Point 9 (overall) -> Point 6 in Panel 3 (9 - 8 + 5 = 6, but we want 6)
-  // Actually, if 5 points were scored before change, the 6th point overall should be ticked as point 6 in Panel 3
-  // So: point 9 overall -> point 6 in Panel 3 (9 - 3 = 6)
-  // point 10 overall -> point 7 in Panel 3 (10 - 3 = 7)
-  // General formula: if n points before change, point p overall -> point (p - 8 + n) in Panel 3
-  // But wait, the user said "tick the nth point where n = current stand"
-  // So if 5 points before change, tick point 6 in Panel 3 (the 6th point overall)
-  const pointsBeforeChange = markedPointsLeftTeam_Left.length; // Number of points scored before change (max 8)
-  const markedPointsLeftTeam_Right = set5MarkedPointsTeamOnLeft.filter(p => p > 8).map(p => {
-    // Map point p (overall) to point number in Panel 3
-    // If 5 points before change, point 9 overall -> point 6 in Panel 3 (9 - 8 + 5 = 6)
-    // But we want: point 6 overall -> point 6 in Panel 3, point 7 -> 7, etc.
-    // So: point p overall -> point (p - 8 + pointsBeforeChange) in Panel 3
-    return p - 8 + pointsBeforeChange;
-  });
+  // Get the left team's score at the moment of court change from set5Data
+  const leftScoreAtChange = set5Data?.leftScoreAtCourtChange || 0;
+
+  // Panel 1 (1-8 column): Points scored BEFORE court change (points 1 to leftScoreAtChange)
+  // These are the actual points scored while left team was on left side before court change
+  const markedPointsLeftTeam_Left = set5MarkedPointsTeamOnLeft.filter(p => p <= leftScoreAtChange);
+
+  // Panel 3 (1-30 column): Points scored AFTER court change (points leftScoreAtChange+1 onwards)
+  // These points are displayed directly as their point number (no mapping needed)
+  // Panel 3's PointsColumn30 shows:
+  // - Points 1 to leftScoreAtChange as "number only" (preChangePoints)
+  // - Points leftScoreAtChange+1 onwards as ticked (from markedPointsA_Right)
+  const markedPointsLeftTeam_Right = set5MarkedPointsTeamOnLeft.filter(p => p > leftScoreAtChange);
+
   const markedPointsRightTeam = set5MarkedPointsTeamOnRight; // Team on right doesn't change sides
   
   // Get circled points for each team
@@ -1485,12 +1582,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const set5CircledPointsTeamOnRight = set5LeftTeamIsB ? set5CircledPointsTeamA : set5CircledPointsTeamB;
   
   // Split circled points for the team that changes sides (left team)
-  const circledPointsLeftTeam_Left = set5CircledPointsTeamOnLeft.filter(p => p <= 8); // Points 1-8 on left panel
-  const pointsBeforeChangeForCircled = circledPointsLeftTeam_Left.length; // Number of circled points before change
-  const circledPointsLeftTeam_Right = set5CircledPointsTeamOnLeft.filter(p => p > 8).map(p => {
-    // Map point p (overall) to point number in Panel 3, same logic as marked points
-    return p - 8 + pointsBeforeChangeForCircled;
-  });
+  // Use the same leftScoreAtChange to split correctly
+  const circledPointsLeftTeam_Left = set5CircledPointsTeamOnLeft.filter(p => p <= leftScoreAtChange);
+  const circledPointsLeftTeam_Right = set5CircledPointsTeamOnLeft.filter(p => p > leftScoreAtChange);
   const circledPointsRightTeam = set5CircledPointsTeamOnRight; // Team on right doesn't change sides
   
   // Map to SetFive component expectations
@@ -1554,6 +1648,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   let set5LeftServiceStarted_After = false;
   let set5RightServiceStarted = false;
   let set5LeftTeamTotalScore = 0; // Track total left team score to determine before/after change
+  let set5CourtChangeHappened = false; // Track when court change occurs (either team reaches 8)
+
+  // Track which team started receiving (their position I box 1 has X marker)
+  const set5LeftStartedReceiving = set5FirstServeTeam !== set5LeftTeamKey;
+  const set5RightStartedReceiving = set5FirstServeTeam !== set5RightTeamKey;
   
   // Initialize first serve for Set 5 - create initial entry at position I, box 1
   if (set5FirstServeTeam === set5LeftTeamKey) {
@@ -1598,10 +1697,63 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     if (isLeftTeam) {
       set5LeftTeamTotalScore++;
     }
-    
+
+    // Get current scores after this point
+    const leftTeamCurrentScore = set5LeftTeamKey === 'home' ? set5HomeScore : set5AwayScore;
+    const rightTeamCurrentScore = set5RightTeamKey === 'home' ? set5HomeScore : set5AwayScore;
+
+    // Detect when court change happens (first time either team reaches 8)
+    const courtChangeJustHappened = !set5CourtChangeHappened && (leftTeamCurrentScore >= 8 || rightTeamCurrentScore >= 8);
+
+    // Handle court change transition for left team's service box
+    if (courtChangeJustHappened) {
+      set5CourtChangeHappened = true;
+
+      // Copy state from before to after
+      set5LeftCurrentPosition_After = set5LeftCurrentPosition_Before;
+      set5LeftServiceRound_After = set5LeftServiceRound_Before;
+
+      if (isLeftTeam) {
+        // Left team scored the point that triggered court change
+        if (set5CurrentServeTeam === set5LeftTeamKey && set5LeftServiceStarted_Before) {
+          // Left team was serving - continue same service box in Panel 3 (don't close Panel 1 box)
+          // Find the current open service box in Panel 1 and create a copy in Panel 3
+          const currentBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
+          set5ServiceRoundsLeftTeam_After.push({
+            position: set5LeftCurrentPosition_Before,
+            box: currentBoxNum,
+            ticked: true,
+            points: null, // Still open
+            circled: false
+          });
+          set5LeftServiceStarted_After = true;
+        } else {
+          // Left team was receiving when they scored - they will gain service after this
+          // The service box will be created when they gain service (handled below)
+        }
+      } else {
+        // Right team scored the point that triggered court change (left team lost)
+        // Copy the last closed service box to Panel 3 if left team was serving
+        if (set5LeftServiceStarted_Before && set5ServiceRoundsLeftTeam_Before.length > 0) {
+          const lastLeftServiceBox = set5ServiceRoundsLeftTeam_Before[set5ServiceRoundsLeftTeam_Before.length - 1];
+          if (lastLeftServiceBox.points !== null) {
+            // Box is closed - copy it to Panel 3
+            set5ServiceRoundsLeftTeam_After.push({
+              ...lastLeftServiceBox
+            });
+            set5LeftServiceStarted_After = true;
+          }
+        }
+      }
+    }
+
+    // Determine if we're before or after court change for this point's processing
+    const isBeforeCourtChange = !set5CourtChangeHappened || (set5CourtChangeHappened && courtChangeJustHappened && !isLeftTeam);
+
     // Determine if left team is before change (≤8) or after change (>8)
-    const isLeftTeamBeforeChange = isLeftTeam && set5LeftTeamTotalScore <= 8;
-    const isLeftTeamAfterChange = isLeftTeam && set5LeftTeamTotalScore > 8;
+    // After court change happened, left team updates should go to Panel 3
+    const isLeftTeamBeforeChange = isLeftTeam && !set5CourtChangeHappened;
+    const isLeftTeamAfterChange = isLeftTeam && set5CourtChangeHappened;
     
     // Check if service was lost
     if (scoringTeam !== set5CurrentServeTeam) {
@@ -1613,9 +1765,17 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         // The left team's total score hasn't changed (opponent scored), so use it directly
         // to determine which phase (before/after 8-point change)
 
-        if (leftTeamScoreAtLoss <= 8 && set5LeftServiceStarted_Before) {
+        // Use court change flag instead of score comparison
+        // If court change hasn't happened, or just happened because opponent scored, use Panel 1
+        const usePanel1ForLeftLoss = !set5CourtChangeHappened || (courtChangeJustHappened && !isLeftTeam);
+
+        if (usePanel1ForLeftLoss && set5LeftServiceStarted_Before) {
           // Left team was before change (Panel 1) when they lost service
-          const boxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
+          let boxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (set5LeftStartedReceiving && set5LeftCurrentPosition_Before === 0) {
+            boxNum++;
+          }
           const existingRound = set5ServiceRoundsLeftTeam_Before.find(sr => sr.position === set5LeftCurrentPosition_Before && sr.box === boxNum);
           if (existingRound) {
             existingRound.points = leftTeamScoreAtLoss;
@@ -1629,9 +1789,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
               circled: false
             });
           }
-        } else if (leftTeamScoreAtLoss > 8 && set5LeftServiceStarted_After) {
+        } else if (set5CourtChangeHappened && set5LeftServiceStarted_After) {
           // Left team was after change (Panel 3) when they lost service - continuation from Panel 1
-          const boxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+          let boxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (set5LeftStartedReceiving && set5LeftCurrentPosition_After === 0) {
+            boxNum++;
+          }
           const existingRound = set5ServiceRoundsLeftTeam_After.find(sr => sr.position === set5LeftCurrentPosition_After && sr.box === boxNum);
           if (existingRound) {
             existingRound.points = leftTeamScoreAtLoss;
@@ -1647,10 +1811,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           }
         }
         
-        // Right team gains service - create initial entry at position I, box 1 (if first time)
+        // Right team gains service
         if (!set5RightServiceStarted) {
+          // First time serving - they were receiving, so they rotate when gaining serve
+          // Position II (index 1) is the new server after rotation from receiving position I
+          set5RightCurrentPosition = 1; // Position II
           set5ServiceRoundsRightTeam.push({
-            position: 0, // Column I
+            position: 1, // Column II (they rotated from receiving at I)
             box: 1,
             ticked: true, // Tick because this position is serving
             points: null,
@@ -1661,7 +1828,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           set5RightCurrentPosition = (set5RightCurrentPosition + 1) % 6;
           set5RightServiceRound++;
           // Create entry for the new position
-          const newBoxNum = Math.floor(set5RightServiceRound / 6) + 1;
+          let newBoxNum = Math.floor(set5RightServiceRound / 6) + 1;
+          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+          if (set5RightStartedReceiving && set5RightCurrentPosition === 0) {
+            newBoxNum++;
+          }
           set5ServiceRoundsRightTeam.push({
             position: set5RightCurrentPosition,
             box: newBoxNum,
@@ -1677,7 +1848,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         // Right team lost service - record their TEAM SCORE at the time of service loss
         // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
         const rightTeamScoreAtLoss = set5RightTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-        const boxNum = Math.floor(set5RightServiceRound / 6) + 1;
+        let boxNum = Math.floor(set5RightServiceRound / 6) + 1;
+        // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+        if (set5RightStartedReceiving && set5RightCurrentPosition === 0) {
+          boxNum++;
+        }
         const existingRound = set5ServiceRoundsRightTeam.find(sr => sr.position === set5RightCurrentPosition && sr.box === boxNum);
         if (existingRound) {
           existingRound.points = rightTeamScoreAtLoss;
@@ -1693,13 +1868,15 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         }
         
         // Left team gains service
-        // Determine if left team is before or after change
-        if (set5LeftTeamTotalScore <= 8) {
+        // Determine if left team is before or after change using court change flag
+        if (!set5CourtChangeHappened) {
           // Left team before change (Panel 1)
           if (!set5LeftServiceStarted_Before) {
-            // First time serving - create entry at position I, box 1
+            // First time serving - they were receiving, so they rotate when gaining serve
+            // Position II (index 1) is the new server after rotation from receiving position I
+            set5LeftCurrentPosition_Before = 1; // Position II
             set5ServiceRoundsLeftTeam_Before.push({
-              position: 0, // Column I
+              position: 1, // Column II (they rotated from receiving at I)
               box: 1,
               ticked: true, // Tick because this position is serving
               points: null,
@@ -1709,7 +1886,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             // Already served before - rotate and create entry
             set5LeftCurrentPosition_Before = (set5LeftCurrentPosition_Before + 1) % 6;
             set5LeftServiceRound_Before++;
-            const newBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
+            let newBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
+            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+            if (set5LeftStartedReceiving && set5LeftCurrentPosition_Before === 0) {
+              newBoxNum++;
+            }
             set5ServiceRoundsLeftTeam_Before.push({
               position: set5LeftCurrentPosition_Before,
               box: newBoxNum,
@@ -1730,7 +1911,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             // Rotate for first serve after change
             set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
             set5LeftServiceRound_After++;
-            const newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+            let newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+            if (set5LeftStartedReceiving && set5LeftCurrentPosition_After === 0) {
+              newBoxNum++;
+            }
             set5ServiceRoundsLeftTeam_After.push({
               position: set5LeftCurrentPosition_After,
               box: newBoxNum,
@@ -1742,7 +1927,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
             // Already served after change - rotate and create entry
             set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
             set5LeftServiceRound_After++;
-            const newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+            let newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
+            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
+            if (set5LeftStartedReceiving && set5LeftCurrentPosition_After === 0) {
+              newBoxNum++;
+            }
             set5ServiceRoundsLeftTeam_After.push({
               position: set5LeftCurrentPosition_After,
               box: newBoxNum,
@@ -1784,7 +1973,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     // Circle the last point for the winning team (team that scored the last point)
     if (isLeftTeam) {
       // Left team won
-      const isLeftTeamBeforeChange = set5LeftTeamTotalScore <= 8;
+      // Use court change flag to determine which panel
+      const isLeftTeamBeforeChange = !set5CourtChangeHappened;
       
       if (set5CurrentServeTeam === set5LeftTeamKey) {
         // Left team was serving - find their CURRENT active service round (the one with null points)
@@ -2421,19 +2611,8 @@ const handlePrint = () => {
                             markedPointsA_Right={hasSet5CoinToss && set5Data ? markedPointsA_Right : []}
                             circledPointsA_Right={hasSet5CoinToss && set5Data ? circledPointsA_Right : []}
                             serviceRoundsA_Right={hasSet5CoinToss && set5Data ? set5ServiceRoundsLeftTeam_After : []}
-                            pointsAtChange={hasSet5CoinToss && set5Data ? (() => {
-                              // POINTS AT CHANGE: Total points scored by the team on the left at the moment of change (should be 8)
-                              if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return '';
-                              const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-                              // The change happens at 8 points, so we show 8 if the team has scored at least 8 points
-                              // Otherwise, show the actual points if less than 8 (set not yet reached change point)
-                              if (leftTeamPoints >= 8) {
-                                return '8';
-                              } else if (leftTeamPoints > 0) {
-                                return String(leftTeamPoints);
-                              }
-                              return '';
-                            })() : ''}
+                            pointsAtChangeA={hasSet5CoinToss && set5Data ? (set5Data.leftScoreAtCourtChange || 0) : 0}
+                            pointsAtChangeB={hasSet5CoinToss && set5Data ? (set5Data.rightScoreAtCourtChange || 0) : 0}
                                 positionBoxRef={positionBoxSet5Ref}
                             />
                         </div>
@@ -2454,7 +2633,7 @@ const handlePrint = () => {
                             </div>
                             {/* Approvals - 70% height */}
                             <div ref={approvalsRef} className="flex-[5] min-h-0">
-                                <Approvals officials={match?.officials} />
+                                <Approvals officials={match?.officials} match={match} teamAKey={teamAKey} />
                             </div>
                         </div>
                         

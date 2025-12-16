@@ -42,7 +42,8 @@ export interface SetData {
   teamB_Points: number;
   
   // For Set 5 logic
-  pointsAtChange?: string;
+  pointsAtChangeA?: number; // Left panel team's points at court change
+  pointsAtChangeB?: number; // Middle panel team's points at court change
 }
 
 export interface SanctionRecord {

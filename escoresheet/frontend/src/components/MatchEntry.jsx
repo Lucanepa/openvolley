@@ -1032,7 +1032,14 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                           position: 'absolute',
                           bottom: '-6px',
                           right: '-6px',
-                          zIndex: 10
+                          zIndex: 10,
+                          ...(player.substitutedPlayerNumber && (hasWarning || hasDisqualification) ? {
+                            background: '#1a1a1a',
+                            borderRadius: '3px',
+                            padding: '2px',
+                            bottom: '-8px',
+                            right: '-8px'
+                          } : {})
                         }}>
                           {hasExpulsion ? (
                             <div style={{ position: 'relative', width: '12px', height: '12px' }}>
@@ -1075,7 +1082,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                   )
                 })}
               </div>
-              
+
               {/* Back Row (further from net) */}
               <div className={`court-row court-row-back`}>
                 {backRow.map((player, idx) => {
@@ -1177,7 +1184,14 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                           position: 'absolute',
                           bottom: '-6px',
                           right: '-6px',
-                          zIndex: 10
+                          zIndex: 10,
+                          ...(player.substitutedPlayerNumber && (hasWarning || hasDisqualification) ? {
+                            background: '#1a1a1a',
+                            borderRadius: '3px',
+                            padding: '2px',
+                            bottom: '-8px',
+                            right: '-8px'
+                          } : {})
                         }}>
                           {hasExpulsion ? (
                             <div style={{ position: 'relative', width: '12px', height: '12px' }}>

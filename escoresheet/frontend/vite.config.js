@@ -237,7 +237,8 @@ export default defineConfig({
         enabled: true, // Enable PWA in development
         type: 'module',
         navigateFallback: undefined, // Explicitly disable - we handle multi-page routing ourselves
-        navigateFallbackAllowlist: [] // No fallback for any routes
+        navigateFallbackAllowlist: [], // No fallback for any routes
+        disableDevLogs: true // Disable verbose workbox logging in dev console
       },
       manifest: {
         name: process.env.VITE_APP_TITLE || 'Open eScoresheet',
