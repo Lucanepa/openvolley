@@ -2650,11 +2650,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <span style={{
             position: 'absolute',
             right: '50%',
-            marginRight: isCompactMode ? '16px' : isLaptopMode ? '22px' : '28px',
+            marginRight: isCompactMode ? '24px' : isLaptopMode ? '32px' : '40px',
             fontVariantNumeric: 'tabular-nums',
             fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
             lineHeight: 1,
-            letterSpacing: 0
+            letterSpacing: 0,
+            minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+            textAlign: 'right'
           }}>{pointsBySide.left}</span>
           {/* Colon - absolute at center */}
           <span style={{
@@ -2669,11 +2671,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <span style={{
             position: 'absolute',
             left: '50%',
-            marginLeft: isCompactMode ? '16px' : isLaptopMode ? '22px' : '28px',
+            marginLeft: isCompactMode ? '24px' : isLaptopMode ? '32px' : '40px',
             fontVariantNumeric: 'tabular-nums',
             fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
             lineHeight: 1,
-            letterSpacing: 0
+            letterSpacing: 0,
+            minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+            textAlign: 'left'
           }}>{pointsBySide.right}</span>
         </div>
       </div>
@@ -10472,13 +10476,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              paddingRight: isCompactMode ? '8px' : '16px'
+              paddingRight: isCompactMode ? '16px' : '24px'
             }}>
               <span style={{
                 fontVariantNumeric: 'tabular-nums',
                 fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
                 fontWeight: 700,
-                lineHeight: 1
+                lineHeight: 1,
+                minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+                textAlign: 'right'
               }}>{pointsBySide.left}</span>
             </div>
 
@@ -10500,13 +10506,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              paddingLeft: isCompactMode ? '8px' : '16px'
+              paddingLeft: isCompactMode ? '16px' : '24px'
             }}>
               <span style={{
                 fontVariantNumeric: 'tabular-nums',
                 fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
                 fontWeight: 700,
-                lineHeight: 1
+                lineHeight: 1,
+                minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+                textAlign: 'left'
               }}>{pointsBySide.right}</span>
             </div>
 
@@ -11676,7 +11684,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </button>
                   ) : (
                     <>
-                      <div className="rally-controls-row">
+                      <div className="rally-controls-row" style={{ gap: '5px' }}>
                         <button className="rally-point-button" onClick={() => handlePoint('left')}>
                           Point {teamALabel}
                         </button>

@@ -40,7 +40,17 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   // Determine team labels (A or B) based on coin toss
   const teamAKey = match?.coinTossTeamA || 'home';
   const teamBKey = teamAKey === 'home' ? 'away' : 'home';
-  
+
+  // Calculate if coin toss is confirmed (all coin toss fields are set)
+  const coinTossConfirmed = match?.coinTossTeamA !== null &&
+                            match?.coinTossTeamA !== undefined &&
+                            match?.coinTossTeamB !== null &&
+                            match?.coinTossTeamB !== undefined &&
+                            match?.coinTossServeA !== null &&
+                            match?.coinTossServeA !== undefined &&
+                            match?.coinTossServeB !== null &&
+                            match?.coinTossServeB !== undefined;
+
   const teamAPlayers = formatPlayers(teamAKey === 'home' ? homePlayers : awayPlayers);
   const teamBPlayers = formatPlayers(teamBKey === 'home' ? homePlayers : awayPlayers);
   
@@ -164,29 +174,36 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     let leftServiceStarted = false; // Has left team started serving?
     let rightServiceStarted = false; // Has right team started serving?
     
-    // Initialize first serve - create initial service round entry for position I, box 1
+    // Initialize first serve - only create initial service round entry if there are point events
+    // The tick mark should only appear when "start set" is confirmed (first point scored)
+    const hasPointEvents = pointEvents.length > 0;
+
     if (firstServeTeam === leftTeamKey) {
       leftServiceStarted = true;
       leftCurrentPosition = 0;
-      // Create initial entry for serving team (ticked = true since this position is serving)
-      leftServiceRounds.push({
-        position: 0, // Column I
-        box: 1,
-        ticked: true,
-        points: null,
-        circled: false
-      });
+      // Only create ticked entry if gameplay has started (points scored)
+      if (hasPointEvents) {
+        leftServiceRounds.push({
+          position: 0, // Column I
+          box: 1,
+          ticked: true,
+          points: null,
+          circled: false
+        });
+      }
     } else {
       rightServiceStarted = true;
       rightCurrentPosition = 0;
-      // Create initial entry for serving team (ticked = true since this position is serving)
-      rightServiceRounds.push({
-        position: 0, // Column I
-        box: 1,
-        ticked: true,
-        points: null,
-        circled: false
-      });
+      // Only create ticked entry if gameplay has started (points scored)
+      if (hasPointEvents) {
+        rightServiceRounds.push({
+          position: 0, // Column I
+          box: 1,
+          ticked: true,
+          points: null,
+          circled: false
+        });
+      }
     }
     
     pointEvents.forEach((event, idx) => {
@@ -218,12 +235,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           if (existingRound) {
             existingRound.points = teamScoreAtLoss;
           } else {
+            // Fallback: create entry if it doesn't exist (should have been created when gaining service)
             leftServiceRounds.push({
               position: leftCurrentPosition,
               box: boxNum,
-              ticked: false,
+              ticked: true, // Should always be ticked since team was serving from this position
               points: teamScoreAtLoss,
-                            circled: false
+              circled: false
             });
           }
           
@@ -267,12 +285,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           if (existingRound) {
             existingRound.points = teamScoreAtLoss;
           } else {
+            // Fallback: create entry if it doesn't exist (should have been created when gaining service)
             rightServiceRounds.push({
               position: rightCurrentPosition,
               box: boxNum,
-              ticked: false,
+              ticked: true, // Should always be ticked since team was serving from this position
               points: teamScoreAtLoss,
-                            circled: false
+              circled: false
             });
           }
           
@@ -968,7 +987,21 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const set2Data = getSetData(2, true);
   const set3Data = getSetData(3, false);
   const set4Data = getSetData(4, true);
-  
+
+  // Helper to check if a set has finished
+  const isSetFinished = (setIndex: number) => {
+    const setInfo = sets?.find(s => s.index === setIndex);
+    return setInfo?.finished === true;
+  };
+
+  // Determine which sets should show team names, S/R, X (basic info)
+  // Set 1: shows when coin toss is confirmed
+  // Set 2: shows when Set 1 is finished
+  // Set 3: shows when Set 2 is finished
+  const shouldShowSet1 = coinTossConfirmed;
+  const shouldShowSet2 = isSetFinished(1);
+  const shouldShowSet3 = isSetFinished(2);
+
   // Calculate set wins to determine if Set 4 should be displayed
   // Set 4 should only be filled if both teams have won at least one set
   // (This calculation is also used later for match results, so we calculate it once here)
@@ -1587,12 +1620,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           if (existingRound) {
             existingRound.points = leftTeamScoreAtLoss;
           } else {
+            // Fallback: create entry if it doesn't exist
             set5ServiceRoundsLeftTeam_Before.push({
               position: set5LeftCurrentPosition_Before,
               box: boxNum,
-              ticked: false,
+              ticked: true, // Should always be ticked since team was serving
               points: leftTeamScoreAtLoss,
-                            circled: false
+              circled: false
             });
           }
         } else if (leftTeamScoreAtLoss > 8 && set5LeftServiceStarted_After) {
@@ -1602,12 +1636,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
           if (existingRound) {
             existingRound.points = leftTeamScoreAtLoss;
           } else {
+            // Fallback: create entry if it doesn't exist
             set5ServiceRoundsLeftTeam_After.push({
               position: set5LeftCurrentPosition_After,
               box: boxNum,
-              ticked: false,
+              ticked: true, // Should always be ticked since team was serving
               points: leftTeamScoreAtLoss,
-                            circled: false
+              circled: false
             });
           }
         }
@@ -1647,12 +1682,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
         if (existingRound) {
           existingRound.points = rightTeamScoreAtLoss;
         } else {
+          // Fallback: create entry if it doesn't exist
           set5ServiceRoundsRightTeam.push({
             position: set5RightCurrentPosition,
             box: boxNum,
-            ticked: false,
+            ticked: true, // Should always be ticked since team was serving
             points: rightTeamScoreAtLoss,
-                        circled: false
+            circled: false
           });
         }
         
@@ -2150,14 +2186,17 @@ const handlePrint = () => {
             transition: 'transform 0.2s ease'
           }}
         >
-        <div className="h-full" style={{ padding: '5mm 5mm 5mm 5mm' }}>
+        <div className="h-full" style={{ padding: '4mm 5mm 6mm 5mm' }}>
             <div ref={headerRef}>
-              <Header 
+              <Header
                 match={match}
                 homeTeam={homeTeam}
                 awayTeam={awayTeam}
                 teamAName={teamAName}
                 teamBName={teamBName}
+                coinTossConfirmed={coinTossConfirmed}
+                homeSide={teamAKey === 'home' ? 'A' : 'B'}
+                awaySide={teamAKey === 'away' ? 'A' : 'B'}
               />
             </div>
             
@@ -2180,11 +2219,11 @@ const handlePrint = () => {
                             <div className="font-black text-sm mt-1">1</div>
                         </div>
                         <div className="flex-1">
-                            <StandardSet 
-                                setNumber={1} 
-                                teamNameLeft={teamAShortName}
-                                teamNameRight={teamBShortName}
-                                firstServeTeamA={match?.coinTossServeA}
+                            <StandardSet
+                                setNumber={1}
+                                teamNameLeft={shouldShowSet1 ? teamAShortName : ''}
+                                teamNameRight={shouldShowSet1 ? teamBShortName : ''}
+                                firstServeTeamA={shouldShowSet1 ? match?.coinTossServeA : undefined}
                                 positionBoxRef={positionBoxSet1Ref}
                                 {...set1Data}
                             />
@@ -2200,12 +2239,12 @@ const handlePrint = () => {
                             <div className="font-black text-sm mt-1">2</div>
                         </div>
                         <div className="flex-1">
-                            <StandardSet 
-                                setNumber={2} 
-                                isSwapped={true} 
-                                teamNameLeft={teamBShortName}
-                                teamNameRight={teamAShortName}
-                                firstServeTeamA={match?.coinTossServeA}
+                            <StandardSet
+                                setNumber={2}
+                                isSwapped={true}
+                                teamNameLeft={shouldShowSet2 ? teamBShortName : ''}
+                                teamNameRight={shouldShowSet2 ? teamAShortName : ''}
+                                firstServeTeamA={shouldShowSet2 ? match?.coinTossServeA : undefined}
                                 {...set2Data}
                             />
                         </div>
@@ -2244,11 +2283,11 @@ const handlePrint = () => {
                             <div className="font-black text-sm mt-1">3</div>
                         </div>
                         <div className="flex-1">
-                            <StandardSet 
-                                setNumber={3} 
-                                teamNameLeft={teamAShortName}
-                                teamNameRight={teamBShortName}
-                                firstServeTeamA={match?.coinTossServeA}
+                            <StandardSet
+                                setNumber={3}
+                                teamNameLeft={shouldShowSet3 ? teamAShortName : ''}
+                                teamNameRight={shouldShowSet3 ? teamBShortName : ''}
+                                firstServeTeamA={shouldShowSet3 ? match?.coinTossServeA : undefined}
                                 {...set3Data}
                             />
                         </div>
@@ -2421,8 +2460,8 @@ const handlePrint = () => {
                         
                         {/* Results - adjust flex-[x] to change width proportion */}
                         <div ref={resultsRef} className="flex-[0.67] flex flex-col shrink-0" style={{ height: '8.4cm' }}>
-                            <Results 
-                                teamAShortName={teamAShortName} 
+                            <Results
+                                teamAShortName={teamAShortName}
                                 teamBShortName={teamBShortName}
                                 setResults={setResults}
                                 matchStart={matchStart}
@@ -2430,31 +2469,36 @@ const handlePrint = () => {
                                 matchDuration={matchDuration}
                                 winner={winner}
                                 result={result}
+                                coinTossConfirmed={coinTossConfirmed}
                             />
                         </div>
                     </div>
                 </div>
                 
-                {/* Right side: Rosters spanning full height */}
+                {/* Right side: Rosters spanning full height - HOME always left, AWAY always right */}
                 <div className="flex gap-0.5 shrink-0" style={{ width: '110mm', height: '13.5cm', maxWidth: '110mm' }}>
                     <div ref={rosterARef} className="flex-1 min-w-0">
-                        <Roster 
-                          team={teamAShortName} 
-                          side="A" 
-                          players={teamAPlayers}
-                          benchStaff={teamAKey === 'home' ? match?.bench_home : match?.bench_away}
-                          preGameCaptainSignature={teamAKey === 'home' ? match?.homeCaptainSignature : match?.awayCaptainSignature}
-                          preGameCoachSignature={teamAKey === 'home' ? match?.homeCoachSignature : match?.awayCoachSignature}
+                        <Roster
+                          team={match?.homeShortName || ''}
+                          side={teamAKey === 'home' ? 'A' : 'B'}
+                          players={formatPlayers(homePlayers)}
+                          benchStaff={match?.bench_home}
+                          preGameCaptainSignature={match?.homeCaptainSignature}
+                          preGameCoachSignature={match?.homeCoachSignature}
+                          coinTossConfirmed={coinTossConfirmed}
+                          isHome={true}
                         />
                     </div>
                     <div ref={rosterBRef} className="flex-1 min-w-0">
-                        <Roster 
-                          team={teamBShortName} 
-                          side="B" 
-                          players={teamBPlayers}
-                          benchStaff={teamBKey === 'home' ? match?.bench_home : match?.bench_away}
-                          preGameCaptainSignature={teamBKey === 'home' ? match?.homeCaptainSignature : match?.awayCaptainSignature}
-                          preGameCoachSignature={teamBKey === 'home' ? match?.homeCoachSignature : match?.awayCoachSignature}
+                        <Roster
+                          team={match?.awayShortName || ''}
+                          side={teamAKey === 'away' ? 'A' : 'B'}
+                          players={formatPlayers(awayPlayers)}
+                          benchStaff={match?.bench_away}
+                          preGameCaptainSignature={match?.awayCaptainSignature}
+                          preGameCoachSignature={match?.awayCoachSignature}
+                          coinTossConfirmed={coinTossConfirmed}
+                          isHome={false}
                         />
                     </div>
                 </div>

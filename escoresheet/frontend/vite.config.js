@@ -68,6 +68,26 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // Rewrite clean URLs to their index.html files
+    {
+      name: 'html-rewrite-handler',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url?.split('?')[0] || '/'
+
+          // Rewrite folder routes to their index.html
+          const folderRoutes = ['referee', 'scoresheet', 'bench', 'livescore', 'upload_roster']
+          for (const route of folderRoutes) {
+            if (url === `/${route}` || url === `/${route}/`) {
+              req.url = `/${route}/index.html`
+              break
+            }
+          }
+
+          next()
+        })
+      }
+    },
     // Custom 404 handling for invalid routes
     {
       name: 'html-404-handler',
@@ -215,8 +235,9 @@ export default defineConfig({
       },
       devOptions: {
         enabled: true, // Enable PWA in development
-        type: 'module'
-        // No navigateFallback - we want 404s for invalid routes
+        type: 'module',
+        navigateFallback: undefined, // Explicitly disable - we handle multi-page routing ourselves
+        navigateFallbackAllowlist: [] // No fallback for any routes
       },
       manifest: {
         name: process.env.VITE_APP_TITLE || 'Open eScoresheet',

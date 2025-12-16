@@ -2971,11 +2971,8 @@ export default function App() {
             offlineMode={offlineMode}
           />
         ) : showMatchEnd && matchId ? (
-          <MatchEnd 
-            matchId={matchId} 
-            onShowScoresheet={() => {
-              // TODO: Implement scoresheet view
-            }}
+          <MatchEnd
+            matchId={matchId}
             onGoHome={() => {
               setMatchId(null)
               setShowMatchEnd(false)

@@ -3706,22 +3706,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     }
   }
 
-  // Dashboard Toggle Component - compact vertical layout
+  // Dashboard Toggle Component - horizontal layout with PIN on right
   const DashboardToggle = ({ label, enabled, onToggle, pin }) => {
     return (
       <div style={{
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
-        gap: '6px',
+        gap: '10px',
         padding: '8px 12px',
         background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
         borderRadius: '8px',
         border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255,255,255,0.1)',
-        minWidth: '100px',
+        minWidth: '140px',
         flex: 1
       }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)' }}>{label}</span>
+        <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', minWidth: '70px' }}>{label}</span>
         <div style={{
           position: 'relative',
           width: '40px',
@@ -3749,11 +3748,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         {enabled && pin && (
           <span style={{
             fontWeight: 700,
-            fontSize: '13px',
+            fontSize: '14px',
             color: 'var(--accent)',
-            letterSpacing: '1px',
+            letterSpacing: '2px',
             fontFamily: 'monospace',
-            marginTop: '2px'
+            marginLeft: '4px'
           }}>
             {pin}
           </span>
