@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react'
 import Modal from '../Modal'
 import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
+import { changelog } from '../../CHANGELOG'
+
+const currentVersion = changelog[0]?.version || 'unknown'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -185,6 +188,8 @@ export default function HomeOptionsModal({
 }) {
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
+  const [updateCheck, setUpdateCheck] = useState({ checking: false, result: null }) // result: 'available' | 'latest' | 'error'
+  const [newVersion, setNewVersion] = useState(null)
 
   // Handle copy with feedback
   const handleCopy = useCallback(async (text, label) => {
@@ -207,6 +212,31 @@ export default function HomeOptionsModal({
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations()
       await Promise.all(registrations.map(registration => registration.unregister()))
+    }
+  }
+
+  const checkForUpdates = async () => {
+    setUpdateCheck({ checking: true, result: null })
+    setNewVersion(null)
+    try {
+      // Fetch latest version from server (bypass cache)
+      const res = await fetch(`/version.json?t=${Date.now()}`)
+      const data = await res.json()
+      const latestVersion = data.version
+
+      if (latestVersion && latestVersion !== currentVersion) {
+        setNewVersion(latestVersion)
+        setUpdateCheck({ checking: false, result: 'available' })
+        // Trigger service worker update check
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration()
+          if (reg) reg.update()
+        }
+      } else {
+        setUpdateCheck({ checking: false, result: 'latest' })
+      }
+    } catch {
+      setUpdateCheck({ checking: false, result: 'error' })
     }
   }
 
@@ -1082,6 +1112,98 @@ export default function HomeOptionsModal({
             </Row>
           </Section>
         )}
+
+        <Section title="App Version">
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>Current Version</div>
+                <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px' }}>
+                  v{currentVersion}
+                </div>
+              </div>
+              <button
+                onClick={checkForUpdates}
+                disabled={updateCheck.checking}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: updateCheck.checking ? 'rgba(255, 255, 255, 0.1)' : 'rgba(59, 130, 246, 0.2)',
+                  color: updateCheck.checking ? 'rgba(255,255,255,0.5)' : '#3b82f6',
+                  border: updateCheck.checking ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '6px',
+                  cursor: updateCheck.checking ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {updateCheck.checking ? 'Checking...' : 'Check for Updates'}
+              </button>
+            </div>
+
+            {updateCheck.result === 'available' && (
+              <div style={{
+                padding: '12px',
+                background: 'rgba(34, 197, 94, 0.15)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#22c55e' }}>
+                    Update Available!
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
+                    {currentVersion} → {newVersion}
+                  </div>
+                </div>
+                <button
+                  onClick={() => window.location.reload()}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: '#22c55e',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Refresh to Update
+                </button>
+              </div>
+            )}
+
+            {updateCheck.result === 'latest' && (
+              <div style={{
+                padding: '10px 12px',
+                background: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: 'rgba(255,255,255,0.8)'
+              }}>
+                You're on the latest version!
+              </div>
+            )}
+
+            {updateCheck.result === 'error' && (
+              <div style={{
+                padding: '10px 12px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#ef4444'
+              }}>
+                Could not check for updates. Please try again.
+              </div>
+            )}
+          </Row>
+        </Section>
 
         <Section title="Cache Management" borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>

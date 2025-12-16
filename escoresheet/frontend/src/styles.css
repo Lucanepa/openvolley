@@ -830,12 +830,13 @@
 
   .match-content {
     display: grid;
-    gap: 16px;
-    grid-template-columns: 1fr 3fr 1fr;
+    gap: 12px;
+    grid-template-columns: minmax(160px, 1fr) minmax(0, 4fr) minmax(160px, 1fr);
     align-items: stretch;
     flex: 1;
     height: auto;
     width: 100%;
+    overflow: hidden;
   }
 
   @media (max-width: 1400px) {
@@ -1085,7 +1086,7 @@
   .set-score-display {
     font-size: 60px;
     font-weight: 800;
-    letter-spacing: 2px;
+    letter-spacing: 0;
     background: rgba(15, 23, 42, 0.8);
     margin: 0 auto;
     box-sizing: border-box;
@@ -1126,7 +1127,8 @@
 
   .court {
     position: relative;
-    width: var(--court-width,93%);
+    width: var(--court-width, 100%);
+    max-width: 100%;
     margin: 0 auto;
     aspect-ratio: 2 / 1;
     display: grid;
