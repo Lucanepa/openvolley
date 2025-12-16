@@ -3,6 +3,60 @@
 
 export const changelog = [
   {
+    version: '0.8.28',
+    date: '16.12.25',
+    changes: [
+      'CoinToss responsive sizing: larger elements in non-compact mode',
+      'Dashboard row layout with header and vertical toggle cards'
+    ]
+  },
+  {
+    version: '0.8.26',
+    date: '16.12.25',
+    changes: [
+      'Fix test match shortName: now correctly passes ZÜRICH/UNISG to match data',
+      'Dashboard toggles: compact vertical layout with PIN below'
+    ]
+  },
+  {
+    version: '0.8.24',
+    date: '16.12.25',
+    changes: [
+      'Dashboard Connections row between Match info/officials and Team cards',
+      'Fix team shortName from testSeeds (ZÜRICH, UNISG) in test match'
+    ]
+  },
+  {
+    version: '0.8.22',
+    date: '16.12.25',
+    changes: [
+      'Add Dashboard Connections card in MatchSetup with all dashboard toggles and PINs',
+      'Auto-fill team shortName from testSeeds data in test match creation'
+    ]
+  },
+  {
+    version: '0.8.20',
+    date: '16.12.25',
+    changes: [
+      'Split referee indicators: 1R above court, 2R below court with minimal margins',
+      'Fix duplicate set index bug by improving set deduplication and creation checks'
+    ]
+  },
+  {
+    version: '0.8.16',
+    date: '16.12.25',
+    changes: [
+      'Implement 5-column grid layout for score display with perfectly centered colon'
+    ]
+  },
+  {
+    version: '0.8.10',
+    date: '16.12.25',
+    changes: [
+      'Update service worker revision, enhance styling in CSS, and improve MatchSetup and Scoreboard components with lineup peeking functionality and update checks.'
+    ]
+  },
+  {
     version: '0.8.8',
     date: '15.12.25',
     changes: [

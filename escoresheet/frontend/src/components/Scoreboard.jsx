@@ -532,9 +532,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       .equals(matchId)
       .sortBy('index')
 
-    const currentSet =
-      sets.find(s => !s.finished) ??
-      null
+    // Find the current set: first unfinished set, preferring highest id if duplicates exist
+    // Also filter out any duplicate indices, keeping the latest one (highest id)
+    const setsByIndex = new Map()
+    for (const set of sets) {
+      const existing = setsByIndex.get(set.index)
+      if (!existing || set.id > existing.id) {
+        setsByIndex.set(set.index, set)
+      }
+    }
+    const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+    const currentSet = dedupedSets.find(s => !s.finished) ?? null
 
     // Debug: log current set detection
     if (sets.length > 0) {
@@ -1661,8 +1669,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         if (!prev || !prev.started) return prev
         const newCountdown = prev.countdown - 1
         if (newCountdown <= 0) {
-          // Stay at 0, don't reset to null - this prevents restart
-          return { countdown: 0, started: false }
+          // Auto-end the set interval when countdown reaches 0
+          countdownDismissedRef.current = true
+          return null
         }
         return { ...prev, countdown: newCountdown }
       })
@@ -2626,48 +2635,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const renderScoreDisplay = useCallback(
     (style = {}) => (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
-        {/* Score display container - colon absolutely centered */}
+        {/* Score display container - all elements absolute, colon at center */}
         <div
           className="set-score-display"
           style={{
             position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            width: isCompactMode ? '200px' : isLaptopMode ? '280px' : '350px',
+            height: isCompactMode ? '60px' : isLaptopMode ? '85px' : '105px',
             padding: '5px 0',
             letterSpacing: 0
           }}
         >
-          {/* Left side: score - right aligned, fixed width */}
+          {/* Left score - right edge ends before colon */}
           <span style={{
-            display: 'inline-block',
-            width: isCompactMode ? '60px' : isLaptopMode ? '80px' : '100px',
+            position: 'absolute',
+            right: '50%',
+            marginRight: isCompactMode ? '16px' : isLaptopMode ? '22px' : '28px',
             fontVariantNumeric: 'tabular-nums',
-            fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
             lineHeight: 1,
-            textAlign: 'right',
-            letterSpacing: 0,
-            paddingRight: isCompactMode ? '8px' : isLaptopMode ? '12px' : '16px'
+            letterSpacing: 0
           }}>{pointsBySide.left}</span>
-          {/* Center colon - absolutely positioned for perfect centering */}
+          {/* Colon - absolute at center */}
           <span style={{
             position: 'absolute',
             left: '50%',
             transform: 'translateX(-50%)',
-            fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
             lineHeight: 1,
             letterSpacing: 0
           }}>:</span>
-          {/* Right side: score - left aligned, fixed width */}
+          {/* Right score - left edge starts after colon */}
           <span style={{
-            display: 'inline-block',
-            width: isCompactMode ? '60px' : isLaptopMode ? '80px' : '100px',
+            position: 'absolute',
+            left: '50%',
+            marginLeft: isCompactMode ? '16px' : isLaptopMode ? '22px' : '28px',
             fontVariantNumeric: 'tabular-nums',
-            fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
             lineHeight: 1,
-            textAlign: 'left',
-            letterSpacing: 0,
-            paddingLeft: isCompactMode ? '8px' : isLaptopMode ? '12px' : '16px'
+            letterSpacing: 0
           }}>{pointsBySide.right}</span>
         </div>
       </div>
@@ -3482,8 +3488,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const newSetIndex = setIndex + 1
 
       // Check if a set with this index already exists to prevent duplicates
-      const existingSet = await db.sets.where({ matchId, index: newSetIndex }).first()
-      console.log('[Set Transition] Creating set', newSetIndex, 'for match', matchId, 'existingSet:', existingSet)
+      // Use separate queries since compound index may not exist
+      const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
+      const existingSet = allSetsForMatch.find(s => s.index === newSetIndex)
+      console.log('[Set Transition] Creating set', newSetIndex, 'for match', matchId, 'existingSet:', existingSet, 'allSets:', allSetsForMatch.map(s => ({ id: s.id, index: s.index })))
       if (existingSet) {
         console.log('[Set Transition] Set already exists, returning existing id:', existingSet.id)
         return existingSet.id
@@ -6337,57 +6345,208 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [sanctionConfirmModal, data?.set, data?.events, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning])
 
-  // Show libero confirmation
-  const showLiberoConfirm = useCallback((liberoType) => {
-    if (!liberoDropdown || !liberoType) return
-    setLiberoConfirm({
-      team: liberoDropdown.team,
-      position: liberoDropdown.position,
-      playerOut: liberoDropdown.playerNumber,
-      liberoIn: liberoType
-    })
-    setLiberoDropdown(null)
-    setSubstitutionDropdown(null) // Close substitution dropdown when selecting libero
-  }, [liberoDropdown])
+  // Execute libero substitution directly (no confirmation modal needed)
+  const showLiberoConfirm = useCallback(async (liberoType) => {
+    if (!liberoDropdown || !liberoType || !data?.set) return
 
-  // Handle libero in player selection
+    const team = liberoDropdown.team
+    const position = liberoDropdown.position
+    const playerOut = liberoDropdown.playerNumber
+
+    // Validate that liberos can only enter back-row positions (I, V, VI)
+    const isBackRow = position === 'I' || position === 'V' || position === 'VI'
+    if (!isBackRow) {
+      alert('Liberos can only enter back-row positions (I, V, VI)')
+      setLiberoDropdown(null)
+      return
+    }
+
+    // Get libero player number
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const liberoPlayer = teamPlayers?.find(p => p.libero === liberoType)
+    if (!liberoPlayer) {
+      setLiberoDropdown(null)
+      return
+    }
+
+    // Check if libero is unable to play
+    if (isLiberoUnable(team, liberoPlayer.number)) {
+      alert('This libero is unable to play (injured, expelled, disqualified, or declared unable)')
+      setLiberoDropdown(null)
+      return
+    }
+
+    // Get current lineup for this team in the current set
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+    // Create new lineup with libero entry
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
+      }
+    }
+
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[position] = String(liberoPlayer.number)
+
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
+      }
+    }
+
+    // Save the updated lineup with libero substitution info
+    const nextSeq = await getNextSeq()
+
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
+        team,
+        lineup: finalLineup,
+        liberoSubstitution: {
+          position,
+          liberoNumber: liberoPlayer.number,
+          playerNumber: playerOut,
+          liberoType: liberoType
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: nextSeq
+    })
+
+    // Log the libero entry event
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoType
+    })
+
+    // Check if captain is on court after libero entry
+    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
+
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      setTimeout(() => {
+        checkAndRequestCaptainOnCourt(team)
+      }, 100)
+    }
+
+    setLiberoDropdown(null)
+    setSubstitutionDropdown(null)
+  }, [liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable, checkAndRequestCaptainOnCourt])
+
+  // Handle libero in player selection - directly execute substitution
   const handleLiberoInPlayerSelect = useCallback(async (position, playerNumber) => {
     if (!liberoInDropdown || !data?.set) return
-    
+
     const { team } = liberoInDropdown
-    
+
     // Get available liberos
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
     const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
     const availableLiberos = liberos.filter(libero => !isLiberoUnable(team, libero.number))
-    
+
     if (availableLiberos.length === 0) {
       alert('No available liberos')
       setLiberoInDropdown(null)
       return
     }
-    
-    // If only one libero, use it; otherwise show selection
-    let liberoToUse = availableLiberos[0]
-    if (availableLiberos.length > 1) {
-      // For now, use the first available libero
-      // Could enhance to show libero selection if needed
-      liberoToUse = availableLiberos[0]
-    }
-    
+
+    // If only one libero, use it; otherwise use the first available
+    const liberoToUse = availableLiberos[0]
+
     // Liberos can only enter back row positions (I, V, VI)
-    // Since user selected a player in I (not serving), II, or III, we'll enter libero in position I
     const liberoEntryPosition = 'I'
-    
-    // Set up libero confirm similar to existing flow
-    setLiberoConfirm({
-      team: team,
+
+    // Get current lineup for this team in the current set
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+    // Create new lineup with libero entry
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
+      }
+    }
+
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[liberoEntryPosition] = String(liberoToUse.number)
+
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
+      }
+    }
+
+    // Save the updated lineup with libero substitution info
+    const nextSeq = await getNextSeq()
+
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
+        team,
+        lineup: finalLineup,
+        liberoSubstitution: {
+          position: liberoEntryPosition,
+          liberoNumber: liberoToUse.number,
+          playerNumber,
+          liberoType: liberoToUse.libero
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: nextSeq
+    })
+
+    // Log the libero entry event
+    await logEvent('libero_entry', {
+      team,
       position: liberoEntryPosition,
       playerOut: playerNumber,
-      liberoIn: liberoToUse.libero
+      liberoIn: liberoToUse.number,
+      liberoType: liberoToUse.libero
     })
+
+    // Check if captain is on court after libero entry
+    const leavingPlayer = teamPlayers?.find(p => p.number === playerNumber)
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = currentCourtCaptain === playerNumber
+
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      setTimeout(() => {
+        checkAndRequestCaptainOnCourt(team)
+      }, 100)
+    }
+
     setLiberoInDropdown(null)
-  }, [liberoInDropdown, data?.set, data?.homePlayers, data?.awayPlayers, isLiberoUnable])
+  }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable, checkAndRequestCaptainOnCourt])
 
   // Confirm libero entry
   const confirmLibero = useCallback(async () => {
@@ -9761,14 +9920,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }
                         }}
                         style={{
-                          padding: '4px 8px',
+                          padding: '5px 10px',
                           background: isSubstitutedByLibero
                             ? '#ffffff'  // White for libero-replaced
                             : wasSubstitutedOut
                               ? '#fde047'  // Yellow for substituted-out
                               : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
                           borderRadius: '4px',
-                          fontSize: '11px',
+                          fontSize: '14px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
@@ -9981,11 +10140,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               })
                             }
                           }}
-                          style={{ 
-                            padding: '4px 8px', 
-                            background: isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)', 
+                          style={{
+                            padding: '5px 10px',
+                            background: isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                             borderRadius: '4px',
-                            fontSize: '11px',
+                            fontSize: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
@@ -9995,7 +10154,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }}
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
-                          <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '10px', fontWeight: 700 }}>
+                          <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
                             {player.libero === 'libero1' ? 'L1' : 'L2'}
                           </span>
                           {sanctions.length > 0 && (
@@ -10239,21 +10398,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </ScoreboardTeamColumn>
 
         <ScoreboardCourtColumn>
-          {/* 3-column layout: Serve+Ball | Score | Ball+Serve - fixed width sides for perfect centering */}
+          {/* 5-column layout: Serve+Ball | Left Score | Colon | Right Score | Ball+Serve */}
           <div style={{
             position: 'relative',
             display: 'grid',
-            gridTemplateColumns: isCompactMode ? '120px 1fr 120px' : '180px 1fr 180px',
+            gridTemplateColumns: '1fr auto auto auto 1fr',
             alignItems: 'center',
-            gap: isCompactMode ? '4px' : '8px',
+            gap: 0,
             width: '100%'
           }}>
             {/* Column 1: Left - Serve indicator + Ball */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: isCompactMode ? '4px' : '8px'
+              justifyContent: 'flex-end',
+              gap: isCompactMode ? '4px' : '8px',
+              paddingRight: isCompactMode ? '8px' : '16px'
             }}>
               {leftServing && (() => {
                 const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
@@ -10307,60 +10467,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               })()}
             </div>
 
-            {/* Column 2: Score counter - Center */}
+            {/* Column 2: Left Score */}
             <div style={{
               display: 'flex',
-              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              paddingRight: isCompactMode ? '8px' : '16px'
+            }}>
+              <span style={{
+                fontVariantNumeric: 'tabular-nums',
+                fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontWeight: 700,
+                lineHeight: 1
+              }}>{pointsBySide.left}</span>
+            </div>
+
+            {/* Column 3: Colon - CENTERED */}
+            <div style={{
+              display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              <div className="set-summary">
-                <div className="set-info">
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', width: '100%' }}>
-                    {renderScoreDisplay({ margin: '0 auto' })}
-                  </div>
-                </div>
-              </div>
-
-              {/* 1st Referee - Below the score (hidden in compact mode) */}
-              {!isCompactMode && refereeConnectionEnabled && (() => {
-                const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
-                const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}` : 'N/A'
-
-                return (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    marginTop: '0px',
-                    marginBottom: '8px',
-                    zIndex: 10
-                  }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: isCompactMode ? '4px 8px' : '6px 12px',
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(255, 255, 255, 0.2)'
-                      }}
-                    >
-                      <span style={{ fontSize: isCompactMode ? '8px' : '12px', fontWeight: 600, color: 'var(--text)' }}>
-                        1<sup><small><small>st</small></small></sup> Ref: {ref1Name}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })()}
+              <span style={{
+                fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontWeight: 700,
+                lineHeight: 1
+              }}>:</span>
             </div>
 
-            {/* Column 3: Right - Ball + Serve indicator */}
+            {/* Column 4: Right Score */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: isCompactMode ? '4px' : '8px'
+              justifyContent: 'flex-start',
+              paddingLeft: isCompactMode ? '8px' : '16px'
+            }}>
+              <span style={{
+                fontVariantNumeric: 'tabular-nums',
+                fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontWeight: 700,
+                lineHeight: 1
+              }}>{pointsBySide.right}</span>
+            </div>
+
+            {/* Column 5: Right - Ball + Serve indicator */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              gap: isCompactMode ? '4px' : '8px',
+              paddingLeft: isCompactMode ? '8px' : '16px'
             }}>
               {rightServing && (() => {
                 const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
@@ -10415,7 +10571,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
 
-          <div className="court" style={{ marginTop: isCompactMode ? '4px' : '6px', marginBottom: isCompactMode ? '2px' : '4px' }}>
+          {/* 1st Referee - above court, minimal margin */}
+          {!isCompactMode && refereeConnectionEnabled && (() => {
+            const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
+            const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
+            if (!ref1Name) return null
+            return (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '1px'
+              }}>
+                <span style={{
+                  fontSize: isLaptopMode ? '13px' : '16px',
+                  color: 'var(--muted)',
+                  whiteSpace: 'nowrap'
+                }}>
+                  1R: {ref1Name}
+                </span>
+              </div>
+            )
+          })()}
+
+          <div className="court" style={{ marginTop: isCompactMode ? '4px' : '2px', marginBottom: isCompactMode ? '2px' : '1px' }}>
             <div className="court-attack-line court-attack-left" />
             <div className="court-attack-line court-attack-right" />
             {rallyStatus === 'idle' && isFirstRally && (
@@ -11318,36 +11497,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           </div>
 
-          {/* 2nd Referee - Between the court and rally-controls (hidden in compact mode) */}
+          {/* 2nd Referee - below court, minimal margin */}
           {!isCompactMode && refereeConnectionEnabled && (() => {
             const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
-            const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}` : 'N/A'
-            const ref2Status = isReferee2Connected
-            const ref2StatusColor = ref2Status ? '#22c55e' : '#eab308'
-            
+            const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}`.trim() : null
+            if (!ref2Name) return null
             return (
               <div style={{
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                marginTop: isCompactMode ? '2px' : '4px',
-                marginBottom: isCompactMode ? '2px' : '4px',
-                zIndex: 10,
+                justifyContent: 'center',
+                marginTop: '1px'
               }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: isCompactMode ? '2px 6px' : '4px 10px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.2)'
-                  }}
-                >
-                  <span style={{ fontSize: isCompactMode ? '8px' : '12px', fontWeight: 600, color: 'var(--text)' }}>
-                    2<sup><small><small>nd</small></small></sup> Ref: {ref2Name}
-                  </span>
-                </div>
+                <span style={{
+                  fontSize: isLaptopMode ? '13px' : '16px',
+                  color: 'var(--muted)',
+                  whiteSpace: 'nowrap'
+                }}>
+                  2R: {ref2Name}
+                </span>
               </div>
             )
           })()}
@@ -12089,14 +12257,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }
                         }}
                         style={{
-                          padding: '4px 8px',
+                          padding: '5px 10px',
                           background: isSubstitutedByLibero
                             ? '#ffffff'  // White for libero-replaced
                             : wasSubstitutedOut
                               ? '#fde047'  // Yellow for substituted-out
                               : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
                           borderRadius: '4px',
-                          fontSize: '11px',
+                          fontSize: '14px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
@@ -12309,11 +12477,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               })
                             }
                           }}
-                          style={{ 
-                            padding: '4px 8px', 
-                            background: isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)', 
+                          style={{
+                            padding: '5px 10px',
+                            background: isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                             borderRadius: '4px',
-                            fontSize: '11px',
+                            fontSize: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
@@ -12323,7 +12491,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }}
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
-                          <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '10px', fontWeight: 700 }}>
+                          <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
                             {player.libero === 'libero1' ? 'L1' : 'L2'}
                           </span>
                           {sanctions.length > 0 && (
@@ -16295,23 +16463,73 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       label: p.libero === 'libero1' ? 'L1' : 'L2'
                     }))
 
-                  const handleLiberoSelect = (libero) => {
-                    // Set up liberoDropdown and trigger confirmation
-                    setLiberoDropdown({
-                      team,
-                      position,
-                      playerNumber,
-                      element: playerActionMenu.element,
-                      x: playerActionMenu.x,
-                      y: playerActionMenu.y
-                    })
-                    setTimeout(() => {
-                      showLiberoConfirm(libero.type)
-                    }, 50)
+                  const handleLiberoSelect = async (libero) => {
+                    // Close menus first
                     setPlayerActionMenu(null)
                     setCourtSubExpanded(false)
                     setCourtLiberoExpanded(false)
                     setCourtSanctionExpanded(false)
+
+                    // Directly execute libero substitution
+                    const liberoType = libero.type
+                    const liberoPlayer = teamPlayers?.find(p => p.libero === liberoType)
+                    if (!liberoPlayer || !data?.set) return
+
+                    // Get current lineup
+                    const lineupEvents = data.events?.filter(e =>
+                      e.type === 'lineup' &&
+                      e.payload?.team === team &&
+                      e.setIndex === data.set.index
+                    ) || []
+                    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+                    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+                    // Create new lineup with libero entry
+                    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+                    const cleanedCurrentLineup = {}
+                    for (const pos of validPositions) {
+                      if (currentLineup[pos] !== undefined) {
+                        cleanedCurrentLineup[pos] = currentLineup[pos]
+                      }
+                    }
+
+                    const newLineup = { ...cleanedCurrentLineup }
+                    newLineup[position] = String(liberoPlayer.number)
+
+                    const finalLineup = {}
+                    for (const pos of validPositions) {
+                      if (newLineup[pos] !== undefined) {
+                        finalLineup[pos] = newLineup[pos]
+                      }
+                    }
+
+                    // Save the updated lineup
+                    const nextSeq = await getNextSeq()
+                    await db.events.add({
+                      matchId,
+                      setIndex: data.set.index,
+                      type: 'lineup',
+                      payload: {
+                        team,
+                        lineup: finalLineup,
+                        liberoSubstitution: {
+                          position,
+                          liberoNumber: liberoPlayer.number,
+                          playerNumber,
+                          liberoType
+                        }
+                      },
+                      ts: new Date().toISOString(),
+                      seq: nextSeq
+                    })
+
+                    await logEvent('libero_entry', {
+                      team,
+                      position,
+                      playerOut: playerNumber,
+                      liberoIn: liberoPlayer.number,
+                      liberoType
+                    })
                   }
 
                   return (
