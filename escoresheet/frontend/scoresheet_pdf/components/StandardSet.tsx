@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SubRecord } from '../types_scoresheet';
+import { PointsColumn } from './PointsColumn';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -8,6 +9,9 @@ interface ServiceRound {
   points: number | null; // Points scored when service lost (null if still serving)
   circled: boolean; // Circled at end of set for last point
 }
+
+// 75% black border color
+const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
 
 interface StandardSetProps {
   setNumber: number;
@@ -41,37 +45,7 @@ interface StandardSetProps {
   positionBoxRef?: React.RefObject<HTMLDivElement>;
 }
 
-// Static Point Box: Display only, not interactive
-export const PointBox: React.FC<{ num: number; filledState?: 0 | 1 | 2; isCircled?: boolean }> = ({ num, filledState = 0, isCircled = false }) => {
-    // type: 0 = none (blank), 1 = slash (scored), 2 = vertical bar (cancelled at end)
-    // Only show number if scored (filledState === 1) or circled (penalty point)
-    const showNumber = filledState === 1 || isCircled;
-
-    return (
-        <div
-            className="flex-1 w-full relative flex items-center justify-center"
-        >
-            {/* Background Number - only show if scored or circled */}
-            {showNumber && (
-                <span className="text-[8px] leading-none text-black">{num}</span>
-            )}
-
-            {/* Overlays */}
-            {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
-            {filledState === 1 && !isCircled && (
-                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="0" y1="100" x2="100" y2="0" stroke="black" strokeWidth="8" />
-                 </svg>
-            )}
-            {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
-            {isCircled && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="48" fill="none" stroke="black" strokeWidth="8" />
-                </svg>
-            )}
-        </div>
-    );
-};
+// PointBox is now imported from ./PointsCol/87umn
 
 // Service/Reception Selector (S above R) - Static version
 export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ initialSelection = null }) => {
@@ -80,7 +54,8 @@ export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ 
             {['S', 'R'].map((item) => (
                 <div 
                     key={item}
-                    className="relative w-3 h-3 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white select-none leading-none"
+                    className="relative w-3 h-3 rounded-full border flex items-center justify-center text-[7px] font-bold bg-white select-none leading-none"
+                    style={borderColor75}
                 >
                     {item}
                     {initialSelection === item && (
@@ -95,87 +70,7 @@ export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ 
     );
 };
 
-// The 1-48 Point Column for a single team
-export const PointsColumn: React.FC<{ 
-  isLast?: boolean, 
-  currentScore?: number, 
-  timeouts?: [string, string], 
-  startsReceiving?: boolean, 
-  markedPoints?: number[],
-  isSetFinished?: boolean,
-  circledPoints?: number[]
-}> = ({ isLast, currentScore = 0, timeouts = ["", ""], markedPoints = [], isSetFinished = false, circledPoints = [] }) => {
-    return (
-        <div className={`flex flex-col h-full shrink-0 ${isLast ? '' : 'border-r border-black'}`} style={{ width: '15mm' }}>
-            <div 
-                className="grid grid-cols-4 bg-white border-b border-l border-black" 
-                style={{ height: '3.0cm' }}
-            >
-                {[0, 12, 24, 36].map((offset) => (
-                    <div 
-                        key={offset} 
-                        className="flex flex-col h-full"
-                        style={{ minWidth: 0, flex: 1 }}
-                    >
-                        {Array.from({ length: 12 }).map((_, i) => {
-                            const num = offset + i + 1;
-                            // Mark point if it's in the markedPoints array
-                            // If set is finished, cancel (vertical bar) all unmarked points
-                            let state: 0 | 1 | 2 = 0;
-                            if (markedPoints.includes(num)) {
-                                state = 1; // Slashed (scored)
-                            } else if (isSetFinished) {
-                                // Find the maximum marked point
-                                const maxMarkedPoint = markedPoints.length > 0 ? Math.max(...markedPoints) : 0;
-                                // All points after the last marked point should be cancelled
-                                if (num > maxMarkedPoint) {
-                                    state = 2; // Vertical bar (cancelled - not scored)
-                                }
-                            }
-                            return (
-                                <div 
-                                    key={i} 
-                                    style={{ minHeight: '0', height: 'calc(100% / 12)' }} 
-                                    className="flex-1 flex items-center justify-center"
-                                >
-                                    <PointBox num={num} filledState={state} isCircled={circledPoints.includes(num)} />
-                                </div>
-                            );
-                        })}
-                    </div>
-                ))}
-            </div>
-            {/* TO Boxes - Standardized Size */}
-            <div className="bg-white flex flex-col items-center justify-start gap-1 border-l border-black py-1" style={{ height: '1.5cm' }}>
-                <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>T</span>
-                <div className="flex flex-col w-full px-2 items-center" style={{ height: '1cm' }}>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[0] ? (
-                            <>
-                                <span>{timeouts[0].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[0].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[1] ? (
-                            <>
-                                <span>{timeouts[1].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[1].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
+// PointsColumn is now imported from ./PointsColumn
 
 // TeamServiceGrid for Sets 1-4 (8 rotation boxes)
 export const TeamServiceGrid: React.FC<{ 
@@ -200,13 +95,13 @@ export const TeamServiceGrid: React.FC<{
     return (
         <div className="flex flex-col shrink-0 border-b" style={{ width: '60mm', height: totalHeight }}>
             {/* Roman Numerals Header */}
-            <div className="flex border-b border-black shrink-0" style={{ height: '5mm' }}>
+            <div className="flex border-b shrink-0" style={{ height: '5mm', ...borderColor75 }}>
                 {['I', 'II', 'III', 'IV', 'V', 'VI'].map((roman, idx) => (
                     <div 
                         key={roman} 
                         ref={idx === 0 ? positionBoxRef : undefined}
-                        className="border-r border-b border-black last:border-r-0 flex items-center justify-center font-bold bg-gray-100 text-[10px]"
-                        style={{ width: '10mm', height: '5mm' }}
+                        className="border-r border-b last:border-r-0 flex items-center justify-center font-bold bg-gray-100 text-[10px]"
+                        style={{ width: '10mm', height: '5mm', ...borderColor75 }}
                     >
                         {roman}
                     </div>
@@ -214,9 +109,9 @@ export const TeamServiceGrid: React.FC<{
             </div>
 
             {/* Starting Players Row */}
-            <div className="flex border-b border-black shrink-0" style={{ height: '5mm' }}>
+            <div className="flex border-b shrink-0" style={{ height: '5mm', ...borderColor75 }}>
                 {positions.map((i) => (
-                    <div key={i} className="border-r border-black last:border-none p-0.5 flex items-center justify-center relative" style={{ width: '10mm', height: '5mm' }}>
+                    <div key={i} className="border-r last:border-none p-0.5 flex items-center justify-center relative" style={{ width: '10mm', height: '5mm', ...borderColor75 }}>
                         <div className="font-bold text-sm text-center print:text-base">{lineup[i] || ''}</div>
                     </div>
                 ))}
@@ -231,9 +126,9 @@ export const TeamServiceGrid: React.FC<{
                     const sub2 = posSubs[1];
 
                     return (
-                        <div key={colIdx} className="border-r border-black last:border-none flex flex-col h-full" style={{ width: '10mm' }}>
+                        <div key={colIdx} className="border-r last:border-none flex flex-col h-full" style={{ width: '10mm', ...borderColor75 }}>
                             {/* Substitution Row - Only PlayerIn (PlayerOut is already in lineup row) */}
-                            <div className="border-b border-black shrink-0 p-0.5 flex items-center justify-center relative" style={{ height: '0.5cm' }}>
+                            <div className="border-b shrink-0 p-0.5 flex items-center justify-center relative" style={{ height: '0.5cm', ...borderColor75 }}>
                                 {sub1 ? (
                                     <>
                                         <div className="text-[14px] text-center font-bold">
@@ -263,7 +158,7 @@ export const TeamServiceGrid: React.FC<{
                                 )}
                             </div>
                             {/* Sub 1 Score - upper box */}
-                            <div className="border-b border-black flex items-center justify-center" style={{ height: '0.5cm' }}>
+                            <div className="border-b flex items-center justify-center" style={{ height: '0.5cm', ...borderColor75 }}>
                                 {sub1 && sub1.score ? (
                                     <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
                                         <span>{sub1.score.split(':')[0]}</span>
@@ -276,7 +171,7 @@ export const TeamServiceGrid: React.FC<{
                             </div>
                             
                             {/* Sub 2 Score - lower box (for return substitution) */}
-                            <div className="flex items-center border-b border-black justify-center bg-white" style={{ height: '0.5cm' }}>
+                            <div className="flex items-center border-b justify-center bg-white" style={{ height: '0.5cm', ...borderColor75 }}>
                                 {sub2 && sub2.score ? (
                                     <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
                                         <span>{sub2.score.split(':')[0]}</span>
@@ -293,17 +188,15 @@ export const TeamServiceGrid: React.FC<{
             </div>
 
             {/* Service Rotation Area */}
-            <div className="flex shrink-0 border-b-0 border-black" style={{ height: rotationHeight }}>
+            <div className="flex shrink-0 border-b-0" style={{ height: rotationHeight, ...borderColor75 }}>
                 {positions.map((colIdx, colArrIdx) => {
                     // For receiving team, position I (colIdx === 0), box 1 gets an X
                     const isLastPosition = colArrIdx === positions.length - 1;
                     return (
                         <div 
                             key={colIdx} 
-                            className={`flex flex-col h-full ${isLastPosition ? '' : 'border-r border-black'}`}
-                            style={{ 
-                                width: '10mm',
-                            }}
+                            className={`flex flex-col h-full ${isLastPosition ? '' : 'border-r'}`}
+                            style={{ width: '10mm', ...(isLastPosition ? {} : borderColor75) }}
                         >
                             {/* Rotation Box Grid for Service Order tracking */}
                             <div 
@@ -315,8 +208,8 @@ export const TeamServiceGrid: React.FC<{
                             >
                                 {/* Vertical divider between the two columns - spans full height */}
                                 <div 
-                                    className="absolute top-0 bottom-0 left-1/2 border-l border-black pointer-events-none"
-                                    style={{ transform: 'translateX(-50%)' }}
+                                    className="absolute top-0 bottom-0 left-1/2 border-l pointer-events-none"
+                                    style={{ transform: 'translateX(-50%)', borderColor: 'rgba(0, 0, 0, 0.50)' }}
                                 />
                                 
                                 {rotationNumbers.map((num, boxIdx) => {
@@ -340,7 +233,7 @@ export const TeamServiceGrid: React.FC<{
                                         'flex',
                                         'items-center',
                                         'justify-center',
-                                        !isLastRow ? 'border-b border-black' : '',
+                                        !isLastRow ? 'border-b-0.5' : '',
                                     ]
                                     .filter(Boolean)
                                     .join(' ');
@@ -351,7 +244,8 @@ export const TeamServiceGrid: React.FC<{
                                             className={boxClass}
                                             style={{
                                                 width: '5mm', 
-                                                height: '5.1mm',
+                                                height: '5.05mm',
+                                                borderBottom: '0.5px solid rgba(0, 0, 0, 0.75)',
                                             }}
                                         >
                                             <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
@@ -360,7 +254,7 @@ export const TeamServiceGrid: React.FC<{
                                             {/* Tick/slash through the box number when this position served */}
                                             {isTicked && !showX && (
                                                 <svg className="absolute top-0 right-0 w-[1.5mm] h-[1.5mm] pointer-events-none" viewBox="0 0 100 100">
-                                                    <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="20" />
+                                                    <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="10" />
                                                 </svg>
                                             )}
                                             {showX && (
@@ -429,11 +323,11 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   if (firstServeTeamA !== undefined) {
     // Team A is left when not swapped, right when swapped
     const teamAIsLeft = !isSwapped;
-    
+
     // Service alternates: Set 1 = firstServeTeamA, Set 2 = !firstServeTeamA, Set 3 = firstServeTeamA, Set 4 = !firstServeTeamA
     // This is because teams switch sides in sets 2 and 4
     const actualFirstServeTeamA = (setNumber % 2 === 1) ? firstServeTeamA : !firstServeTeamA;
-    
+
     if (teamAIsLeft) {
       // Left = Team A, Right = Team B
       leftServes = actualFirstServeTeamA ? 'S' : 'R';
@@ -445,20 +339,23 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     }
   }
 
+  // Calculate max score for dynamic points column sizing
+  const maxScore = Math.max(leftPoints || 0, rightPoints || 0);
+
   return (
-    <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0" style={{ width: '150mm' }}>
+    <div className="border bg-white flex flex-col overflow-hidden shadow-sm shrink-0" style={{ width: '150mm', ...borderColor75 }}>
         {/* Header Strip */}
-        <div className="flex border-b border-black bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm' }}>
+        <div className="flex border-b bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm', ...borderColor75 }}>
              {/* Start Time */}
-             <div className="border-r border-black flex items-center px-2 gap-2 bg-white shrink-0" style={{ width: '20mm' }}>
+             <div className="border-r flex items-center px-2 gap-2 bg-white shrink-0" style={{ width: '20mm', ...borderColor75 }}>
                 <span className="font-bold text-[9px]">Start:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{startTime}</div>
              </div>
              {/* Team Left (A or B) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
-             <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.3mm' }}>
+             <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.3mm', ...borderColor75 }}>
                  <div className="flex items-center gap-1 w-full">
                      <div className="flex items-center gap-1">
-                         <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
+                         <div className="w-6 h-6 rounded-full border flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0" style={borderColor75}>
                             {leftTeamLabel}
                          </div>
                          <SRSelector initialSelection={leftServes} />
@@ -466,14 +363,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                      <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameLeft}</div>
                  </div>
              </div>
-             <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.7mm' }}>Points</div>
+             <div className="border-r flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.7mm', ...borderColor75 }}>Points</div>
               {/* Team Right (B or A) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
-             <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
+             <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm', ...borderColor75 }}>
                  <div className="flex items-center gap-1 w-full justify-end">
                      <div className="w-full text-xs uppercase font-bold text-center bg-white mr-1">{teamNameRight}</div>
                      <div className="flex items-center gap-1">
                         <SRSelector initialSelection={rightServes} />
-                        <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
+                        <div className="w-6 h-6 rounded-full border flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0" style={borderColor75}>
                             {rightTeamLabel}
                         </div>
                      </div>
@@ -484,7 +381,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <span className="font-bold text-[9px]">End:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
              </div>
-             <div className="flex items-center border-l border-black justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
+             <div className="flex items-center border-l justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm', ...borderColor75 }}>Points</div>
         </div>
 
         {/* Main Body - Teams side by side with points on their right */}
@@ -492,13 +389,13 @@ export const StandardSet: React.FC<StandardSetProps> = ({
             {/* Team Left Block - fixed width to match header */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                 <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} positionBoxRef={positionBoxRef} serviceRounds={leftServiceRounds} />
-                <PointsColumn currentScore={leftPoints} timeouts={leftTimeouts} markedPoints={leftMarkedPoints} circledPoints={leftCircledPoints} isSetFinished={!!endTime} />
+                <PointsColumn timeouts={leftTimeouts} markedPoints={leftMarkedPoints} circledPoints={leftCircledPoints} maxScore={maxScore} />
             </div>
 
             {/* Team Right Block - fixed width to match header */}
              <div className="flex shrink-0" style={{ width: '75mm' }}>
                 <TeamServiceGrid lineup={rightLineup} subs={rightSubs} startsReceiving={rightServes === 'R'} serviceRounds={rightServiceRounds} />
-                <PointsColumn isLast={true} currentScore={rightPoints} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} isSetFinished={!!endTime} />
+                <PointsColumn isLast={true} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} maxScore={maxScore} />
             </div>
         </div>
     </div>

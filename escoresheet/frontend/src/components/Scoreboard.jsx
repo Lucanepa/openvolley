@@ -3311,14 +3311,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Confirm set start time
   const confirmSetStartTime = useCallback(async (time) => {
     if (!setStartTimeModal || !data?.set) return
-    
+
+    // Check if the confirmed time differs from the expected time
+    const expectedTime = setStartTimeModal.defaultTime
+    const confirmedTime = new Date(time).getTime()
+    const expectedTimeMs = expectedTime ? new Date(expectedTime).getTime() : confirmedTime
+    const timeDifferent = Math.abs(confirmedTime - expectedTimeMs) > 60000 // More than 1 minute difference
+
     // Update set with start time (absolute timestamp)
     await db.sets.update(data.set.id, { startTime: time })
-    
+
     // Get the highest sequence number for this match
     const nextSeq1 = await getNextSeq()
     const nextSeq2 = nextSeq1 + 1
-    
+
     // Log set_start event
     const setStartEventId = await db.events.add({
       matchId,
@@ -3346,6 +3352,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ts: new Date().toISOString(),
       seq: nextSeq2
     })
+
+    // If the start time differs from expected, automatically open remarks
+    if (timeDifferent) {
+      setShowRemarks(true)
+    }
   }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup])
 
   // Confirm set end time
@@ -3912,6 +3923,50 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     setUndoConfirm({ event: lastUndoableEvent, description })
+  }, [data?.events, data?.set, getActionDescription])
+
+  // Check if there's anything that can be undone (mirrors showUndoConfirm logic)
+  const canUndo = useMemo(() => {
+    if (!data?.events || data.events.length === 0 || !data?.set) return false
+
+    // Only consider events from the CURRENT SET
+    const currentSetIndex = data.set.index
+    const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
+
+    if (currentSetEvents.length === 0) return false
+
+    // Sort events by sequence number (highest first)
+    const sortedEvents = [...currentSetEvents].sort((a, b) => {
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return bSeq - aSeq
+      }
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return bTime - aTime
+    })
+
+    // Check if there's at least one undoable event
+    for (const event of sortedEvents) {
+      // Skip rotation lineups (they get undone with their triggering point)
+      if (event.type === 'lineup' && !event.payload?.isInitial && !event.payload?.fromSubstitution && !event.payload?.liberoSubstitution) {
+        // Check if there's a point before it that we can undo
+        const pointBefore = sortedEvents.find(e => e.type === 'point' && (e.seq || 0) < (event.seq || 0))
+        if (pointBefore) {
+          const desc = getActionDescription(pointBefore)
+          if (desc && desc !== 'Unknown action') return true
+        }
+        continue
+      }
+
+      const description = getActionDescription(event)
+      if (description && description !== 'Unknown action') {
+        return true
+      }
+    }
+
+    return false
   }, [data?.events, data?.set, getActionDescription])
 
   const handleUndo = useCallback(async () => {
@@ -9294,6 +9349,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </button>
                       <button
                         onClick={handleUndo}
+                        disabled={!canUndo}
                         style={{
                           padding: '10px',
                           fontSize: '12px',
@@ -9302,7 +9358,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           color: '#ef4444',
                           border: '1px solid rgba(239, 68, 68, 0.3)',
                           borderRadius: '6px',
-                          cursor: 'pointer'
+                          cursor: canUndo ? 'pointer' : 'not-allowed',
+                          opacity: canUndo ? 1 : 0.5
                         }}
                       >
                         Undo
@@ -11707,7 +11764,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     <button
                       className="danger"
                       onClick={showUndoConfirm}
-                      disabled={!data?.events || data.events.length === 0}
+                      disabled={!canUndo}
                       style={{ flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none' }}
                     >
                       Undo

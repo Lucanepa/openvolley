@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 
+// 75% black border color
+const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
+
 interface SanctionsProps {
     items?: SanctionRecord[];
     improperRequests?: { teamA: boolean; teamB: boolean };
@@ -11,17 +14,17 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
     const rowCount = 10; 
 
     return (
-        <div className="border border-black bg-white flex flex-col h-full relative group overflow-hidden">
-            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 relative shrink-0">
+        <div className="border bg-white flex flex-col h-full relative group overflow-hidden" style={borderColor75}>
+            <div className="bg-gray-200 border-b text-center font-bold text-[10px] py-0.5 relative shrink-0" style={borderColor75}>
                 SANCTIONS
             </div>
 
             {/* Improper Request Row - Static */}
-            <div className="flex items-center justify-between px-2 py-0.5 border-b border-black bg-white shrink-0">
+            <div className="flex items-center justify-between px-2 py-0.5 border-b bg-white shrink-0" style={borderColor75}>
                 <span className="text-[9px] font-bold uppercase">Improper Request</span>
                 <div className="flex items-center gap-3">
                     {/* Team A */}
-                    <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center relative select-none bg-white" style={borderColor75}>
                         <span className="text-[20px] font-bold leading-none relative z-0">A</span>
                         {improperRequests.teamA && (
                             <span className="absolute inset-0 flex items-center justify-center text-[30px] text-gray-500 leading-none z-10">X</span>
@@ -29,7 +32,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                     </div>
 
                     {/* Team B */}
-                    <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center relative select-none bg-white" style={borderColor75}>
                         <span className="text-[20px] font-bold leading-none relative z-0">B</span>
                         {improperRequests.teamB && (
                             <span className="absolute inset-0 flex items-center justify-center text-[30px] text-gray-500 leading-none z-10">X</span>
@@ -38,21 +41,21 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                 </div>
             </div>
 
-            <div className="grid grid-cols-7 text-[9px] font-bold text-center border-b border-black bg-white shrink-0" style={{ height: '0.7cm' }}>
-                <div className="border-r border-black flex items-center justify-center">W</div>
-                <div className="border-r border-black flex items-center justify-center">P</div>
-                <div className="border-r border-black flex items-center justify-center">E</div>
-                <div className="border-r border-black flex items-center justify-center">D</div>
-                <div className="border-r border-black flex items-center justify-center h-full">
+            <div className="grid grid-cols-7 text-[9px] font-bold text-center border-b bg-white shrink-0" style={{ height: '0.7cm', ...borderColor75 }}>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>W</div>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>P</div>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>E</div>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>D</div>
+                <div className="border-r flex items-center justify-center h-full" style={borderColor75}>
                     <div className="flex flex-col items-center justify-center min-h-0 py-0.5 gap-0.5">
-                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white">A</div>
-                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white">B</div>
+                        <div className="w-2.5 h-2.5 rounded-full border flex items-center justify-center text-[7px] font-bold bg-white" style={borderColor75}>A</div>
+                        <div className="w-2.5 h-2.5 rounded-full border flex items-center justify-center text-[7px] font-bold bg-white" style={borderColor75}>B</div>
                     </div>
                     <div className="flex flex-col items-center justify-center h-full ml-1">
                         <span className="text-[8px] font-normal text-gray-700" style={{ lineHeight: '100%' }}>or</span>
                     </div>
                 </div>
-                <div className="border-r border-black flex items-center justify-center">Set</div>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>Set</div>
                 <div className=" flex items-center justify-center">Score</div>
             </div>
             {/* flex-1 makes this container take remaining space and rows distribute evenly */}
@@ -62,30 +65,30 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                     return (
                     <div key={i} className="grid grid-cols-7 flex-1 last:border-none text-xs min-h-0">
                          <div className="flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">
+                            <div className="text-center text-[10px]">
                                 {item?.type === 'warning' ? (item.playerNr || '') : ''}
                             </div>
                          </div>
                          <div className=" flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">
+                            <div className="text-center text-[10px]">
                                 {item?.type === 'penalty' ? (item.playerNr || '') : ''}
                             </div>
                          </div>
                          <div className=" flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">
+                            <div className=" text-center text-[10px]">
                                 {item?.type === 'expulsion' ? (item.playerNr || '') : ''}
                             </div>
                          </div>
                          <div className=" flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="font-bold text-center text-[10px]">
+                            <div className="text-center text-[10px]">
                                 {item?.type === 'disqualification' ? (item.playerNr || '') : ''}
                             </div>
                          </div>
-                         <div className="text-center uppercase font-bold flex items-center justify-center text-[10px] px-0.5" style={{ aspectRatio: '1' }}>
+                         <div className="text-center uppercase flex items-center justify-center text-[10px] px-0.5" style={{ aspectRatio: '1' }}>
                             {item?.team || ''}
                          </div>
-                         <div className="text-center font-bold flex items-center justify-center text-[10px]" style={{ aspectRatio: '1' }}>{item?.set || ''}</div>
-                         <div className="text-center font-bold flex items-center justify-center text-[10px]" style={{ aspectRatio: '1' }}>{item?.score || ''}</div>
+                         <div className="text-center flex items-center justify-center text-[10px]" style={{ aspectRatio: '1' }}>{item?.set || ''}</div>
+                         <div className="text-center flex items-center justify-center text-[9px]" style={{ aspectRatio: '1' }}>{item?.score || ''}</div>
                     </div>
                 )})}
             </div>
@@ -132,8 +135,8 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
     const hasContent = remarks.trim() || overflowSanctions.length > 0;
 
     return (
-        <div className="border border-black bg-white flex flex-col h-full">
-            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
+        <div className="border bg-white flex flex-col h-full" style={borderColor75}>
+            <div className="bg-gray-200 border-b text-center font-bold text-[10px] py-0.5 shrink-0" style={borderColor75}>REMARKS</div>
             <div className="p-1 flex-1 flex flex-col overflow-y-auto">
                 {hasContent ? (
                     <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full">
@@ -207,17 +210,17 @@ export const Results: React.FC<ResultsProps> = ({
   coinTossConfirmed = false
 }) => {
     return (
-        <div className="border border-black bg-white flex flex-col h-full">
-            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
-            <div className="grid grid-cols-[1fr_80px_1fr] gap-px bg-black border-b border-black flex-1 min-h-0">
+        <div className="border bg-white flex flex-col h-full" style={borderColor75}>
+            <div className="bg-gray-200 border-b text-center font-bold text-[10px] py-0.5 shrink-0" style={borderColor75}>RESULT</div>
+            <div className="grid grid-cols-[1fr_80px_1fr] gap-px bg-black border-b flex-1 min-h-0" style={borderColor75}>
                 {/* Team A Stats */}
                 <div className="bg-white flex flex-col">
-                    <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50">
-                         <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
+                    <div className="flex items-center gap-1 px-1 border-b h-5 bg-gray-50" style={borderColor75}>
+                         <div className="w-4 h-4 rounded-full border flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0" style={borderColor75}>A</div>
                          <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</div>
                     </div>
-                    <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
-                        <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div className="border-r">P</div>
+                    <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b" style={borderColor75}>
+                        <div className="border-r" style={borderColor75}>T</div><div className="border-r" style={borderColor75}>S</div><div className="border-r" style={borderColor75}>W</div><div className="border-r">P</div>
                     </div>
                     <div className="flex-1 flex flex-col">
                         {[1,2,3,4,5].map(set => {
@@ -241,7 +244,7 @@ export const Results: React.FC<ResultsProps> = ({
                             );
                         })}
                         {/* Total Row */}
-                        <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
+                        <div className="border-t grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm', ...borderColor75 }}>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
                                 {setResults.reduce((sum, r) => sum + (r.teamATimeouts !== null ? (r.teamATimeouts || 0) : 0), 0) || 0}
                             </div>
@@ -259,10 +262,10 @@ export const Results: React.FC<ResultsProps> = ({
                 </div>
 
                 {/* Center Duration & Set */}
-                <div className="bg-white flex flex-col border-black">
-                     <div className="h-5 border-b border-black bg-gray-200"></div>
-                     <div className="bg-white text-[8px] font-bold text-center border-b border-black h-[13px] grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                         <span className="border-r border-black flex-1">Set</span>
+                <div className="bg-white flex flex-col" style={borderColor75}>
+                     <div className="h-5 border-b bg-gray-200" style={borderColor75}></div>
+                     <div className="bg-white text-[8px] font-bold text-center border-b h-[13px] grid" style={{ gridTemplateColumns: '1fr 2fr', ...borderColor75 }}>
+                         <span className="border-r flex-1" style={borderColor75}>Set</span>
                          <span className="flex-1">Time</span>
                      </div>
                      <div className="flex-1 flex flex-col">
@@ -272,15 +275,15 @@ export const Results: React.FC<ResultsProps> = ({
                             const showSetNumber = set <= 3 || (setData && setData.teamATimeouts !== null);
                             return (
                             <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                                <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? set : ''}</div>
+                                <div className="flex items-center justify-center border-r text-[9px]" style={borderColor75}>{showSetNumber ? set : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
                                 </div>
                             </div>
                             );
                         })}
-                        <div className="border-t border-black grid bg-white" style={{ gridTemplateColumns: '1fr 2fr', height: '0.7cm' }}>
-                            <div className="flex items-center justify-center font-bold text-[9px] border-r border-black">Total</div>
+                        <div className="border-t grid bg-white" style={{ gridTemplateColumns: '1fr 2fr', height: '0.7cm', ...borderColor75 }}>
+                            <div className="flex items-center justify-center font-bold text-[9px] border-r" style={borderColor75}>Total</div>
                             <div className="text-center font-bold flex items-center justify-center text-[9px]">
                                 {(() => {
                                     // Total is the sum of all set durations (in minutes)
@@ -299,12 +302,12 @@ export const Results: React.FC<ResultsProps> = ({
 
                 {/* Team B Stats */}
                  <div className="bg-white flex flex-col">
-                    <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50 flex-row-reverse">
-                         <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
+                    <div className="flex items-center gap-1 px-1 border-b h-5 bg-gray-50 flex-row-reverse" style={borderColor75}>
+                         <div className="w-4 h-4 rounded-full border flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0" style={borderColor75}>B</div>
                          <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</div>
                     </div>
-                    <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
-                        <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div>T</div>
+                    <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b" style={borderColor75}>
+                        <div className="border-r" style={borderColor75}>P</div><div className="border-r" style={borderColor75}>W</div><div className="border-r" style={borderColor75}>S</div><div>T</div>
                     </div>
                     <div className="flex-1 flex flex-col">
                         {[1,2,3,4,5].map(set => {
@@ -327,7 +330,7 @@ export const Results: React.FC<ResultsProps> = ({
                              </div>
                             );
                         })}
-                        <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
+                        <div className="border-t grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm', ...borderColor75 }}>
                             <div className="border-r border-gray-300 text-center font-bold flex items-center justify-center text-[9px]">
                                 {setResults.reduce((sum, r) => sum + (r.teamBPoints !== null ? (r.teamBPoints || 0) : 0), 0) || 0}
                             </div>
@@ -346,23 +349,23 @@ export const Results: React.FC<ResultsProps> = ({
             </div>
             
             {/* Set Start/End/Duration Row - spans full width */}
-            <div className="border-t border-black grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm' }}>
-                <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match Start</div>
-                <div className="border-r border-black flex items-center justify-center">
+            <div className="border-t grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm', ...borderColor75 }}>
+                <div className="border-r text-[6px] font-bold flex items-center justify-start pl-1" style={borderColor75}>Match Start</div>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>
                     <div className="w-full text-center text-[6px] font-bold bg-white">{matchStart}</div>
                 </div>
-                <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match End</div>
-                <div className="border-r border-black flex items-center justify-center">
+                <div className="border-r text-[6px] font-bold flex items-center justify-start pl-1" style={borderColor75}>Match End</div>
+                <div className="border-r flex items-center justify-center" style={borderColor75}>
                     <div className="w-full text-center text-[6px] font-bold bg-white">{matchEnd}</div>
                 </div>
-                <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match Duration</div>
+                <div className="border-r text-[6px] font-bold flex items-center justify-start pl-1" style={borderColor75}>Match Duration</div>
                 <div className="flex items-center justify-center">
                     <div className="w-full text-center text-[6px] font-bold bg-white">{matchDuration}</div>
                 </div>
             </div>
             
             {/* Winner Area */}
-            <div className="p-1 grid grid-cols-[3fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
+            <div className="p-1 grid grid-cols-[3fr_1fr] gap-1 border-t h-14 shrink-0 bg-white" style={borderColor75}>
                  <div className="relative">
                      <span className="text-[12px] absolute top-0 left-0 text-gray-500">WINNER</span>
                      <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-end justify-center pb-0.5">{winner}</div>
@@ -394,12 +397,33 @@ export const Results: React.FC<ResultsProps> = ({
 
 interface ApprovalsProps {
   officials?: any[];
+  match?: any;
+  teamAKey?: 'home' | 'away';
 }
 
-export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
+export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home' }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
-    const [openSignature, setOpenSignature] = useState<string | null>(null);
-    const [signatures, setSignatures] = useState<Record<string, string>>({});
+    
+    // Load signatures from match data
+    const getSignatureForRole = (role: string): string | null => {
+        if (role === '1st Referee') return match?.ref1Signature || null;
+        if (role === '2nd Referee') return match?.ref2Signature || null;
+        if (role === 'Scorer') return match?.scorerSignature || null;
+        if (role === 'Assistant Scorer') return match?.asstScorerSignature || null;
+        return null;
+    };
+
+    const getCaptainSignature = (side: 'home' | 'away'): string | null => {
+        if (side === 'home') return match?.homeCaptainSignature || null;
+        return match?.awayCaptainSignature || null;
+    };
+
+    // Determine which team is A and which is B
+    const homeIsA = teamAKey === 'home';
+    const homeCaptainSignature = getCaptainSignature('home');
+    const awayCaptainSignature = getCaptainSignature('away');
+    const captainASignature = homeIsA ? homeCaptainSignature : awayCaptainSignature;
+    const captainBSignature = homeIsA ? awayCaptainSignature : homeCaptainSignature;
     
     const getOfficial = (role: string) => {
         return officials.find(o => 
@@ -408,21 +432,12 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
         );
     };
 
-    const handleSignatureClick = (role: string) => {
-        setOpenSignature(role);
-    };
-
-    const handleSignatureSave = (role: string, signatureDataUrl: string) => {
-        setSignatures(prev => ({ ...prev, [role]: signatureDataUrl }));
-        setOpenSignature(null);
-    };
-
     return (
-        <div className="border border-black bg-white flex flex-col h-full w-full">
-            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">APPROVAL</div>
+        <div className="border bg-white flex flex-col h-full w-full" style={borderColor75}>
+            <div className="bg-gray-200 border-b text-center font-bold text-[10px] py-0.5 shrink-0" style={borderColor75}>APPROVAL</div>
             
             {/* Column Headers */}
-            <div className="flex items-center border-b border-black px-2 gap-2 text-[8px] font-bold bg-white h-4 shrink-0">
+            <div className="flex items-center border-b px-2 gap-2 text-[8px] font-bold bg-white h-4 shrink-0" style={borderColor75}>
                  <div className="w-20 text-left text-[9px]">Official</div>
                  <div className="w-28 text-left text-[9px]">Name</div>
                  <div className="w-16 text-center text-[9px]">Country</div>
@@ -431,7 +446,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
             </div>
 
             {/* Officials List */}
-            <div className="flex flex-col border-b border-black flex-1 min-h-0">
+            <div className="flex flex-col border-b flex-1 min-h-0" style={borderColor75}>
                 {roles.map((role, idx) => {
                     const official = getOfficial(role);
                     const fullName = official ? `${official.lastName || ''} ${official.firstName || ''}`.trim() : '';
@@ -453,14 +468,12 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
                         </div>
 
                         <div 
-                            className="flex-1 h-full relative flex items-end pb-1 min-h-0 cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white"
-                            onClick={() => handleSignatureClick(role)}
-                            title="Click to sign"
+                            className="flex-1 h-full relative flex items-end pb-1 min-h-0"
                         >
-                            {/* Signature space */}
-                            {signatures[role] ? (
+                            {/* Signature space - read-only in PDF */}
+                            {getSignatureForRole(role) ? (
                                 <img 
-                                    src={signatures[role]} 
+                                    src={getSignatureForRole(role)!} 
                                     alt={`${role} signature`}
                                     className="w-full h-6 object-contain"
                                     style={{ maxHeight: '24px' }}
@@ -479,14 +492,12 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
                  <div className="flex-1 flex flex-col">
                     <span className="text-[7px] text-gray-400 uppercase mb-1">Captain Signature</span>
                     <div 
-                        className="flex-1 border-b border-black relative cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white min-h-[24px]"
-                        onClick={() => handleSignatureClick('home-captain')}
-                        title="Click to sign"
+                        className="flex-1 border-b relative min-h-[24px]"
                     >
-                        {signatures['home-captain'] ? (
+                        {captainASignature ? (
                             <img 
-                                src={signatures['home-captain']} 
-                                alt="Home captain signature"
+                                src={captainASignature} 
+                                alt="Captain A signature"
                                 className="w-full h-6 object-contain"
                                 style={{ maxHeight: '24px' }}
                             />
@@ -497,21 +508,19 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
                  </div>
                  
                  <div className="flex items-center gap-3 pb-1">
-                     <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center font-bold text-sm bg-white">A</div>
-                     <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center font-bold text-sm bg-white">B</div>
+                     <div className="w-6 h-6 rounded-full border flex items-center justify-center font-bold text-sm bg-white" style={borderColor75}>A</div>
+                     <div className="w-6 h-6 rounded-full border flex items-center justify-center font-bold text-sm bg-white" style={borderColor75}>B</div>
                  </div>
                  
                  <div className="flex-1 flex flex-col">
                     <span className="text-[7px] text-gray-400 uppercase mb-1 text-right">Captain Signature</span>
                     <div 
-                        className="flex-1 border-b border-black relative cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white min-h-[24px]"
-                        onClick={() => handleSignatureClick('away-captain')}
-                        title="Click to sign"
+                        className="flex-1 border-b relative min-h-[24px]"
                     >
-                        {signatures['away-captain'] ? (
+                        {captainBSignature ? (
                             <img 
-                                src={signatures['away-captain']} 
-                                alt="Away captain signature"
+                                src={captainBSignature} 
+                                alt="Captain B signature"
                                 className="w-full h-6 object-contain"
                                 style={{ maxHeight: '24px' }}
                             />
@@ -522,15 +531,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [] }) => {
                  </div>
             </div>
 
-            {/* Signature Modal */}
-            {openSignature && (
-                <SignatureModal
-                    open={true}
-                    onClose={() => setOpenSignature(null)}
-                    onSave={(signatureDataUrl) => handleSignatureSave(openSignature, signatureDataUrl)}
-                    title={`${openSignature === 'home-captain' ? 'Home' : openSignature === 'away-captain' ? 'Away' : openSignature} Signature`}
-                />
-            )}
+            {/* Signature Modal - removed, signatures are managed in MatchEnd */}
         </div>
     );
 };
@@ -610,15 +611,15 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // Get liberos separately for the libero section, sorted by jersey number
     const liberos = players
         .filter(p => p.libero)
-        .sort((a, b) => parseInt(a.number || '0') - parseInt(b.number || '0'))
+        .sort((a, b) => parseInt(String(a.number || '0')) - parseInt(String(b.number || '0')))
         .slice(0, 2);
     
     return (
-        <div className="border border-black bg-white h-full flex flex-col min-w-0">
-            <div className="bg-white text-black border-b border-black font-bold py-0.5 text-xs flex justify-between px-1 items-center h-6 shrink-0">
+        <div className="border bg-white h-full flex flex-col min-w-0" style={borderColor75}>
+            <div className="bg-white text-black border-b font-bold py-0.5 text-xs flex justify-between px-1 items-center h-6 shrink-0" style={borderColor75}>
                 {isHome ? (
                     <>
-                        <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase">{coinTossConfirmed ? side : ''}</div>
+                        <div className="w-5 h-5 rounded-full border flex items-center justify-center shrink-0 font-bold text-[10px] uppercase" style={borderColor75}>{coinTossConfirmed ? side : ''}</div>
                         <div className="font-bold text-xs uppercase flex-1 text-center bg-white text-left pl-2">{team}</div>
                     </>
                 ) : (
@@ -629,9 +630,9 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                 )}
             </div>
             {/* Header */}
-            <div className={`bg-white border-b border-black ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`}>
-                <div className="border-r border-black text-center h-full flex items-center justify-center">DoB</div>
-                <div className="border-r border-black text-center h-full flex items-center justify-center">No</div>
+            <div className={`bg-white border-b ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`} style={borderColor75}>
+                <div className="border-r text-center h-full flex items-center justify-center" style={borderColor75}>DoB</div>
+                <div className="border-r text-center h-full flex items-center justify-center" style={borderColor75}>No</div>
                 <div className="pl-1 h-full flex items-center">Name</div>
             </div>
             
@@ -642,8 +643,8 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     const isCaptain = player?.isCaptain;
                     return (
                     <div key={i} className={`${gridClass} last:border-none flex-1 h-4`}>
-                        <div className="border-r border-black flex items-center justify-center text-center text-[9px]">{player?.dob || ''}</div>
-                        <div className="border-r border-black flex items-center justify-center relative font-bold">
+                        <div className="border-r flex items-center justify-center text-center text-[9px]" style={borderColor75}>{player?.dob || ''}</div>
+                        <div className="border-r flex items-center justify-center relative font-bold" style={borderColor75}>
                             <div className="font-bold bg-white text-center w-full text-[10px]">{player?.number || ''}</div>
                             {isCaptain && (
                                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
@@ -657,16 +658,16 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             </div>
             
             {/* Liberos - 2 players */}
-            <div className="border-t border-black shrink-0">
-                <div className="bg-gray-200 text-[12px] font-bold border-b border-black h-4 flex items-center justify-center">LIBERO</div>
+            <div className="border-t shrink-0" style={borderColor75}>
+                <div className="bg-gray-200 text-[12px] font-bold border-b h-4 flex items-center justify-center" style={borderColor75}>LIBERO</div>
                 {Array.from({ length: 2 }).map((_, i) => {
                     const libero = liberos[i];
                     // Capitalize only (not UPPERCASE) for liberos
                     const liberoName = libero?.name ? libero.name.charAt(0).toUpperCase() + libero.name.slice(1).toLowerCase() : '';
                     return (
                         <div key={i} className={`${gridClass} ${i === 0 ? 'border-none' : ''} ${rowHeight} text-[9px]`}>
-                            <div className="border-r border-black text-center flex items-center justify-center">{libero?.dob || ''}</div>
-                            <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
+                            <div className="border-r text-center flex items-center justify-center" style={borderColor75}>{libero?.dob || ''}</div>
+                            <div className="border-r font-bold bg-white text-center flex items-center justify-center" style={borderColor75}>{libero?.number || ''}</div>
                             <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center">{liberoName}</div>
                         </div>
                     );
@@ -674,8 +675,8 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             </div>
 
             {/* Officials */}
-             <div className="border-t border-black bg-white shrink-0">
-                 <div className="bg-gray-200 text-[12px] font-bold h-4 border-b border-black text-center flex items-center justify-center">BENCH OFFICIALS</div>
+             <div className="border-t bg-white shrink-0" style={borderColor75}>
+                 <div className="bg-gray-200 text-[12px] font-bold h-4 border-b text-center flex items-center justify-center" style={borderColor75}>BENCH OFFICIALS</div>
                  {['C', 'AC1', 'AC2', 'P', 'M'].map((roleLabel, idx) => {
                      const roleMap: { [key: string]: string } = {
                          'C': 'Coach',
@@ -690,7 +691,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                      return (
                          <div key={roleLabel} className={`${gridClass} text-[9px] items-center ${rowHeight}`}>
                              <div className="text-center flex items-center justify-center">{official?.dob || ''}</div>
-                             <div className="font-bold text-center border-r border-black border-l border-black h-full flex items-center justify-center bg-white text-[9px]">{roleLabel}</div>
+                             <div className="font-bold text-center border-r border-l h-full flex items-center justify-center bg-white text-[9px]" style={borderColor75}>{roleLabel}</div>
                              <div className="uppercase bg-white px-1 text-left flex items-center">{fullName}</div>
                          </div>
                      );
@@ -698,17 +699,18 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
              </div>
 
              {/* Signatures */}
-             <div className="border-t border-black bg-white shrink-0 p-0.5">
+             <div className="border-t bg-white shrink-0 p-0.5" style={borderColor75}>
                  <div className="flex flex-col gap-1">
                     {/* Captain Signature */}
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Captain</span>
                         <div 
-                            className={`flex-1 border-b border-black relative min-h-[20px] ${
+                            className={`flex-1 border-b relative min-h-[20px] ${
                                 preGameCaptainSignature 
                                     ? 'cursor-default' 
                                     : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
                             }`}
+                            style={borderColor75}
                             onClick={preGameCaptainSignature ? undefined : () => handleSignatureClick(captainSignatureKey)}
                             title={preGameCaptainSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
                         >
@@ -728,7 +730,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Coach</span>
                         <div 
-                            className={`flex-1 border-b border-black relative min-h-[20px] ${
+                            className={`flex-1 border-b relative min-h-[20px] ${
                                 preGameCoachSignature 
                                     ? 'cursor-default' 
                                     : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.12',
+    date: '16.12.25',
+    changes: [
+      'Update version number to 0.8.11, enhance Vite configuration for clean URL handling, and improve scoresheet PDF components with coin toss confirmation logic.'
+    ]
+  },
+  {
     version: '0.8.28',
     date: '16.12.25',
     changes: [
