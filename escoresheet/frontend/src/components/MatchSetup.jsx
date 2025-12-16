@@ -2689,14 +2689,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   if (val !== null && (val < 1 || val > 99)) return
                   const updated = [...homeRoster]
                   updated[i] = { ...updated[i], number: val }
-                  // Sort roster by player number
-                  updated.sort((a, b) => (a.number || 0) - (b.number || 0))
                   setHomeRoster(updated)
-                }} 
+                }}
+                onBlur={() => {
+                  // Sort roster by player number when done editing
+                  const sorted = [...homeRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
+                  setHomeRoster(sorted)
+                }}
               />
-              <input 
-                className="w-name capitalize" 
-                placeholder="Last Name" 
+              <input
+                className="w-name capitalize"
+                placeholder="Last Name"
                 value={p.lastName || ''} 
                 onChange={e => {
                   const updated = [...homeRoster]
@@ -3323,14 +3326,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   if (val !== null && (val < 1 || val > 99)) return
                   const updated = [...awayRoster]
                   updated[i] = { ...updated[i], number: val }
-                  // Sort roster by player number
-                  updated.sort((a, b) => (a.number || 0) - (b.number || 0))
                   setAwayRoster(updated)
-                }} 
+                }}
+                onBlur={() => {
+                  // Sort roster by player number when done editing
+                  const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
+                  setAwayRoster(sorted)
+                }}
               />
-              <input 
-                className="w-name capitalize" 
-                placeholder="Last Name" 
+              <input
+                className="w-name capitalize"
+                placeholder="Last Name"
                 value={p.lastName || ''} 
                 onChange={e => {
                   const updated = [...awayRoster]

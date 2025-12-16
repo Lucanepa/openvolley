@@ -53,6 +53,18 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
   const [wakeLockActive, setWakeLockActive] = useState(false) // Track wake lock status
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown, started }
+  const [peekingLineup, setPeekingLineup] = useState({ left: false, right: false }) // Track which team's lineup is being peeked
+
+  // Reset peeking state on any mouseup/touchend (since overlay disappears when peeking)
+  useEffect(() => {
+    const resetPeeking = () => setPeekingLineup({ left: false, right: false })
+    document.addEventListener('mouseup', resetPeeking)
+    document.addEventListener('touchend', resetPeeking)
+    return () => {
+      document.removeEventListener('mouseup', resetPeeking)
+      document.removeEventListener('touchend', resetPeeking)
+    }
+  }, [])
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -924,6 +936,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     
     return !hasSetStarted
   }, [data?.sets, data?.set, data?.events])
+
+  // Check if this is the first rally of the set (no points scored yet)
+  const isFirstRally = useMemo(() => {
+    if (!data?.events || !data?.set) return true
+    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
+    return !hasPoints
+  }, [data?.events, data?.set])
 
   // Start between-sets countdown when we detect we're between sets
   useEffect(() => {
@@ -2160,6 +2179,53 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 })()}
               </div>
             )}
+            {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+            {leftLineup && !rightLineup && isFirstRally && !peekingLineup.left && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                zIndex: 50,
+                borderRadius: '8px'
+              }}>
+                <div style={{
+                  fontSize: 'clamp(14px, 3vw, 20px)',
+                  fontWeight: 700,
+                  color: '#22c55e',
+                  textAlign: 'center'
+                }}>
+                  Line-up set
+                </div>
+                <button
+                  onMouseDown={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                  onMouseUp={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                  onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                  onTouchStart={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                  onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: 'clamp(10px, 2vw, 13px)',
+                    fontWeight: 600,
+                    background: 'rgba(59, 130, 246, 0.3)',
+                    color: '#fff',
+                    border: '1px solid rgba(59, 130, 246, 0.5)',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Show Line-up
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Right side */}
@@ -2273,6 +2339,53 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     )
                   })
                 })()}
+              </div>
+            )}
+            {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+            {rightLineup && !leftLineup && isFirstRally && !peekingLineup.right && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                zIndex: 50,
+                borderRadius: '8px'
+              }}>
+                <div style={{
+                  fontSize: 'clamp(14px, 3vw, 20px)',
+                  fontWeight: 700,
+                  color: '#22c55e',
+                  textAlign: 'center'
+                }}>
+                  Line-up set
+                </div>
+                <button
+                  onMouseDown={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                  onMouseUp={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                  onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                  onTouchStart={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                  onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: 'clamp(10px, 2vw, 13px)',
+                    fontWeight: 600,
+                    background: 'rgba(59, 130, 246, 0.3)',
+                    color: '#fff',
+                    border: '1px solid rgba(59, 130, 246, 0.5)',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Show Line-up
+                </button>
               </div>
             )}
           </div>

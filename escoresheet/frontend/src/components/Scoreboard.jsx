@@ -132,6 +132,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
+  const [peekingLineup, setPeekingLineup] = useState({ left: false, right: false }) // Track which team's lineup is being peeked
+
+  // Reset peeking state on any mouseup/touchend (since overlay disappears when peeking)
+  useEffect(() => {
+    const resetPeeking = () => setPeekingLineup({ left: false, right: false })
+    document.addEventListener('mouseup', resetPeeking)
+    document.addEventListener('touchend', resetPeeking)
+    return () => {
+      document.removeEventListener('mouseup', resetPeeking)
+      document.removeEventListener('touchend', resetPeeking)
+    }
+  }, [])
+
   const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
   const [exceptionalSubstitutionModal, setExceptionalSubstitutionModal] = useState(null) // { team: 'home'|'away', position: string, playerOut: number, reason: 'expulsion'|'disqualification'|'injury' } | null
   const [substitutionDropdown, setSubstitutionDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, isInjury?: boolean } | null
@@ -145,7 +158,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [exchangeLiberoDropdown, setExchangeLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', liberoNumber: number, element: HTMLElement } | null
   const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string, availableLiberos: [{number, type, label}], selectedLiberoIndex: number } | null
   const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string } | null
-  const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string } | null
+  const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, reason?: 'declared'|'injury' } | null
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
   const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away' } | null
   const [reopenSetConfirm, setReopenSetConfirm] = useState(null) // { setId: number, setIndex: number } | null
@@ -164,7 +177,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
+  const [courtLiberoExpanded, setCourtLiberoExpanded] = useState(false) // Track if libero list is expanded in court player menu
   const [benchSanctionExpanded, setBenchSanctionExpanded] = useState(false) // Track if sanction list is expanded in bench player menu
+  const [liberoBenchReplaceExpanded, setLiberoBenchReplaceExpanded] = useState(false) // Track if replace list is expanded in libero bench menu
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
@@ -2619,8 +2634,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '5px 16px',
-            letterSpacing: 0 // Reset letter-spacing from CSS to prevent colon offset
+            padding: '5px 0',
+            letterSpacing: 0
           }}
         >
           {/* Left side: score - right aligned, fixed width */}
@@ -2629,15 +2644,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             width: isCompactMode ? '60px' : isLaptopMode ? '80px' : '100px',
             fontVariantNumeric: 'tabular-nums',
             fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            lineHeight: 1,
             textAlign: 'right',
-            letterSpacing: 0
+            letterSpacing: 0,
+            paddingRight: isCompactMode ? '8px' : isLaptopMode ? '12px' : '16px'
           }}>{pointsBySide.left}</span>
-          {/* Center colon - fixed width to stay perfectly centered */}
+          {/* Center colon - absolutely positioned for perfect centering */}
           <span style={{
-            display: 'inline-block',
-            width: isCompactMode ? '20px' : isLaptopMode ? '24px' : '30px',
-            textAlign: 'center',
-            fontSize: isCompactMode ? '36px' : isLaptopMode ? '50px' : '70px',
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            lineHeight: 1,
             letterSpacing: 0
           }}>:</span>
           {/* Right side: score - left aligned, fixed width */}
@@ -2646,8 +2664,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             width: isCompactMode ? '60px' : isLaptopMode ? '80px' : '100px',
             fontVariantNumeric: 'tabular-nums',
             fontSize: isCompactMode ? '48px' : isLaptopMode ? '70px' : '90px',
+            lineHeight: 1,
             textAlign: 'left',
-            letterSpacing: 0
+            letterSpacing: 0,
+            paddingLeft: isCompactMode ? '8px' : isLaptopMode ? '12px' : '16px'
           }}>{pointsBySide.right}</span>
         </div>
       </div>
@@ -6767,16 +6787,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(async () => {
     if (!liberoUnableModal || !data?.set) return
-    
-    const { team, liberoNumber, liberoType } = liberoUnableModal
-    
+
+    const { team, liberoNumber, liberoType, reason = 'declared' } = liberoUnableModal
+
     try {
-      // Mark libero as unable (declared by coach)
+      // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
         team,
         liberoNumber,
         liberoType,
-        reason: 'declared'
+        reason
       })
       
       // Check if re-designation is needed
@@ -9459,45 +9479,92 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               Time-out
             </button>
           )}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
-            <button 
-              onClick={() => handleLiberoOut('left')}
-              disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(leftIsHome ? 'home' : 'away') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'home' : 'away')}
-              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              Libero out
-            </button>
-            <button 
-              onClick={() => handleExchangeLibero('left')}
-              disabled={(() => {
-                const teamKey = leftIsHome ? 'home' : 'away'
-                const teamPlayers = leftIsHome ? data?.homePlayers : data?.awayPlayers
-                const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
-                const liberoOnCourt = getLiberoOnCourt(teamKey)
-                
-                // Check if libero on court is unable
-                const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-                
-                // Check if the other libero is unable
-                const otherLibero = liberos.find(p => 
-                  String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                  (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-                )
-                const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-                
-                return rallyStatus === 'in_play' || 
-                       isRallyReplayed ||
-                       !liberoOnCourt || 
-                       !hasPointSinceLastLiberoExchange(teamKey) ||
-                       liberos.length < 2 || // Disable if team has less than 2 liberos
-                       liberoOnCourtUnable || // Disable if libero on court is unable
-                       otherLiberoUnable // Disable if other libero is unable
-              })()}
-              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              Exchange libero
-            </button>
-          </div>
+          {(() => {
+            const teamKey = leftIsHome ? 'home' : 'away'
+            const teamPlayers = leftIsHome ? data?.homePlayers : data?.awayPlayers
+            const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+            const hasOnlyOneLibero = liberos.length === 1
+            const onlyLibero = hasOnlyOneLibero ? liberos[0] : null
+            const onlyLiberoUnable = onlyLibero && isLiberoUnable(teamKey, onlyLibero.number)
+
+            // Check if already redesignated
+            const alreadyRedesignated = data?.events?.some(e =>
+              e.type === 'libero_redesignation' &&
+              e.payload?.team === teamKey &&
+              e.payload?.unableLiberoNumber === onlyLibero?.number
+            )
+
+            const needsRedesignation = hasOnlyOneLibero && onlyLiberoUnable && !alreadyRedesignated
+
+            if (needsRedesignation) {
+              return (
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+                  <button
+                    onClick={() => {
+                      setLiberoRedesignationModal({
+                        team: teamKey,
+                        unableLiberoNumber: onlyLibero.number,
+                        unableLiberoType: onlyLibero.libero
+                      })
+                    }}
+                    disabled={rallyStatus === 'in_play' || isRallyReplayed}
+                    style={{
+                      flex: 1,
+                      fontSize: '10px',
+                      padding: '8px 4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                      color: '#f87171'
+                    }}
+                  >
+                    Redesignate Libero
+                  </button>
+                </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+                <button
+                  onClick={() => handleLiberoOut('left')}
+                  disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  Libero out
+                </button>
+                <button
+                  onClick={() => handleExchangeLibero('left')}
+                  disabled={(() => {
+                    const liberoOnCourt = getLiberoOnCourt(teamKey)
+
+                    // Check if libero on court is unable
+                    const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
+
+                    // Check if the other libero is unable
+                    const otherLibero = liberos.find(p =>
+                      String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                      (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+                    )
+                    const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
+
+                    return rallyStatus === 'in_play' ||
+                           isRallyReplayed ||
+                           !liberoOnCourt ||
+                           !hasPointSinceLastLiberoExchange(teamKey) ||
+                           liberos.length < 2 || // Disable if team has less than 2 liberos
+                           liberoOnCourtUnable || // Disable if libero on court is unable
+                           otherLiberoUnable // Disable if other libero is unable
+                  })()}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  Exchange libero
+                </button>
+              </div>
+            )
+          })()}
           
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
           <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
@@ -10769,6 +10836,70 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+                {leftTeamLineupSet && !rightTeamLineupSet && isFirstRally && !peekingLineup.left && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    zIndex: 50,
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{
+                      fontSize: 'clamp(16px, 3vw, 24px)',
+                      fontWeight: 700,
+                      color: '#22c55e',
+                      textAlign: 'center'
+                    }}>
+                      Line-up set
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <button
+                        onMouseDown={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                        onMouseUp={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                        onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                        onTouchStart={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                        onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: 'clamp(11px, 2vw, 14px)',
+                          fontWeight: 600,
+                          background: 'rgba(59, 130, 246, 0.3)',
+                          color: '#fff',
+                          border: '1px solid rgba(59, 130, 246, 0.5)',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Show Line-up
+                      </button>
+                      <button
+                        onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: 'clamp(11px, 2vw, 14px)',
+                          fontWeight: 600,
+                          background: 'rgba(251, 191, 36, 0.3)',
+                          color: '#fbbf24',
+                          border: '1px solid rgba(251, 191, 36, 0.5)',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Change Line-up
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="court-net" />
@@ -11119,6 +11250,70 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )
                   })}
                 </div>
+                {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+                {rightTeamLineupSet && !leftTeamLineupSet && isFirstRally && !peekingLineup.right && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    zIndex: 50,
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{
+                      fontSize: 'clamp(16px, 3vw, 24px)',
+                      fontWeight: 700,
+                      color: '#22c55e',
+                      textAlign: 'center'
+                    }}>
+                      Line-up set
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <button
+                        onMouseDown={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                        onMouseUp={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                        onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                        onTouchStart={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                        onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: 'clamp(11px, 2vw, 14px)',
+                          fontWeight: 600,
+                          background: 'rgba(59, 130, 246, 0.3)',
+                          color: '#fff',
+                          border: '1px solid rgba(59, 130, 246, 0.5)',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Show Line-up
+                      </button>
+                      <button
+                        onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: 'clamp(11px, 2vw, 14px)',
+                          fontWeight: 600,
+                          background: 'rgba(251, 191, 36, 0.3)',
+                          color: '#fbbf24',
+                          border: '1px solid rgba(251, 191, 36, 0.5)',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Change Line-up
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -11612,45 +11807,92 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               Time-out
             </button>
           )}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
-            <button 
-              onClick={() => handleLiberoOut('right')}
-              disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(leftIsHome ? 'away' : 'home') || !hasPointSinceLastLiberoExchange(leftIsHome ? 'away' : 'home')}
-              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              Libero out
-            </button>
-            <button 
-              onClick={() => handleExchangeLibero('right')}
-              disabled={(() => {
-                const teamKey = leftIsHome ? 'away' : 'home'
-                const teamPlayers = leftIsHome ? data?.awayPlayers : data?.homePlayers
-                const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
-                const liberoOnCourt = getLiberoOnCourt(teamKey)
-                
-                // Check if libero on court is unable
-                const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-                
-                // Check if the other libero is unable
-                const otherLibero = liberos.find(p => 
-                  String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                  (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-                )
-                const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-                
-                return rallyStatus === 'in_play' || 
-                       isRallyReplayed ||
-                       !liberoOnCourt || 
-                       !hasPointSinceLastLiberoExchange(teamKey) ||
-                       liberos.length < 2 || // Disable if team has less than 2 liberos
-                       liberoOnCourtUnable || // Disable if libero on court is unable
-                       otherLiberoUnable // Disable if other libero is unable
-              })()}
-              style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              Exchange libero
-            </button>
-          </div>
+          {(() => {
+            const teamKey = leftIsHome ? 'away' : 'home'
+            const teamPlayers = leftIsHome ? data?.awayPlayers : data?.homePlayers
+            const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+            const hasOnlyOneLibero = liberos.length === 1
+            const onlyLibero = hasOnlyOneLibero ? liberos[0] : null
+            const onlyLiberoUnable = onlyLibero && isLiberoUnable(teamKey, onlyLibero.number)
+
+            // Check if already redesignated
+            const alreadyRedesignated = data?.events?.some(e =>
+              e.type === 'libero_redesignation' &&
+              e.payload?.team === teamKey &&
+              e.payload?.unableLiberoNumber === onlyLibero?.number
+            )
+
+            const needsRedesignation = hasOnlyOneLibero && onlyLiberoUnable && !alreadyRedesignated
+
+            if (needsRedesignation) {
+              return (
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+                  <button
+                    onClick={() => {
+                      setLiberoRedesignationModal({
+                        team: teamKey,
+                        unableLiberoNumber: onlyLibero.number,
+                        unableLiberoType: onlyLibero.libero
+                      })
+                    }}
+                    disabled={rallyStatus === 'in_play' || isRallyReplayed}
+                    style={{
+                      flex: 1,
+                      fontSize: '10px',
+                      padding: '8px 4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                      color: '#f87171'
+                    }}
+                  >
+                    Redesignate Libero
+                  </button>
+                </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+                <button
+                  onClick={() => handleLiberoOut('right')}
+                  disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  Libero out
+                </button>
+                <button
+                  onClick={() => handleExchangeLibero('right')}
+                  disabled={(() => {
+                    const liberoOnCourt = getLiberoOnCourt(teamKey)
+
+                    // Check if libero on court is unable
+                    const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
+
+                    // Check if the other libero is unable
+                    const otherLibero = liberos.find(p =>
+                      String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                      (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+                    )
+                    const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
+
+                    return rallyStatus === 'in_play' ||
+                           isRallyReplayed ||
+                           !liberoOnCourt ||
+                           !hasPointSinceLastLiberoExchange(teamKey) ||
+                           liberos.length < 2 || // Disable if team has less than 2 liberos
+                           liberoOnCourtUnable || // Disable if libero on court is unable
+                           otherLiberoUnable // Disable if other libero is unable
+                  })()}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  Exchange libero
+                </button>
+              </div>
+            )
+          })()}
           
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
           <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
@@ -15952,7 +16194,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtSanctionExpanded(false) }}
+              onClick={() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false) }}
             />
             {/* Action Menu */}
             <div style={menuStyle} className="modal-wrapper-roll-down">
@@ -16041,35 +16283,109 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     )}
                   </div>
                 )}
-                {/* Libero - direct button */}
-                {playerActionMenu.canEnterLibero && (
-                  <button
-                    onClick={openLiberoFromMenu}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: '#FFF8E7',
-                      color: '#000',
-                      border: '1px solid rgba(0, 0, 0, 0.2)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fff4d6'
-                      e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#FFF8E7'
-                      e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.2)'
-                    }}
-                  >
-                    Libero
-                  </button>
-                )}
+                {/* Libero - expandable */}
+                {playerActionMenu.canEnterLibero && (() => {
+                  // Get available liberos for this team
+                  const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+                  const availableLiberos = (teamPlayers || [])
+                    .filter(p => p.libero && p.libero !== '' && !isLiberoUnable(team, p.number))
+                    .map(p => ({
+                      number: p.number,
+                      type: p.libero,
+                      label: p.libero === 'libero1' ? 'L1' : 'L2'
+                    }))
+
+                  const handleLiberoSelect = (libero) => {
+                    // Set up liberoDropdown and trigger confirmation
+                    setLiberoDropdown({
+                      team,
+                      position,
+                      playerNumber,
+                      element: playerActionMenu.element,
+                      x: playerActionMenu.x,
+                      y: playerActionMenu.y
+                    })
+                    setTimeout(() => {
+                      showLiberoConfirm(libero.type)
+                    }, 50)
+                    setPlayerActionMenu(null)
+                    setCourtSubExpanded(false)
+                    setCourtLiberoExpanded(false)
+                    setCourtSanctionExpanded(false)
+                  }
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <button
+                        onClick={() => setCourtLiberoExpanded(!courtLiberoExpanded)}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: '#FFF8E7',
+                          color: '#000',
+                          border: '1px solid rgba(0, 0, 0, 0.2)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '6px',
+                          width: '100%'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#fff4d6'
+                          e.currentTarget.style.transform = 'scale(1.02)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#FFF8E7'
+                          e.currentTarget.style.transform = 'scale(1)'
+                        }}
+                      >
+                        <span>Libero</span>
+                        <span style={{ fontSize: '14px', lineHeight: '1', transform: courtLiberoExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+                      </button>
+                      {courtLiberoExpanded && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                          {availableLiberos.map(libero => (
+                            <button
+                              key={libero.number}
+                              onClick={() => handleLiberoSelect(libero)}
+                              style={{
+                                padding: '6px 10px',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                background: '#fff',
+                                color: '#000',
+                                border: '1px solid rgba(0, 0, 0, 0.3)',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                minWidth: '50px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#f3f4f6'
+                                e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.5)'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = '#fff'
+                                e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
+                              }}
+                            >
+                              <span>{libero.number}</span>
+                              <span style={{ fontSize: '10px', fontWeight: 600, color: '#000' }}>({libero.label})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
                 {/* Sanction - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <button
@@ -18254,16 +18570,47 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           top: `${liberoBenchActionMenu.y}px`,
           zIndex: 1000
         }
-        
+
+        // Get eligible back-row players for libero substitution
+        const teamKey = liberoBenchActionMenu.team
+        const { playersOnCourt } = getTeamLineupState(teamKey)
+        const currentServe = getCurrentServe()
+        const isServing = currentServe === teamKey
+        const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+
+        // Back row positions: I, V, VI - but I cannot be replaced when serving
+        const backRowPositions = ['I', 'V', 'VI']
+        const eligiblePositions = backRowPositions.filter(pos => {
+          // Position I cannot be replaced when this team is serving
+          if (pos === 'I' && isServing) return false
+          // Check if there's been a point since last libero exchange for this position
+          return hasPointSinceLastLiberoExchange(teamKey, pos)
+        })
+
+        // Get the lineup to find player numbers at each position
+        const lineupEvents = (data?.events || [])
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data?.set?.index)
+        const latestLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
+
+        const eligiblePlayers = eligiblePositions.map(pos => {
+          const playerNum = latestLineup[pos]
+          const player = teamPlayers?.find(p => String(p.number) === String(playerNum))
+          return { position: pos, number: playerNum, player }
+        }).filter(p => p.number && !teamPlayers?.find(tp => String(tp.number) === String(p.number))?.libero)
+
+        // Check if libero is already on court
+        const liberoOnCourt = getLiberoOnCourt(teamKey)
+        const canPutIn = !liberoOnCourt && eligiblePlayers.length > 0 && rallyStatus === 'idle'
+
         return (
           <>
-            <div 
+            <div
               style={{
                 position: 'fixed',
                 inset: 0,
                 zIndex: 999
               }}
-              onClick={() => setLiberoBenchActionMenu(null)}
+              onClick={() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false) }}
             />
             <div style={menuStyle}>
               <div style={{
@@ -18274,20 +18621,154 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px',
-                minWidth: '180px'
+                minWidth: '200px'
               }}>
+                {/* Put in section - collapsible */}
+                {canPutIn && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <button
+                      onClick={() => setLiberoBenchReplaceExpanded(!liberoBenchReplaceExpanded)}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: '#FFF8E7',
+                        color: '#000',
+                        border: '1px solid rgba(0, 0, 0, 0.2)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '6px',
+                        width: '100%'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#fff3cd'
+                        e.currentTarget.style.transform = 'scale(1.02)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#FFF8E7'
+                        e.currentTarget.style.transform = 'scale(1)'
+                      }}
+                    >
+                      <span>Replace</span>
+                      <span style={{ fontSize: '14px', lineHeight: '1', transform: liberoBenchReplaceExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+                    </button>
+                    {liberoBenchReplaceExpanded && (
+                      <div style={{ display: 'flex', justifyContent: 'space-evenly', gap: '4px', marginTop: '4px' }}>
+                        {eligiblePlayers.map(({ position, number }) => (
+                          <button
+                            key={position}
+                            onClick={() => {
+                              // Open libero confirmation with this position
+                              setLiberoDropdown({
+                                team: teamKey,
+                                position,
+                                playerNumber: number,
+                                element: liberoBenchActionMenu.element,
+                                x: liberoBenchActionMenu.x,
+                                y: liberoBenchActionMenu.y
+                              })
+                              // Auto-select this libero
+                              setTimeout(() => {
+                                showLiberoConfirm(liberoBenchActionMenu.liberoType)
+                              }, 50)
+                              setLiberoBenchActionMenu(null)
+                              setLiberoBenchReplaceExpanded(false)
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '14px',
+                              fontWeight: 700,
+                              background: '#fff',
+                              color: '#000',
+                              border: '1px solid rgba(0, 0, 0, 0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              transition: 'all 0.2s',
+                              minWidth: '45px'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#f3f4f6'
+                              e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.4)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#fff'
+                              e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.2)'
+                            }}
+                          >
+                            {number}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Injury option */}
                 <button
                   onClick={() => {
                     setLiberoUnableModal({
                       team: liberoBenchActionMenu.team,
                       liberoNumber: liberoBenchActionMenu.liberoNumber,
-                      liberoType: liberoBenchActionMenu.liberoType
+                      liberoType: liberoBenchActionMenu.liberoType,
+                      reason: 'injury'
                     })
                     setLiberoBenchActionMenu(null)
                   }}
                   style={{
                     padding: '8px 12px',
-                    fontSize: '13px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: '#dc2626',
+                    color: '#fff',
+                    border: '2px solid #991b1b',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '6px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#ef4444'
+                    e.currentTarget.style.transform = 'scale(1.02)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#dc2626'
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }}
+                >
+                  <span>Injury</span>
+                  <span style={{
+                    fontSize: '18px',
+                    lineHeight: '1',
+                    fontWeight: 700,
+                    color: '#fff',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                  }}>✚</span>
+                </button>
+
+                {/* Declare unable to play */}
+                <button
+                  onClick={() => {
+                    setLiberoUnableModal({
+                      team: liberoBenchActionMenu.team,
+                      liberoNumber: liberoBenchActionMenu.liberoNumber,
+                      liberoType: liberoBenchActionMenu.liberoType,
+                      reason: 'declared'
+                    })
+                    setLiberoBenchActionMenu(null)
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    fontSize: '12px',
                     fontWeight: 600,
                     background: 'rgba(239, 68, 68, 0.2)',
                     color: '#f87171',
@@ -18306,6 +18787,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 >
                   Declare unable to play
                 </button>
+
+                {/* Sanction */}
                 <button
                   onClick={() => {
                     setSanctionDropdown({
@@ -18320,7 +18803,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   }}
                   style={{
                     padding: '8px 12px',
-                    fontSize: '13px',
+                    fontSize: '12px',
                     fontWeight: 600,
                     background: '#000',
                     color: '#fff',
@@ -18386,10 +18869,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           >
             <div style={{ padding: '24px' }}>
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--text)' }}>
-                Mark Libero #{liberoUnableModal.liberoNumber} ({liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as unable to play?
+                {liberoUnableModal.reason === 'injury'
+                  ? `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as injured?`
+                  : `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as unable to play?`
+                }
               </p>
               <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-                The libero can be declared unable to play if injured, ill, expelled, disqualified, or for any reason by the coach.
+                {liberoUnableModal.reason === 'injury'
+                  ? 'The libero will be marked as injured and unable to play for the remainder of the match.'
+                  : 'The libero can be declared unable to play if injured, ill, expelled, disqualified, or for any reason by the coach.'
+                }
               </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
