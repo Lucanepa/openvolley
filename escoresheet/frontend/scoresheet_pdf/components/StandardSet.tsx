@@ -417,9 +417,9 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     rightServiceRounds = [],
     positionBoxRef
 }) => {
-  // Only show labels if team names are provided (for Set 4, this means shouldShowSet4 is true)
-  const leftTeamLabel = teamNameLeft ? (isSwapped ? 'B' : 'A') : '';
-  const rightTeamLabel = teamNameRight ? (isSwapped ? 'A' : 'B') : '';
+  // A/B labels are always shown based on position (left=A when not swapped, left=B when swapped)
+  const leftTeamLabel = isSwapped ? 'B' : 'A';
+  const rightTeamLabel = isSwapped ? 'A' : 'B';
   
   // Determine who serves/receives based on coin toss (Set 1) or switched sides
   // Pattern: Set 1 (A serves if coinTossServeA), Set 2 (opposite - teams switch), Set 3 (same as Set 1 - teams back), Set 4 (opposite - teams switch)
@@ -446,7 +446,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   }
 
   return (
-    <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0" style={{ width: '150.8mm' }}>
+    <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0" style={{ width: '150mm' }}>
         {/* Header Strip */}
         <div className="flex border-b border-black bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm' }}>
              {/* Start Time */}

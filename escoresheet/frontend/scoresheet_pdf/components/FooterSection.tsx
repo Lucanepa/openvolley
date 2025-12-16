@@ -185,6 +185,7 @@ interface ResultsProps {
   matchDuration?: string;
   winner?: string;
   result?: string;
+  coinTossConfirmed?: boolean;
 }
 
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
@@ -194,15 +195,16 @@ const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = 
   return <span>{duration || ''}</span>;
 };
 
-export const Results: React.FC<ResultsProps> = ({ 
-  teamAShortName = '', 
+export const Results: React.FC<ResultsProps> = ({
+  teamAShortName = '',
   teamBShortName = '',
   setResults = [],
   matchStart = '',
   matchEnd = '',
   matchDuration = '',
   winner = '',
-  result = ''
+  result = '',
+  coinTossConfirmed = false
 }) => {
     return (
         <div className="border border-black bg-white flex flex-col h-full">
@@ -212,7 +214,7 @@ export const Results: React.FC<ResultsProps> = ({
                 <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
-                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{teamAShortName}</div>
+                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</div>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
                         <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div className="border-r">P</div>
@@ -266,9 +268,11 @@ export const Results: React.FC<ResultsProps> = ({
                      <div className="flex-1 flex flex-col">
                         {[1,2,3,4,5].map(set => {
                             const setData = setResults.find(r => r.setNumber === set);
+                            // Only show set 4 and 5 numbers if they were actually played
+                            const showSetNumber = set <= 3 || (setData && setData.teamATimeouts !== null);
                             return (
                             <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                                <div className="flex items-center justify-center border-r border-black text-[9px]">{set}</div>
+                                <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? set : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
                                 </div>
@@ -297,7 +301,7 @@ export const Results: React.FC<ResultsProps> = ({
                  <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50 flex-row-reverse">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
-                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{teamBShortName}</div>
+                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</div>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
                         <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div>T</div>
@@ -342,7 +346,7 @@ export const Results: React.FC<ResultsProps> = ({
             </div>
             
             {/* Set Start/End/Duration Row - spans full width */}
-            <div className="border-t-' border-black grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm' }}>
+            <div className="border-t border-black grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm' }}>
                 <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match Start</div>
                 <div className="border-r border-black flex items-center justify-center">
                     <div className="w-full text-center text-[6px] font-bold bg-white">{matchStart}</div>
@@ -366,9 +370,21 @@ export const Results: React.FC<ResultsProps> = ({
                  <div className="relative border-l border-gray-300" >
                      <span className="text-[12px] absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
                      <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">
-                         <span className="w-1/2 text-right">3</span>
-                         <span className="px-0.5">:</span>
-                         <span className="w-1/2 text-left">{result}</span>
+                         {(() => {
+                             // Calculate sets won by each team from setResults
+                             const teamASetsWon = setResults.reduce((sum, r) => sum + (r.teamAWon || 0), 0);
+                             const teamBSetsWon = setResults.reduce((sum, r) => sum + (r.teamBWon || 0), 0);
+                             // Winner has 3 sets, loser has the remaining
+                             const winnerSets = Math.max(teamASetsWon, teamBSetsWon);
+                             const loserSets = Math.min(teamASetsWon, teamBSetsWon);
+                             return (
+                                 <>
+                                     <span className="w-1/2 text-right">{winnerSets}</span>
+                                     <span className="px-0.5">:</span>
+                                     <span className="w-1/2 text-left">{loserSets}</span>
+                                 </>
+                             );
+                         })()}
                      </div>
                  </div>
             </div>
@@ -526,9 +542,11 @@ interface RosterProps {
   benchStaff?: any[];
   preGameCaptainSignature?: string;
   preGameCoachSignature?: string;
+  coinTossConfirmed?: boolean;
+  isHome?: boolean;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature }) => {
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true }) => {
     const [openSignature, setOpenSignature] = useState<string | null>(null);
     
     // Create unique signature keys based on side
@@ -587,22 +605,26 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // Unified height for Libero and Bench Official cells
     const rowHeight = "h-4";
 
-    // Separate players and liberos
-    const regularPlayers = players.filter(p => !p.libero).slice(0, 14);
-    const liberos = players.filter(p => p.libero).slice(0, 2);
+    // Include all players in roster (including liberos) - up to 14 players total
+    const regularPlayers = players.slice(0, 14);
+    // Get liberos separately for the libero section, sorted by jersey number
+    const liberos = players
+        .filter(p => p.libero)
+        .sort((a, b) => parseInt(a.number || '0') - parseInt(b.number || '0'))
+        .slice(0, 2);
     
     return (
         <div className="border border-black bg-white h-full flex flex-col min-w-0">
             <div className="bg-white text-black border-b border-black font-bold py-0.5 text-xs flex justify-between px-1 items-center h-6 shrink-0">
-                {side.toUpperCase() === 'A' ? (
+                {isHome ? (
                     <>
-                        <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase">{side}</div>
+                        <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase">{coinTossConfirmed ? side : ''}</div>
                         <div className="font-bold text-xs uppercase flex-1 text-center bg-white text-left pl-2">{team}</div>
                     </>
                 ) : (
                     <>
                         <div className="font-bold text-xs uppercase flex-1 text-center bg-white pr-2">{team}</div>
-                        <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase ml-1">{side}</div>
+                        <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase ml-1">{coinTossConfirmed ? side : ''}</div>
                     </>
                 )}
             </div>
