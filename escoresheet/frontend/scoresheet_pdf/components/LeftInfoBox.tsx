@@ -1,8 +1,8 @@
 import React from 'react';
 import { SubRecord } from '../types_scoresheet';
 
-// 75% black border color
-const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
+// Full black border color for PDF capture
+const borderColor75 = { borderColor: '#000000' };
 
 interface ServiceRound {
   position: number;
@@ -32,7 +32,7 @@ export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
   return (
     <div
       className={`border bg-white flex flex-col ${isSet5 ? "mr-1" : "mr-2"}`}
-      style={{ width: isSet5 ? '40mm' : '40mm', height: isSet5 ? '4.8cm' : '5.3cm', ...borderColor75 }}
+      style={{ width: isSet5 ? '39.7mm' : '40mm', height: isSet5 ? '4.8cm' : '5.3cm', ...borderColor75 }}
     >
         <div className="flex flex-col items-center justify-center min-w-[30px] border-b p-1" style={{height:'0.8cm', ...borderColor75}}>
 

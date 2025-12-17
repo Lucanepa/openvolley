@@ -10,8 +10,8 @@ interface ServiceRound {
   circled: boolean; // Circled at end of set for last point
 }
 
-// 75% black border color
-const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
+// Full black border color for PDF capture
+const borderColor75 = { borderColor: '#000000' };
 
 interface SetFiveProps {
     teamNameA?: string;
@@ -340,10 +340,10 @@ export const SetFive: React.FC<SetFiveProps> = ({
                     <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</div>
                 </div>
            </div>
-                   <div className="border-r flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15.3mm', ...borderColor75 }}>Points</div>
+                   <div className="border-r flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15.2mm', ...borderColor75 }}>Points</div>
 
-           {/* Panel 2 Header: Team B */}
-           <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '39.9mm', ...borderColor75 }}>
+           {/* Panel 2 Header: Team RIGHT */}
+           <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm', ...borderColor75 }}>
                 <div className="flex items-center gap-1 w-full justify-end">
                     <div className="w-full text-xs uppercase text-center font-bold bg-white mr-1">{teamNameB || ''}</div>
                     <div className="flex items-center gap-1">
@@ -353,13 +353,13 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 </div>
            </div>
  {/* End Time */}
-                   <div className="flex items-center border-r px-2 gap-2 justify-start bg-white shrink-0" style={{ width: '20.1mm', ...borderColor75 }}>
+                   <div className="flex items-center border-r px-2 gap-2 justify-start bg-white shrink-0" style={{ width: '20.05mm', ...borderColor75 }}>
                 <span className="font-bold text-[9px]">End:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
            </div>
                    <div className="border-r flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm', ...borderColor75 }}>Points</div>
-           {/* Panel 3 Header: Team A (Swapped) */}
-           <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '29.7mm', marginLeft: '3mm', ...borderColor75 }}>
+           {/* Panel 3 Header: Team LEFT (Swapped) */}
+           <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '29.75mm', marginLeft: '3mm', ...borderColor75 }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center" style={borderColor75}>{teamALabel}</div>
