@@ -31,6 +31,7 @@ export default function MainHeader({
     return saved === 'true' // Default to hidden
   })
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
   // Use changelog as source of truth (first entry = latest version)
@@ -492,105 +493,380 @@ export default function MainHeader({
         alignItems: 'center',
         gap: 'clamp(8px, 1.5vw, 12px)',
         flex: '0 0 auto',
-        alignSelf: 'stretch'
+        alignSelf: 'stretch',
+        position: 'relative'
       }}>
-        {/* Home Button - only show when not on home screen */}
-        {matchId && onOpenSetup && (
-          <button
-            onClick={() => onOpenSetup()}
-            title="Back to Home"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '4px 10px',
-              fontSize: 'clamp(10px, 1.2vw, 12px)',
-              fontWeight: 600,
-              background: 'rgba(34, 197, 94, 0.2)',
-              color: '#22c55e',
-              border: '1px solid rgba(34, 197, 94, 0.4)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              whiteSpace: 'nowrap',
-              gap: '4px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.3)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
-            }}
-          >
-            <span>🏠</span>
-            <span>Home</span>
-          </button>
-        )}
+        {/* Compact Mode: Collapsible Actions Menu */}
+        {isCompactMode ? (
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setActionsMenuOpen(!actionsMenuOpen)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 10px',
+                height: '32px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: actionsMenuOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                gap: '6px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                if (!actionsMenuOpen) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                }
+              }}
+            >
+              <span>{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
+              <span style={{
+                fontSize: '8px',
+                transition: 'transform 0.2s',
+                transform: actionsMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+              }}>
+                ▼
+              </span>
+            </button>
 
-        {/* Viewport Size Display - Editable (hidden by default) */}
-        {showViewportSize && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            fontSize: 'clamp(10px, 1.2vw, 12px)',
-            color: 'rgba(255, 255, 255, 0.6)',
-            whiteSpace: 'nowrap'
-          }}>
-            {isEditing ? (
-              <>
-                <input
-                  type="number"
-                  value={editingSize.width}
-                  onChange={(e) => setEditingSize({ ...editingSize, width: e.target.value })}
-                  onKeyDown={handleKeyDown}
-                  onBlur={handleResizeViewport}
-                  autoFocus
-                  style={{
-                    width: '60px',
-                    fontSize: 'clamp(10px, 1.2vw, 12px)',
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    borderRadius: '4px',
-                    padding: '2px 4px',
-                    textAlign: 'center',
-                    outline: 'none'
+            {/* Expanded Actions Menu */}
+            {actionsMenuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '4px',
+                  padding: '8px',
+                  background: 'rgba(0, 0, 0, 0.95)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  minWidth: '160px',
+                  zIndex: 1000,
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}
+              >
+                {/* Fullscreen Action */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleFullscreen()
+                    setActionsMenuOpen(false)
                   }}
-                />
-                <span>×</span>
-                <input
-                  type="number"
-                  value={editingSize.height}
-                  onChange={(e) => setEditingSize({ ...editingSize, height: e.target.value })}
-                  onKeyDown={handleKeyDown}
-                  onBlur={handleResizeViewport}
                   style={{
-                    width: '60px',
-                    fontSize: 'clamp(10px, 1.2vw, 12px)',
-                    color: 'rgba(255, 255, 255, 0.9)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
                     background: 'rgba(255, 255, 255, 0.1)',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    borderRadius: '4px',
-                    padding: '2px 4px',
-                    textAlign: 'center',
-                    outline: 'none'
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    width: '100%',
+                    textAlign: 'left'
                   }}
-                />
-              </>
-            ) : (
-              <span
-                onClick={() => {
-                  setEditingSize({
-                    width: viewportSize.width.toString(),
-                    height: viewportSize.height.toString()
-                  })
-                  setIsEditing(true)
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  }}
+                >
+                  <span>⛶</span>
+                  <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+                </button>
+
+                {/* Version Action */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setVersionMenuOpen(!versionMenuOpen)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    background: versionMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    width: '100%',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!versionMenuOpen) {
+                      e.currentTarget.style.background = 'transparent'
+                    }
+                  }}
+                >
+                  <span>📋</span>
+                  <span>v{currentVersion}</span>
+                </button>
+
+                {/* Home Action - only show when not on home screen */}
+                {matchId && onOpenSetup && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onOpenSetup()
+                      setActionsMenuOpen(false)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      color: '#22c55e',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      width: '100%',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    <span>🏠</span>
+                    <span>Home</span>
+                  </button>
+                )}
+
+                {/* Version Changelog - nested dropdown */}
+                {versionMenuOpen && (
+                  <div
+                    style={{
+                      padding: '8px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '6px',
+                      maxHeight: '250px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: '#fff',
+                      marginBottom: '8px',
+                      paddingBottom: '6px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      Version History
+                    </div>
+                    {changelog.slice(0, 5).map((release, index) => (
+                      <div
+                        key={release.version}
+                        style={{
+                          marginBottom: index < 4 ? '8px' : 0,
+                          paddingBottom: index < 4 ? '8px' : 0,
+                          borderBottom: index < 4 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none'
+                        }}
+                      >
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '4px'
+                        }}>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: release.version === currentVersion ? '#4ade80' : '#fff'
+                          }}>
+                            v{release.version}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                            {release.date}
+                          </span>
+                        </div>
+                        <ul style={{
+                          margin: 0,
+                          paddingLeft: '12px',
+                          fontSize: '10px',
+                          color: 'rgba(255, 255, 255, 0.6)',
+                          lineHeight: '1.4'
+                        }}>
+                          {release.changes.slice(0, 2).map((change, i) => (
+                            <li key={i} style={{ marginBottom: '1px' }}>{change}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Desktop Mode: Show all actions inline */
+          <>
+            {/* Home Button - only show when not on home screen */}
+            {matchId && onOpenSetup && (
+              <button
+                onClick={() => onOpenSetup()}
+                title="Back to Home"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '4px 10px',
+                  fontSize: 'clamp(10px, 1.2vw, 12px)',
+                  fontWeight: 600,
+                  background: 'rgba(34, 197, 94, 0.2)',
+                  color: '#22c55e',
+                  border: '1px solid rgba(34, 197, 94, 0.4)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap',
+                  gap: '4px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(34, 197, 94, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
+                }}
+              >
+                <span>🏠</span>
+                <span>Home</span>
+              </button>
+            )}
+
+            {/* Viewport Size Display - Editable (hidden by default) */}
+            {showViewportSize && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: 'clamp(10px, 1.2vw, 12px)',
+                color: 'rgba(255, 255, 255, 0.6)',
+                whiteSpace: 'nowrap'
+              }}>
+                {isEditing ? (
+                  <>
+                    <input
+                      type="number"
+                      value={editingSize.width}
+                      onChange={(e) => setEditingSize({ ...editingSize, width: e.target.value })}
+                      onKeyDown={handleKeyDown}
+                      onBlur={handleResizeViewport}
+                      autoFocus
+                      style={{
+                        width: '60px',
+                        fontSize: 'clamp(10px, 1.2vw, 12px)',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        borderRadius: '4px',
+                        padding: '2px 4px',
+                        textAlign: 'center',
+                        outline: 'none'
+                      }}
+                    />
+                    <span>×</span>
+                    <input
+                      type="number"
+                      value={editingSize.height}
+                      onChange={(e) => setEditingSize({ ...editingSize, height: e.target.value })}
+                      onKeyDown={handleKeyDown}
+                      onBlur={handleResizeViewport}
+                      style={{
+                        width: '60px',
+                        fontSize: 'clamp(10px, 1.2vw, 12px)',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        borderRadius: '4px',
+                        padding: '2px 4px',
+                        textAlign: 'center',
+                        outline: 'none'
+                      }}
+                    />
+                  </>
+                ) : (
+                  <span
+                    onClick={() => {
+                      setEditingSize({
+                        width: viewportSize.width.toString(),
+                        height: viewportSize.height.toString()
+                      })
+                      setIsEditing(true)
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '2px 4px',
+                      borderRadius: '4px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+                    }}
+                    title="Click to edit and resize viewport"
+                  >
+                    {viewportSize.width} × {viewportSize.height}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Version with Changelog Menu */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setVersionMenuOpen(!versionMenuOpen)
                 }}
                 style={{
+                  fontSize: 'clamp(10px, 1.2vw, 12px)',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  whiteSpace: 'nowrap',
+                  background: 'transparent',
+                  border: 'none',
                   cursor: 'pointer',
-                  padding: '2px 4px',
+                  padding: '4px 8px',
                   borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
                   transition: 'all 0.2s'
                 }}
                 onMouseEnter={(e) => {
@@ -601,174 +877,139 @@ export default function MainHeader({
                   e.currentTarget.style.background = 'transparent'
                   e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
                 }}
-                title="Click to edit and resize viewport"
               >
-                {viewportSize.width} × {viewportSize.height}
-              </span>
-            )}
-          </div>
-        )}
-        
-        {/* Version with Changelog Menu */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setVersionMenuOpen(!versionMenuOpen)
-            }}
-            style={{
-              fontSize: 'clamp(10px, 1.2vw, 12px)',
-              color: 'rgba(255, 255, 255, 0.6)',
-              whiteSpace: 'nowrap',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
-            }}
-          >
-            <span>v{currentVersion}</span>
-            <span style={{
-              fontSize: '8px',
-              transition: 'transform 0.2s',
-              transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
-            }}>
-              ▼
-            </span>
-          </button>
+                <span>v{currentVersion}</span>
+                <span style={{
+                  fontSize: '8px',
+                  transition: 'transform 0.2s',
+                  transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                }}>
+                  ▼
+                </span>
+              </button>
 
-          {/* Version Changelog Dropdown */}
-          {versionMenuOpen && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                marginTop: '4px',
-                padding: '12px',
-                background: 'rgba(0, 0, 0, 0.95)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '8px',
-                minWidth: '280px',
-                maxWidth: '350px',
-                maxHeight: '400px',
-                overflowY: 'auto',
-                zIndex: 1000,
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
-              }}
-            >
-              <div style={{
-                fontSize: '14px',
-                fontWeight: 700,
-                color: '#fff',
-                marginBottom: '12px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-                paddingBottom: '8px'
-              }}>
-                Version History
-              </div>
-
-              {changelog.map((release, index) => (
+              {/* Version Changelog Dropdown */}
+              {versionMenuOpen && (
                 <div
-                  key={release.version}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
-                    marginBottom: index < changelog.length - 1 ? '12px' : 0,
-                    paddingBottom: index < changelog.length - 1 ? '12px' : 0,
-                    borderBottom: index < changelog.length - 1 ? '1px solid rgba(255, 255, 255, 0.1)' : 'none'
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '4px',
+                    padding: '12px',
+                    background: 'rgba(0, 0, 0, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    minWidth: '280px',
+                    maxWidth: '350px',
+                    maxHeight: '400px',
+                    overflowY: 'auto',
+                    zIndex: 1000,
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
                   }}
                 >
                   <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '6px'
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: '#fff',
+                    marginBottom: '12px',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+                    paddingBottom: '8px'
                   }}>
-                    <span style={{
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: release.version === currentVersion ? '#4ade80' : '#fff'
-                    }}>
-                      v{release.version}
-                      {release.version === currentVersion && (
-                        <span style={{
-                          marginLeft: '6px',
-                          fontSize: '10px',
-                          background: 'rgba(74, 222, 128, 0.2)',
-                          padding: '2px 6px',
-                          borderRadius: '4px'
-                        }}>
-                          Current
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
-                      {release.date}
-                    </span>
+                    Version History
                   </div>
-                  <ul style={{
-                    margin: 0,
-                    paddingLeft: '16px',
-                    fontSize: '12px',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    lineHeight: '1.5'
-                  }}>
-                    {release.changes.map((change, i) => (
-                      <li key={i} style={{ marginBottom: '2px' }}>{change}</li>
-                    ))}
-                  </ul>
+
+                  {changelog.map((release, index) => (
+                    <div
+                      key={release.version}
+                      style={{
+                        marginBottom: index < changelog.length - 1 ? '12px' : 0,
+                        paddingBottom: index < changelog.length - 1 ? '12px' : 0,
+                        borderBottom: index < changelog.length - 1 ? '1px solid rgba(255, 255, 255, 0.1)' : 'none'
+                      }}
+                    >
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '6px'
+                      }}>
+                        <span style={{
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          color: release.version === currentVersion ? '#4ade80' : '#fff'
+                        }}>
+                          v{release.version}
+                          {release.version === currentVersion && (
+                            <span style={{
+                              marginLeft: '6px',
+                              fontSize: '10px',
+                              background: 'rgba(74, 222, 128, 0.2)',
+                              padding: '2px 6px',
+                              borderRadius: '4px'
+                            }}>
+                              Current
+                            </span>
+                          )}
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                          {release.date}
+                        </span>
+                      </div>
+                      <ul style={{
+                        margin: 0,
+                        paddingLeft: '16px',
+                        fontSize: '12px',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        lineHeight: '1.5'
+                      }}>
+                        {release.changes.map((change, i) => (
+                          <li key={i} style={{ marginBottom: '2px' }}>{change}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-        
-        {/* Fullscreen Button */}
-        <button
-          className="header-fullscreen-btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleFullscreen()
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0 8px',
-            width: 'auto',
-            height: '80%',
-            fontSize: 'clamp(8px, 1.2vw, 12px)',
-            fontWeight: 600,
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '6px',
-            cursor: 'pointer'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-          }}
-          title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-        >
-          <span className="fullscreen-btn-text" style={{ fontSize: 'clamp(10px, 1.2vw, 12px)' }}>
-            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
-          </span>
-        </button>
+
+            {/* Fullscreen Button */}
+            <button
+              className="header-fullscreen-btn"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleFullscreen()
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 8px',
+                width: 'auto',
+                height: '80%',
+                fontSize: 'clamp(8px, 1.2vw, 12px)',
+                fontWeight: 600,
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              }}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+            >
+              <span className="fullscreen-btn-text" style={{ fontSize: 'clamp(10px, 1.2vw, 12px)' }}>
+                {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+              </span>
+            </button>
+          </>
+        )}
       </div>
     </div>
     </>

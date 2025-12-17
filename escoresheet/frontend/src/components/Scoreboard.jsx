@@ -475,6 +475,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Auto-lock orientation to landscape for scoreboard on mount
+  useEffect(() => {
+    const lockLandscape = async () => {
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          await screen.orientation.lock('landscape')
+          console.log('[Scoreboard] Orientation locked to landscape')
+        }
+      } catch (err) {
+        console.log('[Scoreboard] Orientation lock not supported:', err)
+      }
+    }
+    lockLandscape()
+
+    return () => {
+      // Unlock orientation when leaving scoreboard
+      if (screen.orientation && screen.orientation.unlock) {
+        try {
+          screen.orientation.unlock()
+        } catch (err) {
+          // Ignore unlock errors
+        }
+      }
+    }
+  }, [])
+
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
 

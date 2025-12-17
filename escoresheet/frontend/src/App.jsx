@@ -99,6 +99,7 @@ export default function App() {
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const [matchInfoMenuOpen, setMatchInfoMenuOpen] = useState(false)
   const [offlineMode, setOfflineMode] = useState(() => {
     const saved = localStorage.getItem('offlineMode')
@@ -284,6 +285,7 @@ export default function App() {
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
+      const height = window.innerHeight
       let detected = 'desktop'
 
       if (width < 768) {
@@ -294,6 +296,7 @@ export default function App() {
       // > 1024px = desktop (default)
 
       setDetectedDisplayMode(detected)
+      setViewportSize({ width, height })
     }
 
     // Check on mount
@@ -304,7 +307,7 @@ export default function App() {
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [])
 
-  // Fullscreen and orientation lock for tablet/smartphone modes
+  // Fullscreen for tablet/smartphone modes (orientation lock handled by Scoreboard/Scoresheet)
   const enterDisplayMode = useCallback((mode) => {
     // Request fullscreen
     if (document.documentElement.requestFullscreen) {
@@ -313,12 +316,8 @@ export default function App() {
       })
     }
 
-    // Try to lock orientation to landscape (may not work on all browsers)
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(err => {
-        console.log('Orientation lock failed:', err)
-      })
-    }
+    // Note: Orientation locking is now handled by Scoreboard and Scoresheet components
+    // so other screens (MatchSetup, CoinToss, etc.) can work in portrait mode
 
     // Set the display mode
     setDisplayMode(mode)
@@ -331,11 +330,6 @@ export default function App() {
       document.exitFullscreen().catch(err => {
         console.log('Exit fullscreen failed:', err)
       })
-    }
-
-    // Unlock orientation
-    if (screen.orientation && screen.orientation.unlock) {
-      screen.orientation.unlock()
     }
 
     setDisplayMode('desktop')
@@ -2916,6 +2910,64 @@ export default function App() {
         } : null}
       />
 
+      {/* Fullscreen minimum size warning */}
+      {isFullscreen && (viewportSize.width < 800 || viewportSize.height < 800) ? (
+        <div style={{
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '40px 20px',
+          textAlign: 'center',
+          color: 'rgba(255, 255, 255, 0.9)',
+          gap: '20px'
+        }}>
+          <div style={{
+            fontSize: '48px',
+            marginBottom: '10px'
+          }}>
+            📱
+          </div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 600,
+            maxWidth: '400px',
+            lineHeight: '1.5'
+          }}>
+            To use this application, please have a screen with at least 800px in width and height.
+          </div>
+          <div style={{
+            fontSize: '14px',
+            color: 'rgba(255, 255, 255, 0.6)'
+          }}>
+            Current: {viewportSize.width} × {viewportSize.height}px
+          </div>
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              marginTop: '20px',
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.15)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+            }}
+          >
+            Exit Fullscreen
+          </button>
+        </div>
+      ) : (
       <div className="container" style={{
         minHeight: 0,
         flex: '1 1 auto',
@@ -3462,6 +3514,7 @@ export default function App() {
       />
 
       </div>
+      )}
     </div>
   )
 }
