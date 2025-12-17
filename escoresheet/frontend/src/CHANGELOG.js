@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.15',
+    date: '17.12.25',
+    changes: [
+      'Refactor scoresheet components and enhance user experience with team serving logic updates.'
+    ]
+  },
+  {
     version: '0.8.12',
     date: '16.12.25',
     changes: [

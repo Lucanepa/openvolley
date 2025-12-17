@@ -2241,6 +2241,32 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Lock orientation to landscape for scoresheet
+  useEffect(() => {
+    const lockLandscape = async () => {
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          await screen.orientation.lock('landscape');
+          console.log('[Scoresheet] Orientation locked to landscape');
+        }
+      } catch (err) {
+        console.log('[Scoresheet] Orientation lock not supported:', err);
+      }
+    };
+    lockLandscape();
+
+    return () => {
+      // Unlock orientation when leaving scoresheet
+      if (screen.orientation && screen.orientation.unlock) {
+        try {
+          screen.orientation.unlock();
+        } catch (err) {
+          // Ignore unlock errors
+        }
+      }
+    };
+  }, []);
+
   // Auto-fit to screen on mount if viewport is smaller than scoresheet
   useEffect(() => {
     const viewportWidth = window.innerWidth;
