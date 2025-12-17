@@ -2881,6 +2881,51 @@ export default function App() {
         setMatchInfoMenuOpen(false)
       }
     }}>
+      {/* Minimum screen size warning - block phones/small screens */}
+      {/* Allow if at least one dimension >= 800 (tablet in any orientation), but enforce min 500 on both */}
+      {/* Skip warning in fullscreen mode - trust user has adequate screen space */}
+      {!isFullscreen && ((viewportSize.width < 800 && viewportSize.height < 800) || viewportSize.width < 500 || viewportSize.height < 500) ? (
+        <div style={{
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '40px 20px',
+          textAlign: 'center',
+          color: 'rgba(255, 255, 255, 0.9)',
+          gap: '20px'
+        }}>
+          <div style={{
+            fontSize: '48px',
+            marginBottom: '10px'
+          }}>
+            📱
+          </div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 600,
+            maxWidth: '400px',
+            lineHeight: '1.5'
+          }}>
+            To use this application, please use a tablet or larger screen (minimum 500×800 or 800×500).
+          </div>
+          <div style={{
+            fontSize: '14px',
+            color: 'rgba(255, 255, 255, 0.6)'
+          }}>
+            Current: {viewportSize.width} × {viewportSize.height}px
+          </div>
+          <div style={{
+            fontSize: '13px',
+            color: 'rgba(255, 255, 255, 0.5)',
+            marginTop: '10px'
+          }}>
+            Try rotating your device if using a tablet.
+          </div>
+        </div>
+      ) : (
+      <>
       {/* Global Header */}
       <MainHeader
         connectionStatuses={connectionStatuses}
@@ -2909,65 +2954,6 @@ export default function App() {
           onOpenOptions: () => setHomeOptionsModal(true)
         } : null}
       />
-
-      {/* Fullscreen minimum size warning */}
-      {isFullscreen && (viewportSize.width < 800 || viewportSize.height < 800) ? (
-        <div style={{
-          flex: '1 1 auto',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '40px 20px',
-          textAlign: 'center',
-          color: 'rgba(255, 255, 255, 0.9)',
-          gap: '20px'
-        }}>
-          <div style={{
-            fontSize: '48px',
-            marginBottom: '10px'
-          }}>
-            📱
-          </div>
-          <div style={{
-            fontSize: '18px',
-            fontWeight: 600,
-            maxWidth: '400px',
-            lineHeight: '1.5'
-          }}>
-            To use this application, please have a screen with at least 800px in width and height.
-          </div>
-          <div style={{
-            fontSize: '14px',
-            color: 'rgba(255, 255, 255, 0.6)'
-          }}>
-            Current: {viewportSize.width} × {viewportSize.height}px
-          </div>
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              marginTop: '20px',
-              padding: '12px 24px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.15)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-            }}
-          >
-            Exit Fullscreen
-          </button>
-        </div>
-      ) : (
       <div className="container" style={{
         minHeight: 0,
         flex: '1 1 auto',
@@ -3514,6 +3500,7 @@ export default function App() {
       />
 
       </div>
+      </>
       )}
     </div>
   )

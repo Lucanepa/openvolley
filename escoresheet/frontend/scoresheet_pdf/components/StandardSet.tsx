@@ -10,8 +10,6 @@ interface ServiceRound {
   circled: boolean; // Circled at end of set for last point
 }
 
-// 75% black border color
-const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
 
 interface StandardSetProps {
   setNumber: number;
@@ -52,10 +50,10 @@ export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ 
     return (
         <div className="flex flex-col gap-0.5 mx-1 justify-center">
             {['S', 'R'].map((item) => (
-                <div 
+                <div
                     key={item}
-                    className="relative w-3 h-3 rounded-full border flex items-center justify-center text-[7px] font-bold bg-white select-none leading-none"
-                    style={borderColor75}
+                    className="relative w-3 h-3 rounded-full flex items-center justify-center text-[7px] font-bold bg-white select-none leading-none"
+                    style={{ border: '1px solid #000000' }}
                 >
                     {item}
                     {initialSelection === item && (
@@ -93,42 +91,49 @@ export const TeamServiceGrid: React.FC<{
     const totalHeight = '4.5cm';
 
     return (
-        <div className="flex flex-col shrink-0 border-b" style={{ width: '60mm', height: totalHeight }}>
+        <div className="flex flex-col shrink-0" style={{ width: '60mm', height: totalHeight, borderBottom: '1px solid #000000' }}>
             {/* Roman Numerals Header */}
-            <div className="flex border-b shrink-0" style={{ height: '5mm', ...borderColor75 }}>
-                {['I', 'II', 'III', 'IV', 'V', 'VI'].map((roman, idx) => (
-                    <div 
-                        key={roman} 
-                        ref={idx === 0 ? positionBoxRef : undefined}
-                        className="border-r border-b last:border-r-0 flex items-center justify-center font-bold bg-gray-100 text-[10px]"
-                        style={{ width: '10mm', height: '5mm', ...borderColor75 }}
-                    >
-                        {roman}
-                    </div>
-                ))}
+            <div className="flex shrink-0" style={{ height: '5mm', borderBottom: '1px solid #000000' }}>
+                {['I', 'II', 'III', 'IV', 'V', 'VI'].map((roman, idx, arr) => {
+                    const isLast = idx === arr.length - 1;
+                    return (
+                        <div
+                            key={roman}
+                            ref={idx === 0 ? positionBoxRef : undefined}
+                            className="flex items-center justify-center font-bold bg-gray-100 text-[10px]"
+                            style={{ width: '10mm', height: '5mm', borderRight: isLast ? 'none' : '1px solid #000000' }}
+                        >
+                            {roman}
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Starting Players Row */}
-            <div className="flex border-b shrink-0" style={{ height: '5mm', ...borderColor75 }}>
-                {positions.map((i) => (
-                    <div key={i} className="border-r last:border-none p-0.5 flex items-center justify-center relative" style={{ width: '10mm', height: '5mm', ...borderColor75 }}>
-                        <div className="font-bold text-sm text-center print:text-base">{lineup[i] || ''}</div>
-                    </div>
-                ))}
+            <div className="flex shrink-0" style={{ height: '5mm', borderBottom: '1px solid #000000' }}>
+                {positions.map((i, idx, arr) => {
+                    const isLast = idx === arr.length - 1;
+                    return (
+                        <div key={i} className="p-0.5 flex items-center justify-center relative bg-white" style={{ width: '10mm', height: '5mm', borderRight: isLast ? 'none' : '1px solid #000000' }}>
+                            <div className="font-bold text-sm text-center print:text-base">{lineup[i] || ''}</div>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Substitutions Area */}
-            <div className="flex shrink-0" style={{ height: '1.5cm' }}>
-                {positions.map((colIdx) => {
+            <div className="flex shrink-0" style={{ height: '1.5cm', borderBottom: '1px solid #000000' }}>
+                {positions.map((colIdx, colArrIdx) => {
                     // Get subs for this specific position (I-VI)
                     const posSubs = subs[colIdx] || [];
                     const sub1 = posSubs[0];
                     const sub2 = posSubs[1];
+                    const isLastCol = colArrIdx === positions.length - 1;
 
                     return (
-                        <div key={colIdx} className="border-r last:border-none flex flex-col h-full" style={{ width: '10mm', ...borderColor75 }}>
+                        <div key={colIdx} className="flex flex-col h-full bg-white" style={{ width: '10mm', borderRight: isLastCol ? 'none' : '1px solid #000000' }}>
                             {/* Substitution Row - Only PlayerIn (PlayerOut is already in lineup row) */}
-                            <div className="border-b shrink-0 p-0.5 flex items-center justify-center relative" style={{ height: '0.5cm', ...borderColor75 }}>
+                            <div className="shrink-0 p-0.5 flex items-center justify-center relative" style={{ height: '0.5cm', borderBottom: '1px solid #000000' }}>
                                 {sub1 ? (
                                     <>
                                         <div className="text-[14px] text-center font-bold">
@@ -158,7 +163,7 @@ export const TeamServiceGrid: React.FC<{
                                 )}
                             </div>
                             {/* Sub 1 Score - upper box */}
-                            <div className="border-b flex items-center justify-center" style={{ height: '0.5cm', ...borderColor75 }}>
+                            <div className="flex items-center justify-center" style={{ height: '0.5cm', borderBottom: '1px solid #000000' }}>
                                 {sub1 && sub1.score ? (
                                     <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
                                         <span>{sub1.score.split(':')[0]}</span>
@@ -169,9 +174,9 @@ export const TeamServiceGrid: React.FC<{
                                     <div className="text-[12px] text-center leading-tight">:</div>
                                 )}
                             </div>
-                            
+
                             {/* Sub 2 Score - lower box (for return substitution) */}
-                            <div className="flex items-center border-b justify-center bg-white" style={{ height: '0.5cm', ...borderColor75 }}>
+                            <div className="flex items-center justify-center bg-white" style={{ height: '0.5cm', borderBottom: '1px solid #000000' }}>
                                 {sub2 && sub2.score ? (
                                     <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
                                         <span>{sub2.score.split(':')[0]}</span>
@@ -188,15 +193,15 @@ export const TeamServiceGrid: React.FC<{
             </div>
 
             {/* Service Rotation Area */}
-            <div className="flex shrink-0 border-b-0" style={{ height: rotationHeight, ...borderColor75 }}>
+            <div className="flex shrink-0" style={{ height: rotationHeight }}>
                 {positions.map((colIdx, colArrIdx) => {
                     // For receiving team, position I (colIdx === 0), box 1 gets an X
                     const isLastPosition = colArrIdx === positions.length - 1;
                     return (
-                        <div 
-                            key={colIdx} 
-                            className={`flex flex-col h-full ${isLastPosition ? '' : 'border-r'}`}
-                            style={{ width: '10mm', ...(isLastPosition ? {} : borderColor75) }}
+                        <div
+                            key={colIdx}
+                            className="flex flex-col h-full"
+                            style={{ width: '10mm', borderRight: isLastPosition ? 'none' : '1px solid #000000' }}
                         >
                             {/* Rotation Box Grid for Service Order tracking */}
                             <div 
@@ -207,12 +212,12 @@ export const TeamServiceGrid: React.FC<{
                                 }}
                             >
                                 {/* Vertical divider between the two columns - spans full height */}
-                                <div 
-                                    className="absolute top-0 bottom-0 left-1/2 border-l pointer-events-none"
-                                    style={{ transform: 'translateX(-50%)', borderColor: 'rgba(0, 0, 0, 0.50)' }}
+                                <div
+                                    className="absolute top-0 bottom-0 left-1/2 pointer-events-none"
+                                    style={{ transform: 'translateX(-50%)', borderLeft: '1px solid #000000' }}
                                 />
                                 
-                                {rotationNumbers.map((num, boxIdx) => {
+                                {rotationNumbers.map((num) => {
                                     // X marks position I box 1 for receiving team (they start there, never serve from I)
                                     const showX = startsReceiving && colIdx === 0 && num === 1;
 
@@ -222,30 +227,16 @@ export const TeamServiceGrid: React.FC<{
                                     const isTicked = serviceRound?.ticked || false;
                                     const isCircled = serviceRound?.circled || false;
                                     
-                                    // Calculate row position for horizontal borders
-                                    const row = Math.floor(boxIdx / gridCols);
-                                    const isLastRow = row === gridRows - 0;
-                                    
-                                    // Add horizontal borders between rows (3 borders for 4 rows, 2 for 3 rows)
-                                    // Don't add border to last row (top and bottom are from overall structure)
-                                    const boxClass = [
-                                        'relative',
-                                        'flex',
-                                        'items-center',
-                                        'justify-center',
-                                        !isLastRow ? 'border-b-0.5' : '',
-                                    ]
-                                    .filter(Boolean)
-                                    .join(' ');
+                                    const boxClass = 'relative flex items-center justify-center';
 
                                     return (
-                                        <div 
-                                            key={num} 
+                                        <div
+                                            key={num}
                                             className={boxClass}
                                             style={{
-                                                width: '5mm', 
+                                                width: '5mm',
                                                 height: '5.05mm',
-                                                borderBottom: '0.5px solid rgba(0, 0, 0, 0.75)',
+                                                borderBottom: '1px solid #000000',
                                             }}
                                         >
                                             <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
@@ -343,19 +334,19 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   const maxScore = Math.max(leftPoints || 0, rightPoints || 0);
 
   return (
-    <div className="border bg-white flex flex-col overflow-hidden shadow-sm shrink-0" style={{ width: '150mm', ...borderColor75 }}>
+    <div className="bg-white flex flex-col overflow-hidden shadow-sm shrink-0" style={{ width: '150mm', border: '1px solid #000000' }}>
         {/* Header Strip */}
-        <div className="flex border-b bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm', ...borderColor75 }}>
+        <div className="flex bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm', borderBottom: '1px solid #000000' }}>
              {/* Start Time */}
-             <div className="border-r flex items-center px-2 gap-2 bg-white shrink-0" style={{ width: '20mm', ...borderColor75 }}>
+             <div className="flex items-center px-2 gap-2 bg-white shrink-0" style={{ width: '20mm', borderRight: '1px solid #000000' }}>
                 <span className="font-bold text-[9px]">Start:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{startTime}</div>
              </div>
              {/* Team Left (A or B) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
-             <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.3mm', ...borderColor75 }}>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.3mm', borderRight: '1px solid #000000' }}>
                  <div className="flex items-center gap-1 w-full">
                      <div className="flex items-center gap-1">
-                         <div className="w-6 h-6 rounded-full border flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0" style={borderColor75}>
+                         <div className="w-6 h-6 rounded-full flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0" style={{ border: '1px solid #000000' }}>
                             {leftTeamLabel}
                          </div>
                          <SRSelector initialSelection={leftServes} />
@@ -363,14 +354,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                      <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameLeft}</div>
                  </div>
              </div>
-             <div className="border-r flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.7mm', ...borderColor75 }}>Points</div>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.7mm', borderRight: '1px solid #000000' }}>Points</div>
               {/* Team Right (B or A) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
-             <div className="border-r flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm', ...borderColor75 }}>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm', borderRight: '1px solid #000000' }}>
                  <div className="flex items-center gap-1 w-full justify-end">
                      <div className="w-full text-xs uppercase font-bold text-center bg-white mr-1">{teamNameRight}</div>
                      <div className="flex items-center gap-1">
                         <SRSelector initialSelection={rightServes} />
-                        <div className="w-6 h-6 rounded-full border flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0" style={borderColor75}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0" style={{ border: '1px solid #000000' }}>
                             {rightTeamLabel}
                         </div>
                      </div>
@@ -381,7 +372,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <span className="font-bold text-[9px]">End:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
              </div>
-             <div className="flex items-center border-l justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm', ...borderColor75 }}>Points</div>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm', borderLeft: '1px solid #000000' }}>Points</div>
         </div>
 
         {/* Main Body - Teams side by side with points on their right */}

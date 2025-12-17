@@ -1,4 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
+import * as htmlToImage from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { SetFive } from './components/SetFive';
@@ -2195,10 +2197,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   const positionBoxSet5Ref = useRef<HTMLDivElement>(null);
   const buttonsContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Zoom state for tablet/viewport control
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Viewport tracking for portrait/landscape detection
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366);
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768);
+  const isLandscape = viewportWidth >= viewportHeight;
 
   const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, 2));
   const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, 0.3));
@@ -2245,8 +2253,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
   useEffect(() => {
     const lockLandscape = async () => {
       try {
-        if (screen.orientation && screen.orientation.lock) {
-          await screen.orientation.lock('landscape');
+        const orientation = screen.orientation as any;
+        if (orientation && orientation.lock) {
+          await orientation.lock('landscape');
           console.log('[Scoresheet] Orientation locked to landscape');
         }
       } catch (err) {
@@ -2257,14 +2266,25 @@ const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
 
     return () => {
       // Unlock orientation when leaving scoresheet
-      if (screen.orientation && screen.orientation.unlock) {
+      const orientation = screen.orientation as any;
+      if (orientation && orientation.unlock) {
         try {
-          screen.orientation.unlock();
+          orientation.unlock();
         } catch (err) {
           // Ignore unlock errors
         }
       }
     };
+  }, []);
+
+  // Track viewport size for portrait/landscape detection
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+      setViewportHeight(window.innerHeight);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Auto-fit to screen on mount if viewport is smaller than scoresheet
@@ -2309,8 +2329,179 @@ const handlePrint = () => {
   }, 100);
 };
 
+  // State for PDF generation
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  const handleSavePdf = async () => {
+    if (!containerRef.current || isGeneratingPdf) return;
+
+    setIsGeneratingPdf(true);
+
+    try {
+      // Store current zoom level
+      const savedZoomLevel = zoomLevel;
+
+      // Generate filename
+      const matchNum = match?.gameNumber || match?.externalId || match?.game_n?.toString() || 'match';
+      const homeShort = match?.homeShortName || homeTeam?.name || 'Home';
+      const awayShort = match?.awayShortName || awayTeam?.name || 'Away';
+      const date = match?.scheduledAt
+        ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
+        : new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+      const filename = `${matchNum}_${sanitize(homeShort)}_${sanitize(awayShort)}_${date}.pdf`;
+
+      // Reset zoom to 100% for capture
+      setZoomLevel(1);
+
+      // Wait for zoom to apply and fonts to load
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await document.fonts.ready;
+
+      // Capture using html-to-image toCanvas
+      const canvas = await htmlToImage.toCanvas(containerRef.current, {
+        pixelRatio: 4,
+        backgroundColor: '#ffffff',
+        style: {
+          transform: 'none',
+        },
+      });
+
+      // Restore zoom
+      setZoomLevel(savedZoomLevel);
+
+      // Convert canvas to image data
+      const imgData = canvas.toDataURL('image/png', 1.0);
+
+      // Create PDF (A3 landscape: 420mm x 297mm)
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a3'
+      });
+
+      // Add canvas as full-page image
+      pdf.addImage(imgData, 'PNG', 0, 0, 420, 297);
+
+      // Save PDF
+      pdf.save(filename);
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try the Print/PDF option instead.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  // Handle Import JSON - load match data from exported JSON file
+  const handleImportJson = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importedData = JSON.parse(text);
+
+      // Transform exported format to scoresheet format
+      // Exported format: { match: { ...matchData, homeTeam, awayTeam }, homePlayers, awayPlayers, sets, events }
+      // Scoresheet format: { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
+      const scoresheetData = {
+        match: importedData.match || {},
+        homeTeam: importedData.match?.homeTeam || importedData.homeTeam || null,
+        awayTeam: importedData.match?.awayTeam || importedData.awayTeam || null,
+        homePlayers: importedData.homePlayers || [],
+        awayPlayers: importedData.awayPlayers || [],
+        sets: importedData.sets || [],
+        events: importedData.events || [],
+        sanctions: importedData.sanctions || []
+      };
+
+      // Store in sessionStorage and reload
+      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData));
+      window.location.reload();
+    } catch (error) {
+      console.error('Error importing JSON:', error);
+      alert('Failed to import JSON file. Please check the file format.');
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <>
+      {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS) */}
+      {!isLandscape && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            fontSize: '64px',
+            marginBottom: '24px',
+            animation: 'rotate90 1.5s ease-in-out infinite'
+          }}>
+            📱
+          </div>
+          <style>{`
+            @keyframes rotate90 {
+              0%, 100% { transform: rotate(0deg); }
+              50% { transform: rotate(-90deg); }
+            }
+          `}</style>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            color: '#ffffff',
+            marginBottom: '16px'
+          }}>
+            Please Rotate Your Device
+          </h2>
+          <p style={{
+            fontSize: '16px',
+            color: '#9ca3af',
+            maxWidth: '300px',
+            lineHeight: 1.5,
+            marginBottom: '24px'
+          }}>
+            The Scoresheet works best in landscape mode. Please rotate your device horizontally to continue.
+          </p>
+          <div style={{
+            padding: '12px 16px',
+            background: 'rgba(59, 130, 246, 0.15)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '8px',
+            maxWidth: '320px'
+          }}>
+            <p style={{
+              fontSize: '13px',
+              color: '#93c5fd',
+              lineHeight: 1.4,
+              margin: 0
+            }}>
+              <strong>Tip:</strong> For auto-backup features, use Chrome or Edge on a desktop/laptop computer.
+            </p>
+          </div>
+        </div>
+      )}
       <div ref={buttonsContainerRef} className="mb-2 flex justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
         <div className="flex items-center space-x-2">
           {/* Zoom controls */}
@@ -2363,6 +2554,37 @@ const handlePrint = () => {
           >
             Print / PDF
           </button>
+
+          {/* Save PDF button (one-click, no dialog) */}
+          <button
+            onClick={handleSavePdf}
+            disabled={isGeneratingPdf}
+            className={`${isGeneratingPdf ? 'bg-purple-400 cursor-wait' : 'bg-purple-500 hover:bg-purple-700'} text-white px-3 py-1 rounded text-sm shadow`}
+            title="Save as PDF (one-click download)"
+          >
+            {isGeneratingPdf ? 'Generating...' : 'Save PDF v9'}
+          </button>
+
+          {/* Divider */}
+          <div className="w-px h-6 bg-gray-400 mx-2"></div>
+
+          {/* Import JSON button */}
+          <button
+            onClick={handleImportJson}
+            className="bg-orange-500 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm shadow"
+            title="Import match data from JSON file"
+          >
+            Import JSON
+          </button>
+
+          {/* Hidden file input for JSON import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
         </div>
       </div>
       <style>{`
@@ -2402,7 +2624,7 @@ const handlePrint = () => {
             transition: 'transform 0.2s ease'
           }}
         >
-        <div className="h-full" style={{ padding: '4mm 5mm 6mm 5mm' }}>
+        <div className="h-full" style={{ padding: '4mm 7mm 6mm 5mm' }}>
             <div ref={headerRef}>
               <Header
                 match={match}
@@ -2574,7 +2796,7 @@ const handlePrint = () => {
                             isSet5={true}
                           />
                         </div>
-                        <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
+                        <div className="flex flex-col items-center justify-center w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
                             <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                                 <span>S</span>
                                 <span>E</span>

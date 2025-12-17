@@ -7911,6 +7911,71 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   return (
     <div className="match-record">
+      {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS) */}
+      {!isLandscape && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            fontSize: '64px',
+            marginBottom: '24px',
+            animation: 'rotate90 1.5s ease-in-out infinite'
+          }}>
+            📱
+          </div>
+          <style>{`
+            @keyframes rotate90 {
+              0%, 100% { transform: rotate(0deg); }
+              50% { transform: rotate(-90deg); }
+            }
+          `}</style>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            color: '#ffffff',
+            marginBottom: '16px'
+          }}>
+            Please Rotate Your Device
+          </h2>
+          <p style={{
+            fontSize: '16px',
+            color: '#9ca3af',
+            maxWidth: '300px',
+            lineHeight: 1.5,
+            marginBottom: '24px'
+          }}>
+            The Scoreboard works best in landscape mode. Please rotate your device horizontally to continue.
+          </p>
+          <div style={{
+            padding: '12px 16px',
+            background: 'rgba(59, 130, 246, 0.15)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '8px',
+            maxWidth: '320px'
+          }}>
+            <p style={{
+              fontSize: '13px',
+              color: '#93c5fd',
+              lineHeight: 1.4,
+              margin: 0
+            }}>
+              <strong>Tip:</strong> For auto-backup features, use Chrome or Edge on a desktop/laptop computer.
+            </p>
+          </div>
+        </div>
+      )}
       <ScoreboardToolbar>
         {/* Left: Date/Time */}
         <div className="toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
@@ -10439,14 +10504,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                         }}>{leftTeamLabel}</span>
                       </h4>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px', tableLayout: 'fixed' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>S</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>P</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>W</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>Su</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>T</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>Set</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>P</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>W</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>S</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>T</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -12780,14 +12845,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
                         }}>{rightTeamLabel}</span>
                       </h4>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px', tableLayout: 'fixed' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>S</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>P</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>W</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>Su</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px' }}>T</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>Set</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>P</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>W</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>S</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>T</th>
                           </tr>
                         </thead>
                         <tbody>

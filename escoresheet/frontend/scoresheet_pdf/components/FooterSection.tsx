@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 
-// 75% black border color
-const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
+// Full black border color for PDF capture
+const borderColor75 = { borderColor: '#000000' };
 
 interface SanctionsProps {
     items?: SanctionRecord[];
@@ -210,9 +210,9 @@ export const Results: React.FC<ResultsProps> = ({
   coinTossConfirmed = false
 }) => {
     return (
-        <div className="border bg-white flex flex-col h-full" style={borderColor75}>
-            <div className="bg-gray-200 border-b text-center font-bold text-[10px] py-0.5 shrink-0" style={borderColor75}>RESULT</div>
-            <div className="grid grid-cols-[1fr_80px_1fr] gap-px bg-black border-b flex-1 min-h-0" style={borderColor75}>
+        <div className="border bg-white flex flex-col mr-1 h-full" style={borderColor75}>
+            <div className="bg-gray-200 border-b text-center font-bold text-[10px] py-0.5 shrink-0 border-r" style={borderColor75}>RESULT</div>
+            <div className="grid grid-cols-[1fr_80px_1fr] gap-px bg-black flex-1 min-h-0 border-r" style={borderColor75}>
                 {/* Team A Stats */}
                 <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b h-5 bg-gray-50" style={borderColor75}>
@@ -359,13 +359,13 @@ export const Results: React.FC<ResultsProps> = ({
                     <div className="w-full text-center text-[6px] font-bold bg-white">{matchEnd}</div>
                 </div>
                 <div className="border-r text-[6px] font-bold flex items-center justify-start pl-1" style={borderColor75}>Match Duration</div>
-                <div className="flex items-center justify-center">
+                <div className="flex items-center justify-center border-r" style={borderColor75}>
                     <div className="w-full text-center text-[6px] font-bold bg-white">{matchDuration}</div>
                 </div>
             </div>
             
             {/* Winner Area */}
-            <div className="p-1 grid grid-cols-[3fr_1fr] gap-1 border-t h-14 shrink-0 bg-white" style={borderColor75}>
+            <div className="p-1 grid grid-cols-[3fr_1fr] gap-1 border-t h-14 shrink-0 bg-white border-r" style={borderColor75}>
                  <div className="relative">
                      <span className="text-[12px] absolute top-0 left-0 text-gray-500">WINNER</span>
                      <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-end justify-center pb-0.5">{winner}</div>

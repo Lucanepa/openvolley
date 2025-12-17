@@ -1,8 +1,5 @@
 import React from 'react';
 
-// 75% black border color
-const borderColor75 = { borderColor: 'rgba(0, 0, 0, 0.75)' };
-
 // Unified PointBox component - uses SetFive styling (thinner strokes, better proportions)
 export const PointBox: React.FC<{
     num: number;
@@ -18,7 +15,7 @@ export const PointBox: React.FC<{
     return (
         <div
             className="flex-1 w-full relative flex items-center justify-center"
-            style={{ borderColor: '#000' }}
+            style={{ borderColor: '#000000' }}
         >
             {/* Background Number - only show if scored or circled */}
             {showNumber && (
@@ -64,10 +61,10 @@ export const PointsColumn: React.FC<{
     const maxPoints = rowsPerColumn * 4;
 
     return (
-        <div className={`flex flex-col h-full shrink-0 ${isLast ? '' : 'border-r'}`} style={{ width: '15mm', ...(isLast ? {} : borderColor75) }}>
+        <div className="flex flex-col h-full shrink-0" style={{ width: '15mm', borderRight: isLast ? 'none' : '1px solid #000000' }}>
             <div
-                className="grid grid-cols-4 bg-white border-b border-l"
-                style={{ height: '3.0cm', ...borderColor75 }}
+                className="grid grid-cols-4 bg-white"
+                style={{ height: '3.0cm', borderBottom: '1px solid #000000', borderLeft: '1px solid #000000' }}
             >
                 {offsets.map((offset) => (
                     <div
@@ -88,7 +85,7 @@ export const PointsColumn: React.FC<{
                 ))}
             </div>
               {/* TO Boxes */}
-            <div className="bg-white flex flex-col items-center justify-start gap-1 border-l py-1" style={{ height: '1.5cm', ...borderColor75 }}>
+            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1" style={{ height: '1.5cm', borderLeft: '1px solid #000000' }}>
             <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>T</span>
                 <div className="flex flex-col w-full px-2 items-center" style={{ height: '1cm' }}>
                     <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
@@ -128,7 +125,7 @@ export const PointsColumn5: React.FC<{
 }> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [] }) => {
     return (
         <div className="flex flex-col shrink-0" style={{ width: '15mm', height: '3.5cm' }}>
-            <div className="grid grid-cols-3 bg-white border-b shrink-0" style={{ height: '2.48cm', ...borderColor75 }}>
+            <div className="grid grid-cols-3 bg-white shrink-0" style={{ height: '2.48cm', borderBottom: '1px solid #000000' }}>
                 <div className="h-full"></div>
                 <div className="flex flex-col h-full">
                     {Array.from({ length: 8 }).map((_, i) => {
@@ -189,10 +186,10 @@ export const PointsColumn30: React.FC<{
     const maxPoints = rowsPerColumn * 4;
 
     return (
-        <div className={`flex flex-col shrink-0 ${isLast ? '' : 'border-l-0'}`} style={{ width: '15mm', height: '3.5cm', ...(isLast ? {} : borderColor75) }}>
-            <div className="grid grid-cols-4 bg-white border-b shrink-0" style={{ height: '2.5cm', ...borderColor75 }}>
+        <div className="flex flex-col shrink-0" style={{ width: '15mm', height: '3.5cm', borderLeft: isLast ? 'none' : '1px solid #000000' }}>
+            <div className="grid grid-cols-4 bg-white shrink-0" style={{ height: '2.5cm', borderBottom: '1px solid #000000' }}>
                 {offsets.map((offset) => (
-                    <div key={offset} className="flex flex-col border-t-0 h-full">
+                    <div key={offset} className="flex flex-col h-full">
                         {Array.from({ length: rowsPerColumn }).map((_, i) => {
                              const num = offset + i + 1;
                              if (num > maxPoints) return <div key={i} className="flex-1"></div>;
