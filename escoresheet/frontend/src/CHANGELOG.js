@@ -3,11 +3,18 @@
 
 export const changelog = [
   {
-    version: '0.9.16',
+    version: '0.9.18',
     date: '18.12.25',
     changes: [
-      'Add immediate WebSocket sync after coin toss, lineup, and set start',
-      'Add sync timing logs for debugging WebSocket delays'
+      'Update version to 0.9.17, enhance WebSocket sync for official matches, and add cache cleared alert before page reload. Refactor sync logic to exclude test matches and clean up debug logs across components.'
+    ]
+  },
+  {
+    version: '0.9.17',
+    date: '18.12.25',
+    changes: [
+      'Add cache cleared alert in Options before page reload',
+      'Add immediate WebSocket sync after coin toss, lineup, and set start'
     ]
   },
   {

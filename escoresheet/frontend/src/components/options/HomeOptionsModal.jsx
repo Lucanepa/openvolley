@@ -249,6 +249,9 @@ export default function HomeOptionsModal({
         localStorage.clear()
       }
 
+      // Show success alert before reload
+      alert(includeLocalStorage ? 'Cache and settings cleared!' : 'Cache cleared!')
+
       // Reload to apply changes
       window.location.reload()
     } catch (error) {

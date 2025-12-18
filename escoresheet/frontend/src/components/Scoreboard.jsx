@@ -571,12 +571,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
     const currentSet = dedupedSets.find(s => !s.finished) ?? null
 
-    // Debug: log current set detection
-    if (sets.length > 0) {
-      console.log('[useLiveQuery] Sets:', sets.map(s => ({ id: s.id, index: s.index, finished: s.finished, points: `${s.homePoints}-${s.awayPoints}` })))
-      console.log('[useLiveQuery] Current set:', currentSet ? { id: currentSet.id, index: currentSet.index, finished: currentSet.finished } : 'null')
-    }
-
     const [homePlayers, awayPlayers] = await Promise.all([
       match?.homeTeamId
         ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
@@ -765,11 +759,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     const syncMatchData = async () => {
-      const syncStartTime = Date.now()
       // Use wsRef.current to always get the current WebSocket (not stale closure)
       const currentWs = wsRef.current
       if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
-        console.log(`[Scoreboard] syncMatchData: WebSocket not ready (state: ${currentWs?.readyState})`)
         return
       }
 
@@ -804,8 +796,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
 
         currentWs.send(JSON.stringify(syncPayload))
-        const syncDuration = Date.now() - syncStartTime
-        console.log(`[Scoreboard] syncMatchData: sent in ${syncDuration}ms (events: ${freshEvents?.length}, sets: ${freshSets?.length})`)
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
       }
@@ -1093,28 +1083,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Sync when connection settings change (e.g., referee dashboard enabled/disabled)
   useEffect(() => {
-    console.log('[Scoreboard] Connection settings changed:', {
-      gameNumber: data?.match?.gameNumber,
-      matchId: data?.match?.id,
-      refereeConnectionEnabled: data?.match?.refereeConnectionEnabled,
-      refereeConnectionEnabledType: typeof data?.match?.refereeConnectionEnabled,
-      homeTeamConnectionEnabled: data?.match?.homeTeamConnectionEnabled,
-      awayTeamConnectionEnabled: data?.match?.awayTeamConnectionEnabled
-    })
     if (syncFunctionRef.current && data?.match) {
-      console.log('[Scoreboard] Triggering sync to server...')
       syncFunctionRef.current()
     }
   }, [data?.match?.refereeConnectionEnabled, data?.match?.homeTeamConnectionEnabled, data?.match?.awayTeamConnectionEnabled])
 
   // Sync data to referee/bench - call this after any action that changes match data
   const syncToReferee = useCallback(() => {
-    const syncTime = Date.now()
-    console.log(`[Scoreboard] syncToReferee called at ${syncTime}`)
     if (syncFunctionRef.current) {
       syncFunctionRef.current()
-    } else {
-      console.warn('[Scoreboard] syncFunctionRef.current is null - WebSocket may not be connected')
     }
   }, [])
 
@@ -1316,23 +1293,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Get match to check if it's a test match
     const match = await db.matches.get(matchId)
     const isTest = match?.test || false
-    
-    await db.sync_queue.add({
-      resource: 'set',
-      action: 'insert',
-      payload: {
-        external_id: String(setId),
-        match_id: match?.externalId || String(matchId),
-        index: nextIndex,
-        home_points: 0,
-        away_points: 0,
-        finished: false,
-        test: isTest,
-        created_at: new Date().toISOString()
-      },
-      ts: new Date().toISOString(),
-      status: 'queued'
-    })
+
+    // Only sync official matches (not test matches)
+    if (!isTest) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: String(setId),
+          match_id: match?.externalId || String(matchId),
+          index: nextIndex,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          test: isTest,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
   }, [matchId])
 
   useEffect(() => {
@@ -2619,7 +2599,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
     if (!data?.set || !data?.match) {
-      console.log('[SERVE DEBUG] No set or match data, returning:', data?.match?.firstServe || 'home')
       return data?.match?.firstServe || 'home'
     }
 
@@ -2639,19 +2618,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const teamAKey = data.match.coinTossTeamA || 'home'
       const teamBKey = data.match.coinTossTeamB || 'away'
       currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-      console.log('[SERVE DEBUG] Set 5 with coin toss:', { teamAKey, teamBKey, set5FirstServe: data.match.set5FirstServe, currentSetFirstServe })
     } else if (setIndex === 5) {
       // Set 5 without set5FirstServe specified - fallback to alternation
       currentSetFirstServe = set1FirstServe
-      console.log('[SERVE DEBUG] Set 5 fallback to set1FirstServe:', currentSetFirstServe)
     } else {
       // Sets 1-4: odd sets (1, 3) same as set 1, even sets (2, 4) opposite
       currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-      console.log('[SERVE DEBUG] Set', setIndex, '- set1FirstServe:', set1FirstServe, '-> currentSetFirstServe:', currentSetFirstServe)
     }
 
     if (!data?.events || data.events.length === 0) {
-      console.log('[SERVE DEBUG] No events, returning currentSetFirstServe:', currentSetFirstServe)
       return currentSetFirstServe
     }
 
@@ -2665,15 +2640,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       })
 
     if (pointEvents.length === 0) {
-      console.log('[SERVE DEBUG] No point events in set', setIndex, ', returning currentSetFirstServe:', currentSetFirstServe)
       return currentSetFirstServe
     }
 
     // The team that scored the last point now has serve
     const lastPoint = pointEvents[0]
-    const result = lastPoint.payload?.team || currentSetFirstServe
-    console.log('[SERVE DEBUG] Last point by:', lastPoint.payload?.team, '-> serve:', result)
-    return result
+    return lastPoint.payload?.team || currentSetFirstServe
   }, [data?.events, data?.set, data?.match, data?.match?.set5FirstServe])
 
   const leftServeTeamKey = leftIsHome ? 'home' : 'away'
@@ -2692,24 +2664,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const rightServing = (isBeforeCoinToss || hasNoSet)
     ? false
     : (data?.set ? currentServeTeam === rightServeTeamKey : false)
-
-  // Debug log for serve indicator
-  console.log('[SERVE DEBUG] Indicator:', {
-    setIndex: data?.set?.index,
-    leftIsHome,
-    leftServeTeamKey,
-    rightServeTeamKey,
-    currentServeTeam,
-    leftServing,
-    rightServing,
-    teamAKey,
-    teamBKey,
-    coinTossTeamA: data?.match?.coinTossTeamA,
-    coinTossTeamB: data?.match?.coinTossTeamB,
-    firstServe: data?.match?.firstServe,
-    homeTeamName: data?.homeTeam?.name,
-    awayTeamName: data?.awayTeam?.name
-  })
 
   const serveBallBaseStyle = useMemo(
     () => ({
@@ -3599,9 +3553,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Use separate queries since compound index may not exist
       const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
       const existingSet = allSetsForMatch.find(s => s.index === newSetIndex)
-      console.log('[Set Transition] Creating set', newSetIndex, 'for match', matchId, 'existingSet:', existingSet, 'allSets:', allSetsForMatch.map(s => ({ id: s.id, index: s.index })))
       if (existingSet) {
-        console.log('[Set Transition] Set already exists, returning existing id:', existingSet.id)
         return existingSet.id
       }
 
@@ -3612,7 +3564,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         awayPoints: 0,
         finished: false
       })
-      console.log('[Set Transition] Created new set with id:', newSetId)
 
       // Get match data
       const match = await db.matches.get(matchId)
@@ -3624,23 +3575,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       })
       
       const isTest = match?.test || false
-      
-      await db.sync_queue.add({
-        resource: 'set',
-        action: 'insert',
-        payload: {
-          external_id: String(newSetId),
-          match_id: match?.externalId || String(matchId),
-          index: setIndex + 1,
-          home_points: 0,
-          away_points: 0,
-          finished: false,
-          test: isTest,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+
+      // Only sync official matches (not test matches)
+      if (!isTest) {
+        await db.sync_queue.add({
+          resource: 'set',
+          action: 'insert',
+          payload: {
+            external_id: String(newSetId),
+            match_id: match?.externalId || String(matchId),
+            index: setIndex + 1,
+            home_points: 0,
+            away_points: 0,
+            finished: false,
+            test: isTest,
+            created_at: new Date().toISOString()
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
     }
   }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup])
 
@@ -3658,8 +3612,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Determine which team (home/away) serves first
     const firstServeTeamKey = firstServe === 'A' ? teamAKey : teamBKey
 
-    console.log('[Set 5 Coin Toss] Confirming set 5 configuration:', { leftTeam, firstServe, setIndex })
-
     // Update match with set 5 configuration (don't update firstServe - keep original coin toss result)
     // getCurrentServe() uses set5FirstServe for set 5 logic
     await db.matches.update(matchId, {
@@ -3672,7 +3624,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const existingSet5 = await db.sets.where({ matchId, index: setIndex }).first()
     let newSetId
     if (existingSet5) {
-      console.log('[Set 5 Coin Toss] Set 5 already exists with id:', existingSet5.id)
       // Make sure it's not marked as finished (in case of redo)
       await db.sets.update(existingSet5.id, { finished: false, homePoints: 0, awayPoints: 0 })
       newSetId = existingSet5.id
@@ -3684,7 +3635,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         awayPoints: 0,
         finished: false
       })
-      console.log('[Set 5 Coin Toss] Created new set 5 with id:', newSetId)
     }
 
     // Log the set 5 coin toss event so it can be undone
@@ -3707,8 +3657,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const match = await db.matches.get(matchId)
     const isTest = match?.test || false
 
-    // Only add to sync queue if set was newly created
-    if (!existingSet5) {
+    // Only add to sync queue if set was newly created and it's an official match
+    if (!existingSet5 && !isTest) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'insert',
@@ -3766,10 +3716,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     let eventDescription = ''
     if (event.type === 'coin_toss') {
-      const teamA = event.payload?.teamA === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
-      const teamB = event.payload?.teamB === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
-      const firstServeTeam = event.payload?.firstServe === 'home' ? teamA : teamB
-      eventDescription = `Coin toss - Team A: ${teamA}, Team B: ${teamB}, First serve: ${firstServeTeam}`
+      const teamAName = event.payload?.teamA === 'home'
+        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+        : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+      const teamBName = event.payload?.teamB === 'home'
+        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+        : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+      // Determine if first serve is Team A or Team B
+      const firstServeLabel = event.payload?.firstServe === event.payload?.teamA ? 'A' : 'B'
+      eventDescription = `Coin toss - A: ${teamAName}, B: ${teamBName}, First serve: ${firstServeLabel}`
     } else if (event.type === 'point') {
       eventDescription = `Point — ${teamName} (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
     } else if (event.type === 'timeout') {

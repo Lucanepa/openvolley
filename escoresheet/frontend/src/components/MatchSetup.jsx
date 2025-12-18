@@ -502,10 +502,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         
         // Load referee connection setting (default to disabled if not set)
         setRefereeConnectionEnabled(match.refereeConnectionEnabled === true)
-        
+
         // Load bench connection settings (default to disabled if not set)
         setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled === true)
         setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled === true)
+
+        // Migrate old matches: ensure connection fields are explicitly set to false if undefined
+        const connectionUpdates = {}
+        if (match.refereeConnectionEnabled === undefined) connectionUpdates.refereeConnectionEnabled = false
+        if (match.homeTeamConnectionEnabled === undefined) connectionUpdates.homeTeamConnectionEnabled = false
+        if (match.awayTeamConnectionEnabled === undefined) connectionUpdates.awayTeamConnectionEnabled = false
+        if (Object.keys(connectionUpdates).length > 0) {
+          await db.matches.update(matchId, connectionUpdates)
+        }
         
         // Mark roster as loaded
         rosterLoadedRef.current = true
@@ -1655,24 +1664,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     // Get match to check if it's a test match
     const matchForSet = await db.matches.get(matchId)
     const isTest = matchForSet?.test || false
-    
-    // Add first set to sync queue
-    await db.sync_queue.add({
-      resource: 'set',
-      action: 'insert',
-      payload: {
-        external_id: String(firstSetId),
-        match_id: String(matchId),
-        index: 1,
-        home_points: 0,
-        away_points: 0,
-        finished: false,
-        test: isTest,
-        created_at: new Date().toISOString()
-      },
-      ts: new Date().toISOString(),
-      status: 'queued'
-    })
+
+    // Only sync official matches (not test matches)
+    if (!isTest) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: String(firstSetId),
+          match_id: String(matchId),
+          index: 1,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
     
     // Update match status to 'live' to indicate match has started
     await db.matches.update(matchId, { status: 'live' })
@@ -1716,7 +1726,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     // Sync to server immediately so referee/bench dashboards receive data before Scoreboard mounts
     const finalMatchData = await db.matches.get(matchId)
     if (finalMatchData) {
-      console.log('[MatchSetup] Syncing match data to server after coin toss confirmation...')
       await syncMatchToServer(finalMatchData, true) // Full sync with teams, players, sets, events
     }
 
@@ -3678,12 +3687,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // If fullSync is true, fetches all data (teams, players, sets, events) from IndexedDB
   const syncMatchToServer = async (matchData, fullSync = false) => {
     const wsUrl = getWebSocketUrl()
-    if (!wsUrl) {
-      console.log('[MatchSetup] No WebSocket URL, skipping server sync')
-      return
-    }
-
-    console.log('[MatchSetup] Connecting to WebSocket:', wsUrl, fullSync ? '(full sync)' : '(partial sync)')
+    if (!wsUrl) return
 
     try {
       // For full sync, fetch all data from IndexedDB
@@ -3710,8 +3714,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('[MatchSetup] Temporary WebSocket connected, syncing match data...')
-        // Server expects: { type: 'sync-match-data', matchId, match, teams, players, sets, events }
         const syncPayload = {
           type: 'sync-match-data',
           matchId: matchData.id,
@@ -3725,22 +3727,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           _timestamp: Date.now()
         }
         ws.send(JSON.stringify(syncPayload))
-        console.log('[MatchSetup] Sync payload sent:', {
-          matchId: matchData.id,
-          gameNumber: matchData.gameNumber,
-          fullSync: fullSync,
-          setsCount: sets.length,
-          eventsCount: events.length,
-          homePlayersCount: homePlayers.length,
-          awayPlayersCount: awayPlayers.length
-        })
         // Close after a short delay to ensure message is sent
         setTimeout(() => ws.close(), 500)
       }
 
-      ws.onerror = (err) => {
-        console.error('[MatchSetup] WebSocket sync error:', err)
-      }
+      ws.onerror = () => {}
     } catch (error) {
       console.error('[MatchSetup] Failed to sync to server:', error)
     }
@@ -3761,21 +3752,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         updates.refereePin = String(newPin).trim() // Ensure it's a string
       }
 
-      console.log('[MatchSetup] Saving referee toggle:', {
-        matchId,
-        gameNumber: match.gameNumber,
-        enabled,
-        updates,
-        previousValue: match.refereeConnectionEnabled
-      })
-
       await db.matches.update(matchId, updates)
 
-      // Verify the update was saved and sync to server
-      const updatedMatch = await db.matches.get(matchId)
-      console.log('[MatchSetup] After save - refereeConnectionEnabled:', updatedMatch?.refereeConnectionEnabled)
-
       // Sync to server since Scoreboard is not mounted when MatchSetup is shown
+      const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
       }
