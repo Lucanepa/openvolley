@@ -181,6 +181,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [courtLiberoExpanded, setCourtLiberoExpanded] = useState(false) // Track if libero list is expanded in court player menu
   const [benchSanctionExpanded, setBenchSanctionExpanded] = useState(false) // Track if sanction list is expanded in bench player menu
   const [liberoBenchReplaceExpanded, setLiberoBenchReplaceExpanded] = useState(false) // Track if replace list is expanded in libero bench menu
+  const [leftLiberoDropdownOpen, setLeftLiberoDropdownOpen] = useState(false) // Narrow mode dropdown for left team libero buttons
+  const [rightLiberoDropdownOpen, setRightLiberoDropdownOpen] = useState(false) // Narrow mode dropdown for right team libero buttons
+  const [leftDelaysDropdownOpen, setLeftDelaysDropdownOpen] = useState(false) // Narrow mode dropdown for left team delays/sanctions buttons
+  const [rightDelaysDropdownOpen, setRightDelaysDropdownOpen] = useState(false) // Narrow mode dropdown for right team delays/sanctions buttons
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
@@ -200,6 +204,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     : (viewportHeight <= 800 || viewportWidth < 600)
   // Laptop mode: between compact (960) and full desktop (1400) - smaller UI than full desktop
   const isLaptopMode = !isCompactMode && viewportWidth > 960 && viewportWidth <= 1400
+  // Narrow mode: < 1000px - collapse buttons into dropdowns, column layout for counters
+  const isNarrowMode = viewportWidth < 1000
+  // Short height mode: < 900px - smaller counters, clickable TO counter, hide TO button
+  const isShortHeight = viewportHeight < 900
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
@@ -8016,6 +8024,39 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <strong>Tip:</strong> For auto-backup features, use Chrome or Edge on a desktop/laptop computer.
             </p>
           </div>
+          <button
+            onClick={() => {
+              if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                  console.log('Fullscreen request failed:', err)
+                })
+              }
+            }}
+            style={{
+              marginTop: '24px',
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'var(--accent)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>⛶</span>
+            <span>Enter Fullscreen</span>
+          </button>
+          <p style={{
+            fontSize: '12px',
+            color: '#6b7280',
+            marginTop: '12px'
+          }}>
+            Fullscreen removes browser headers to maximize screen space.
+          </p>
         </div>
       )}
       <ScoreboardToolbar>
@@ -8027,11 +8068,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         {/* Center: Set Counter fixed in center, Rally Status (left) and Last Action (right) on sides */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isCompactMode ? '60px 1fr 100px' : '80px 1fr 120px') : '1fr',
+          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isNarrowMode ? '200px 1fr 200px' : (isCompactMode ? '200px 1fr 200px' : '100px 1fr 100px')) : '1fr',
           alignItems: 'center',
-          gap: isCompactMode ? '4px' : '8px',
+          gap: isNarrowMode ? '2px' : (isCompactMode ? '4px' : '8px'),
           flex: '1 1 auto'
         }}>
+          
           {/* Rally Status - Left of set counter (compact and laptop) */}
           {(isCompactMode || isLaptopMode) && (
             <div
@@ -8040,14 +8082,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 fontSize: isCompactMode ? '10px' : '11px',
                 color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c',
                 cursor: 'pointer',
-                textAlign: 'right',
+                textAlign: 'center',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
                 fontWeight: 600
               }}
             >
-              {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
+              Rally: {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
             </div>
           )}
 
@@ -8160,10 +8202,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     fontSize: isCompactMode ? '10px' : '11px',
                     color: 'var(--muted)',
                     cursor: 'pointer',
-                    textAlign: 'left',
+                    textAlign: 'center',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
+                    whiteSpace:'nowrap'
                   }}
                 >
                   <span style={{ opacity: 0.7 }}>Last action: </span>
@@ -8829,8 +8871,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
-      {/* Team Names Container - Hide on compact mode (info is now in toolbar) */}
-      {!isCompactMode && (
+      {/* Team Names Container - Hide on compact mode (info is now in toolbar) and when height < 900px */}
+      {!isCompactMode && viewportHeight >= 900 && (
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -9923,16 +9965,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 textOverflow: 'ellipsis'
               }}
             >
-              <span>{teamALabel}</span>
-              <span>-</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{teamAShortName}</span>
+              <span style={{ flexShrink: 0 }}>{teamALabel}</span>
+              <span style={{ flexShrink: 0 }}>-</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: isNarrowMode ? '30px' : '40px' }}>{teamAShortName}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
             <div
               onClick={() => {
-                if (isCompactMode) {
-                  // In compact mode, clicking calls timeout if available
+                if (isCompactMode || isShortHeight) {
+                  // In compact/short mode, clicking calls timeout if available
                   const canCallTimeout = getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
                   if (canCallTimeout) {
                     handleTimeout('left')
@@ -9948,29 +9990,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               className="to-sub-counter"
               style={{
                 flex: 1,
-                background: isCompactMode
+                background: (isCompactMode || isShortHeight)
                   ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
                     ? 'rgba(239, 68, 68, 0.2)'
                     : 'rgba(34, 197, 94, 0.2)')
                   : 'rgba(255, 255, 255, 0.05)',
-                borderRadius: isCompactMode ? '4px' : '8px',
-                padding: isCompactMode ? '6px' : '12px',
+                borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
+                padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
-                border: isCompactMode
+                border: (isCompactMode || isShortHeight)
                   ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
                     ? '1px solid rgba(239, 68, 68, 0.4)'
                     : '1px solid rgba(34, 197, 94, 0.4)')
                   : '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: isCompactMode
+                cursor: (isCompactMode || isShortHeight)
                   ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer')
                   : (getTimeoutDetails('left').length > 0 ? 'pointer' : 'default')
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>TO</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>TO</div>
               <div className="to-sub-value" style={{
-                fontSize: isCompactMode ? '16px' : '24px',
+                fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
-                color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (isCompactMode && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
+                color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : ((isCompactMode || isShortHeight) && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
               }}>{getTimeoutsUsed('left')}</div>
             </div>
             <div
@@ -9984,22 +10026,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               style={{
                 flex: 1,
                 background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: isCompactMode ? '4px' : '8px',
-                padding: isCompactMode ? '6px' : '12px',
+                borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
+                padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>SUB</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>SUB</div>
               <div className="to-sub-value" style={{
-                fontSize: isCompactMode ? '16px' : '24px',
+                fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
                 color: getSubstitutionsUsed('left') >= 6 ? '#ef4444' : getSubstitutionsUsed('left') >= 5 ? '#eab308' : 'inherit'
               }}>{getSubstitutionsUsed('left')}</div>
             </div>
           </div>
-          {!isCompactMode && (
+          {!isCompactMode && !isShortHeight && (
             <button
               onClick={() => handleTimeout('left')}
               disabled={getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
@@ -10055,39 +10097,62 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               )
             }
 
+            const liberoOutDisabled = rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)
+            const exchangeLiberoDisabled = (() => {
+              const liberoOnCourt = getLiberoOnCourt(teamKey)
+              const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
+              const otherLibero = liberos.find(p =>
+                String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+              )
+              const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
+              return rallyStatus === 'in_play' || isRallyReplayed || !liberoOnCourt || !hasPointSinceLastLiberoExchange(teamKey) || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
+            })()
+
+            if (isNarrowMode) {
+              return (
+                <div style={{ marginBottom: '4px', width: '100%' }}>
+                  <button
+                    onClick={() => setLeftLiberoDropdownOpen(!leftLiberoDropdownOpen)}
+                    style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
+                  >
+                    Libero {leftLiberoDropdownOpen ? '▲' : '▼'}
+                  </button>
+                  {leftLiberoDropdownOpen && (
+                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <button
+                        onClick={() => { handleLiberoOut('left'); setLeftLiberoDropdownOpen(false) }}
+                        disabled={liberoOutDisabled}
+                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
+                      >
+                        Libero out
+                      </button>
+                      <button
+                        onClick={() => { handleExchangeLibero('left'); setLeftLiberoDropdownOpen(false) }}
+                        disabled={exchangeLiberoDisabled}
+                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
+                      >
+                        Exchange libero
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
             return (
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', width: '100%' }}>
                 <button
                   onClick={() => handleLiberoOut('left')}
-                  disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={liberoOutDisabled}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
                 >
                   Libero out
                 </button>
                 <button
                   onClick={() => handleExchangeLibero('left')}
-                  disabled={(() => {
-                    const liberoOnCourt = getLiberoOnCourt(teamKey)
-
-                    // Check if libero on court is unable
-                    const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-
-                    // Check if the other libero is unable
-                    const otherLibero = liberos.find(p =>
-                      String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                      (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-                    )
-                    const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-
-                    return rallyStatus === 'in_play' ||
-                           isRallyReplayed ||
-                           !liberoOnCourt ||
-                           !hasPointSinceLastLiberoExchange(teamKey) ||
-                           liberos.length < 2 || // Disable if team has less than 2 liberos
-                           liberoOnCourtUnable || // Disable if libero on court is unable
-                           otherLiberoUnable // Disable if other libero is unable
-                  })()}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={exchangeLiberoDisabled}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
                 >
                   Exchange libero
                 </button>
@@ -10096,34 +10161,75 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           })()}
           
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
-          <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-            {!data?.match?.sanctions?.improperRequestLeft && (
+          {isNarrowMode ? (
+            <div style={{ marginTop: '4px' }}>
               <button
-                onClick={() => handleImproperRequest('left')}
-                disabled={rallyStatus === 'in_play'}
-                style={sanctionButtonStyles.improper}
+                onClick={() => setLeftDelaysDropdownOpen(!leftDelaysDropdownOpen)}
+                style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                Improper Request
+                IR & Delays {leftDelaysDropdownOpen ? '▲' : '▼'}
               </button>
-            )}
-            {!data?.match?.sanctions?.delayWarningLeft ? (
-              <button
-                onClick={() => handleDelayWarning('left')}
-                disabled={rallyStatus === 'in_play'}
-                style={sanctionButtonStyles.delayWarning}
-              >
-                Delay Warning
-              </button>
-            ) : (
-              <button
-                onClick={() => handleDelayPenalty('left')}
-                disabled={rallyStatus === 'in_play'}
-                style={sanctionButtonStyles.delayPenalty}
-              >
-                Delay Penalty
-              </button>
-            )}
-          </div>
+              {leftDelaysDropdownOpen && (
+                <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {!data?.match?.sanctions?.improperRequestLeft && (
+                    <button
+                      onClick={() => { handleImproperRequest('left'); setLeftDelaysDropdownOpen(false) }}
+                      disabled={rallyStatus === 'in_play'}
+                      style={sanctionButtonStyles.improper}
+                    >
+                      Improper Request
+                    </button>
+                  )}
+                  {!data?.match?.sanctions?.delayWarningLeft ? (
+                    <button
+                      onClick={() => { handleDelayWarning('left'); setLeftDelaysDropdownOpen(false) }}
+                      disabled={rallyStatus === 'in_play'}
+                      style={sanctionButtonStyles.delayWarning}
+                    >
+                      Delay Warning
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { handleDelayPenalty('left'); setLeftDelaysDropdownOpen(false) }}
+                      disabled={rallyStatus === 'in_play'}
+                      style={sanctionButtonStyles.delayPenalty}
+                    >
+                      Delay Penalty
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+              {!data?.match?.sanctions?.improperRequestLeft && (
+                <button
+                  onClick={() => handleImproperRequest('left')}
+                  disabled={rallyStatus === 'in_play'}
+                  style={sanctionButtonStyles.improper}
+                >
+                  Improper Request
+                </button>
+              )}
+              {!data?.match?.sanctions?.delayWarningLeft ? (
+                <button
+                  onClick={() => handleDelayWarning('left')}
+                  disabled={rallyStatus === 'in_play'}
+                  style={sanctionButtonStyles.delayWarning}
+                >
+                  Delay Warning
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleDelayPenalty('left')}
+                  disabled={rallyStatus === 'in_play'}
+                  style={sanctionButtonStyles.delayPenalty}
+                >
+                  Delay Penalty
+                </button>
+              )}
+            </div>
+          )}
           
           {/* Status boxes for team sanctions */}
           <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -10782,8 +10888,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              gap: isCompactMode ? '4px' : '8px',
-              paddingRight: isCompactMode ? '8px' : '16px'
+              gap: isVeryCompact ? '2px' : isCompactMode ? '4px' : '8px',
+              paddingRight: isVeryCompact ? '4px' : isCompactMode ? '8px' : '16px'
             }}>
               {leftServing && (() => {
                 const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
@@ -10795,8 +10901,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isCompactMode ? 32 : 48,
-                        height: isCompactMode ? 32 : 48
+                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
+                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
                       }}
                     />
                   )
@@ -10807,31 +10913,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: isCompactMode ? '2px' : '4px',
+                      gap: isVeryCompact ? '1px' : isCompactMode ? '2px' : '4px',
                       zIndex: 10,
                       pointerEvents: 'none'
                     }}>
                       <div style={{
-                        fontSize: isCompactMode ? '20px' : '36px',
+                        fontSize: isVeryCompact ? '14px' : isCompactMode ? '20px' : '36px',
                         fontWeight: 700,
                         color: 'var(--text)',
                         textTransform: 'uppercase',
-                        letterSpacing: isCompactMode ? '1px' : '2px'
+                        letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
                       }}>
                         SERVE
                       </div>
                       <div style={{
-                        fontSize: isCompactMode ? '32px' : '56px',
+                        fontSize: isVeryCompact ? '22px' : isCompactMode ? '32px' : '56px',
                         fontWeight: 700,
                         color: 'var(--accent)',
-                        width: isCompactMode ? '50px' : '80px',
-                        height: isCompactMode ? '50px' : '80px',
+                        width: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
+                        height: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         background: 'rgba(34, 197, 94, 0.1)',
-                        border: isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
-                        borderRadius: isCompactMode ? '8px' : '14px'
+                        border: isVeryCompact ? '2px solid var(--accent)' : isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
+                        borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '14px'
                       }}>
                         {servingPlayer.number}
                       </div>
@@ -10841,8 +10947,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isCompactMode ? 32 : 48,
-                        height: isCompactMode ? 32 : 48
+                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
+                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
                       }}
                     />
                   </>
@@ -10855,14 +10961,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              paddingRight: isCompactMode ? '16px' : '24px'
+              paddingRight: isVeryCompact ? '8px' : isCompactMode ? '16px' : '24px'
             }}>
               <span style={{
                 fontVariantNumeric: 'tabular-nums',
-                fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontSize: isVeryCompact ? '40px' : isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
                 fontWeight: 700,
                 lineHeight: 1,
-                minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+                minWidth: isVeryCompact ? '45px' : isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
                 textAlign: 'right'
               }}>{pointsBySide.left}</span>
             </div>
@@ -10874,7 +10980,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               justifyContent: 'center'
             }}>
               <span style={{
-                fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontSize: isVeryCompact ? '40px' : isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
                 fontWeight: 700,
                 lineHeight: 1
               }}>:</span>
@@ -10885,14 +10991,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              paddingLeft: isCompactMode ? '16px' : '24px'
+              paddingLeft: isVeryCompact ? '8px' : isCompactMode ? '16px' : '24px'
             }}>
               <span style={{
                 fontVariantNumeric: 'tabular-nums',
-                fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontSize: isVeryCompact ? '40px' : isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
                 fontWeight: 700,
                 lineHeight: 1,
-                minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+                minWidth: isVeryCompact ? '45px' : isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
                 textAlign: 'left'
               }}>{pointsBySide.right}</span>
             </div>
@@ -10902,8 +11008,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              gap: isCompactMode ? '4px' : '8px',
-              paddingLeft: isCompactMode ? '8px' : '16px'
+              gap: isVeryCompact ? '2px' : isCompactMode ? '4px' : '8px',
+              paddingLeft: isVeryCompact ? '4px' : isCompactMode ? '8px' : '16px'
             }}>
               {rightServing && (() => {
                 const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
@@ -10915,8 +11021,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isCompactMode ? 32 : 48,
-                        height: isCompactMode ? 32 : 48
+                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
+                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
                       }}
                     />
                   )
@@ -10928,39 +11034,39 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isCompactMode ? 32 : 48,
-                        height: isCompactMode ? 32 : 48
+                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
+                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
                       }}
                     />
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: isCompactMode ? '2px' : '4px',
+                      gap: isVeryCompact ? '1px' : isCompactMode ? '2px' : '4px',
                       zIndex: 10,
                       pointerEvents: 'none'
                     }}>
                       <div style={{
-                        fontSize: isCompactMode ? '20px' : '36px',
+                        fontSize: isVeryCompact ? '14px' : isCompactMode ? '20px' : '36px',
                         fontWeight: 700,
                         color: 'var(--text)',
                         textTransform: 'uppercase',
-                        letterSpacing: isCompactMode ? '1px' : '2px'
+                        letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
                       }}>
                         SERVE
                       </div>
                       <div style={{
-                        fontSize: isCompactMode ? '32px' : '56px',
+                        fontSize: isVeryCompact ? '22px' : isCompactMode ? '32px' : '56px',
                         fontWeight: 700,
                         color: 'var(--accent)',
-                        width: isCompactMode ? '50px' : '80px',
-                        height: isCompactMode ? '50px' : '80px',
+                        width: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
+                        height: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         background: 'rgba(34, 197, 94, 0.1)',
-                        border: isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
-                        borderRadius: isCompactMode ? '8px' : '14px'
+                        border: isVeryCompact ? '2px solid var(--accent)' : isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
+                        borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '14px'
                       }}>
                         {servingPlayer.number}
                       </div>
@@ -12381,16 +12487,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 textOverflow: 'ellipsis'
               }}
             >
-              <span>{teamBLabel}</span>
-              <span>-</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{teamBShortName}</span>
+              <span style={{ flexShrink: 0 }}>{teamBLabel}</span>
+              <span style={{ flexShrink: 0 }}>-</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: isNarrowMode ? '30px' : '40px' }}>{teamBShortName}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: isCompactMode ? '4px' : '8px', marginBottom: isCompactMode ? '4px' : '8px' }}>
+          <div style={{ display: 'flex', gap: '4px', marginBottom: (isCompactMode || isShortHeight) ? '4px' : '8px' }}>
             <div
               onClick={() => {
-                if (isCompactMode) {
-                  // In compact mode, clicking calls timeout if available
+                if (isCompactMode || isShortHeight) {
+                  // In compact/short mode, clicking calls timeout if available
                   const canCallTimeout = getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
                   if (canCallTimeout) {
                     handleTimeout('right')
@@ -12406,29 +12512,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               className="to-sub-counter"
               style={{
                 flex: 1,
-                background: isCompactMode
+                background: (isCompactMode || isShortHeight)
                   ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
                     ? 'rgba(239, 68, 68, 0.2)'
                     : 'rgba(34, 197, 94, 0.2)')
                   : 'rgba(255, 255, 255, 0.05)',
-                borderRadius: isCompactMode ? '4px' : '8px',
-                padding: isCompactMode ? '6px' : '12px',
+                borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
+                padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
-                border: isCompactMode
+                border: (isCompactMode || isShortHeight)
                   ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
                     ? '1px solid rgba(239, 68, 68, 0.4)'
                     : '1px solid rgba(34, 197, 94, 0.4)')
                   : '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: isCompactMode
+                cursor: (isCompactMode || isShortHeight)
                   ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer')
                   : (getTimeoutDetails('right').length > 0 ? 'pointer' : 'default')
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>TO</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>TO</div>
               <div className="to-sub-value" style={{
-                fontSize: isCompactMode ? '16px' : '24px',
+                fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
-                color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (isCompactMode && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
+                color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : ((isCompactMode || isShortHeight) && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
               }}>{getTimeoutsUsed('right')}</div>
             </div>
             <div
@@ -12442,22 +12548,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               style={{
                 flex: 1,
                 background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: isCompactMode ? '4px' : '8px',
-                padding: isCompactMode ? '6px' : '12px',
+                borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
+                padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: isCompactMode ? '9px' : '11px', color: 'var(--muted)', marginBottom: isCompactMode ? '2px' : '4px' }}>SUB</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>SUB</div>
               <div className="to-sub-value" style={{
-                fontSize: isCompactMode ? '16px' : '24px',
+                fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
                 color: getSubstitutionsUsed('right') >= 6 ? '#ef4444' : getSubstitutionsUsed('right') >= 5 ? '#eab308' : 'inherit'
               }}>{getSubstitutionsUsed('right')}</div>
             </div>
           </div>
-          {!isCompactMode && (
+          {!isCompactMode && !isShortHeight && (
             <button
               onClick={() => handleTimeout('right')}
               disabled={getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
@@ -12513,76 +12619,140 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               )
             }
 
+            const liberoOutDisabled = rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)
+            const exchangeLiberoDisabled = (() => {
+              const liberoOnCourt = getLiberoOnCourt(teamKey)
+              const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
+              const otherLibero = liberos.find(p =>
+                String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+              )
+              const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
+              return rallyStatus === 'in_play' || isRallyReplayed || !liberoOnCourt || !hasPointSinceLastLiberoExchange(teamKey) || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
+            })()
+
+            if (isNarrowMode) {
+              return (
+                <div style={{ marginBottom: '4px', width: '100%' }}>
+                  <button
+                    onClick={() => setRightLiberoDropdownOpen(!rightLiberoDropdownOpen)}
+                    style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
+                  >
+                    Libero {rightLiberoDropdownOpen ? '▲' : '▼'}
+                  </button>
+                  {rightLiberoDropdownOpen && (
+                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <button
+                        onClick={() => { handleLiberoOut('right'); setRightLiberoDropdownOpen(false) }}
+                        disabled={liberoOutDisabled}
+                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
+                      >
+                        Libero out
+                      </button>
+                      <button
+                        onClick={() => { handleExchangeLibero('right'); setRightLiberoDropdownOpen(false) }}
+                        disabled={exchangeLiberoDisabled}
+                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
+                      >
+                        Exchange libero
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
             return (
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', width: '100%' }}>
                 <button
                   onClick={() => handleLiberoOut('right')}
-                  disabled={rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={liberoOutDisabled}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
                 >
                   Libero out
                 </button>
                 <button
                   onClick={() => handleExchangeLibero('right')}
-                  disabled={(() => {
-                    const liberoOnCourt = getLiberoOnCourt(teamKey)
-
-                    // Check if libero on court is unable
-                    const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-
-                    // Check if the other libero is unable
-                    const otherLibero = liberos.find(p =>
-                      String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                      (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-                    )
-                    const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-
-                    return rallyStatus === 'in_play' ||
-                           isRallyReplayed ||
-                           !liberoOnCourt ||
-                           !hasPointSinceLastLiberoExchange(teamKey) ||
-                           liberos.length < 2 || // Disable if team has less than 2 liberos
-                           liberoOnCourtUnable || // Disable if libero on court is unable
-                           otherLiberoUnable // Disable if other libero is unable
-                  })()}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={exchangeLiberoDisabled}
+                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
                 >
                   Exchange libero
                 </button>
               </div>
             )
           })()}
-          
+
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
-          <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-            {!data?.match?.sanctions?.improperRequestRight && (
+          {isNarrowMode ? (
+            <div style={{ marginTop: '4px' }}>
               <button
-                onClick={() => handleImproperRequest('right')}
-                disabled={rallyStatus === 'in_play'}
-                style={sanctionButtonStyles.improper}
+                onClick={() => setRightDelaysDropdownOpen(!rightDelaysDropdownOpen)}
+                style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                Improper Request
+                IR & Delays {rightDelaysDropdownOpen ? '▲' : '▼'}
               </button>
-            )}
-            {!data?.match?.sanctions?.delayWarningRight ? (
-              <button
-                onClick={() => handleDelayWarning('right')}
-                disabled={rallyStatus === 'in_play'}
-                style={sanctionButtonStyles.delayWarning}
-              >
-                Delay Warning
-              </button>
-            ) : (
-              <button
-                onClick={() => handleDelayPenalty('right')}
-                disabled={rallyStatus === 'in_play'}
-                style={sanctionButtonStyles.delayPenalty}
-              >
-                Delay Penalty
-              </button>
-            )}
-          </div>
-          
+              {rightDelaysDropdownOpen && (
+                <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {!data?.match?.sanctions?.improperRequestRight && (
+                    <button
+                      onClick={() => { handleImproperRequest('right'); setRightDelaysDropdownOpen(false) }}
+                      disabled={rallyStatus === 'in_play'}
+                      style={sanctionButtonStyles.improper}
+                    >
+                      Improper Request
+                    </button>
+                  )}
+                  {!data?.match?.sanctions?.delayWarningRight ? (
+                    <button
+                      onClick={() => { handleDelayWarning('right'); setRightDelaysDropdownOpen(false) }}
+                      disabled={rallyStatus === 'in_play'}
+                      style={sanctionButtonStyles.delayWarning}
+                    >
+                      Delay Warning
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { handleDelayPenalty('right'); setRightDelaysDropdownOpen(false) }}
+                      disabled={rallyStatus === 'in_play'}
+                      style={sanctionButtonStyles.delayPenalty}
+                    >
+                      Delay Penalty
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+              {!data?.match?.sanctions?.improperRequestRight && (
+                <button
+                  onClick={() => handleImproperRequest('right')}
+                  disabled={rallyStatus === 'in_play'}
+                  style={sanctionButtonStyles.improper}
+                >
+                  Improper Request
+                </button>
+              )}
+              {!data?.match?.sanctions?.delayWarningRight ? (
+                <button
+                  onClick={() => handleDelayWarning('right')}
+                  disabled={rallyStatus === 'in_play'}
+                  style={sanctionButtonStyles.delayWarning}
+                >
+                  Delay Warning
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleDelayPenalty('right')}
+                  disabled={rallyStatus === 'in_play'}
+                  style={sanctionButtonStyles.delayPenalty}
+                >
+                  Delay Penalty
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Status boxes for team sanctions */}
           <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {data?.match?.sanctions?.improperRequestRight && (

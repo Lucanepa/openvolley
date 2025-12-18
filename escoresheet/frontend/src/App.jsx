@@ -2828,7 +2828,7 @@ export default function App() {
       {/* Minimum screen size warning - block phones/small screens */}
       {/* Allow if at least one dimension >= 800 (tablet in any orientation), but enforce min 500 on both */}
       {/* Skip warning in fullscreen mode - trust user has adequate screen space */}
-      {!isFullscreen && ((viewportSize.width < 800 && viewportSize.height < 800) || viewportSize.width < 500 || viewportSize.height < 500) ? (
+      {!isFullscreen && ((viewportSize.width < 800 && viewportSize.height < 800) || viewportSize.width < 600 || viewportSize.height < 600) ? (
         <div style={{
           flex: '1 1 auto',
           display: 'flex',
@@ -2852,7 +2852,7 @@ export default function App() {
             maxWidth: '400px',
             lineHeight: '1.5'
           }}>
-            To use this application, please use a tablet or larger screen (minimum 500×800 or 800×500).
+            To use this application, please use a tablet or larger screen (minimum 800×600).
           </div>
           <div style={{
             fontSize: '14px',
@@ -2865,7 +2865,34 @@ export default function App() {
             color: 'rgba(255, 255, 255, 0.5)',
             marginTop: '10px'
           }}>
-            Try rotating your device if using a tablet.
+            Try rotating your device or entering fullscreen mode.
+          </div>
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              marginTop: '20px',
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'var(--accent)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>⛶</span>
+            <span>Enter Fullscreen</span>
+          </button>
+          <div style={{
+            fontSize: '12px',
+            color: 'rgba(255, 255, 255, 0.4)',
+            marginTop: '12px'
+          }}>
+            Fullscreen removes browser headers to maximize screen space.
           </div>
         </div>
       ) : (

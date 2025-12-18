@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.19',
+    date: '18.12.25',
+    changes: [
+      'Refactor App and Scoreboard components for improved responsiveness and usability. Update minimum screen size requirements, add fullscreen toggle buttons, and enhance layout for narrow mode. Adjust styles for better alignment and spacing across various screen sizes.'
+    ]
+  },
+  {
     version: '0.9.18',
     date: '18.12.25',
     changes: [
