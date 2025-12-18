@@ -3636,6 +3636,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return `${lastName}, ${firstName.charAt(0)}.`
   }
 
+  // Format line judge full name (e.g., "John Smith") to "Smith, J."
+  const formatLineJudge = (fullName) => {
+    if (!fullName) return null
+    const parts = fullName.trim().split(/\s+/)
+    if (parts.length === 1) return parts[0] // Only one name
+    const firstName = parts[0]
+    const lastName = parts.slice(1).join(' ')
+    return `${lastName}, ${firstName.charAt(0)}.`
+  }
+
   const formatDisplayDate = value => {
     if (!value) return null
     const parts = value.split('-')
@@ -4004,20 +4014,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <h3 style={{ margin: 0 }}>Match officials</h3>
               </div>
             </div>
-            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
-              <span>1st ref:</span>
+            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '75px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
+              <span>1st Referee:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
-              <span>2nd ref:</span>
+              <span>2nd Referee:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref2Last, ref2First)}>{formatOfficial(ref2Last, ref2First)}</span>
               <span>Scorer:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(scorerLast, scorerFirst)}>{formatOfficial(scorerLast, scorerFirst)}</span>
-              <span>Ass. Sc:</span>
+              <span>Ass. Scorer:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(asstLast, asstFirst)}>{formatOfficial(asstLast, asstFirst)}</span>
               {(lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4) && (
                 <>
-                  <span>Line J:</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).join(', ')}>
-                    {[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).join(', ') || 'Not set'}
+                  <span>LJs:</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).map(formatLineJudge).join(', ')}>
+                    {[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).map(formatLineJudge).join(', ') || 'Not set'}
                   </span>
                 </>
               )}
@@ -4060,13 +4070,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           />
         </div>
       </div>
+      
       <div className="grid-4">
         <div className="card" style={{ order: 1 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={homeConfigured} />
-                <h3 style={{ margin: 0 }}>Home team</h3>
+                <h1 style={{ margin: 0 }}>HOME TEAM</h1>
               </div>
             </div>
             <div style={{ marginTop: 8 }}>
@@ -4144,33 +4155,66 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 </div>
               </div>
             </div>
-            {/* <ConnectionBanner
-            //   team="home"
-            //   enabled={homeTeamConnectionEnabled}
-            //   onToggle={handleHomeTeamConnectionToggle}
-            //   pin={match?.homeTeamPin}
-            //   onEditPin={() => handleEditPin('benchHome')}
-            // /> */}
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
+              style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
             >
-              <span>Players:</span>
-              <span>{homeCounts.players}</span>
-              <span>Libero(s):</span>
-              <span>{homeCounts.liberos}</span>
-              <span>Bench:</span>
-              <span>{homeCounts.bench}</span>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{
+                  background: 'rgb(0, 0, 0)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontWeight: 500,
+                  color: '#fff',
+                  fontSize: 13,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  Players: {homeCounts.players}
+                </div>
+                <div style={{
+                  background: 'rgb(255, 255, 255)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontWeight: 500,
+                  color: '#000',
+                  fontSize: 13,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  o/w Libero(s): {homeCounts.liberos}
+                </div>
+                <div style={{
+                  background: 'rgba(34, 197, 94, 0.10)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontWeight: 500,
+                  color: '#4ade80',
+                  fontSize: 13,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  Bench: {homeCounts.bench}
+                </div>
+              </div>
             </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('home')}>Edit</button></div>
         </div>
+        
         <div className="card" style={{ order: 2 }}>
+
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={awayConfigured} />
-                <h3 style={{ margin: 0 }}>Away team</h3>
+                <h1 style={{ margin: 0 }}>AWAY TEAM</h1>
               </div>
               
             </div>
@@ -4258,15 +4302,53 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             />*/}
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
+              style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
             >
-              <span>Players:</span>
-              <span>{awayCounts.players}</span>
-              <span>Libero(s):</span>
-              <span>{awayCounts.liberos}</span>
-              <span>Bench:</span>
-              <span>{awayCounts.bench}</span>
-            </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{
+                  background: 'rgb(0, 0, 0)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontWeight: 500,
+                  color: '#fff',
+                  fontSize: 13,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  Players: {awayCounts.players}
+                </div>
+                <div style={{
+                  background: 'rgb(255, 255, 255)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontWeight: 500,
+                  color: '#000',
+                  fontSize: 13,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  o/w Libero(s): {awayCounts.liberos}
+                </div>
+                <div style={{
+                  background: 'rgba(34, 197, 94, 0.10)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontWeight: 500,
+                  color: '#4ade80',
+                  fontSize: 13,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  Bench: {awayCounts.bench}
+                </div>
+              </div>
+              </div>
           </div>
           <div className="actions"><button className="secondary" onClick={()=>setCurrentView('away')}>Edit</button></div>
         </div>
