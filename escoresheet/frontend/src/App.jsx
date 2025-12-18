@@ -2207,10 +2207,6 @@ export default function App() {
     setNewMatchModal(null)
   }
 
-  const halls = ['Kantonsschule Wiedikon (Halle A)', 'Kantonsschule Wiedikon (Halle B)', 'Kantonsschule Wiedikon C', 'Sporthalle Zürich', 'Hallenstadion', 'Sporthalle Basel', 'Sporthalle Bern']
-  const cities = ['Zürich', 'Basel', 'Bern', 'Luzern', 'Genf', 'Lausanne', 'St. Gallen', 'Winterthur']
-  const leagues = ['3L A', '3L B', '2L A', '2L B', '1L', 'NLA', 'NLB']
-
   useEffect(() => {
     ensureSeedTestTeams().catch(error => {
       console.error('Failed to ensure seeded test teams:', error)

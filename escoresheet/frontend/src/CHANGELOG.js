@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.20',
+    date: '18.12.25',
+    changes: [
+      'Refactor test team seed data and remove unused constants from App component. Update seed keys for test teams to better reflect their roles in matches.'
+    ]
+  },
+  {
     version: '0.9.19',
     date: '18.12.25',
     changes: [
