@@ -502,23 +502,25 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
 
     const isTest = match?.test || false
 
-    // Add first set to sync queue
-    await db.sync_queue.add({
-      resource: 'set',
-      action: 'insert',
-      payload: {
-        external_id: String(firstSetId),
-        match_id: String(matchId),
-        index: 1,
-        home_points: 0,
-        away_points: 0,
-        finished: false,
-        test: isTest,
-        created_at: new Date().toISOString()
-      },
-      ts: new Date().toISOString(),
-      status: 'queued'
-    })
+    // Add first set to sync queue (only for official matches)
+    if (!isTest) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: String(firstSetId),
+          match_id: String(matchId),
+          index: 1,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          test: isTest,
+          created_at: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
 
     // Update match status to 'live'
     await db.matches.update(matchId, { status: 'live' })

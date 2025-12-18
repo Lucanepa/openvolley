@@ -975,6 +975,8 @@ export default function App() {
   }, [currentMatch])
 
   useEffect(() => {
+    // Keep WebSocket connection alive even when on home screen (for dashboards)
+    // Use matchId or fall back to currentMatch?.id for background sync
     const activeMatchId = matchId || currentMatch?.id
     if (!activeMatchId || !currentMatch) {
       // Clean up if we had a connection for a different match
@@ -997,15 +999,13 @@ export default function App() {
 
     // Only reconnect if matchId actually changed
     if (currentMatchIdRef.current === activeMatchId && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log('[App WebSocket] Already connected for matchId:', activeMatchId)
       return
     }
 
     // If matchId changed, close old connection and clear old match from server
     if (currentMatchIdRef.current !== activeMatchId && currentMatchIdRef.current && wsRef.current) {
       const oldMatchId = currentMatchIdRef.current
-      console.log('[App WebSocket] Match ID changed, closing old connection and clearing old match:', oldMatchId)
-      
+
       // Clear old match from server
       if (wsRef.current.readyState === WebSocket.OPEN) {
         try {
@@ -1013,12 +1013,11 @@ export default function App() {
             type: 'delete-match',
             matchId: String(oldMatchId)
           }))
-          console.log('[App WebSocket] Deleted old match from server:', oldMatchId)
         } catch (err) {
           console.error('[App WebSocket] Error deleting old match:', err)
         }
       }
-      
+
       isIntentionallyClosedRef.current = true
       wsRef.current.close()
       wsRef.current = null
@@ -1031,59 +1030,9 @@ export default function App() {
         reconnectTimeoutRef.current = null
       }
     }
-    
-    // If no active match, clear all matches from server (scoreboard is source of truth)
-    if (!activeMatchId) {
-      const clearAllMatches = () => {
-        const ws = wsRef.current
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({
-              type: 'clear-all-matches'
-            }))
-            console.log('[App WebSocket] Cleared all matches from server (no active match)')
-          } catch (err) {
-            console.error('[App WebSocket] Error clearing all matches:', err)
-          }
-        }
-      }
-      
-      // Try to clear immediately if WebSocket is open
-      clearAllMatches()
 
-      // Also set up a connection to clear when WebSocket opens
-      // Check if we have a configured backend URL (Railway/cloud backend)
-      const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-      let wsUrl
-      if (backendUrl) {
-        // Use configured backend (Railway cloud)
-        const url = new URL(backendUrl)
-        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        wsUrl = `${protocol}//${url.host}`
-      } else {
-        // Fallback to local WebSocket server
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        const wsPort = serverStatus?.wsPort || 8080
-        wsUrl = `${protocol}://${hostname}:${wsPort}`
-      }
-
-      const tempWs = new WebSocket(wsUrl)
-      tempWs.onopen = () => {
-        tempWs.send(JSON.stringify({ type: 'clear-all-matches' }))
-        tempWs.close()
-      }
-      tempWs.onerror = () => {
-        // Ignore - server might not be running
-      }
-      
-      return () => {
-        if (tempWs.readyState === WebSocket.OPEN || tempWs.readyState === WebSocket.CONNECTING) {
-          tempWs.close()
-        }
-      }
-    }
+    // Don't clear matches when going to home - keep dashboards connected
+    // Only clear on explicit delete (handled in confirmDeleteMatch)
 
     currentMatchIdRef.current = activeMatchId
     isIntentionallyClosedRef.current = false
@@ -1161,14 +1110,13 @@ export default function App() {
             }
             return
           }
-          
+
           // Clear all other matches first (scoreboard is source of truth - only current match should exist)
           try {
             wsRef.current.send(JSON.stringify({
               type: 'clear-all-matches',
               keepMatchId: String(activeMatchId) // Keep only the current match
             }))
-            console.log('[App WebSocket] Cleared all matches except current match:', activeMatchId)
           } catch (err) {
             console.error('[App WebSocket] Error clearing other matches:', err)
           }
@@ -1229,7 +1177,7 @@ export default function App() {
       const currentActiveMatchId = currentMatchIdRef.current
       const currentMatchData = currentMatchRef.current // Use ref to get latest value
 
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData || currentActiveMatchId !== (matchId || currentMatchData?.id)) {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData || currentActiveMatchId !== activeMatchId) {
         return
       }
 
