@@ -66,6 +66,81 @@ const server = createServer((req, res) => {
     return
   }
 
+  // Validate PIN for referee/bench access
+  if (url.pathname === '/api/match/validate-pin' && req.method === 'POST') {
+    let body = ''
+    req.on('data', chunk => { body += chunk.toString() })
+    req.on('end', () => {
+      try {
+        if (!body || body.trim() === '') {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Empty request body' }))
+          return
+        }
+
+        const { pin, type = 'referee' } = JSON.parse(body)
+
+        if (!pin || String(pin).length !== 6) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid PIN format' }))
+          return
+        }
+
+        const pinStr = String(pin).trim()
+
+        // Search active matches for matching PIN
+        let matchFound = null
+        for (const [matchId, matchData] of activeMatches.entries()) {
+          const match = matchData.match || matchData
+          if (!match) continue
+
+          let matchPin = null
+          if (type === 'referee') {
+            matchPin = match.refereePin
+          } else if (type === 'homeTeam') {
+            matchPin = match.homeTeamPin
+          } else if (type === 'awayTeam') {
+            matchPin = match.awayTeamPin
+          }
+
+          if (matchPin && String(matchPin).trim() === pinStr) {
+            let connectionEnabled = true
+            if (type === 'referee') {
+              connectionEnabled = match.refereeConnectionEnabled === true
+            } else if (type === 'homeTeam') {
+              connectionEnabled = match.homeTeamConnectionEnabled === true
+            } else if (type === 'awayTeam') {
+              connectionEnabled = match.awayTeamConnectionEnabled === true
+            }
+
+            if (connectionEnabled && match.status !== 'final') {
+              matchFound = { ...match, id: matchId }
+              break
+            }
+          }
+        }
+
+        if (matchFound) {
+          console.log(`[API] PIN validated for ${type}: match ${matchFound.id}`)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: true, match: matchFound }))
+        } else {
+          console.log(`[API] PIN validation failed for ${type}: ${pinStr}`)
+          res.writeHead(404, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            success: false,
+            error: 'No match found with this PIN. Make sure the main scoresheet is running and connected.'
+          }))
+        }
+      } catch (err) {
+        console.error('[API] Error validating PIN:', err)
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ success: false, error: err.message || 'Invalid request body' }))
+      }
+    })
+    return
+  }
+
   // List active matches (ephemeral - just for current session)
   // Only return matches where refereeConnectionEnabled is true
   if (url.pathname === '/api/match/list') {
