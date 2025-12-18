@@ -7,6 +7,10 @@ import ConnectionStatus from './ConnectionStatus'
 import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
+import { changelog } from '../CHANGELOG'
+
+// Get current version from changelog
+const currentVersion = changelog[0]?.version || '1.0.0'
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
@@ -1828,6 +1832,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </div>
             )}
           </div>
+          {/* Version */}
+          <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
+            v{currentVersion}
+          </span>
           {/* Exit Button with Icon */}
           <button
             onClick={onExit}
@@ -2656,6 +2664,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Column 4: Right team name (fills space, text centered) */}
         <div style={{
           display: 'flex',
+          padding: '3px',
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden'
