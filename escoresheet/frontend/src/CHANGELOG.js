@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.7',
+    date: '18.12.25',
+    changes: [
+      'Remove unnecessary Clear data checkbox from UpdateBanner'
+    ]
+  },
+  {
     version: '0.9.6',
     date: '18.12.25',
     changes: [
