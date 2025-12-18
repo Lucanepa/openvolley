@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.4',
+    date: '18.12.25',
+    changes: [
+      'Add redirect HTML files for clean URLs without trailing slash'
+    ]
+  },
+  {
     version: '0.9.3',
     date: '18.12.25',
     changes: [
