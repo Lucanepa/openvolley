@@ -184,13 +184,16 @@ export default function RefereeApp() {
       try {
         const result = await listAvailableMatches()
         if (result.success && result.matches) {
+          console.log('[RefereeApp] Available games:', result.matches.length, '| Games:', result.matches.map(m => ({
+            gameNumber: m.gameNumber,
+            refereeEnabled: m.refereeConnectionEnabled  // Top-level property, not nested
+          })))
           setAvailableMatches(result.matches)
           setServerConnected(true)
         } else {
           setServerConnected(false)
         }
       } catch (err) {
-        console.error('Error loading matches:', err)
         setServerConnected(false)
       } finally {
         setLoadingMatches(false)
@@ -640,22 +643,28 @@ export default function RefereeApp() {
 
                   return (
                     <div style={{
-                      padding: '12px',
-                      margin: '12px auto 0 auto',
-                      width: '300px',
-                      background: 'rgba(13, 16, 14, 0.1)',
-                      border: '1px solid rgba(59, 130, 246, 0.3)',
-                      borderRadius: '8px',
-                      textAlign: 'center'
+                      display: 'flex',
+                      justifyContent: 'center',
+                      width: '100%',
+                      marginTop: '12px'
                     }}>
-                      <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>
-                        Game #{selected.gameNumber}
-                      </div>
-                      <div style={{ fontSize: '14px', marginBottom: '4px' }}>
-                        {selected.homeTeam} <span style={{ color: 'var(--muted)' }}>vs</span> {selected.awayTeam}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {selected.dateTime || 'TBD'}
+                      <div style={{
+                        padding: '12px',
+                        width: '300px',
+                        background: 'rgba(13, 16, 14, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>
+                          Game #{selected.gameNumber}
+                        </div>
+                        <div style={{ fontSize: '14px', marginBottom: '4px' }}>
+                          {selected.homeTeam} <span style={{ color: 'var(--muted)' }}>vs</span> {selected.awayTeam}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                          {selected.dateTime || 'TBD'}
+                        </div>
                       </div>
                     </div>
                   )

@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
+import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { sanitizeForFilename } from '../utils/stringUtils'
 
 // Standard Results component for MatchEnd page
 const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration }) => {
@@ -601,7 +603,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
     )
   }
 
-  const handleShowScoresheet = () => {
+  const handleShowScoresheet = (action = 'preview') => {
     // Prepare scoresheet data
     const scoresheetData = {
       match,
@@ -613,7 +615,8 @@ export default function MatchEnd({ matchId, onGoHome }) {
       events
     }
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-    window.open('/scoresheet', '_blank', 'width=1600,height=1200')
+    const url = action === 'preview' ? '/scoresheet' : `/scoresheet?action=${action}`
+    window.open(url, '_blank', 'width=1600,height=1200')
   }
 
   const handleApprove = async () => {
@@ -661,7 +664,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
       const matchDate = match.scheduledAt
         ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
-      const dataFilename = `MatchData_${(homeTeam?.name || 'Home').replace(/[^a-zA-Z0-9]/g, '_')}_vs_${(awayTeam?.name || 'Away').replace(/[^a-zA-Z0-9]/g, '_')}_${matchDate}.json`
+      const dataFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.json`
       dataLink.download = dataFilename
       dataLink.href = URL.createObjectURL(dataBlob)
       dataLink.click()
@@ -697,9 +700,17 @@ export default function MatchEnd({ matchId, onGoHome }) {
           <h2 style={{ margin: 0 }}>Match Complete</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="secondary" onClick={handleShowScoresheet}>
-            Scoresheet
-          </button>
+          <MenuList
+            buttonLabel="📄 Scoresheet"
+            buttonClassName="secondary"
+            showArrow={true}
+            position="right"
+            items={[
+              { key: 'preview', label: '🔍 Preview', onClick: () => handleShowScoresheet('preview') },
+              { key: 'print', label: '🖨️ Print', onClick: () => handleShowScoresheet('print') },
+              { key: 'save', label: '💾 Save PDF', onClick: () => handleShowScoresheet('save') }
+            ]}
+          />
           {onGoHome && (
             <button className="secondary" onClick={onGoHome}>
               Home
@@ -843,13 +854,18 @@ export default function MatchEnd({ matchId, onGoHome }) {
           </button>
         )}
 
-        <button
-          onClick={handleShowScoresheet}
-          className="secondary"
-          style={{ padding: '14px 20px', fontSize: '15px' }}
-        >
-          View Scoresheet
-        </button>
+        <MenuList
+          buttonLabel="📄 Scoresheet"
+          buttonClassName="secondary"
+          buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
+          showArrow={true}
+          position="right"
+          items={[
+            { key: 'preview', label: '🔍 Preview', onClick: () => handleShowScoresheet('preview') },
+            { key: 'print', label: '🖨️ Print', onClick: () => handleShowScoresheet('print') },
+            { key: 'save', label: '💾 Save PDF', onClick: () => handleShowScoresheet('save') }
+          ]}
+        />
       </div>
 
       {/* Signature Modal - Added open prop */}

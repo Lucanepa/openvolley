@@ -75,6 +75,24 @@
   @media (min-width: 900px) {
     .grid-4 { grid-template-columns: repeat(2, 1fr); }
   }
+  /* In landscape mode, make grid-4 cards wider */
+  @media (orientation: landscape) and (min-width: 600px) {
+    .grid-4 {
+      grid-template-columns: 1fr;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .grid-4 .card {
+      width: 100%;
+    }
+  }
+  /* For very wide landscape screens, allow side by side but wider */
+  @media (orientation: landscape) and (min-width: 1200px) {
+    .grid-4 {
+      grid-template-columns: repeat(2, 1fr);
+      max-width: 1400px;
+    }
+  }
   .card {
     background: var(--panel);
     border: 1px solid rgba(255,255,255,0.08);
@@ -1365,6 +1383,8 @@
     justify-content: center;
     gap: 12px;
     margin-top: -15px;
+    max-height: 100%;
+    overflow: visible;
   }
 
   .rally-controls-row {
@@ -1382,12 +1402,13 @@
     justify-content: center;
   }
 
+  /* Rally point buttons - 15% larger than original */
   .rally-point-button {
-    min-width: 120px;
-    min-height: 80px;
-    font-size: 20px;
+    min-width: 138px;
+    min-height: 92px;
+    font-size: 23px;
     font-weight: 700;
-    padding: 16px 24px;
+    padding: 18px 28px;
   }
 
   @media (max-width: 1400px) {
@@ -1398,10 +1419,10 @@
       gap: 16px;
     }
     .rally-point-button {
-      min-width: 100px;
-      min-height: 65px;
-      font-size: 18px;
-      padding: 12px 20px;
+      min-width: 115px;
+      min-height: 75px;
+      font-size: 21px;
+      padding: 14px 23px;
     }
   }
 
@@ -1413,11 +1434,22 @@
       gap: 12px;
     }
     .rally-point-button {
-      min-width: 90px;
-      min-height: 55px;
-      font-size: 16px;
-      padding: 10px 16px;
+      min-width: 104px;
+      min-height: 63px;
+      font-size: 18px;
+      padding: 12px 18px;
     }
+  }
+
+  /* Tablet mode fullscreen - ensure full viewport height */
+  .tablet-fullscreen .match-record {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .tablet-fullscreen .match-content {
+    height: calc(100vh - 80px);
+    overflow: hidden;
   }
 
   .match-footer {

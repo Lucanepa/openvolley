@@ -7,6 +7,7 @@
 
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
+import { sanitizeSimple } from './stringUtils'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -217,8 +218,7 @@ export async function downloadMatchBackup(matchId) {
   const date = new Date().toISOString().split('T')[0]
   const homeName = data.homeTeam?.shortName || data.homeTeam?.name?.substring(0, 10) || 'home'
   const awayName = data.awayTeam?.shortName || data.awayTeam?.name?.substring(0, 10) || 'away'
-  const sanitize = (str) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15)
-  const filename = `match_${matchId}_${sanitize(homeName)}_vs_${sanitize(awayName)}_${date}.json`
+  const filename = `match_${matchId}_${sanitizeSimple(homeName, 15)}_vs_${sanitizeSimple(awayName, 15)}_${date}.json`
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)

@@ -8,6 +8,7 @@ import TeamAutocomplete from './TeamAutocomplete'
 import { useTeamHistory } from '../hooks/useTeamHistory'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
+import { getWebSocketUrl } from '../utils/backendConfig'
 
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const [home, setHome] = useState('Home')
@@ -71,6 +72,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const [asstLast, setAsstLast] = useState('')
   const [asstCountry, setAsstCountry] = useState('CHE')
   const [asstDob, setAsstDob] = useState('01.01.1900')
+
+  // Line Judges (only names needed)
+  const [lineJudge1, setLineJudge1] = useState('')
+  const [lineJudge2, setLineJudge2] = useState('')
+  const [lineJudge3, setLineJudge3] = useState('')
+  const [lineJudge4, setLineJudge4] = useState('')
+
+  // Track which official cards are expanded (all collapsed by default)
+  const [expandedOfficials, setExpandedOfficials] = useState({})
+  const toggleOfficialExpanded = (key) => {
+    setExpandedOfficials(prev => ({ ...prev, [key]: !prev[key] }))
+  }
 
   // Bench
   const BENCH_ROLES = [
@@ -530,8 +543,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setAsstCountry(asst.country || 'CHE')
             setAsstDob(asst.dob || '01.01.1900')
           }
+          // Load line judges
+          const lj1 = match.officials.find(o => o.role === 'line judge 1')
+          if (lj1) setLineJudge1(lj1.name || '')
+          const lj2 = match.officials.find(o => o.role === 'line judge 2')
+          if (lj2) setLineJudge2(lj2.name || '')
+          const lj3 = match.officials.find(o => o.role === 'line judge 3')
+          if (lj3) setLineJudge3(lj3.name || '')
+          const lj4 = match.officials.find(o => o.role === 'line judge 4')
+          if (lj4) setLineJudge4(lj4.name || '')
         }
-        
+
         // Load signatures
         if (match.homeCoachSignature) {
           setHomeCoachSignature(match.homeCoachSignature)
@@ -876,12 +898,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
             { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
             { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-            { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+            { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+            ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
+            ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
+            ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
+            ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
           ],
           bench_home: benchHome,
           bench_away: benchAway
         })
-        
+
         // Update or create teams
         let homeTeamId = match?.homeTeamId
         let awayTeamId = match?.awayTeamId
@@ -1239,7 +1265,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
         { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
         { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-        { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+        { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+        ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
+        ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
+        ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
+        ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
       ],
       bench_home: benchHome,
       bench_away: benchAway,
@@ -2053,205 +2083,195 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   }
 
   if (currentView === 'officials') {
+    // Helper to render collapsible official card
+    const OfficialCard = ({ title, officialKey, lastName, firstName, country, dob, setLastName, setFirstName, setCountry, setDob, hasDatabase = false, selectorKey = null }) => {
+      const isExpanded = expandedOfficials[officialKey]
+      const displayName = lastName || firstName
+        ? `${lastName || ''}${firstName ? ', ' + firstName.charAt(0) + '.' : ''}`
+        : 'Not set'
+
+      return (
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          overflow: 'hidden'
+        }}>
+          <div
+            onClick={() => toggleOfficialExpanded(officialKey)}
+            style={{
+              padding: '12px 16px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{title}</span>
+              {!isExpanded && (
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayName}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {hasDatabase && isExpanded && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setRefereeSelectorPosition({ element: e.currentTarget })
+                    setShowRefereeSelector(selectorKey)
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    background: 'rgba(59, 130, 246, 0.2)',
+                    color: '#60a5fa',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Database
+                </button>
+              )}
+              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
+            </div>
+          </div>
+          {isExpanded && (
+            <div style={{ padding: '16px' }}>
+              <div className="row">
+                <div className="field"><label>Last Name</label><input className="w-name capitalize" value={lastName} onChange={e=>setLastName(e.target.value)} /></div>
+                <div className="field"><label>First Name</label><input className="w-name capitalize" value={firstName} onChange={e=>setFirstName(e.target.value)} /></div>
+                <div className="field"><label>Country</label><input className="w-90" value={country} onChange={e=>setCountry(e.target.value)} /></div>
+                <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e=>setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    // Line Judges collapsible card
+    const LineJudgesCard = () => {
+      const isExpanded = expandedOfficials['lineJudges']
+      const filledCount = [lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).length
+      const displayText = filledCount > 0 ? `${filledCount} set` : 'Not set'
+
+      return (
+        <div style={{
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          background: 'rgba(15, 23, 42, 0.2)',
+          overflow: 'hidden'
+        }}>
+          <div
+            onClick={() => toggleOfficialExpanded('lineJudges')}
+            style={{
+              padding: '12px 16px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>Line Judges</span>
+              {!isExpanded && (
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayText}</span>
+              )}
+            </div>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
+          </div>
+          {isExpanded && (
+            <div style={{ padding: '16px' }}>
+              <div className="row">
+                <div className="field"><label>Line Judge 1</label><input className="w-name capitalize" value={lineJudge1} onChange={e=>setLineJudge1(e.target.value)} placeholder="Name" /></div>
+                <div className="field"><label>Line Judge 2</label><input className="w-name capitalize" value={lineJudge2} onChange={e=>setLineJudge2(e.target.value)} placeholder="Name" /></div>
+              </div>
+              <div className="row">
+                <div className="field"><label>Line Judge 3</label><input className="w-name capitalize" value={lineJudge3} onChange={e=>setLineJudge3(e.target.value)} placeholder="Name" /></div>
+                <div className="field"><label>Line Judge 4</label><input className="w-name capitalize" value={lineJudge4} onChange={e=>setLineJudge4(e.target.value)} placeholder="Name" /></div>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
     return (
       <MatchSetupOfficialsView>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
-          <h2>Match officials</h2>
+          <h2 style={{ marginLeft: 20, marginRight: 20 }}>Match officials</h2>
           {onGoHome ? (
             <button className="secondary" onClick={onGoHome}>Home</button>
           ) : (
           <div style={{ width: 80 }}></div>
           )}
         </div>
-        
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '16px',
-            background: 'rgba(15, 23, 42, 0.2)'
-          }}>
-            <h4 style={{ 
-              marginTop: 0, 
-              marginBottom: '12px',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <span>1st Referee</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setRefereeSelectorPosition({ element: e.currentTarget })
-                  setShowRefereeSelector('ref1')
-                }}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  background: 'rgba(59, 130, 246, 0.2)',
-                  color: '#60a5fa',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
-                }}
-              >
-                Database
-              </button>
-            </h4>
-            <div className="row">
-              <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref1Last} onChange={e=>setRef1Last(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref1First} onChange={e=>setRef1First(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-90" value={ref1Country} onChange={e=>setRef1Country(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={ref1Dob ? formatDateToISO(ref1Dob) : ''} onChange={e=>setRef1Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
-            </div>
-          </div>
 
-          <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '16px',
-            background: 'rgba(15, 23, 42, 0.2)'
-          }}>
-            <h4 style={{
-              marginTop: 0,
-              marginBottom: '12px',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <span>2nd Referee</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setRefereeSelectorPosition({ element: e.currentTarget })
-                  setShowRefereeSelector('ref2')
-                }}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  background: 'rgba(59, 130, 246, 0.2)',
-                  color: '#60a5fa',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
-                }}
-              >
-                Database
-              </button>
-            </h4>
-            <div className="row">
-              <div className="field"><label>Last Name</label><input className="w-name capitalize" value={ref2Last} onChange={e=>setRef2Last(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="w-name capitalize" value={ref2First} onChange={e=>setRef2First(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-90" value={ref2Country} onChange={e=>setRef2Country(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={ref2Dob ? formatDateToISO(ref2Dob) : ''} onChange={e=>setRef2Dob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
-            </div>
-          </div>
-
-          <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '16px',
-            background: 'rgba(15, 23, 42, 0.2)'
-          }}>
-            <h4 style={{
-              marginTop: 0,
-              marginBottom: '12px',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <span>Scorer</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  setRefereeSelectorPosition({ element: e.currentTarget })
-                  setShowRefereeSelector('scorer')
-                }}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  background: 'rgba(59, 130, 246, 0.2)',
-                  color: '#60a5fa',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
-                }}
-              >
-                Database
-              </button>
-            </h4>
-            <div className="row">
-              <div className="field"><label>Last Name</label><input className="w-name capitalize" value={scorerLast} onChange={e=>setScorerLast(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="w-name capitalize" value={scorerFirst} onChange={e=>setScorerFirst(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-90" value={scorerCountry} onChange={e=>setScorerCountry(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={scorerDob ? formatDateToISO(scorerDob) : ''} onChange={e=>setScorerDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
-            </div>
-          </div>
-
-          <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '16px',
-            background: 'rgba(15, 23, 42, 0.2)'
-          }}>
-            <h4 style={{ 
-              marginTop: 0, 
-              marginBottom: '12px',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: 600
-            }}>Assistant Scorer</h4>
-            <div className="row">
-              <div className="field"><label>Last Name</label><input className="w-name capitalize" value={asstLast} onChange={e=>setAsstLast(e.target.value)} /></div>
-              <div className="field"><label>First Name</label><input className="w-name capitalize" value={asstFirst} onChange={e=>setAsstFirst(e.target.value)} /></div>
-              <div className="field"><label>Country</label><input className="w-90" value={asstCountry} onChange={e=>setAsstCountry(e.target.value)} /></div>
-              <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={asstDob ? formatDateToISO(asstDob) : ''} onChange={e=>setAsstDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
-            </div>
-          </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <OfficialCard
+            title="1st Referee"
+            officialKey="ref1"
+            lastName={ref1Last}
+            firstName={ref1First}
+            country={ref1Country}
+            dob={ref1Dob}
+            setLastName={setRef1Last}
+            setFirstName={setRef1First}
+            setCountry={setRef1Country}
+            setDob={setRef1Dob}
+            hasDatabase={true}
+            selectorKey="ref1"
+          />
+          <OfficialCard
+            title="2nd Referee"
+            officialKey="ref2"
+            lastName={ref2Last}
+            firstName={ref2First}
+            country={ref2Country}
+            dob={ref2Dob}
+            setLastName={setRef2Last}
+            setFirstName={setRef2First}
+            setCountry={setRef2Country}
+            setDob={setRef2Dob}
+            hasDatabase={true}
+            selectorKey="ref2"
+          />
+          <OfficialCard
+            title="Scorer"
+            officialKey="scorer"
+            lastName={scorerLast}
+            firstName={scorerFirst}
+            country={scorerCountry}
+            dob={scorerDob}
+            setLastName={setScorerLast}
+            setFirstName={setScorerFirst}
+            setCountry={setScorerCountry}
+            setDob={setScorerDob}
+            hasDatabase={false}
+            selectorKey="scorer"
+          />
+          <OfficialCard
+            title="Assistant Scorer"
+            officialKey="asst"
+            lastName={asstLast}
+            firstName={asstFirst}
+            country={asstCountry}
+            dob={asstDob}
+            setLastName={setAsstLast}
+            setFirstName={setAsstFirst}
+            setCountry={setAsstCountry}
+            setDob={setAsstDob}
+          />
+          <LineJudgesCard />
         </div>
         {/* Referee Selector */}
         <RefereeSelector
@@ -2287,7 +2307,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
                   { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
                   { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-                  { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+                  { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+                  ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
+                  ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
+                  ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
+                  ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
                 ]
               })
             }
@@ -3643,22 +3667,83 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return generatePinCode(existingPins)
   }
 
+  // Sync match data to server (for when Scoreboard is not mounted)
+  const syncMatchToServer = async (matchData) => {
+    const wsUrl = getWebSocketUrl()
+    if (!wsUrl) {
+      console.log('[MatchSetup] No WebSocket URL, skipping server sync')
+      return
+    }
+
+    console.log('[MatchSetup] Connecting to WebSocket:', wsUrl)
+
+    try {
+      // Create a temporary WebSocket connection to sync the data
+      const ws = new WebSocket(wsUrl)
+
+      ws.onopen = () => {
+        console.log('[MatchSetup] Temporary WebSocket connected, syncing match data...')
+        // Server expects: { type: 'sync-match-data', matchId, match, teams, players, sets, events }
+        const syncPayload = {
+          type: 'sync-match-data',
+          matchId: matchData.id,
+          match: matchData,  // Nest match data under 'match' property as server expects
+          teams: [],  // MatchSetup doesn't have team objects loaded
+          players: [],
+          sets: [],
+          events: []
+        }
+        ws.send(JSON.stringify(syncPayload))
+        console.log('[MatchSetup] Sync payload sent:', {
+          matchId: matchData.id,
+          gameNumber: matchData.gameNumber,
+          refereeConnectionEnabled: matchData.refereeConnectionEnabled
+        })
+        // Close after a short delay to ensure message is sent
+        setTimeout(() => ws.close(), 500)
+      }
+
+      ws.onerror = (err) => {
+        console.error('[MatchSetup] WebSocket sync error:', err)
+      }
+    } catch (error) {
+      console.error('[MatchSetup] Failed to sync to server:', error)
+    }
+  }
+
   const handleRefereeConnectionToggle = async (enabled) => {
     if (!matchId) return
     setRefereeConnectionEnabled(enabled)
     try {
       const match = await db.matches.get(matchId)
       if (!match) return
-      
+
       const updates = { refereeConnectionEnabled: enabled }
-      
+
       // If enabling connection and PIN doesn't exist, generate one
       if (enabled && !match.refereePin) {
         const newPin = await generateUniquePin()
         updates.refereePin = String(newPin).trim() // Ensure it's a string
       }
-      
+
+      console.log('[MatchSetup] Saving referee toggle:', {
+        matchId,
+        gameNumber: match.gameNumber,
+        enabled,
+        updates,
+        previousValue: match.refereeConnectionEnabled
+      })
+
       await db.matches.update(matchId, updates)
+
+      // Verify the update was saved and sync to server
+      const updatedMatch = await db.matches.get(matchId)
+      console.log('[MatchSetup] After save - refereeConnectionEnabled:', updatedMatch?.refereeConnectionEnabled)
+
+      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
+      if (updatedMatch) {
+        await syncMatchToServer(updatedMatch)
+      }
     } catch (error) {
       console.error('Failed to update referee connection setting:', error)
     }
@@ -3670,16 +3755,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     try {
       const match = await db.matches.get(matchId)
       if (!match) return
-      
+
       const updates = { homeTeamConnectionEnabled: enabled }
-      
+
       // If enabling connection and PIN doesn't exist, generate one
       if (enabled && !match.homeTeamPin) {
         const newPin = await generateUniquePin()
         updates.homeTeamPin = String(newPin).trim() // Ensure it's a string
       }
-      
+
       await db.matches.update(matchId, updates)
+
+      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
+      const updatedMatch = await db.matches.get(matchId)
+      if (updatedMatch) {
+        await syncMatchToServer(updatedMatch)
+      }
     } catch (error) {
       console.error('Failed to update home team connection setting:', error)
     }
@@ -3691,16 +3782,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     try {
       const match = await db.matches.get(matchId)
       if (!match) return
-      
+
       const updates = { awayTeamConnectionEnabled: enabled }
-      
+
       // If enabling connection and PIN doesn't exist, generate one
       if (enabled && !match.awayTeamPin) {
         const newPin = await generateUniquePin()
         updates.awayTeamPin = String(newPin).trim() // Ensure it's a string
       }
-      
+
       await db.matches.update(matchId, updates)
+
+      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
+      const updatedMatch = await db.matches.get(matchId)
+      if (updatedMatch) {
+        await syncMatchToServer(updatedMatch)
+      }
     } catch (error) {
       console.error('Failed to update away team connection setting:', error)
     }
@@ -3850,8 +3947,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )}
         </div>
       </div>
-      <div className="grid-4">
-        <div className="card" style={{ order: 1 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, maxWidth: '900px' }}>
+        {/* Match Info Card */}
+        <div className="card">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -3861,7 +3959,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', rowGap: 4, marginTop: 8 }}
+              style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}
             >
               <span>Date:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || 'Not set'}</span>
@@ -3877,9 +3975,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={league}>{league || 'Not set'}</span>
             </div>
           </div>
-          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button></div>
+          <div className="actions">
+            <button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button>
+          </div>
         </div>
-        <div className="card" style={{ order: 2 }}>
+
+        {/* Match Officials Card */}
+        <div className="card">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -3887,7 +3989,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <h3 style={{ margin: 0 }}>Match officials</h3>
               </div>
             </div>
-            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', rowGap: 4, marginTop: 8 }}>
+            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
               <span>1st ref:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
               <span>2nd ref:</span>
@@ -3896,9 +3998,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(scorerLast, scorerFirst)}>{formatOfficial(scorerLast, scorerFirst)}</span>
               <span>Ass. Sc:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(asstLast, asstFirst)}>{formatOfficial(asstLast, asstFirst)}</span>
+              {(lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4) && (
+                <>
+                  <span>Line J:</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).join(', ')}>
+                    {[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).join(', ') || 'Not set'}
+                  </span>
+                </>
+              )}
             </div>
           </div>
-          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button></div>
+          <div className="actions">
+            <button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button>
+          </div>
         </div>
       </div>
       {/* Dashboard Connections Row */}
@@ -4246,7 +4358,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       </div>
 
       <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center' }}>
-        <button className="secondary" onClick={() => setShowBothRosters(!showBothRosters)}>
+        <button
+          className="secondary"
+          style={{
+            background: '#ffe066',
+            color: '#222',
+            border: '1px solid #ffd700',
+            fontWeight: 700
+          }}
+          onClick={() => setShowBothRosters(!showBothRosters)}
+        >
           {showBothRosters ? 'Hide' : 'Show'} Rosters
         </button>
         {isMatchOngoing && onReturn ? (
@@ -4286,12 +4407,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                     { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
                     { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
                     { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-                    { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob }
+                    { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+                    ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
+                    ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
+                    ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
+                    ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
                   ],
                   bench_home: benchHome,
                   bench_away: benchAway
                 })
-                
+
                 // Update teams if needed
                 if (match.homeTeamId) {
                   await db.teams.update(match.homeTeamId, { name: home, color: homeColor })

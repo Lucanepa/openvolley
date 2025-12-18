@@ -20,9 +20,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     const checkAndStartHeartbeat = async () => {
       const match = await db.matches.get(matchId)
       if (!match) return null
-      const connectionEnabled = team === 'home' 
-        ? match.homeTeamConnectionEnabled !== false
-        : match.awayTeamConnectionEnabled !== false
+      const connectionEnabled = team === 'home'
+        ? match.homeTeamConnectionEnabled === true
+        : match.awayTeamConnectionEnabled === true
       if (connectionEnabled === false) return null
       
       const updateHeartbeat = async () => {

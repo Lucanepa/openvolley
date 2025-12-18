@@ -169,6 +169,29 @@ export default function BenchApp() {
 
   // Check connection status periodically
   useEffect(() => {
+    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    const isStaticDeployment = !import.meta.env.DEV && (
+      window.location.hostname.includes('github.io') ||
+      window.location.hostname === 'app.openvolley.app'
+    )
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
+
+    // For static deployments without backend, show helpful message
+    if (isStaticDeployment && !hasBackendUrl) {
+      setConnectionStatuses({
+        server: 'not_available',
+        websocket: 'not_available'
+      })
+      setConnectionDebugInfo({
+        server: {
+          status: 'not_available',
+          message: 'Bench app requires a live scoresheet server',
+          details: 'This app connects to a running scoresheet on your local network. Open this URL from a device connected to the same network as your scoresheet device.'
+        }
+      })
+      return // Don't start polling
+    }
+
     const checkConnections = async () => {
       try {
         const serverStatus = await getServerStatus()
@@ -225,9 +248,9 @@ export default function BenchApp() {
   // Disconnect if connection is disabled
   useEffect(() => {
     if (match && selectedTeam) {
-      const connectionEnabled = selectedTeam === 'home' 
-        ? match.homeTeamConnectionEnabled !== false
-        : match.awayTeamConnectionEnabled !== false
+      const connectionEnabled = selectedTeam === 'home'
+        ? match.homeTeamConnectionEnabled === true
+        : match.awayTeamConnectionEnabled === true
       
       if (connectionEnabled === false) {
         setMatchId(null)

@@ -539,7 +539,7 @@ export function vitePluginApiRoutes(options = {}) {
               dateTime,
               status: match.status,
               refereePin: match.refereePin,
-              refereeConnectionEnabled: match.refereeConnectionEnabled !== false
+              refereeConnectionEnabled: match.refereeConnectionEnabled === true
             }
           }).filter(m => {
             // Only show matches that are:
@@ -617,11 +617,11 @@ export function vitePluginApiRoutes(options = {}) {
                 if (matchPin && String(matchPin).trim() === pinStr) {
                   let connectionEnabled = true
                   if (type === 'referee') {
-                    connectionEnabled = match.refereeConnectionEnabled !== false
+                    connectionEnabled = match.refereeConnectionEnabled === true
                   } else if (type === 'homeTeam') {
-                    connectionEnabled = match.homeTeamConnectionEnabled !== false
+                    connectionEnabled = match.homeTeamConnectionEnabled === true
                   } else if (type === 'awayTeam') {
-                    connectionEnabled = match.awayTeamConnectionEnabled !== false
+                    connectionEnabled = match.awayTeamConnectionEnabled === true
                   }
                   
                   if (connectionEnabled && match.status !== 'final') {

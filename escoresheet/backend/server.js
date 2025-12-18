@@ -67,11 +67,50 @@ const server = createServer((req, res) => {
   }
 
   // List active matches (ephemeral - just for current session)
+  // Only return matches where refereeConnectionEnabled is true
   if (url.pathname === '/api/match/list') {
+    const allMatches = Array.from(activeMatches.values())
+    const filteredMatches = allMatches.filter(m => {
+      // Check if refereeConnectionEnabled is explicitly true
+      return m.match?.refereeConnectionEnabled === true
+    })
+    console.log(`[API] /api/match/list - Total: ${allMatches.length}, Referee enabled: ${filteredMatches.length}`)
+    allMatches.forEach(m => {
+      console.log(`  - Game #${m.gameNumber || m.matchId}: refereeConnectionEnabled=${m.match?.refereeConnectionEnabled}`)
+    })
+
+    // Format response to match dev server (flat structure)
+    const formattedMatches = filteredMatches.map(m => {
+      // Format scheduled date/time
+      let dateTime = 'TBD'
+      if (m.match?.scheduledAt) {
+        try {
+          const scheduledDate = new Date(m.match.scheduledAt)
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+          dateTime = `${dateStr} ${timeStr}`
+        } catch (e) {
+          dateTime = 'TBD'
+        }
+      }
+
+      return {
+        id: m.matchId,
+        gameNumber: m.gameNumber || m.match?.gameNumber || m.matchId,
+        homeTeam: m.homeTeam || 'Home',
+        awayTeam: m.awayTeam || 'Away',
+        scheduledAt: m.match?.scheduledAt,
+        dateTime,
+        status: m.match?.status || 'scheduled',
+        refereePin: m.match?.refereePin,
+        refereeConnectionEnabled: m.match?.refereeConnectionEnabled === true
+      }
+    })
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       success: true,
-      matches: Array.from(activeMatches.values())
+      matches: formattedMatches
     }))
     return
   }

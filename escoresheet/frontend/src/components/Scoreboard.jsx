@@ -22,6 +22,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showLogs, setShowLogs] = useState(false)
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
+  const [showCurrentSetAdjustment, setShowCurrentSetAdjustment] = useState(false)
   const [showRemarks, setShowRemarks] = useState(false)
   const [remarksText, setRemarksText] = useState('')
   const remarksTextareaRef = useRef(null)
@@ -834,13 +835,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         if (pinType === 'referee') {
           matchPin = freshMatch.refereePin
-          connectionEnabled = freshMatch.refereeConnectionEnabled !== false
+          connectionEnabled = freshMatch.refereeConnectionEnabled === true
         } else if (pinType === 'homeTeam') {
           matchPin = freshMatch.homeTeamPin
-          connectionEnabled = freshMatch.homeTeamConnectionEnabled !== false
+          connectionEnabled = freshMatch.homeTeamConnectionEnabled === true
         } else if (pinType === 'awayTeam') {
           matchPin = freshMatch.awayTeamPin
-          connectionEnabled = freshMatch.awayTeamConnectionEnabled !== false
+          connectionEnabled = freshMatch.awayTeamConnectionEnabled === true
         }
 
         if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && freshMatch.status !== 'final') {
@@ -1085,6 +1086,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
   }, [matchId, serverStatus])
+
+  // Sync when connection settings change (e.g., referee dashboard enabled/disabled)
+  useEffect(() => {
+    console.log('[Scoreboard] Connection settings changed:', {
+      gameNumber: data?.match?.gameNumber,
+      matchId: data?.match?.id,
+      refereeConnectionEnabled: data?.match?.refereeConnectionEnabled,
+      refereeConnectionEnabledType: typeof data?.match?.refereeConnectionEnabled,
+      homeTeamConnectionEnabled: data?.match?.homeTeamConnectionEnabled,
+      awayTeamConnectionEnabled: data?.match?.awayTeamConnectionEnabled
+    })
+    if (syncFunctionRef.current && data?.match) {
+      console.log('[Scoreboard] Triggering sync to server...')
+      syncFunctionRef.current()
+    }
+  }, [data?.match?.refereeConnectionEnabled, data?.match?.homeTeamConnectionEnabled, data?.match?.awayTeamConnectionEnabled])
 
   // Sync data to referee/bench - call this after any action that changes match data
   const syncToReferee = useCallback(() => {
@@ -1675,13 +1692,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Only start countdown if between sets AND countdown is null (not started yet)
     // Don't restart if countdown exists (even if finished) or was dismissed
     if (isBetweenSets && betweenSetsCountdown === null && !countdownDismissedRef.current) {
-      setBetweenSetsCountdown({ countdown: setIntervalDuration, started: true })
+      // Calculate remaining time based on previous set's endTime
+      const currentSetIndex = data?.set?.index || 1
+      const previousSet = data?.sets?.find(s => s.index === currentSetIndex - 1)
+      let remainingTime = setIntervalDuration
+
+      if (previousSet?.endTime) {
+        const endTime = new Date(previousSet.endTime).getTime()
+        const now = Date.now()
+        const elapsedSeconds = Math.floor((now - endTime) / 1000)
+        remainingTime = Math.max(0, setIntervalDuration - elapsedSeconds)
+      }
+
+      // If time has already elapsed, mark as dismissed
+      if (remainingTime <= 0) {
+        countdownDismissedRef.current = true
+      } else {
+        setBetweenSetsCountdown({ countdown: remainingTime, started: true })
+      }
     } else if (!isBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
       countdownDismissedRef.current = false // Reset for next time
     }
-  }, [isBetweenSets, setIntervalDuration]) // Removed betweenSetsCountdown from deps to prevent restart loop
+  }, [isBetweenSets, setIntervalDuration, data?.set?.index, data?.sets]) // Removed betweenSetsCountdown from deps to prevent restart loop
 
   // Handle between-sets countdown timer
   useEffect(() => {
@@ -2419,7 +2453,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   } : null,
                   totalSets: sets.length,
                   eventCount: eventCount,
-                  refereeConnectionEnabled: match.refereeConnectionEnabled !== false,
+                  refereeConnectionEnabled: match.refereeConnectionEnabled === true,
                   isCurrentMatch: isCurrentMatch
                 }
               })
@@ -2577,42 +2611,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
     if (!data?.set || !data?.match) {
+      console.log('[SERVE DEBUG] No set or match data, returning:', data?.match?.firstServe || 'home')
       return data?.match?.firstServe || 'home'
     }
-    
-    // For set 5, use set5FirstServe if specified
-    if (data.set.index === 5 && data.match?.set5FirstServe) {
+
+    const setIndex = data.set.index
+    const set1FirstServe = data.match.firstServe || 'home'
+
+    // Calculate first serve for current set based on alternation pattern
+    // Set 1: set1FirstServe
+    // Set 2: opposite of set1FirstServe
+    // Set 3: same as set1FirstServe
+    // Set 4: opposite of set1FirstServe
+    // Set 5: uses set5FirstServe (separate coin toss)
+    let currentSetFirstServe
+
+    if (setIndex === 5 && data.match?.set5FirstServe) {
+      // Set 5 uses separate coin toss
       const teamAKey = data.match.coinTossTeamA || 'home'
       const teamBKey = data.match.coinTossTeamB || 'away'
-      const firstServeTeamKey = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-      
-      if (!data?.events || data.events.length === 0) {
-        return firstServeTeamKey
-      }
-      
-      // Find the last point event in the current set to determine serve
-      const pointEvents = data.events
-        .filter(e => e.type === 'point' && e.setIndex === data.set.index)
-        .sort((a, b) => {
-          const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-          const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-          return bTime - aTime // Most recent first
-        })
-      
-      if (pointEvents.length === 0) {
-        return firstServeTeamKey
-      }
-      
-      // The team that scored the last point now has serve
-      const lastPoint = pointEvents[0]
-      return lastPoint.payload?.team || firstServeTeamKey
+      currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+      console.log('[SERVE DEBUG] Set 5 with coin toss:', { teamAKey, teamBKey, set5FirstServe: data.match.set5FirstServe, currentSetFirstServe })
+    } else if (setIndex === 5) {
+      // Set 5 without set5FirstServe specified - fallback to alternation
+      currentSetFirstServe = set1FirstServe
+      console.log('[SERVE DEBUG] Set 5 fallback to set1FirstServe:', currentSetFirstServe)
+    } else {
+      // Sets 1-4: odd sets (1, 3) same as set 1, even sets (2, 4) opposite
+      currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+      console.log('[SERVE DEBUG] Set', setIndex, '- set1FirstServe:', set1FirstServe, '-> currentSetFirstServe:', currentSetFirstServe)
     }
-    
+
     if (!data?.events || data.events.length === 0) {
-      // First rally: use firstServe from match
-      return data.match.firstServe || 'home'
+      console.log('[SERVE DEBUG] No events, returning currentSetFirstServe:', currentSetFirstServe)
+      return currentSetFirstServe
     }
-    
+
     // Find the last point event in the current set to determine serve
     const pointEvents = data.events
       .filter(e => e.type === 'point' && e.setIndex === data.set.index)
@@ -2621,33 +2655,53 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
         return bTime - aTime // Most recent first
       })
-    
+
     if (pointEvents.length === 0) {
-      // No points yet, use firstServe
-      return data.match.firstServe || 'home'
+      console.log('[SERVE DEBUG] No point events in set', setIndex, ', returning currentSetFirstServe:', currentSetFirstServe)
+      return currentSetFirstServe
     }
-    
+
     // The team that scored the last point now has serve
     const lastPoint = pointEvents[0]
-    return lastPoint.payload?.team || data.match.firstServe || 'home'
+    const result = lastPoint.payload?.team || currentSetFirstServe
+    console.log('[SERVE DEBUG] Last point by:', lastPoint.payload?.team, '-> serve:', result)
+    return result
   }, [data?.events, data?.set, data?.match, data?.match?.set5FirstServe])
 
   const leftServeTeamKey = leftIsHome ? 'home' : 'away'
   const rightServeTeamKey = leftIsHome ? 'away' : 'home'
-  
+
   // Before coin toss or before set starts, show serve on left (home) as placeholder
   const isBeforeCoinToss = !data?.match?.coinTossTeamA || !data?.match?.coinTossTeamB
   const hasNoSet = !data?.set
-  
+
   const currentServeTeam = data?.set ? getCurrentServe() : null
-  
+
   // Show serve on left as placeholder before coin toss or before set starts
-  const leftServing = (isBeforeCoinToss || hasNoSet) 
+  const leftServing = (isBeforeCoinToss || hasNoSet)
     ? true // Placeholder: serve on left (home) before coin toss
     : (data?.set ? currentServeTeam === leftServeTeamKey : false)
-  const rightServing = (isBeforeCoinToss || hasNoSet) 
-    ? false 
+  const rightServing = (isBeforeCoinToss || hasNoSet)
+    ? false
     : (data?.set ? currentServeTeam === rightServeTeamKey : false)
+
+  // Debug log for serve indicator
+  console.log('[SERVE DEBUG] Indicator:', {
+    setIndex: data?.set?.index,
+    leftIsHome,
+    leftServeTeamKey,
+    rightServeTeamKey,
+    currentServeTeam,
+    leftServing,
+    rightServing,
+    teamAKey,
+    teamBKey,
+    coinTossTeamA: data?.match?.coinTossTeamA,
+    coinTossTeamB: data?.match?.coinTossTeamB,
+    firstServe: data?.match?.firstServe,
+    homeTeamName: data?.homeTeam?.name,
+    awayTeamName: data?.awayTeam?.name
+  })
 
   const serveBallBaseStyle = useMemo(
     () => ({
@@ -3339,10 +3393,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!setStartTimeModal || !data?.set) return
 
     // Check if the confirmed time differs from the expected time
-    const expectedTime = setStartTimeModal.defaultTime
-    const confirmedTime = new Date(time).getTime()
-    const expectedTimeMs = expectedTime ? new Date(expectedTime).getTime() : confirmedTime
-    const timeDifferent = Math.abs(confirmedTime - expectedTimeMs) > 60000 // More than 1 minute difference
+    // Compare only hours and minutes since the modal only shows time, not date
+    const expectedDate = new Date(setStartTimeModal.defaultTime)
+    const confirmedDate = new Date(time)
+    const expectedMinutes = expectedDate.getHours() * 60 + expectedDate.getMinutes()
+    const confirmedMinutes = confirmedDate.getHours() * 60 + confirmedDate.getMinutes()
+    const timeDifferent = expectedMinutes !== confirmedMinutes
 
     // Update set with start time (absolute timestamp)
     await db.sets.update(data.set.id, { startTime: time })
@@ -3547,33 +3603,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       })
       console.log('[Set Transition] Created new set with id:', newSetId)
 
-      // Get match to determine first serve for the new set
+      // Get match data
       const match = await db.matches.get(matchId)
-      const coinTossFirstServe = match?.firstServe || 'home' // Original first serve from coin toss
-      const teamAKey = match?.coinTossTeamA || 'home'
-      const teamBKey = match?.coinTossTeamB || 'away'
-      
-      // Determine first serve based on set number (except set 5 which has its own logic)
-      // The coin toss determines who serves first in set 1, then it alternates
-      // Set 1: Coin toss winner serves, Set 2: Coin toss winner receives, Set 3: Coin toss winner serves, Set 4: Coin toss winner receives
-      let newFirstServe = 'home'
-      if (newSetIndex !== 5) {
-        // For sets 1-4: odd sets (1, 3) = coin toss winner serves, even sets (2, 4) = opposite serves
-        const oppositeTeam = coinTossFirstServe === 'home' ? 'away' : 'home'
-        newFirstServe = newSetIndex % 2 === 1 ? coinTossFirstServe : oppositeTeam
-      } else {
-        // Set 5 uses set5FirstServe if specified, otherwise keep current firstServe
-        if (match?.set5FirstServe) {
-          newFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
-        } else {
-          newFirstServe = match?.firstServe || coinTossFirstServe
-        }
-      }
-      
-      // Update match with new first serve and reset set5CourtSwitched flag
-      await db.matches.update(matchId, { 
-        firstServe: newFirstServe,
-        set5CourtSwitched: false 
+
+      // Reset set5CourtSwitched flag for new sets (don't update firstServe - it should remain as original coin toss result)
+      // The getCurrentServe() function calculates the correct first serve for each set based on alternation
+      await db.matches.update(matchId, {
+        set5CourtSwitched: false
       })
       
       const isTest = match?.test || false
@@ -3613,11 +3649,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     console.log('[Set 5 Coin Toss] Confirming set 5 configuration:', { leftTeam, firstServe, setIndex })
 
-    // Update match with set 5 configuration and first serve
+    // Update match with set 5 configuration (don't update firstServe - keep original coin toss result)
+    // getCurrentServe() uses set5FirstServe for set 5 logic
     await db.matches.update(matchId, {
       set5LeftTeam: leftTeam,
       set5FirstServe: firstServe,
-      firstServe: firstServeTeamKey,
       set5CourtSwitched: false
     })
 
@@ -3722,7 +3758,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const teamA = event.payload?.teamA === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
       const teamB = event.payload?.teamB === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
       const firstServeTeam = event.payload?.firstServe === 'home' ? teamA : teamB
-      eventDescription = `Coin toss — Team A: ${teamA}, Team B: ${teamB}, First serve: ${firstServeTeam}`
+      eventDescription = `Coin toss - Team A: ${teamA}, Team B: ${teamB}, First serve: ${firstServeTeam}`
     } else if (event.type === 'point') {
       eventDescription = `Point — ${teamName} (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
     } else if (event.type === 'timeout') {
@@ -3745,7 +3781,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     } else if (event.type === 'rally_start') {
       eventDescription = 'Rally started'
     } else if (event.type === 'replay') {
-      eventDescription = 'Rally replayed'
+      // Show detailed replay info with scores
+      const { oldHomePoints, oldAwayPoints, newHomePoints, newAwayPoints } = event.payload || {}
+      if (oldHomePoints !== undefined && newHomePoints !== undefined) {
+        // Get team labels (A/B) based on coin toss
+        const teamAKey = data?.match?.coinTossTeamA || 'home'
+        const oldLeftScore = teamAKey === 'home' ? oldHomePoints : oldAwayPoints
+        const oldRightScore = teamAKey === 'home' ? oldAwayPoints : oldHomePoints
+        const newLeftScore = teamAKey === 'home' ? newHomePoints : newAwayPoints
+        const newRightScore = teamAKey === 'home' ? newAwayPoints : newHomePoints
+        eventDescription = `${oldLeftScore}:${oldRightScore} Rally Replayed, new score ${newLeftScore}:${newRightScore}`
+      } else {
+        eventDescription = 'Rally replayed'
+      }
     } else if (event.type === 'lineup') {
       // Only show initial lineups, not rotation lineups or libero substitution lineups
       const isInitial = event.payload?.isInitial === true
@@ -4626,20 +4674,48 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       }
 
+      // Capture the old score (before undoing the point)
+      const oldHomePoints = data.set.homePoints
+      const oldAwayPoints = data.set.awayPoints
+
       // Delete all events with this base seq
       for (const eventToDelete of eventsToDelete) {
         await db.events.delete(eventToDelete.id)
       }
 
-      // Do NOT start a new rally - just go back to the state before the point
-      // The rally will be in 'idle' state, waiting for "Start rally" to be clicked
+      // Calculate the new score (after undoing the point)
+      const undoneTeam = lastEvent.payload?.team
+      const newHomePoints = undoneTeam === 'home' ? oldHomePoints - 1 : oldHomePoints
+      const newAwayPoints = undoneTeam === 'away' ? oldAwayPoints - 1 : oldAwayPoints
+
+      // Log the replay event (this is important for match records)
+      const nextSeq = await getNextSeq()
+
+      await db.events.add({
+        matchId,
+        setIndex: data.set.index,
+        type: 'replay',
+        payload: {
+          reason: 'point_replay',
+          undonePointTeam: undoneTeam,
+          oldHomePoints,
+          oldAwayPoints,
+          newHomePoints,
+          newAwayPoints
+        },
+        ts: new Date().toISOString(),
+        seq: nextSeq
+      })
+
+      // Go back to idle state - user can then click "Start rally" or "Undo"
+      // No automatic rally start
 
     } catch (error) {
       // Error during replay - silently handle
     } finally {
       setReplayRallyConfirm(null)
     }
-  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId])
+  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq])
 
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
@@ -7387,9 +7463,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [data?.match?.lastReferee2Heartbeat, now])
 
   const isAnyRefereeConnected = isReferee1Connected || isReferee2Connected
-  const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled !== false
-  const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled !== false
-  const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled !== false
+  const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled === true
+  const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled === true
+  const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled === true
   
   // Handle captain on court selection
   const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
@@ -7985,7 +8061,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         {/* Center: Set Counter fixed in center, Rally Status (left) and Last Action (right) on sides */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isCompactMode ? '80px 1fr 80px' : '100px 1fr 100px') : '1fr',
+          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isCompactMode ? '60px 1fr 100px' : '80px 1fr 120px') : '1fr',
           alignItems: 'center',
           gap: isCompactMode ? '4px' : '8px',
           flex: '1 1 auto'
@@ -8158,78 +8234,163 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         {/* Right: Scoresheet, Menu (Home button moved to MainHeader) */}
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isCompactMode ? '4px' : '12px' }}>
-          <button
-            className="secondary"
-            onClick={async () => {
-              try {
-                const match = data?.match
-                if (!match) {
-                  alert('No match data available')
-                  return
-                }
-
-                // Gather all match data for the scoresheet
-                const allSets = data?.sets || []
-                const allEvents = data?.events || []
-
-                const scoresheetData = {
-                  match,
-                  homeTeam: data?.homeTeam,
-                  awayTeam: data?.awayTeam,
-                  homePlayers: data?.homePlayers || [],
-                  awayPlayers: data?.awayPlayers || [],
-                  sets: allSets,
-                  events: allEvents,
-                  sanctions: [] // TODO: Extract sanctions from events
-                }
-
-                // Store data in sessionStorage to pass to new window
-                sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-
-                // Open scoresheet in new window
-                const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
-
-                if (!scoresheetWindow) {
-                  alert('Please allow popups to view the scoresheet')
-                  return
-                }
-
-                // Set up error listener for scoresheet window
-                const errorListener = (event) => {
-                  // Only accept messages from the scoresheet window
-                  if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                    setScoresheetErrorModal({
-                      error: event.data.error || 'Unknown error',
-                      details: event.data.details || event.data.stack || ''
-                    })
-                    window.removeEventListener('message', errorListener)
-                  }
-                }
-
-                window.addEventListener('message', errorListener)
-
-                // Clean up listener after 30 seconds (scoresheet should load by then)
-                setTimeout(() => {
-                  window.removeEventListener('message', errorListener)
-                }, 30000)
-              } catch (error) {
-                console.error('Error opening scoresheet:', error)
-                setScoresheetErrorModal({
-                  error: 'Failed to open scoresheet',
-                  details: error.message || ''
-                })
-              }
-            }}
-            style={{
+          {/* Scoresheet dropdown menu */}
+          <MenuList
+            buttonLabel={isCompactMode ? "📄" : "📄 Scoresheet"}
+            buttonClassName="secondary"
+            buttonStyle={{
               background: '#22c55e',
               color: '#000',
               fontWeight: 600,
               padding: isCompactMode ? '4px 8px' : '8px 16px',
-              fontSize: isCompactMode ? '10px' : '14px'
+              fontSize: isCompactMode ? '14px' : '14px'
             }}
-          >
-            {isCompactMode ? '📄' : '📄'}
-          </button>
+            showArrow={true}
+            position="right"
+            items={[
+              {
+                key: 'scoresheet-preview',
+                label: '🔍 Preview',
+                onClick: async () => {
+                  try {
+                    const match = data?.match
+                    if (!match) {
+                      alert('No match data available')
+                      return
+                    }
+
+                    const scoresheetData = {
+                      match,
+                      homeTeam: data?.homeTeam,
+                      awayTeam: data?.awayTeam,
+                      homePlayers: data?.homePlayers || [],
+                      awayPlayers: data?.awayPlayers || [],
+                      sets: data?.sets || [],
+                      events: data?.events || [],
+                      sanctions: []
+                    }
+
+                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                    const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
+
+                    if (!scoresheetWindow) {
+                      alert('Please allow popups to view the scoresheet')
+                      return
+                    }
+
+                    const errorListener = (event) => {
+                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                        setScoresheetErrorModal({
+                          error: event.data.error || 'Unknown error',
+                          details: event.data.details || event.data.stack || ''
+                        })
+                        window.removeEventListener('message', errorListener)
+                      }
+                    }
+                    window.addEventListener('message', errorListener)
+                    setTimeout(() => window.removeEventListener('message', errorListener), 30000)
+                  } catch (error) {
+                    console.error('Error opening scoresheet:', error)
+                    setScoresheetErrorModal({ error: 'Failed to open scoresheet', details: error.message || '' })
+                  }
+                }
+              },
+              {
+                key: 'scoresheet-print',
+                label: '🖨️ Print',
+                onClick: async () => {
+                  try {
+                    const match = data?.match
+                    if (!match) {
+                      alert('No match data available')
+                      return
+                    }
+
+                    const scoresheetData = {
+                      match,
+                      homeTeam: data?.homeTeam,
+                      awayTeam: data?.awayTeam,
+                      homePlayers: data?.homePlayers || [],
+                      awayPlayers: data?.awayPlayers || [],
+                      sets: data?.sets || [],
+                      events: data?.events || [],
+                      sanctions: []
+                    }
+
+                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                    const scoresheetWindow = window.open('/scoresheet?action=print', '_blank', 'width=1200,height=900')
+
+                    if (!scoresheetWindow) {
+                      alert('Please allow popups to print the scoresheet')
+                      return
+                    }
+
+                    const errorListener = (event) => {
+                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                        setScoresheetErrorModal({
+                          error: event.data.error || 'Unknown error',
+                          details: event.data.details || event.data.stack || ''
+                        })
+                        window.removeEventListener('message', errorListener)
+                      }
+                    }
+                    window.addEventListener('message', errorListener)
+                    setTimeout(() => window.removeEventListener('message', errorListener), 30000)
+                  } catch (error) {
+                    console.error('Error printing scoresheet:', error)
+                    setScoresheetErrorModal({ error: 'Failed to print scoresheet', details: error.message || '' })
+                  }
+                }
+              },
+              {
+                key: 'scoresheet-save',
+                label: '💾 Save PDF',
+                onClick: async () => {
+                  try {
+                    const match = data?.match
+                    if (!match) {
+                      alert('No match data available')
+                      return
+                    }
+
+                    const scoresheetData = {
+                      match,
+                      homeTeam: data?.homeTeam,
+                      awayTeam: data?.awayTeam,
+                      homePlayers: data?.homePlayers || [],
+                      awayPlayers: data?.awayPlayers || [],
+                      sets: data?.sets || [],
+                      events: data?.events || [],
+                      sanctions: []
+                    }
+
+                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                    const scoresheetWindow = window.open('/scoresheet?action=save', '_blank', 'width=1200,height=900')
+
+                    if (!scoresheetWindow) {
+                      alert('Please allow popups to save the scoresheet')
+                      return
+                    }
+
+                    const errorListener = (event) => {
+                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+                        setScoresheetErrorModal({
+                          error: event.data.error || 'Unknown error',
+                          details: event.data.details || event.data.stack || ''
+                        })
+                        window.removeEventListener('message', errorListener)
+                      }
+                    }
+                    window.addEventListener('message', errorListener)
+                    setTimeout(() => window.removeEventListener('message', errorListener), 30000)
+                  } catch (error) {
+                    console.error('Error saving scoresheet:', error)
+                    setScoresheetErrorModal({ error: 'Failed to save scoresheet', details: error.message || '' })
+                  }
+                }
+              }
+            ]}
+          />
           <MenuList
             buttonLabel="☰"
             buttonClassName="secondary"
@@ -9320,6 +9481,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 {timeoutModal && timeoutModal.started ? (
                   <>
                     <div style={{
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: 'var(--muted)',
+                      textAlign: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}
+                    </div>
+                    <div style={{
                       fontSize: '32px',
                       fontWeight: 700,
                       color: 'var(--accent)',
@@ -9343,6 +9513,88 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   </>
                 ) : betweenSetsCountdown ? (
                   <>
+                    {/* Show which team will serve next set */}
+                    {(() => {
+                      // Determine which team serves first in the next set
+                      const currentSetIndex = data?.set?.index || 1
+                      const nextSetIndex = currentSetIndex + 1
+                      const currentFirstServe = data?.match?.firstServe || 'home'
+
+                      // For set 5, use set5FirstServe if available; otherwise alternate from set 4
+                      let nextSetServeTeam
+                      if (nextSetIndex === 5 && data?.match?.set5FirstServe) {
+                        const teamAKey = data?.match?.coinTossTeamA || 'home'
+                        const teamBKey = data?.match?.coinTossTeamB || 'away'
+                        nextSetServeTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+                      } else {
+                        // Serve alternates each set, so next set's first serve is opposite of current
+                        nextSetServeTeam = currentFirstServe === 'home' ? 'away' : 'home'
+                      }
+
+                      // Teams switch sides between sets, so next set's left side is opposite of current
+                      const nextSetLeftIsHome = !leftIsHome
+                      const serveOnLeft = (nextSetLeftIsHome && nextSetServeTeam === 'home') || (!nextSetLeftIsHome && nextSetServeTeam === 'away')
+                      const teamName = nextSetServeTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+
+                      return (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          marginBottom: '8px'
+                        }}>
+                          {serveOnLeft && (
+                            <>
+                              <div style={{
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: 'var(--accent)',
+                                textTransform: 'uppercase'
+                              }}>
+                                SERVE
+                              </div>
+                              <img
+                                src={mikasaVolleyball}
+                                alt="Serving team"
+                                style={{
+                                  width: 24,
+                                  height: 24,
+                                  objectFit: 'contain'
+                                }}
+                              />
+                            </>
+                          )}
+                          <div style={{
+                            fontSize: '12px',
+                            color: 'var(--muted)'
+                          }}>
+                            {teamName}
+                          </div>
+                          {!serveOnLeft && (
+                            <>
+                              <img
+                                src={mikasaVolleyball}
+                                alt="Serving team"
+                                style={{
+                                  width: 24,
+                                  height: 24,
+                                  objectFit: 'contain'
+                                }}
+                              />
+                              <div style={{
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: 'var(--accent)',
+                                textTransform: 'uppercase'
+                              }}>
+                                SERVE
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()}
                     <div style={{
                       fontSize: '32px',
                       fontWeight: 700,
@@ -9684,7 +9936,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </div>
         )
       })() : (
-      <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: 'auto' } : {}}>
+      <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: 'calc(100vh - 40px)', maxHeight: '100vh', overflow: 'hidden' } : {}}>
         <ScoreboardTeamColumn side="left">
           <div className="team-info" style={{ overflow: 'hidden' }}>
             <div
@@ -10569,7 +10821,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             }}>
               {leftServing && (() => {
                 const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
-                if (!servingPlayer || !servingPlayer.number) return null
+                // If lineup not set, show just the ball
+                if (!servingPlayer || !servingPlayer.number) {
+                  return (
+                    <img
+                      src={mikasaVolleyball}
+                      alt="Serving team"
+                      style={{
+                        ...serveBallBaseStyle,
+                        width: isCompactMode ? 32 : 48,
+                        height: isCompactMode ? 32 : 48
+                      }}
+                    />
+                  )
+                }
                 return (
                   <>
                     <div style={{
@@ -10676,7 +10941,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             }}>
               {rightServing && (() => {
                 const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
-                if (!servingPlayer || !servingPlayer.number) return null
+                // If lineup not set, show just the ball
+                if (!servingPlayer || !servingPlayer.number) {
+                  return (
+                    <img
+                      src={mikasaVolleyball}
+                      alt="Serving team"
+                      style={{
+                        ...serveBallBaseStyle,
+                        width: isCompactMode ? 32 : 48,
+                        height: isCompactMode ? 32 : 48
+                      }}
+                    />
+                  )
+                }
                 return (
                   <>
                     <img
@@ -11783,6 +12061,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               {timeoutModal && timeoutModal.started ? (
                 <>
                   <div style={{
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    textAlign: 'center',
+                    marginBottom: '8px'
+                  }}>
+                    Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}
+                  </div>
+                  <div style={{
                     fontSize: '48px',
                     fontWeight: 700,
                     color: 'var(--accent)',
@@ -11802,6 +12089,88 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </>
               ) : betweenSetsCountdown ? (
                 <>
+                  {/* Show which team will serve next set */}
+                  {(() => {
+                    // Determine which team serves first in the next set
+                    const currentSetIndex = data?.set?.index || 1
+                    const nextSetIndex = currentSetIndex + 1
+                    const currentFirstServe = data?.match?.firstServe || 'home'
+
+                    // For set 5, use set5FirstServe if available; otherwise alternate from set 4
+                    let nextSetServeTeam
+                    if (nextSetIndex === 5 && data?.match?.set5FirstServe) {
+                      const teamAKey = data?.match?.coinTossTeamA || 'home'
+                      const teamBKey = data?.match?.coinTossTeamB || 'away'
+                      nextSetServeTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+                    } else {
+                      // Serve alternates each set, so next set's first serve is opposite of current
+                      nextSetServeTeam = currentFirstServe === 'home' ? 'away' : 'home'
+                    }
+
+                    // Teams switch sides between sets, so next set's left side is opposite of current
+                    const nextSetLeftIsHome = !leftIsHome
+                    const serveOnLeft = (nextSetLeftIsHome && nextSetServeTeam === 'home') || (!nextSetLeftIsHome && nextSetServeTeam === 'away')
+                    const teamName = nextSetServeTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+
+                    return (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '12px',
+                        marginBottom: '12px'
+                      }}>
+                        {serveOnLeft && (
+                          <>
+                            <div style={{
+                              fontSize: '18px',
+                              fontWeight: 600,
+                              color: 'var(--accent)',
+                              textTransform: 'uppercase'
+                            }}>
+                              SERVE
+                            </div>
+                            <img
+                              src={mikasaVolleyball}
+                              alt="Serving team"
+                              style={{
+                                width: 32,
+                                height: 32,
+                                objectFit: 'contain'
+                              }}
+                            />
+                          </>
+                        )}
+                        <div style={{
+                          fontSize: '14px',
+                          color: 'var(--muted)'
+                        }}>
+                          {teamName}
+                        </div>
+                        {!serveOnLeft && (
+                          <>
+                            <img
+                              src={mikasaVolleyball}
+                              alt="Serving team"
+                              style={{
+                                width: 32,
+                                height: 32,
+                                objectFit: 'contain'
+                              }}
+                            />
+                            <div style={{
+                              fontSize: '18px',
+                              fontWeight: 600,
+                              color: 'var(--accent)',
+                              textTransform: 'uppercase'
+                            }}>
+                              SERVE
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <div style={{
                     fontSize: '48px',
                     fontWeight: 700,
@@ -11916,9 +12285,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       const description = getActionDescription(lastEvent)
 
                       return (
-                        <div style={{ fontSize: '12px' }}>
-                          <span className="summary-label">Last action: </span>
-                          <span className="summary-value" style={{ color: 'var(--muted)' }}>
+                        <div style={{ fontSize: '12px', wordBreak: 'break-word', margin: '0 auto', whiteSpace: 'normal' }}>
+                          <span className="summary-label" style={{ whiteSpace: 'normal' }}>Last action: </span>
+                          <span className="summary-value" style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
                             {description}
                           </span>
                         </div>
@@ -13159,7 +13528,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{ padding: '24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Game Number and Referee PIN - Same row (50/50) */}
-              {(data?.match?.gameNumber || (data?.match?.refereePin && data?.match?.refereeConnectionEnabled !== false)) && (
+              {(data?.match?.gameNumber || (data?.match?.refereePin && data?.match?.refereeConnectionEnabled === true)) && (
                 <div style={{
                   display: 'flex',
                   gap: '16px',
@@ -13185,7 +13554,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   )}
                   
-                  {data?.match?.refereePin && data?.match?.refereeConnectionEnabled !== false && (
+                  {data?.match?.refereePin && data?.match?.refereeConnectionEnabled === true && (
                     <div style={{
                       background: 'rgba(255, 255, 255, 0.05)',
                       border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -15502,7 +15871,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               <label style={{ fontSize: '11px', minWidth: '80px' }}>Start Time:</label>
                               <input
                                 type="datetime-local"
-                                value={set.startTime ? new Date(set.startTime).toISOString().slice(0, 16) : ''}
+                                value={(() => {
+                                  if (!set.startTime) return ''
+                                  const d = new Date(set.startTime)
+                                  // Format as local datetime for datetime-local input
+                                  const year = d.getFullYear()
+                                  const month = String(d.getMonth() + 1).padStart(2, '0')
+                                  const day = String(d.getDate()).padStart(2, '0')
+                                  const hours = String(d.getHours()).padStart(2, '0')
+                                  const minutes = String(d.getMinutes()).padStart(2, '0')
+                                  return `${year}-${month}-${day}T${hours}:${minutes}`
+                                })()}
                                 onChange={async (e) => {
                                   const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
                                   await db.sets.update(set.id, { startTime: newTime })
@@ -15521,7 +15900,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               <label style={{ fontSize: '11px', minWidth: '80px' }}>End Time:</label>
                               <input
                                 type="datetime-local"
-                                value={set.endTime ? new Date(set.endTime).toISOString().slice(0, 16) : ''}
+                                value={(() => {
+                                  if (!set.endTime) return ''
+                                  const d = new Date(set.endTime)
+                                  // Format as local datetime for datetime-local input
+                                  const year = d.getFullYear()
+                                  const month = String(d.getMonth() + 1).padStart(2, '0')
+                                  const day = String(d.getDate()).padStart(2, '0')
+                                  const hours = String(d.getHours()).padStart(2, '0')
+                                  const minutes = String(d.getMinutes()).padStart(2, '0')
+                                  return `${year}-${month}-${day}T${hours}:${minutes}`
+                                })()}
                                 onChange={async (e) => {
                                   const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
                                   await db.sets.update(set.id, { endTime: newTime })
@@ -16368,44 +16757,65 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
-      {timeoutModal && (
+      {/* Timeout confirmation modal - only show before timeout starts, not during countdown */}
+      {timeoutModal && !timeoutModal.started && (
         <Modal
           title={`Time-out — ${timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}`}
           open={true}
-          onClose={timeoutModal.started ? stopTimeout : cancelTimeout}
+          onClose={cancelTimeout}
           width={400}
         >
-          <div style={{ textAlign: 'center', padding: '24px' }}>
-            {timeoutModal.started ? (
-              <>
-                <div style={{ fontSize: '64px', fontWeight: 800, marginBottom: '16px', color: 'var(--accent)' }}>
-                  {timeoutModal.countdown}"
+          <div style={{ textAlign: 'center', padding: '24px', fontSize: '16px' }}>
+            {/* Display current score - requesting team on left */}
+            {(() => {
+              const requestingTeamData = timeoutModal.team === 'home' ? data?.homeTeam : data?.awayTeam
+              const otherTeamData = timeoutModal.team === 'home' ? data?.awayTeam : data?.homeTeam
+              const requestingTeamScore = timeoutModal.team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
+              const otherTeamScore = timeoutModal.team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
+              const requestingTeamLabel = timeoutModal.team === teamAKey ? 'A' : 'B'
+              const otherTeamLabel = timeoutModal.team === teamAKey ? 'B' : 'A'
+              const requestingTeamColor = requestingTeamData?.color || (timeoutModal.team === 'home' ? '#ef4444' : '#3b82f6')
+              const otherTeamColor = otherTeamData?.color || (timeoutModal.team === 'home' ? '#3b82f6' : '#ef4444')
+              const isRequestingBright = isBrightColor(requestingTeamColor)
+              const isOtherBright = isBrightColor(otherTeamColor)
+              const currentTimeouts = timeoutsUsed[timeoutModal.team] || 0
+              const isSecondTimeout = currentTimeouts === 1
+              return (
+                <div style={{ marginBottom: '16px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  <span style={{
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: requestingTeamColor,
+                    color: isRequestingBright ? '#000' : '#fff'
+                  }}>{requestingTeamLabel}</span>
+                  <span>{requestingTeamScore}</span>
+                  <span>:</span>
+                  <span>{otherTeamScore}</span>
+                  <span style={{
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: otherTeamColor,
+                    color: isOtherBright ? '#000' : '#fff'
+                  }}>{otherTeamLabel}</span>
                 </div>
-                <p style={{ marginBottom: '24px', color: 'var(--muted)' }}>
-                  Time-out in progress
-                </p>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                  <button className="secondary" onClick={stopTimeout}>
-                    Stop time-out
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p style={{ marginBottom: '24px', color: 'var(--muted)' }}>
-                  Confirm time-out request?
-                </p>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                  <button onClick={confirmTimeout}>
-                    Confirm time-out
-                  </button>
-                  <button className="secondary" onClick={cancelTimeout}>
-                    Cancel
-                  </button>
-                </div>
-              </>
-            )}
-      </div>
+              )
+            })()}
+            <p style={{ marginBottom: '24px', color: 'var(--muted)', fontSize: '16px' }}>
+              Confirm {(timeoutsUsed[timeoutModal.team] || 0) === 1 && <><span style={{ color: '#ef4444', fontWeight: 700 }}>2nd</span>{' '}</>}time-out request?
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button onClick={confirmTimeout} style={{ fontSize: '16px' }}>
+                Confirm time-out
+              </button>
+              <button className="secondary" onClick={cancelTimeout} style={{ fontSize: '16px' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
 
@@ -18458,13 +18868,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return (
           <Modal
             title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span>{teamName}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '19px' }}>{teamName}</span>
                 <span
                   style={{
-                    padding: '4px 12px',
-                    borderRadius: '6px',
-                    fontSize: '14px',
+                    padding: '5px 14px',
+                    borderRadius: '7px',
+                    fontSize: '17px',
                     fontWeight: 700,
                     background: teamColor,
                     color: isBright ? '#000' : '#fff'
@@ -18479,37 +18889,82 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             width="auto"
             hideCloseButton={true}
           >
-            <div style={{ padding: '24px', textAlign: 'center' }}>
+            <div style={{ padding: '29px', textAlign: 'center' }}>
               {substitutionConfirm.isExceptional && (
-                <div style={{ marginBottom: '16px', padding: '8px', background: 'rgba(234, 179, 8, 0.2)', border: '1px solid rgba(234, 179, 8, 0.4)', borderRadius: '6px', fontSize: '12px', color: '#facc15', fontWeight: 600 }}>
+                <div style={{ marginBottom: '19px', padding: '10px', background: 'rgba(234, 179, 8, 0.2)', border: '1px solid rgba(234, 179, 8, 0.4)', borderRadius: '7px', fontSize: '14px', color: '#facc15', fontWeight: 600 }}>
                   Exceptional Substitution - Player cannot take part anymore
                 </div>
               )}
-            <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
-              <div style={{ marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              {/* Display current score - requesting team on left */}
+              {(() => {
+                const requestingTeamData = substitutionConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
+                const otherTeamData = substitutionConfirm.team === 'home' ? data?.awayTeam : data?.homeTeam
+                const requestingTeamScore = substitutionConfirm.team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
+                const otherTeamScore = substitutionConfirm.team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
+                const requestingTeamLabel = substitutionConfirm.team === teamAKey ? 'A' : 'B'
+                const otherTeamLabel = substitutionConfirm.team === teamAKey ? 'B' : 'A'
+                const requestingTeamColor = requestingTeamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
+                const otherTeamColor = otherTeamData?.color || (substitutionConfirm.team === 'home' ? '#3b82f6' : '#ef4444')
+                const isRequestingBright = isBrightColor(requestingTeamColor)
+                const isOtherBright = isBrightColor(otherTeamColor)
+                const currentSubs = substitutionsUsed[substitutionConfirm.team] || 0
+                const subLabel = currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
+                return (
+                  <>
+                    <div style={{ marginBottom: '19px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                      <span style={{
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        background: requestingTeamColor,
+                        color: isRequestingBright ? '#000' : '#fff'
+                      }}>{requestingTeamLabel}</span>
+                      <span>{requestingTeamScore}</span>
+                      <span>:</span>
+                      <span>{otherTeamScore}</span>
+                      <span style={{
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        background: otherTeamColor,
+                        color: isOtherBright ? '#000' : '#fff'
+                      }}>{otherTeamLabel}</span>
+                    </div>
+                    {subLabel && (
+                      <div style={{ marginBottom: '10px', fontSize: '14px' }}>
+                        <span style={{ color: '#ef4444', fontWeight: 700 }}>{subLabel}</span> substitution
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            <div style={{ marginBottom: '29px', fontSize: '19px', fontWeight: 600 }}>
+              <div style={{ marginBottom: '10px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                 <span>OUT: # {substitutionConfirm.playerOut}</span>
                 {(substitutionConfirm.isExpelled || substitutionConfirm.isDisqualified) ? (
-                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#ef4444' }}>✕</span>
+                  <span style={{ fontSize: '29px', fontWeight: 700, color: '#ef4444' }}>✕</span>
                 ) : (
-                  <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
+                  <span style={{ fontSize: '29px', fontWeight: 700 }}>↓</span>
                 )}
               </div>
-              <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                 <span>IN: # {substitutionConfirm.playerIn}</span>
-                <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                <span style={{ fontSize: '29px', fontWeight: 700 }}>↑</span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
               <button
                 onClick={confirmSubstitution}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'var(--accent)',
                   color: '#000',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -18518,13 +18973,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <button
                 onClick={cancelSubstitutionConfirm}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'rgba(255, 255, 255, 0.1)',
                   color: 'var(--text)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -18535,23 +18990,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
         )
       })()}
-      
+
       {liberoConfirm && (() => {
         const teamData = liberoConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoConfirm.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoConfirm.team === 'home' ? 'Home' : 'Away')
         const isBright = isBrightColor(teamColor)
-        
+
         return (
           <Modal
             title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span>{teamName}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '19px' }}>{teamName}</span>
                 <span style={{
-                  padding: '4px 12px',
-                  borderRadius: '6px',
-                  fontSize: '14px',
+                  padding: '5px 14px',
+                  borderRadius: '7px',
+                  fontSize: '17px',
                   fontWeight: 700,
                   background: teamColor,
                   color: isBright ? '#000' : '#fff'
@@ -18563,28 +19018,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             width="auto"
             hideCloseButton={true}
           >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <div style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600 }}>
-              <div style={{ marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <div style={{ padding: '29px', textAlign: 'center' }}>
+            <div style={{ marginBottom: '29px', fontSize: '19px', fontWeight: 600 }}>
+              <div style={{ marginBottom: '10px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                 <span>OUT: # {liberoConfirm.playerOut}</span>
-                <span style={{ fontSize: '24px', fontWeight: 700 }}>↓</span>
+                <span style={{ fontSize: '29px', fontWeight: 700 }}>↓</span>
               </div>
-              <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                 <span>IN: {liberoConfirm.liberoIn === 'libero1' ? 'L1' : 'L2'}</span>
-                <span style={{ fontSize: '24px', fontWeight: 700 }}>↑</span>
+                <span style={{ fontSize: '29px', fontWeight: 700 }}>↑</span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
               <button
                 onClick={confirmLibero}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'var(--accent)',
                   color: '#000',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -18593,13 +19048,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <button
                 onClick={cancelLiberoConfirm}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'rgba(255, 255, 255, 0.1)',
                   color: 'var(--text)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -18667,13 +19122,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return (
             <Modal
               title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
-                  <span style={{ fontSize: isCompactMode ? '10px' : 'inherit' }}>{teamName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '7px' : '14px' }}>
+                  <span style={{ fontSize: isCompactMode ? '12px' : '19px' }}>{teamName}</span>
                   <span
                     style={{
-                      padding: isCompactMode ? '2px 6px' : '4px 12px',
-                      borderRadius: isCompactMode ? '4px' : '6px',
-                      fontSize: isCompactMode ? '8px' : '14px',
+                      padding: isCompactMode ? '2px 7px' : '5px 14px',
+                      borderRadius: isCompactMode ? '5px' : '7px',
+                      fontSize: isCompactMode ? '10px' : '17px',
                       fontWeight: 700,
                       background: teamColor,
                       color: isBright ? '#000' : '#fff'
@@ -18685,27 +19140,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }
               open={true}
               onClose={cancelLiberoReentry}
-              width={isCompactMode ? 200 : 400}
+              width={isCompactMode ? 240 : 480}
               hideCloseButton={true}
               position="custom"
               customStyle={modalStyle}
             >
-              <div style={{ padding: isCompactMode ? '10px' : '24px', textAlign: 'center' }}>
-                <p style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px' }}>
+              <div style={{ padding: isCompactMode ? '12px' : '29px', textAlign: 'center' }}>
+                <p style={{ marginBottom: isCompactMode ? '12px' : '29px', fontSize: isCompactMode ? '10px' : '19px' }}>
                   Do you want to sub a libero in position I?
                 </p>
-                <div style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px', fontWeight: 600 }}>
-                  <div style={{ marginBottom: isCompactMode ? '6px' : '16px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
+                <div style={{ marginBottom: isCompactMode ? '12px' : '29px', fontSize: isCompactMode ? '10px' : '19px', fontWeight: 600 }}>
+                  <div style={{ marginBottom: isCompactMode ? '7px' : '19px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '5px' : '10px' }}>
                     <span>OUT: # {liberoReentryModal.playerNumber}</span>
-                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↓</span>
+                    <span style={{ fontSize: isCompactMode ? '14px' : '29px', fontWeight: 700 }}>↓</span>
                   </div>
 
                   {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 0 && (
-                    <div style={{ marginBottom: isCompactMode ? '6px' : '16px' }}>
-                      <p style={{ marginBottom: isCompactMode ? '6px' : '12px', fontSize: isCompactMode ? '7px' : '14px', color: 'rgba(255,255,255,0.7)' }}>
+                    <div style={{ marginBottom: isCompactMode ? '7px' : '19px' }}>
+                      <p style={{ marginBottom: isCompactMode ? '7px' : '14px', fontSize: isCompactMode ? '8px' : '17px', color: 'rgba(255,255,255,0.7)' }}>
                         Select libero to substitute in:
                       </p>
-                      <div style={{ display: 'flex', gap: isCompactMode ? '6px' : '12px', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: isCompactMode ? '7px' : '14px', justifyContent: 'center' }}>
                         {liberoReentryModal.availableLiberos.map((libero, index) => (
                           <div
                             key={`${libero.type}-${libero.number}`}
@@ -18716,7 +19171,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               })
                             }}
                             style={{
-                              padding: isCompactMode ? '6px 10px' : '16px 24px',
+                              padding: isCompactMode ? '7px 12px' : '19px 29px',
                               background: index === liberoReentryModal.selectedLiberoIndex
                                 ? 'var(--accent)'
                                 : 'rgba(255, 255, 255, 0.1)',
@@ -18726,38 +19181,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               border: index === liberoReentryModal.selectedLiberoIndex
                                 ? '2px solid var(--accent)'
                                 : '1px solid rgba(255, 255, 255, 0.2)',
-                              borderRadius: isCompactMode ? '4px' : '8px',
+                              borderRadius: isCompactMode ? '5px' : '10px',
                               cursor: 'pointer',
                               fontWeight: 600,
-                              fontSize: isCompactMode ? '8px' : '16px',
+                              fontSize: isCompactMode ? '10px' : '19px',
                               transition: 'all 0.2s ease',
-                              minWidth: isCompactMode ? '50px' : '100px'
+                              minWidth: isCompactMode ? '60px' : '120px'
                             }}
                           >
                             <div>{libero.label}</div>
-                            <div style={{ fontSize: isCompactMode ? '10px' : '20px', marginTop: isCompactMode ? '2px' : '4px' }}>#{libero.number}</div>
+                            <div style={{ fontSize: isCompactMode ? '12px' : '24px', marginTop: isCompactMode ? '2px' : '5px' }}>#{libero.number}</div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
-                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↑</span>
+                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '5px' : '10px' }}>
+                    <span style={{ fontSize: isCompactMode ? '14px' : '29px', fontWeight: 700 }}>↑</span>
                     <span>IN</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: isCompactMode ? '6px' : '12px', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: isCompactMode ? '7px' : '14px', justifyContent: 'center' }}>
                   <button
                     onClick={confirmLiberoReentry}
                     style={{
-                      padding: isCompactMode ? '6px 12px' : '12px 24px',
-                      fontSize: isCompactMode ? '8px' : '14px',
+                      padding: isCompactMode ? '7px 14px' : '14px 29px',
+                      fontSize: isCompactMode ? '10px' : '17px',
                       fontWeight: 600,
                       background: 'var(--accent)',
                       color: '#000',
                       border: 'none',
-                      borderRadius: isCompactMode ? '4px' : '8px',
+                      borderRadius: isCompactMode ? '5px' : '10px',
                       cursor: 'pointer'
                     }}
                   >
@@ -18766,13 +19221,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   <button
                     onClick={cancelLiberoReentry}
                     style={{
-                      padding: isCompactMode ? '6px 12px' : '12px 24px',
-                      fontSize: isCompactMode ? '8px' : '14px',
+                      padding: isCompactMode ? '7px 14px' : '14px 29px',
+                      fontSize: isCompactMode ? '10px' : '17px',
                       fontWeight: 600,
                       background: 'rgba(255, 255, 255, 0.1)',
                       color: 'var(--text)',
                       border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: isCompactMode ? '4px' : '8px',
+                      borderRadius: isCompactMode ? '5px' : '10px',
                       cursor: 'pointer'
                     }}
                   >
@@ -18801,34 +19256,34 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             title="Libero Re-designation"
             open={true}
             onClose={() => setLiberoRedesignationModal(null)}
-            width={400}
+            width={480}
             hideCloseButton={true}
           >
-            <div style={{ padding: '24px' }}>
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--text)' }}>
+            <div style={{ padding: '29px' }}>
+              <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--text)' }}>
                 Libero #{liberoRedesignationModal.unableLiberoNumber} ({liberoRedesignationModal.unableLiberoType === 'libero1' ? 'L1' : 'L2'}) is unable to play.
               </p>
-              <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
+              <p style={{ marginBottom: '29px', fontSize: '17px', color: 'var(--muted)' }}>
                 Select a player to re-designate as Libero:
               </p>
               {availablePlayers.length === 0 ? (
-                <p style={{ textAlign: 'center', color: 'var(--muted)', marginBottom: '24px' }}>
+                <p style={{ textAlign: 'center', color: 'var(--muted)', marginBottom: '29px', fontSize: '17px' }}>
                   No available players for re-designation
                 </p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px', maxHeight: '300px', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '29px', maxHeight: '360px', overflowY: 'auto' }}>
                   {availablePlayers.map(player => (
                     <button
                       key={player.id}
                       onClick={() => confirmLiberoRedesignation(player.number)}
                       style={{
-                        padding: '12px',
-                        fontSize: '14px',
+                        padding: '14px',
+                        fontSize: '17px',
                         fontWeight: 600,
                         background: 'rgba(255, 255, 255, 0.05)',
                         color: 'var(--text)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
+                        borderRadius: '7px',
                         cursor: 'pointer',
                         textAlign: 'left',
                         transition: 'all 0.2s'
@@ -18847,17 +19302,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   ))}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
                 <button
                   onClick={() => setLiberoRedesignationModal(null)}
                   style={{
-                    padding: '12px 24px',
-                    fontSize: '14px',
+                    padding: '14px 29px',
+                    fontSize: '17px',
                     fontWeight: 600,
                     background: 'rgba(255, 255, 255, 0.1)',
                     color: 'var(--text)',
                     border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '8px',
+                    borderRadius: '10px',
                     cursor: 'pointer'
                   }}
                 >
@@ -19216,17 +19671,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamLabel = liberoUnableModal.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoUnableModal.team === 'home' ? 'Home' : 'Away')
         const isBright = isBrightColor(teamColor)
-        
+
         return (
           <Modal
             title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span>{teamName}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '19px' }}>{teamName}</span>
                 <span
                   style={{
-                    padding: '4px 12px',
-                    borderRadius: '6px',
-                    fontSize: '14px',
+                    padding: '5px 14px',
+                    borderRadius: '7px',
+                    fontSize: '17px',
                     fontWeight: 700,
                     background: teamColor,
                     color: isBright ? '#000' : '#fff'
@@ -19238,33 +19693,33 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             }
             open={true}
             onClose={() => setLiberoUnableModal(null)}
-            width={400}
+            width={480}
             hideCloseButton={true}
           >
-            <div style={{ padding: '24px' }}>
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--text)' }}>
+            <div style={{ padding: '29px' }}>
+              <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--text)' }}>
                 {liberoUnableModal.reason === 'injury'
                   ? `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as injured?`
                   : `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as unable to play?`
                 }
               </p>
-              <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
+              <p style={{ marginBottom: '29px', fontSize: '14px', color: 'var(--muted)' }}>
                 {liberoUnableModal.reason === 'injury'
                   ? 'The libero will be marked as injured and unable to play for the remainder of the match.'
                   : 'The libero can be declared unable to play if injured, ill, expelled, disqualified, or for any reason by the coach.'
                 }
               </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
               <button
                 onClick={confirmLiberoUnable}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'rgba(239, 68, 68, 0.2)',
                   color: '#f87171',
                   border: '1px solid rgba(239, 68, 68, 0.4)',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -19273,13 +19728,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <button
                 onClick={() => setLiberoUnableModal(null)}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'rgba(255, 255, 255, 0.1)',
                   color: 'var(--text)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -19298,17 +19753,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           onClose={() => {
             setLiberoReminder(null)
           }}
-          width={400}
+          width={480}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+          <div style={{ padding: '29px', textAlign: 'center' }}>
+            <p style={{ marginBottom: '29px', fontSize: '19px' }}>
               Remember to insert the libero if available
             </p>
             {liberoReminder.teams.length > 1 && (
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)' }}>
+              <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--muted)' }}>
                 {liberoReminder.teams.map((team, idx) => {
-                  const teamName = team === 'home' 
+                  const teamName = team === 'home'
                     ? (data?.homeTeam?.name || 'Home')
                     : (data?.awayTeam?.name || 'Away')
                   return (
@@ -19320,19 +19775,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 })}
               </p>
             )}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
               <button
                 onClick={() => {
                   setLiberoReminder(null)
                 }}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'rgba(255, 255, 255, 0.1)',
                   color: 'var(--text)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -19341,10 +19796,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <button
                 onClick={async () => {
                   setLiberoReminder(null)
-                  
+
                   // Show set start time confirmation
                   let defaultTime = new Date().toISOString()
-                  
+
                   if (data?.set?.index === 1) {
                     // Use scheduled time from match
                     if (data?.match?.scheduledAt) {
@@ -19361,17 +19816,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       defaultTime = prevEndTime.toISOString()
                     }
                   }
-                  
+
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
                 }}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
+                  padding: '14px 29px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   background: 'var(--accent)',
                   color: '#000',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer'
                 }}
               >
@@ -19399,9 +19854,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           awayPoints={setEndTimeModal.awayPoints}
           defaultTime={setEndTimeModal.defaultTime}
           teamAKey={teamAKey}
+          leftIsHome={leftIsHome}
           isMatchEnd={setEndTimeModal.isMatchEnd}
           onConfirm={confirmSetEndTime}
-          onCancel={() => setSetEndTimeModal(null)}
+          onUndoLastPoint={async () => {
+            // Close the modal and undo the last point via replay
+            setSetEndTimeModal(null)
+            await handleReplay()
+          }}
         />
       )}
 
@@ -20143,12 +20603,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <Modal
               title={
                 <div style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
-                  <span style={{ fontSize: isCompactMode ? '10px' : 'inherit' }}>{teamName}</span>
+                  <span style={{ fontSize: isCompactMode ? '12px' : 'inherit' }}>{teamName}</span>
                   <span
                     style={{
                       padding: isCompactMode ? '2px 6px' : '4px 12px',
                       borderRadius: isCompactMode ? '4px' : '6px',
-                      fontSize: isCompactMode ? '8px' : '14px',
+                      fontSize: isCompactMode ? '10px' : '17px',
                       fontWeight: 700,
                       background: teamColor,
                       color: isBright ? '#000' : '#fff'
@@ -20160,36 +20620,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }
               open={true}
               onClose={() => setLiberoRotationModal(null)}
-              width={isCompactMode ? 200 : 400}
+              width={isCompactMode ? 240 : 480}
               position="custom"
               hideCloseButton={true}
               customStyle={modalStyle}
             >
-              <div style={{ padding: isCompactMode ? '10px' : '24px', textAlign: 'center' }}>
-                <p style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px' }}>
+              <div style={{ padding: isCompactMode ? '12px' : '28px', textAlign: 'center' }}>
+                <p style={{ marginBottom: isCompactMode ? '12px' : '28px', fontSize: isCompactMode ? '10px' : '19px' }}>
                   The libero rotated to position IV and must leave the court.
                 </p>
-                <div style={{ marginBottom: isCompactMode ? '10px' : '24px', fontSize: isCompactMode ? '8px' : '16px', fontWeight: 600 }}>
-                  <div style={{ marginBottom: isCompactMode ? '4px' : '8px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
+                <div style={{ marginBottom: isCompactMode ? '12px' : '28px', fontSize: isCompactMode ? '10px' : '19px', fontWeight: 600 }}>
+                  <div style={{ marginBottom: isCompactMode ? '5px' : '10px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '5px' : '10px' }}>
                     <span>OUT: {liberoRotationModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoRotationModal.liberoNumber}</span>
-                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↓</span>
+                    <span style={{ fontSize: isCompactMode ? '14px' : '29px', fontWeight: 700 }}>↓</span>
                   </div>
-                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '4px' : '8px' }}>
+                  <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '5px' : '10px' }}>
                     <span>IN: # {liberoRotationModal.playerNumber}</span>
-                    <span style={{ fontSize: isCompactMode ? '12px' : '24px', fontWeight: 700 }}>↑</span>
+                    <span style={{ fontSize: isCompactMode ? '14px' : '29px', fontWeight: 700 }}>↑</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: isCompactMode ? '6px' : '12px', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: isCompactMode ? '7px' : '14px', justifyContent: 'center' }}>
                   <button
                     onClick={() => setLiberoRotationModal(null)}
                     style={{
-                      padding: isCompactMode ? '6px 12px' : '12px 24px',
-                      fontSize: isCompactMode ? '8px' : '14px',
+                      padding: isCompactMode ? '7px 14px' : '14px 28px',
+                      fontSize: isCompactMode ? '10px' : '17px',
                       fontWeight: 600,
                       background: 'var(--accent)',
                       color: '#000',
                       border: 'none',
-                      borderRadius: isCompactMode ? '4px' : '8px',
+                      borderRadius: isCompactMode ? '5px' : '10px',
                       cursor: 'pointer'
                     }}
                   >
@@ -20353,15 +20813,22 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   }) // [IV, III, II, V, VI, I]
   const [errors, setErrors] = useState({}) // Use an object for specific error messages
   const [confirmMessage, setConfirmMessage] = useState(null)
-  const clickTimerRef = useRef({}) // Track click times for double-click detection
+  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
 
   // Get all events to check for disqualifications
   const events = useLiveQuery(async () => {
     return await db.events.where('matchId').equals(matchId).toArray()
   }, [matchId])
 
-  const handleInputChange = (index, value) => {
+  const handleInputChange = (index, value, skipHistory = false) => {
     const numValue = value.replace(/[^0-9]/g, '')
+    const previousValue = lineup[index]
+
+    // Track edit history (only if the value actually changed and not skipping)
+    if (!skipHistory && numValue !== previousValue) {
+      setEditHistory(prev => [...prev, { index, previousValue }])
+    }
+
     const newLineup = [...lineup]
     newLineup[index] = numValue
     setLineup(newLineup)
@@ -20422,27 +20889,76 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     setConfirmMessage(null)
   }
 
-  // Handle click on available player - detects double-click with custom timing
+  // Handle click on available player - SINGLE click assigns to first available position
   const handlePlayerClick = (playerNumber) => {
-    const now = Date.now()
-    const lastClick = clickTimerRef.current[playerNumber]
-
-    if (lastClick && now - lastClick < 400) {
-      // Double-click detected (within 400ms)
-      clickTimerRef.current[playerNumber] = 0 // Reset
-      // Find first empty box (I to VI order: indices 5, 4, 3, 2, 1, 0 for I, VI, V, II, III, IV)
-      // But we want I, II, III, IV, V, VI order, so indices: 5, 2, 1, 0, 3, 4
-      const positionOrder = [5, 2, 1, 0, 3, 4] // I, II, III, IV, V, VI
-      for (const idx of positionOrder) {
-        if (!lineup[idx] || lineup[idx].trim() === '') {
-          handleInputChange(idx, String(playerNumber))
-          break
-        }
+    // Find first empty box (I to VI order: indices 5, 2, 1, 0, 3, 4 for I, II, III, IV, V, VI)
+    const positionOrder = [5, 2, 1, 0, 3, 4] // I, II, III, IV, V, VI
+    for (const idx of positionOrder) {
+      if (!lineup[idx] || lineup[idx].trim() === '') {
+        handleInputChange(idx, String(playerNumber))
+        break
       }
-    } else {
-      // Single click - record time
-      clickTimerRef.current[playerNumber] = now
     }
+  }
+
+  // Undo the last edit
+  const handleUndoLastEdit = () => {
+    if (editHistory.length === 0) return
+
+    const lastEdit = editHistory[editHistory.length - 1]
+    // Restore the previous value (skip history tracking for undo)
+    handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    // Remove the last entry from history
+    setEditHistory(prev => prev.slice(0, -1))
+    setConfirmMessage(null)
+  }
+
+  // Clear all lineup entries
+  const handleClearLineup = () => {
+    // Save current state to history before clearing
+    lineup.forEach((value, index) => {
+      if (value && value.trim() !== '') {
+        setEditHistory(prev => [...prev, { index, previousValue: value }])
+      }
+    })
+    setLineup(['', '', '', '', '', ''])
+    setErrors({})
+    setConfirmMessage(null)
+  }
+
+  // Rotate lineup clockwise (forward): I->II, II->III, III->IV, IV->V, V->VI, VI->I
+  // Array indices: [IV=0, III=1, II=2, V=3, VI=4, I=5]
+  // Clockwise means each player moves to next position: 0->3, 1->0, 2->1, 3->4, 4->5, 5->2
+  const handleRotateClockwise = () => {
+    const newLineup = ['', '', '', '', '', '']
+    // IV(0) -> V(3), III(1) -> IV(0), II(2) -> III(1), V(3) -> VI(4), VI(4) -> I(5), I(5) -> II(2)
+    newLineup[3] = lineup[0]  // IV -> V
+    newLineup[0] = lineup[1]  // III -> IV
+    newLineup[1] = lineup[2]  // II -> III
+    newLineup[4] = lineup[3]  // V -> VI
+    newLineup[5] = lineup[4]  // VI -> I
+    newLineup[2] = lineup[5]  // I -> II
+    setLineup(newLineup)
+    setConfirmMessage(null)
+  }
+
+  // Rotate lineup counterclockwise (backward): I->VI, VI->V, V->IV, IV->III, III->II, II->I
+  const handleRotateCounterClockwise = () => {
+    const newLineup = ['', '', '', '', '', '']
+    // IV(0) -> III(1), III(1) -> II(2), II(2) -> I(5), V(3) -> IV(0), VI(4) -> V(3), I(5) -> VI(4)
+    newLineup[1] = lineup[0]  // IV -> III
+    newLineup[2] = lineup[1]  // III -> II
+    newLineup[5] = lineup[2]  // II -> I
+    newLineup[0] = lineup[3]  // V -> IV
+    newLineup[3] = lineup[4]  // VI -> V
+    newLineup[4] = lineup[5]  // I -> VI
+    setLineup(newLineup)
+    setConfirmMessage(null)
+  }
+
+  // Modify lineup (undo confirm and go back to editing)
+  const handleModify = () => {
+    setConfirmMessage(null)
   }
 
   const handleConfirm = () => {
@@ -20983,7 +21499,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
                   e.currentTarget.style.transform = 'scale(1)'
                 }}
-                title="Double-click to add to first available position"
+                title="Click to add to first available position (I to VI order)"
               >
                 {p.isCaptain && (
                   <span style={{
@@ -21010,6 +21526,108 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             ))}
           </div>
         </div>
+
+        {/* Undo, Clear, and Rotate buttons - hidden when lineup is confirmed */}
+        {!confirmMessage && (
+          <>
+            {/* Undo and Clear buttons row */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '12px',
+              marginBottom: '12px'
+            }}>
+              {editHistory.length > 0 && (
+                <button
+                  className="secondary"
+                  onClick={handleUndoLastEdit}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }}
+                >
+                  <span style={{ fontSize: '16px' }}>↩</span>
+                  Undo last edit
+                </button>
+              )}
+              {lineup.some(v => v && v.trim() !== '') && (
+                <button
+                  className="secondary"
+                  onClick={handleClearLineup}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    fontSize: '13px',
+                    color: '#ef4444',
+                    borderColor: 'rgba(239, 68, 68, 0.3)'
+                  }}
+                >
+                  <span style={{ fontSize: '16px' }}>✕</span>
+                  Clear lineup
+                </button>
+              )}
+            </div>
+
+            {/* Rotate buttons row */}
+            {lineup.some(v => v && v.trim() !== '') && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '16px',
+                marginBottom: '16px'
+              }}>
+                <button
+                  className="secondary"
+                  onClick={handleRotateClockwise}
+                  title="Rotate clockwise"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '44px',
+                    height: '44px',
+                    padding: '0',
+                    fontSize: '20px',
+                    borderRadius: '50%'
+                  }}
+                >
+                  ↻
+                </button>
+                <span style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontSize: '12px',
+                  color: 'var(--muted)'
+                }}>
+                  Rotate
+                </span>
+               
+                <button
+                  className="secondary"
+                  onClick={handleRotateCounterClockwise}
+                  title="Rotate counterclockwise"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '44px',
+                    height: '44px',
+                    padding: '0',
+                    fontSize: '20px',
+                    borderRadius: '50%'
+                  }}
+                >
+                  ↺
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
         {errors.length > 0 && (
           <div style={{ 
@@ -21042,11 +21660,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         )}
 
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+        
           {confirmMessage === null && (
             <button onClick={handleConfirm}>
               Confirm
             </button>
           )}
+          
           <button
             className={confirmMessage === null ? 'secondary' : ''}
             onClick={() => {
@@ -21060,6 +21680,21 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           >
             Close
           </button>
+          {confirmMessage !== null && (
+            <button
+              className="secondary"
+              onClick={handleModify}
+              style={{
+                background: 'rgba(0, 0, 0, 1)',
+                color: '#fff',
+                border: '1px solid rgba(0, 0, 0, 1)',
+                borderRadius: '10px',
+                cursor: 'point  er'
+              }}
+            >
+              Modify
+            </button>
+          )}
         </div>
       </div>
     </Modal>
@@ -21236,7 +21871,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
   )
 }
 
-function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, isMatchEnd, onConfirm, onCancel }) {
+function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, leftIsHome, isMatchEnd, onConfirm, onUndoLastPoint }) {
   const [time, setTime] = useState(() => {
     const date = new Date(defaultTime)
     const hours = String(date.getHours()).padStart(2, '0')
@@ -21244,9 +21879,15 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
     return `${hours}:${minutes}`
   })
 
-  const winnerLabel = winner === 'home' 
+  const winnerLabel = winner === 'home'
     ? (teamAKey === 'home' ? 'A' : 'B')
     : (teamAKey === 'away' ? 'A' : 'B')
+
+  // Calculate left and right team labels and scores
+  const leftTeamLabel = leftIsHome ? (teamAKey === 'home' ? 'A' : 'B') : (teamAKey === 'away' ? 'A' : 'B')
+  const rightTeamLabel = leftIsHome ? (teamAKey === 'away' ? 'A' : 'B') : (teamAKey === 'home' ? 'A' : 'B')
+  const leftScore = leftIsHome ? homePoints : awayPoints
+  const rightScore = leftIsHome ? awayPoints : homePoints
 
   const handleConfirm = () => {
     // Convert time string to ISO string
@@ -21260,7 +21901,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
     <Modal
       title={isMatchEnd ? 'Match End' : `Set ${setIndex} End`}
       open={true}
-      onClose={onCancel}
+      onClose={onUndoLastPoint}
       width={400}
       hideCloseButton={true}
     >
@@ -21269,7 +21910,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
           {isMatchEnd ? `Team ${winnerLabel} won the Match!` : `Team ${winnerLabel} won Set ${setIndex}!`}
         </p>
         <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--muted)' }}>
-          Set {setIndex}: {homePoints} - {awayPoints}
+          Set {setIndex}: Team {leftTeamLabel} {leftScore} : {rightScore} Team {rightTeamLabel}
         </p>
         <p style={{ marginBottom: '16px', fontSize: '16px' }}>
           Confirm the end time:
@@ -21308,7 +21949,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
             Confirm
           </button>
           <button
-            onClick={onCancel}
+            onClick={onUndoLastPoint}
             style={{
               padding: '12px 24px',
               fontSize: '14px',
@@ -21320,7 +21961,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
               cursor: 'pointer'
             }}
           >
-            Cancel
+            Undo last point
           </button>
         </div>
       </div>

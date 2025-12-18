@@ -176,9 +176,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
       connection.ws.onopen = () => {
         // Skip if intentionally closed (cleanup ran before connection opened)
         if (connection.isIntentionallyClosed || !connection.ws) return
-        
+
         connection.reconnectAttempts = 0 // Reset on successful connection
-        console.log(`[ServerDataSync] WebSocket connected for match ${matchIdStr}`)
         // Request match data subscription
         try {
           connection.ws.send(JSON.stringify({
@@ -186,7 +185,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
             matchId: matchIdStr
           }))
         } catch (err) {
-          console.error('[ServerDataSync] Error sending subscription:', err)
+          // Error sending subscription
         }
       }
 
@@ -223,7 +222,6 @@ export function subscribeToMatchData(matchId, onUpdate) {
             })
           } else if (message.type === 'match-action' && String(message.matchId) === matchIdStr) {
             // Action received from scoreboard (timeout, substitution, set_end, etc.)
-            console.log('[ServerDataSync] Received match-action:', message.action, message.data)
             connection.subscribers.forEach(subscriber => {
               try {
                 // Pass the action with a special _action wrapper, including timestamps for latency tracking
@@ -409,7 +407,6 @@ export async function listAvailableMatches() {
   const serverUrl = getServerUrl()
 
   try {
-    console.log('🔍 Fetching matches from:', `${serverUrl}/api/match/list`)
     const response = await fetch(`${serverUrl}/api/match/list`, {
       method: 'GET',
       headers: {
@@ -417,18 +414,13 @@ export async function listAvailableMatches() {
       }
     })
 
-    console.log('📊 Response status:', response.status, response.statusText)
-
     if (!response.ok) {
-      console.log('❌ Response not OK, returning error')
       return { success: false, matches: [], error: `HTTP ${response.status}: ${response.statusText}` }
     }
 
     const result = await response.json()
-    console.log('✅ Matches response:', result)
     return result
   } catch (error) {
-    console.error('❌ Error listing matches:', error)
     return { success: false, matches: [], error: error.message }
   }
 }

@@ -9,11 +9,9 @@ interface HeaderProps {
   teamAName?: string;
   teamBName?: string;
   coinTossConfirmed?: boolean;
-  homeSide?: 'A' | 'B';
-  awaySide?: 'A' | 'B';
 }
 
-export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamAName, teamBName, coinTossConfirmed, homeSide, awaySide }) => {
+export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamAName, teamBName, coinTossConfirmed }) => {
   const [imageError, setImageError] = useState(false);
   const [faviconImageError, setFaviconImageError] = useState(false);
   
@@ -23,8 +21,8 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
   const timeStr = scheduledDate ? scheduledDate.toTimeString().slice(0, 5) : '';
 
   return (
-    <header className="border border-black p-0.5 bg-white" style={{ marginBottom: '5px' }}>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-0.5 mb-0.5">
+    <header className="border border-black bg-white">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-0.5">
         <div className="flex items-center justify-center min-w-[120px]">
             {/* Swiss Volley Logo Section with Fallback */}
             {!imageError ? (
@@ -43,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
         
         <div className="flex-1 w-full md:w-auto grid grid-cols-1 md:grid-cols-4 gap-0.5 text-xs min-w-0 overflow-hidden">
             {/* Match Type Block */}
-            <div className="border border-black p-1 min-w-0 overflow-hidden">
+            <div className="border-r border-l border-black p-1 min-w-0 overflow-hidden">
                 <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
@@ -81,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             </div>
             
             {/* Championship Type Block */}
-            <div className="border border-black p-1 min-w-0 overflow-hidden">
+            <div className="border-r border-black p-1 min-w-0 overflow-hidden mr-[-1px]">
                 <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
@@ -130,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             </div>
             
             {/* Category Block */}
-            <div className="border border-black p-1 min-w-0 overflow-hidden">
+            <div className="border-r border-black p-1 min-w-0 overflow-hidden">
                 <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
                          <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
@@ -195,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
              </div>
 
             {/* Match ID Block */}
-             <div className="border border-black p-0.5 flex flex-col h-full text-xs justify-center min-w-0 overflow-hidden">
+             <div className="border-r border-black p-0.5 flex flex-col h-full text-xs justify-center min-w-0 overflow-hidden">
                 <div className="flex justify-between items-center pl-2 flex-1">
                     <span>League:</span>
                     <div className="w-1/2 text-center uppercase text-xs font-bold">{match?.league || ''}</div>
@@ -225,24 +223,29 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
       </div>
 
       {/* Teams and Location */}
-      <div className="grid grid-cols-12 gap-0 border-t border-black pt-1 mt-1 text-xs">
-        {/* Teams: 2/3rds width =8 cols */}
-        <div className="col-span-6 border-r border-black px-2 flex flex-col justify-between">
-            <div className="w-full text-center mb-0.5">
-                <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+      <div className="grid grid-cols-12 gap-0 border-t border-black text-xs">
+        {/* Teams: 6 cols with A/B circles spanning both rows */}
+        <div className="col-span-6 border-r border-black px-2 flex">
+            {/* Circle A column - centered vertically */}
+            <div className="flex items-center justify-center px-1">
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? 'A' : ''}</div>
             </div>
-             <div className="flex items-end gap-1 mb-0.5">
-                 <div className="flex items-center gap-1 flex-1">
-                    <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? homeSide : ''}</div>
-                     <div className="w-full font-bold text-[18px] uppercase text-center bg-white pb-0.5">{homeTeam?.name || ''}</div>
-                 </div>
-                 <div className="flex items-center h-full">
-                     <span className="text-base font-bold text-gray-500 italic ">VS</span>
-                 </div>
-                 <div className="flex items-center gap-1 flex-1">
-                     <div className="w-full font-bold text-[18px] uppercase text-center bg-white pb-0.5">{awayTeam?.name || ''}</div>
-                    <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? awaySide : ''}</div>
-                 </div>
+            {/* Teams content - TEAMS header and team names */}
+            <div className="flex-1 flex flex-col justify-between">
+                <div className="w-full text-center mb-0.5">
+                    <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+                </div>
+                <div className="flex items-end gap-1 mb-0.5">
+                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{coinTossConfirmed ? teamAName : (homeTeam?.name || '')}</div>
+                    <div className="flex items-center h-full">
+                        <span className="text-base font-bold text-gray-500 italic">VS</span>
+                    </div>
+                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{coinTossConfirmed ? teamBName : (awayTeam?.name || '')}</div>
+                </div>
+            </div>
+            {/* Circle B column - centered vertically */}
+            <div className="flex items-center justify-center px-1">
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? 'B' : ''}</div>
             </div>
         </div>
 
@@ -278,6 +281,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             </div>
         </div>
       </div>
+
     </header>
   );
 };

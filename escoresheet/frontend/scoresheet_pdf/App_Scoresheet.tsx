@@ -7,6 +7,7 @@ import { SetFive } from './components/SetFive';
 import { Sanctions, Results, Approvals, Roster, Remarks } from './components/FooterSection';
 import { LeftInfoBox } from './components/LeftInfoBox';
 import { Player, SanctionRecord } from './types_scoresheet';
+import { sanitizeSimple } from '../src/utils/stringUtils';
 
 interface AppScoresheetProps {
   matchData: {
@@ -19,9 +20,10 @@ interface AppScoresheetProps {
     events: any[];
     sanctions?: SanctionRecord[];
   };
+  autoAction?: 'preview' | 'print' | 'save';
 }
 
-const App: React.FC<AppScoresheetProps> = ({ matchData }) => {
+const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, sanctions = [] } = matchData;
   
   // Helper function to format players for scoresheet
@@ -2309,8 +2311,7 @@ const handlePrint = () => {
   const date = match?.scheduledAt
     ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
     : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-  const filename = `${matchNum}_${sanitize(homeShort)}_${sanitize(awayShort)}_${date}`;
+  const filename = `${matchNum}_${sanitizeSimple(homeShort, 20)}_${sanitizeSimple(awayShort, 20)}_${date}`;
 
   // Set document title to filename (browser uses this for PDF name)
   document.title = filename;
@@ -2348,8 +2349,7 @@ const handlePrint = () => {
       const date = match?.scheduledAt
         ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
         : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-      const filename = `${matchNum}_${sanitize(homeShort)}_${sanitize(awayShort)}_${date}.pdf`;
+      const filename = `${matchNum}_${sanitizeSimple(homeShort, 20)}_${sanitizeSimple(awayShort, 20)}_${date}.pdf`;
 
       // Reset zoom to 100% for capture
       setZoomLevel(1);
@@ -2393,6 +2393,25 @@ const handlePrint = () => {
       setIsGeneratingPdf(false);
     }
   };
+
+  // Auto-trigger print or save based on autoAction prop
+  useEffect(() => {
+    if (!autoAction || autoAction === 'preview') return;
+
+    // Wait for component to fully render and fonts to load
+    const timer = setTimeout(async () => {
+      await document.fonts.ready;
+
+      if (autoAction === 'print') {
+        handlePrint();
+      } else if (autoAction === 'save') {
+        handleSavePdf();
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAction]);
 
   // Handle Import JSON - load match data from exported JSON file
   const handleImportJson = () => {
@@ -2502,6 +2521,55 @@ const handlePrint = () => {
           </div>
         </div>
       )}
+
+      {/* PDF Generating overlay */}
+      {isGeneratingPdf && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          zIndex: 99998,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            fontSize: '48px',
+            marginBottom: '24px',
+            animation: 'spin 1s linear infinite'
+          }}>
+            ⏳
+          </div>
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+          <h2 style={{
+            color: 'white',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            marginBottom: '16px'
+          }}>
+            Generating PDF...
+          </h2>
+          <p style={{
+            color: '#d1d5db',
+            fontSize: '16px',
+            maxWidth: '400px'
+          }}>
+            Please wait while the scoresheet is being converted to PDF. This may take a few seconds.
+          </p>
+        </div>
+      )}
+
       <div ref={buttonsContainerRef} className="mb-2 flex justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
         <div className="flex items-center space-x-2">
           {/* Zoom controls */}
@@ -2562,7 +2630,7 @@ const handlePrint = () => {
             className={`${isGeneratingPdf ? 'bg-purple-400 cursor-wait' : 'bg-purple-500 hover:bg-purple-700'} text-white px-3 py-1 rounded text-sm shadow`}
             title="Save as PDF (one-click download)"
           >
-            {isGeneratingPdf ? 'Generating...' : 'Save PDF v9'}
+            {isGeneratingPdf ? 'Generating...' : 'Save PDF'}
           </button>
 
           {/* Divider */}
@@ -2633,11 +2701,9 @@ const handlePrint = () => {
                 teamAName={teamAName}
                 teamBName={teamBName}
                 coinTossConfirmed={coinTossConfirmed}
-                homeSide={teamAKey === 'home' ? 'A' : 'B'}
-                awaySide={teamAKey === 'away' ? 'A' : 'B'}
               />
             </div>
-            
+            <div className="w-full h-[5px] bg-white" />
             {/* Row 1: Sets 1 and 2 - Full Width 50/50 */}
             <div className="flex">
                   <LeftInfoBox 
@@ -2874,14 +2940,24 @@ const handlePrint = () => {
                         </div>
                         
                         {/* Remarks and Approvals stacked - takes remaining space */}
-                        <div className="flex-1 flex flex-col gap-2 min-h-0">
+                        <div className="flex-1 flex flex-col gap-1 min-h-0">
                             {/* Remarks - 30% height */}
                             <div ref={remarksRef} className="flex-[3] min-h-0">
                                 <Remarks overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
                             </div>
                             {/* Approvals - 70% height */}
                             <div ref={approvalsRef} className="flex-[5] min-h-0">
-                                <Approvals officials={match?.officials} match={match} teamAKey={teamAKey} />
+                                <Approvals
+                                    officials={match?.officials}
+                                    match={match}
+                                    teamAKey={teamAKey}
+                                    lineJudges={[
+                                        match?.officials?.find((o: any) => o.role === 'line judge 1')?.name || '',
+                                        match?.officials?.find((o: any) => o.role === 'line judge 2')?.name || '',
+                                        match?.officials?.find((o: any) => o.role === 'line judge 3')?.name || '',
+                                        match?.officials?.find((o: any) => o.role === 'line judge 4')?.name || ''
+                                    ]}
+                                />
                             </div>
                         </div>
                         

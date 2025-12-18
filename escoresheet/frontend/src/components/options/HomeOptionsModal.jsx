@@ -901,10 +901,10 @@ export default function HomeOptionsModal({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[
               { path: '/', name: 'Scoreboard', desc: 'Main scoring interface' },
-              { path: '/referee', name: 'Referee', desc: 'Referee Dashboard' },
-              { path: '/bench', name: 'Bench', desc: 'Team Dashboard' },
-              { path: '/livescore', name: 'Livescore', desc: 'Public display' },
-              { path: '/upload_roster', name: 'Upload Roster', desc: 'Import team rosters from PDF/CSV' }
+              { path: '/referee/index.html', name: 'Referee', desc: 'Referee Dashboard' },
+              { path: '/bench/index.html', name: 'Bench', desc: 'Team Dashboard' },
+              { path: '/livescore/index.html', name: 'Livescore', desc: 'Public display' },
+              { path: '/upload_roster/index.html', name: 'Upload Roster', desc: 'Import team rosters from PDF/CSV' }
             ].map(page => (
               <a
                 key={page.path}

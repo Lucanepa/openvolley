@@ -536,36 +536,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Get lineup for current set - returns null for team if no lineup exists
   const lineup = useMemo(() => {
-    console.log('[Referee Lineup] data:', data)
-    console.log('[Referee Lineup] data.events:', data?.events)
-    console.log('[Referee Lineup] data.currentSet:', data?.currentSet)
-
     if (!data || !data.events || !data.currentSet) {
-      console.log('[Referee Lineup] Missing data, returning nulls')
       return { home: null, away: null }
     }
 
     const currentSetEvents = data.events.filter(
       e => (e.setIndex || 1) === (data.currentSet?.index || 1)
     )
-    console.log('[Referee Lineup] currentSetEvents:', currentSetEvents)
 
     const homeLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home')
     const awayLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away')
-    console.log('[Referee Lineup] homeLineupEvents:', homeLineupEvents)
-    console.log('[Referee Lineup] awayLineupEvents:', awayLineupEvents)
 
     const latestHomeLineup = homeLineupEvents[homeLineupEvents.length - 1]
     const latestAwayLineup = awayLineupEvents[awayLineupEvents.length - 1]
-    console.log('[Referee Lineup] latestHomeLineup:', latestHomeLineup)
-    console.log('[Referee Lineup] latestAwayLineup:', latestAwayLineup)
 
-    const result = {
+    return {
       home: latestHomeLineup?.payload?.lineup || null,
       away: latestAwayLineup?.payload?.lineup || null
     }
-    console.log('[Referee Lineup] RESULT:', result)
-    return result
   }, [data])
 
   // Calculate set scores
@@ -979,6 +967,81 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
 
+  // Calculate set results for Results component (must be before early return)
+  const calculateSetResults = useMemo(() => {
+    if (!data) return []
+
+    const { match, sets, events } = data
+    const localTeamAKey = match?.coinTossTeamA || 'home'
+    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
+
+    const results = []
+    for (let setNum = 1; setNum <= 5; setNum++) {
+      const setInfo = sets?.find(s => s.index === setNum)
+      const setEvents = events?.filter(e => e.setIndex === setNum) || []
+
+      const isSetFinished = setInfo?.finished === true
+
+      const teamAPoints = isSetFinished
+        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+      const teamBPoints = isSetFinished
+        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+
+      const teamATimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBTimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamASubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
+        : null
+      const teamBSubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
+        : null
+
+      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamAPoints > teamBPoints ? 1 : 0)
+        : null
+      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamBPoints > teamAPoints ? 1 : 0)
+        : null
+
+      let duration = ''
+      if (isSetFinished && setInfo?.endTime) {
+        let start
+        if (setNum === 1 && match?.scheduledAt) {
+          start = new Date(match.scheduledAt)
+        } else if (setInfo?.startTime) {
+          start = new Date(setInfo.startTime)
+        } else {
+          start = new Date()
+        }
+        const end = new Date(setInfo.endTime)
+        const durationMs = end.getTime() - start.getTime()
+        const minutes = Math.floor(durationMs / 60000)
+        duration = minutes > 0 ? `${minutes}'` : ''
+      }
+
+      results.push({
+        setNumber: setNum,
+        teamATimeouts,
+        teamASubstitutions,
+        teamAWon,
+        teamAPoints,
+        teamBTimeouts,
+        teamBSubstitutions,
+        teamBWon,
+        teamBPoints,
+        duration
+      })
+    }
+    return results
+  }, [data])
+
   if (!data) return null
 
   // Player circle component - BIG responsive sizing with all indicators
@@ -1158,81 +1221,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Check if match is finished
   const isMatchFinished = setScore.home === 3 || setScore.away === 3
-
-  // Calculate set results for Results component
-  const calculateSetResults = useMemo(() => {
-    if (!data) return []
-
-    const { match, sets, events } = data
-    const localTeamAKey = match?.coinTossTeamA || 'home'
-    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
-
-    const results = []
-    for (let setNum = 1; setNum <= 5; setNum++) {
-      const setInfo = sets?.find(s => s.index === setNum)
-      const setEvents = events?.filter(e => e.setIndex === setNum) || []
-
-      const isSetFinished = setInfo?.finished === true
-
-      const teamAPoints = isSetFinished
-        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
-        : null
-      const teamBPoints = isSetFinished
-        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
-        : null
-
-      const teamATimeouts = isSetFinished
-        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
-        : null
-      const teamBTimeouts = isSetFinished
-        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
-        : null
-
-      const teamASubstitutions = isSetFinished
-        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
-        : null
-      const teamBSubstitutions = isSetFinished
-        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
-        : null
-
-      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
-        ? (teamAPoints > teamBPoints ? 1 : 0)
-        : null
-      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
-        ? (teamBPoints > teamAPoints ? 1 : 0)
-        : null
-
-      let duration = ''
-      if (isSetFinished && setInfo?.endTime) {
-        let start
-        if (setNum === 1 && match?.scheduledAt) {
-          start = new Date(match.scheduledAt)
-        } else if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime)
-        } else {
-          start = new Date()
-        }
-        const end = new Date(setInfo.endTime)
-        const durationMs = end.getTime() - start.getTime()
-        const minutes = Math.floor(durationMs / 60000)
-        duration = minutes > 0 ? `${minutes}'` : ''
-      }
-
-      results.push({
-        setNumber: setNum,
-        teamATimeouts,
-        teamASubstitutions,
-        teamAWon,
-        teamAPoints,
-        teamBTimeouts,
-        teamBSubstitutions,
-        teamBWon,
-        teamBPoints,
-        duration
-      })
-    }
-    return results
-  }, [data])
 
   // Match finished info
   const matchWinner = isMatchFinished && data
