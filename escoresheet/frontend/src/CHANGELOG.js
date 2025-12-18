@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.10',
+    date: '18.12.25',
+    changes: [
+      'Fix referee team row: VS centered beneath net, counters at edges, names fill space'
+    ]
+  },
+  {
     version: '0.9.9',
     date: '18.12.25',
     changes: [
