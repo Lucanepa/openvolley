@@ -2576,46 +2576,42 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         minHeight: 0,
         overflow: 'hidden'
       }}>
-        {/* Column 1: Left counters (far left) */}
+        {/* Column 1: Left counters (far left) - grid for alignment */}
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '2px',
-          fontSize: 'clamp(12px, 2.5vw, 18px)',
-          fontWeight: 700
+          display: 'grid',
+          gridTemplateColumns: 'auto 1fr',
+          gap: '6px 6px',
+          fontSize: 'clamp(14px, 3vw, 22px)',
+          fontWeight: 700,
+          alignItems: 'stretch',
+          height: '100%'
         }}>
-          <div style={{
+          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>TO</span>
+          <span style={{
+            background: 'rgba(255, 255, 255, 0.15)',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            minWidth: '32px',
+            textAlign: 'center',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            justifyContent: 'center',
             color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
-          }}>
-            <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>TO</span>
-            <span style={{
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              minWidth: '24px',
-              textAlign: 'center'
-            }}>{leftStats.timeouts}</span>
-          </div>
-          <div style={{
+          }}>{leftStats.timeouts}</span>
+          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>SUB</span>
+          <span style={{
+            background: 'rgba(255, 255, 255, 0.15)',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            minWidth: '32px',
+            textAlign: 'center',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            justifyContent: 'center',
             color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
-          }}>
-            <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>SUB</span>
-            <span style={{
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              minWidth: '24px',
-              textAlign: 'center'
-            }}>{leftStats.substitutions}</span>
-          </div>
+          }}>{leftStats.substitutions}</span>
         </div>
 
         {/* Column 2: Left team name (fills space, text centered) */}
@@ -2677,46 +2673,42 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </span>
         </div>
 
-        {/* Column 5: Right counters (far right) */}
+        {/* Column 5: Right counters (far right) - grid for alignment */}
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '2px',
-          fontSize: 'clamp(12px, 2.5vw, 18px)',
-          fontWeight: 700
+          display: 'grid',
+          gridTemplateColumns: '1fr auto',
+          gap: '6px 6px',
+          fontSize: 'clamp(14px, 3vw, 22px)',
+          fontWeight: 700,
+          alignItems: 'stretch',
+          height: '100%'
         }}>
-          <div style={{
+          <span style={{
+            background: 'rgba(255, 255, 255, 0.15)',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            minWidth: '32px',
+            textAlign: 'center',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            justifyContent: 'center',
             color: rightStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
-          }}>
-            <span style={{
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              minWidth: '24px',
-              textAlign: 'center'
-            }}>{rightStats.timeouts}</span>
-            <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>TO</span>
-          </div>
-          <div style={{
+          }}>{rightStats.timeouts}</span>
+          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', textAlign: 'left', display: 'flex', alignItems: 'center' }}>TO</span>
+          <span style={{
+            background: 'rgba(255, 255, 255, 0.15)',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            minWidth: '32px',
+            textAlign: 'center',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            justifyContent: 'center',
             color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
-          }}>
-            <span style={{
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              minWidth: '24px',
-              textAlign: 'center'
-            }}>{rightStats.substitutions}</span>
-            <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>SUB</span>
-          </div>
+          }}>{rightStats.substitutions}</span>
+          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', textAlign: 'left', display: 'flex', alignItems: 'center' }}>SUB</span>
         </div>
       </div>
 
