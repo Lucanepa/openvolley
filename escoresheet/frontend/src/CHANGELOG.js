@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.13',
+    date: '18.12.25',
+    changes: [
+      'Move version before 1R/2R toggle, make VS italic in referee view'
+    ]
+  },
+  {
     version: '0.9.12',
     date: '18.12.25',
     changes: [

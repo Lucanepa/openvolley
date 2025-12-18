@@ -7,10 +7,6 @@ import ConnectionStatus from './ConnectionStatus'
 import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
-import { changelog } from '../CHANGELOG'
-
-// Get current version from changelog
-const currentVersion = changelog[0]?.version || '1.0.0'
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
@@ -1761,6 +1757,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
 
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {/* Version */}
+          <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
+            v{currentVersion}
+          </span>
           {/* Collapsible 1R/2R Dropdown */}
           <div style={{ position: 'relative' }}>
             <button
@@ -1832,10 +1832,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </div>
             )}
           </div>
-          {/* Version */}
-          <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
-            v{currentVersion}
-          </span>
           {/* Exit Button with Icon */}
           <button
             onClick={onExit}
@@ -2649,12 +2645,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           justifyContent: 'center',
           width: 'clamp(36px, 6vw, 50px)',
           height: 'clamp(36px, 6vw, 50px)',
-          borderRadius: '50%',
           background: 'rgba(255, 255, 255, 0.1)',
           border: '2px solid rgba(255, 255, 255, 0.3)',
           flexShrink: 0
         }}>
           <span style={{
+            fontStyle: 'italic',
             fontSize: 'clamp(12px, 2.5vw, 18px)',
             fontWeight: 700,
             color: 'rgba(255, 255, 255, 0.7)'
