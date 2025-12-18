@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
+import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Hook to detect if we should use compact sizing
@@ -637,11 +638,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isCompact ? 16 : 24 }}>
         <button className="secondary" onClick={onBack}>← Back</button>
         <h1 style={{ margin: 0 }}>Coin Toss</h1>
-        {onGoHome ? (
-          <button className="secondary" onClick={onGoHome}>Home</button>
-        ) : (
-          <div style={{ width: 80 }}></div>
-        )}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          
+          {onGoHome && (
+            <button className="secondary" onClick={onGoHome}>Home</button>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, marginBottom: sizes.marginBottom, alignItems: 'start' }}>
@@ -807,6 +809,65 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       </div>
 
       {/* Confirm Button */}
+      
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '1px 0' }}>
+        <MenuList
+          buttonLabel={isCompact ? "📄" : "📄 Scoresheet"}
+          buttonClassName="secondary"
+          buttonStyle={{
+            background: '#22c55e',
+            color: '#000',
+            fontWeight: 600,
+            padding: isCompact ? '4px 8px' : '8px 16px',
+            fontSize: isCompact ? '12px' : '14px'
+          }}
+          showArrow={true}
+          position="center"
+          items={[
+            {
+              key: 'scoresheet-preview',
+              label: '🔍 Preview',
+              onClick: async () => {
+                try {
+                  if (!match) {
+                    alert('No match data available')
+                    return
+                  }
+
+                  // Fetch teams and players for scoresheet
+                  const [homeTeam, awayTeam, homePlayers, awayPlayers] = await Promise.all([
+                    match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+                    match.awayTeamId ? db.teams.get(match.awayTeamId) : null,
+                    match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
+                    match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : []
+                  ])
+
+                  const scoresheetData = {
+                    match,
+                    homeTeam,
+                    awayTeam,
+                    homePlayers: homePlayers || [],
+                    awayPlayers: awayPlayers || [],
+                    sets: [],
+                    events: [],
+                    sanctions: []
+                  }
+
+                  sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                  const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
+
+                  if (!scoresheetWindow) {
+                    alert('Please allow popups to view the scoresheet')
+                  }
+                } catch (error) {
+                  console.error('Error opening scoresheet:', error)
+                  alert('Failed to open scoresheet: ' + (error.message || 'Unknown error'))
+                }
+              }
+            }
+          ]}
+        />
+      </div>
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: sizes.marginBottom }}>
         {isCoinTossConfirmed ? (
           <button onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont }}>

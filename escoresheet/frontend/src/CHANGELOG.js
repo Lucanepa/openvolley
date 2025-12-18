@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.24',
+    date: '18.12.25',
+    changes: [
+      'Update service worker revision and enhance CoinToss and MatchSetup components. Changed service worker revision for cache management. Improved CoinToss layout with a new MenuList for scoresheet preview and adjusted button styling in MatchSetup for better UI consistency.'
+    ]
+  },
+  {
     version: '0.9.23',
     date: '18.12.25',
     changes: [
