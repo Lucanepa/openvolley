@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.3',
+    date: '18.12.25',
+    changes: [
+      'Add /api/match/validate-pin endpoint to backend server'
+    ]
+  },
+  {
     version: '0.9.1',
     date: '18.12.25',
     changes: [
