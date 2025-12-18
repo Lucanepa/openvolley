@@ -2627,15 +2627,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
           {/* Left team name */}
           <span style={{
-            fontSize: 'clamp(16px, 5vw, 28px)',
+            fontSize: 'clamp(14px, 4vw, 24px)',
             fontWeight: 700,
             color: leftColor,
             textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
             maxWidth: '25vw',
-            textAlign: 'right'
+            textAlign: 'right',
+            lineHeight: 1.1,
+            wordBreak: 'break-word'
           }}>
             {leftTeamData?.name || 'Team'}
           </span>
@@ -2670,15 +2669,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }}>
           {/* Right team name */}
           <span style={{
-            fontSize: 'clamp(16px, 5vw, 28px)',
+            fontSize: 'clamp(14px, 4vw, 24px)',
             fontWeight: 700,
             color: rightColor,
             textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
             maxWidth: '25vw',
-            textAlign: 'left'
+            textAlign: 'left',
+            lineHeight: 1.1,
+            wordBreak: 'break-word'
           }}>
             {rightTeamData?.name || 'Team'}
           </span>
