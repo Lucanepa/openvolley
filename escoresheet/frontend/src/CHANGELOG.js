@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.15',
+    date: '18.12.25',
+    changes: [
+      'Downgrade incomplete WebSocket data warning to debug log'
+    ]
+  },
+  {
     version: '0.9.13',
     date: '18.12.25',
     changes: [

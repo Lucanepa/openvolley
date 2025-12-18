@@ -357,7 +357,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         if (updatedData.homeTeam && updatedData.awayTeam && updatedData.sets?.length > 0) {
           updateMatchDataState({ success: true, ...updatedData })
         } else {
-          console.warn('[Referee] Received incomplete WebSocket data, skipping update')
+          // This can happen during toggle changes from MatchSetup - expected, not an error
+          console.debug('[Referee] Received partial data (missing teams/sets), skipping UI update')
         }
       }
     })
