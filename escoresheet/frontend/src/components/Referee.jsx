@@ -7,6 +7,10 @@ import ConnectionStatus from './ConnectionStatus'
 import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
+import { changelog } from '../CHANGELOG'
+
+// Get current version from changelog
+const currentVersion = changelog[0]?.version || '1.0.0'
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
