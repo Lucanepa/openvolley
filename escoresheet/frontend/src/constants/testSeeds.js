@@ -38,7 +38,7 @@ export function getNextTestMatchStartTime() {
 // Test Team Seed Data
 export const TEST_TEAM_SEED_DATA = [
   {
-    seedKey: 'test-team-alpha',
+    seedKey: 'test-team-home',
     name: 'VBC Zürich',
     shortName: 'ZÜRICH',
     color: '#3b82f6',
@@ -58,9 +58,9 @@ export const TEST_TEAM_SEED_DATA = [
     ]
   },
   {
-    seedKey: 'test-team-bravo',
-    name: 'Volleyball Uni St. Gallen',
-    shortName: 'UNISG',
+    seedKey: 'test-team-away',
+    name: 'Volley Luzern',
+    shortName: 'LUZERN',
     color: '#ef4444',
     players: [
       { number: 1, firstName: 'Tom', lastName: 'Weber', dob: '11/01/1998', libero: 'libero1', isCaptain: false },
