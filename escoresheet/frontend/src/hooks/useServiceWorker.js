@@ -90,6 +90,15 @@ export function useServiceWorker() {
         console.log('[SW] Cleared all caches')
       }
 
+      // Unregister all service workers (same as Options > Clear Cache)
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(
+          registrations.map((reg) => reg.unregister())
+        )
+        console.log('[SW] Unregistered all service workers')
+      }
+
       // Optionally clear IndexedDB
       if (clearIndexedDB) {
         const databases = await indexedDB.databases()
