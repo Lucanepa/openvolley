@@ -9,9 +9,8 @@ const currentVersion = changelog[0]?.version || 'unknown'
  * Banner that shows when a new version of the app is available
  * Place this on home/landing pages where it's safe to refresh
  */
-export default function UpdateBanner({ showClearDataOption = false }) {
+export default function UpdateBanner() {
   const { needRefresh, updateServiceWorker, dismissUpdate } = useServiceWorker()
-  const [clearData, setClearData] = useState(false)
   const [newVersion, setNewVersion] = useState(null)
 
   // Fetch the new version from server when update is detected
@@ -58,28 +57,9 @@ export default function UpdateBanner({ showClearDataOption = false }) {
         <span>{currentVersion} → {newVersion || 'New version'} available!</span>
       </div>
 
-      {showClearDataOption && (
-        <label style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          color: 'rgba(255, 255, 255, 0.9)',
-          fontSize: '12px',
-          cursor: 'pointer'
-        }}>
-          <input
-            type="checkbox"
-            checked={clearData}
-            onChange={(e) => setClearData(e.target.checked)}
-            style={{ cursor: 'pointer' }}
-          />
-          <span>Clear data</span>
-        </label>
-      )}
-
       <div style={{ display: 'flex', gap: '8px' }}>
         <button
-          onClick={() => updateServiceWorker(clearData)}
+          onClick={() => updateServiceWorker()}
           style={{
             padding: '8px 16px',
             fontSize: '13px',
