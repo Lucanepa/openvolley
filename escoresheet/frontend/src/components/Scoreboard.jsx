@@ -8068,7 +8068,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         {/* Center: Set Counter fixed in center, Rally Status (left) and Last Action (right) on sides */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isNarrowMode ? '200px 1fr 200px' : (isCompactMode ? '200px 1fr 200px' : '100px 1fr 100px')) : '1fr',
+          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isNarrowMode ? '1fr 150px 1fr' : (isCompactMode ? '1fr 150px 1fr' : '1fr 150px 1fr')) : '1fr',
           alignItems: 'center',
           gap: isNarrowMode ? '2px' : (isCompactMode ? '4px' : '8px'),
           flex: '1 1 auto'
@@ -8082,7 +8082,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 fontSize: isCompactMode ? '10px' : '11px',
                 color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c',
                 cursor: 'pointer',
-                textAlign: 'center',
+                textAlign: 'right',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -8202,7 +8202,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     fontSize: isCompactMode ? '10px' : '11px',
                     color: 'var(--muted)',
                     cursor: 'pointer',
-                    textAlign: 'center',
+                    textAlign: 'left',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace:'nowrap'
@@ -8244,14 +8244,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isCompactMode ? '4px' : '12px' }}>
           {/* Scoresheet dropdown menu */}
           <MenuList
-            buttonLabel={isCompactMode ? "📄" : "📄 Scoresheet"}
+            buttonLabel={isCompactMode ? "📄" : (isNarrowMode ? "📄" : "📄 Scoresheet")}
             buttonClassName="secondary"
             buttonStyle={{
               background: '#22c55e',
               color: '#000',
               fontWeight: 600,
-              padding: isCompactMode ? '4px 8px' : '8px 16px',
-              fontSize: isCompactMode ? '14px' : '14px'
+              padding: isCompactMode ? '4px 8px' : (isNarrowMode ? '4px 8px' : '8px 16px'),
+              fontSize: isCompactMode ? '12px' : (isNarrowMode ? '10px' : '14px')
             }}
             showArrow={true}
             position="right"
@@ -8407,8 +8407,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               color: '#000',
               fontWeight: 600,
               width: isCompactMode ? 'auto' : 'auto',
-              padding: isCompactMode ? '4px 8px' : '8px 16px',
-              fontSize: isCompactMode ? '14px' : '14px',
+              padding: isCompactMode ? '4px 8px' : (isNarrowMode ? '4px 8px' : '8px 16px'),
+              fontSize: isCompactMode ? '14px' : (isNarrowMode ? '12px' : '14px'),
               textAlign: 'center'
             }}
             showArrow={false}
