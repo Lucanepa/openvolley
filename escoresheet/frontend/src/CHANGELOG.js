@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.11',
+    date: '18.12.25',
+    changes: [
+      'Improve referee counters: bigger, aligned, with gap, labels right-aligned'
+    ]
+  },
+  {
     version: '0.9.10',
     date: '18.12.25',
     changes: [
