@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.9',
+    date: '18.12.25',
+    changes: [
+      'Allow team names to wrap to multiple lines in referee view'
+    ]
+  },
+  {
     version: '0.9.8',
     date: '18.12.25',
     changes: [
