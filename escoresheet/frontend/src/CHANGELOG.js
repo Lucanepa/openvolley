@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.23',
+    date: '18.12.25',
+    changes: [
+      'Refactor styles and CoinToss component for improved layout and responsiveness. Adjusted max-height and height properties in styles.css for better UI scaling. Updated image source and button layout in CoinToss.jsx for consistency and enhanced spacing. Modified Scoreboard.jsx for better alignment and responsive design, including grid adjustments and button styling improvements.'
+    ]
+  },
+  {
     version: '0.9.22',
     date: '18.12.25',
     changes: [

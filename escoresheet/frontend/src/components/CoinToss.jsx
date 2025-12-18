@@ -609,8 +609,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       alignItems: 'center', justifyContent: 'center', flexShrink: 0
     }}>
       <img
-        src={mikasaVolleyball}
-        alt="Mikasa V200W Volleyball"
+        src='/volleyball_simple.png'
+        alt="Volleyball"
         style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
       />
     </div>
@@ -719,8 +719,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         </div>
 
         {/* Middle buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 8 : 12, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
-          <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '32px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 8 : 14, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
+          <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '41px' }}>
             <button className="secondary" onClick={switchTeams} style={{ padding: sizes.switchButtonPadding, fontSize: sizes.switchButtonFont, whiteSpace: 'nowrap' }}>
               ⇄ Teams
             </button>
