@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.12',
+    date: '18.12.25',
+    changes: [
+      'Add version display in Referee header next to 1R/2R toggle'
+    ]
+  },
+  {
     version: '0.9.11',
     date: '18.12.25',
     changes: [
