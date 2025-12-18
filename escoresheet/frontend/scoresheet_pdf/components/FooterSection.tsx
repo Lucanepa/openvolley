@@ -402,6 +402,16 @@ interface ApprovalsProps {
 export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [] }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
 
+    // Format line judge name from "FirstName LastName" to "LastName FirstName"
+    const formatLineJudgeName = (fullName: string): string => {
+        if (!fullName) return '';
+        const parts = fullName.trim().split(/\s+/);
+        if (parts.length === 1) return parts[0];
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ');
+        return `${lastName} ${firstName}`;
+    };
+
     // Load signatures from match data
     const getSignatureForRole = (role: string): string | null => {
         if (role === '1st Referee') return match?.ref1Signature || null;
@@ -497,22 +507,22 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                     <div className="flex-1 flex border-b border-black">
                         <div className="flex-1 flex items-center px-2 border-r border-black">
                             <span className="text-[9px] font-bold mr-1">1.</span>
-                            <span className="text-[9px]">{lineJudges[0] || ''}</span>
+                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[0] || '')}</span>
                         </div>
                         <div className="flex-1 flex items-center px-2">
                             <span className="text-[9px] font-bold mr-1">2.</span>
-                            <span className="text-[9px]">{lineJudges[1] || ''}</span>
+                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[1] || '')}</span>
                         </div>
                     </div>
                     {/* Row 2: Line Judges 3 and 4 */}
                     <div className="flex-1 flex">
                         <div className="flex-1 flex items-center px-2 border-r border-black">
                             <span className="text-[9px] font-bold mr-1">3.</span>
-                            <span className="text-[9px]">{lineJudges[2] || ''}</span>
+                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[2] || '')}</span>
                         </div>
                         <div className="flex-1 flex items-center px-2">
                             <span className="text-[9px] font-bold mr-1">4.</span>
-                            <span className="text-[9px]">{lineJudges[3] || ''}</span>
+                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[3] || '')}</span>
                         </div>
                     </div>
                 </div>

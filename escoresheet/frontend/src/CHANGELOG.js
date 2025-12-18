@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.22',
+    date: '18.12.25',
+    changes: [
+      'Enhance line judge name formatting in FooterSection and MatchSetup components. Introduced helper functions to format names from "FirstName LastName" to "LastName FirstName" and "LastName, F." respectively, improving consistency in official name displays.'
+    ]
+  },
+  {
     version: '0.9.21',
     date: '18.12.25',
     changes: [
