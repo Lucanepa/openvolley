@@ -1713,6 +1713,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       }
     }
 
+    // Sync to server immediately so referee/bench dashboards receive data before Scoreboard mounts
+    const finalMatchData = await db.matches.get(matchId)
+    if (finalMatchData) {
+      console.log('[MatchSetup] Syncing match data to server after coin toss confirmation...')
+      await syncMatchToServer(finalMatchData, true) // Full sync with teams, players, sets, events
+    }
+
     // Start the match - directly navigate to scoreboard
     // onStart (continueMatch) will now allow test matches when status is 'live' and coin toss is confirmed
     onStart(matchId)
@@ -3668,16 +3675,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   }
 
   // Sync match data to server (for when Scoreboard is not mounted)
-  const syncMatchToServer = async (matchData) => {
+  // If fullSync is true, fetches all data (teams, players, sets, events) from IndexedDB
+  const syncMatchToServer = async (matchData, fullSync = false) => {
     const wsUrl = getWebSocketUrl()
     if (!wsUrl) {
       console.log('[MatchSetup] No WebSocket URL, skipping server sync')
       return
     }
 
-    console.log('[MatchSetup] Connecting to WebSocket:', wsUrl)
+    console.log('[MatchSetup] Connecting to WebSocket:', wsUrl, fullSync ? '(full sync)' : '(partial sync)')
 
     try {
+      // For full sync, fetch all data from IndexedDB
+      let homeTeam = null, awayTeam = null, homePlayers = [], awayPlayers = [], sets = [], events = []
+
+      if (fullSync && matchData) {
+        const [fetchedHomeTeam, fetchedAwayTeam, fetchedSets, fetchedEvents, fetchedHomePlayers, fetchedAwayPlayers] = await Promise.all([
+          matchData.homeTeamId ? db.teams.get(matchData.homeTeamId) : null,
+          matchData.awayTeamId ? db.teams.get(matchData.awayTeamId) : null,
+          db.sets.where('matchId').equals(matchData.id).toArray(),
+          db.events.where('matchId').equals(matchData.id).toArray(),
+          matchData.homeTeamId ? db.players.where('teamId').equals(matchData.homeTeamId).toArray() : [],
+          matchData.awayTeamId ? db.players.where('teamId').equals(matchData.awayTeamId).toArray() : []
+        ])
+        homeTeam = fetchedHomeTeam
+        awayTeam = fetchedAwayTeam
+        homePlayers = fetchedHomePlayers
+        awayPlayers = fetchedAwayPlayers
+        sets = fetchedSets
+        events = fetchedEvents
+      }
+
       // Create a temporary WebSocket connection to sync the data
       const ws = new WebSocket(wsUrl)
 
@@ -3687,17 +3715,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         const syncPayload = {
           type: 'sync-match-data',
           matchId: matchData.id,
-          match: matchData,  // Nest match data under 'match' property as server expects
-          teams: [],  // MatchSetup doesn't have team objects loaded
-          players: [],
-          sets: [],
-          events: []
+          match: matchData,
+          homeTeam: homeTeam,
+          awayTeam: awayTeam,
+          homePlayers: homePlayers,
+          awayPlayers: awayPlayers,
+          sets: sets,
+          events: events,
+          _timestamp: Date.now()
         }
         ws.send(JSON.stringify(syncPayload))
         console.log('[MatchSetup] Sync payload sent:', {
           matchId: matchData.id,
           gameNumber: matchData.gameNumber,
-          refereeConnectionEnabled: matchData.refereeConnectionEnabled
+          fullSync: fullSync,
+          setsCount: sets.length,
+          eventsCount: events.length,
+          homePlayersCount: homePlayers.length,
+          awayPlayersCount: awayPlayers.length
         })
         // Close after a short delay to ensure message is sent
         setTimeout(() => ws.close(), 500)

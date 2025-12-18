@@ -765,9 +765,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     const syncMatchData = async () => {
+      const syncStartTime = Date.now()
       // Use wsRef.current to always get the current WebSocket (not stale closure)
       const currentWs = wsRef.current
       if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
+        console.log(`[Scoreboard] syncMatchData: WebSocket not ready (state: ${currentWs?.readyState})`)
         return
       }
 
@@ -802,6 +804,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
 
         currentWs.send(JSON.stringify(syncPayload))
+        const syncDuration = Date.now() - syncStartTime
+        console.log(`[Scoreboard] syncMatchData: sent in ${syncDuration}ms (events: ${freshEvents?.length}, sets: ${freshSets?.length})`)
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
       }
@@ -1105,8 +1109,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Sync data to referee/bench - call this after any action that changes match data
   const syncToReferee = useCallback(() => {
+    const syncTime = Date.now()
+    console.log(`[Scoreboard] syncToReferee called at ${syncTime}`)
     if (syncFunctionRef.current) {
       syncFunctionRef.current()
+    } else {
+      console.warn('[Scoreboard] syncFunctionRef.current is null - WebSocket may not be connected')
     }
   }, [])
 
@@ -3435,11 +3443,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       seq: nextSeq2
     })
 
+    // Sync to referee immediately after set start
+    syncToReferee()
+
     // If the start time differs from expected, automatically open remarks
     if (timeDifferent) {
       setShowRemarks(true)
     }
-  }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup])
+  }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup, syncToReferee])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -16819,7 +16830,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
-      {lineupModal && <LineupModal 
+      {lineupModal && <LineupModal
         team={lineupModal.team}
         teamData={
           lineupModal.team === 'home'
@@ -16846,6 +16857,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             checkAndRequestCaptainOnCourt(teamKey)
           }, 100)
         }}
+        onLineupSaved={syncToReferee}
       />}
       
       {playerActionMenu && (() => {
@@ -20803,7 +20815,7 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, onClose, onSave }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, onClose, onSave, onLineupSaved }) {
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
       const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
@@ -21077,6 +21089,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         })
 
         setConfirmMessage('Lineup saved')
+
+        // Sync to referee immediately after lineup is saved
+        if (onLineupSaved) {
+          onLineupSaved()
+        }
         
         // Check if both lineups are now set - if so, award any pending penalty points
         // Reuse allEvents from above to avoid redeclaration
