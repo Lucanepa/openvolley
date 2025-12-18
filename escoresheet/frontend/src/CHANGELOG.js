@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.6',
+    date: '18.12.25',
+    changes: [
+      'Update banner now clears cache and unregisters service workers like Options'
+    ]
+  },
+  {
     version: '0.9.5',
     date: '18.12.25',
     changes: [
