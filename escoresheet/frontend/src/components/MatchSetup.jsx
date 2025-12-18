@@ -3951,11 +3951,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>Match Setup</h2>
           <button
-            className="secondary"
+          
+           buttonClassName="secondary"
             onClick={openScoresheet}
+            background="#22c55e"
             style={{ padding: '6px 12px', fontSize: '13px' }}
           >
-            Scoresheet
+          📄 Scoresheet
           </button>
         </div>
 
