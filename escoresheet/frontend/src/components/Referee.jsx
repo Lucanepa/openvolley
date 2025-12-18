@@ -2568,135 +2568,160 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       <div style={{
         flex: '0 0 10%',
         display: 'flex',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         alignItems: 'center',
         padding: '4px 16px',
         background: 'rgba(0, 0, 0, 0.15)',
-        gap: '8px',
+        gap: '12px',
         minHeight: 0,
         overflow: 'hidden'
       }}>
-        {/* Left team - name centered, TO/SUB below */}
+        {/* Left side: Counters + Team Name */}
         <div style={{
           flex: 1,
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          gap: '6px'
+          justifyContent: 'flex-end',
+          gap: '12px'
         }}>
+          {/* Left counters column (TO/SUB stacked) */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            fontSize: 'clamp(14px, 3vw, 20px)',
+            fontWeight: 700
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
+            }}>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>TO</span>
+              <span style={{
+                background: 'rgba(255, 255, 255, 0.15)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                minWidth: '28px',
+                textAlign: 'center'
+              }}>{leftStats.timeouts}</span>
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
+            }}>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>SUB</span>
+              <span style={{
+                background: 'rgba(255, 255, 255, 0.15)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                minWidth: '28px',
+                textAlign: 'center'
+              }}>{leftStats.substitutions}</span>
+            </div>
+          </div>
+          {/* Left team name */}
           <span style={{
-            fontSize: 'clamp(14px, 4vw, 22px)',
+            fontSize: 'clamp(16px, 5vw, 28px)',
             fontWeight: 700,
             color: leftColor,
             textShadow: '0 1px 2px rgba(0,0,0,0.5)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            maxWidth: '100%',
-            textAlign: 'center'
+            maxWidth: '25vw',
+            textAlign: 'right'
           }}>
             {leftTeamData?.name || 'Team'}
           </span>
-          <div style={{
-            display: 'flex',
-            gap: '16px',
-            fontSize: 'clamp(16px, 4vw, 24px)',
-            fontWeight: 700
-          }}>
-            <span style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
-            }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>TO</span>
-              <span style={{
-                background: 'rgba(255, 255, 255, 0.15)',
-                padding: '2px 10px',
-                borderRadius: '4px',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                minWidth: '32px',
-                textAlign: 'center'
-              }}>{leftStats.timeouts}</span>
-            </span>
-            <span style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
-            }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>SUB</span>
-              <span style={{
-                background: 'rgba(255, 255, 255, 0.15)',
-                padding: '2px 10px',
-                borderRadius: '4px',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                minWidth: '32px',
-                textAlign: 'center'
-              }}>{leftStats.substitutions}</span>
-            </span>
-          </div>
         </div>
 
-        {/* Right team - name centered, TO/SUB below */}
+        {/* Center: VS circle */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 'clamp(40px, 8vw, 60px)',
+          height: 'clamp(40px, 8vw, 60px)',
+          borderRadius: '50%',
+          background: 'rgba(255, 255, 255, 0.1)',
+          border: '2px solid rgba(255, 255, 255, 0.3)',
+          flexShrink: 0
+        }}>
+          <span style={{
+            fontSize: 'clamp(14px, 3vw, 20px)',
+            fontWeight: 700,
+            color: 'rgba(255, 255, 255, 0.7)'
+          }}>VS</span>
+        </div>
+
+        {/* Right side: Team Name + Counters */}
         <div style={{
           flex: 1,
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          gap: '6px'
+          justifyContent: 'flex-start',
+          gap: '12px'
         }}>
+          {/* Right team name */}
           <span style={{
-            fontSize: 'clamp(14px, 4vw, 22px)',
+            fontSize: 'clamp(16px, 5vw, 28px)',
             fontWeight: 700,
             color: rightColor,
             textShadow: '0 1px 2px rgba(0,0,0,0.5)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            maxWidth: '100%',
-            textAlign: 'center'
+            maxWidth: '25vw',
+            textAlign: 'left'
           }}>
             {rightTeamData?.name || 'Team'}
           </span>
+          {/* Right counters column (TO/SUB stacked) */}
           <div style={{
             display: 'flex',
-            gap: '16px',
-            fontSize: 'clamp(16px, 4vw, 24px)',
+            flexDirection: 'column',
+            gap: '4px',
+            fontSize: 'clamp(14px, 3vw, 20px)',
             fontWeight: 700
           }}>
-            <span style={{
+            <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               color: rightStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
             }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>TO</span>
               <span style={{
                 background: 'rgba(255, 255, 255, 0.15)',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '4px',
                 border: '1px solid rgba(255, 255, 255, 0.3)',
-                minWidth: '32px',
+                minWidth: '28px',
                 textAlign: 'center'
               }}>{rightStats.timeouts}</span>
-            </span>
-            <span style={{
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>TO</span>
+            </div>
+            <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
             }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)' }}>SUB</span>
               <span style={{
                 background: 'rgba(255, 255, 255, 0.15)',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '4px',
                 border: '1px solid rgba(255, 255, 255, 0.3)',
-                minWidth: '32px',
+                minWidth: '28px',
                 textAlign: 'center'
               }}>{rightStats.substitutions}</span>
-            </span>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.8em' }}>SUB</span>
+            </div>
           </div>
         </div>
       </div>
