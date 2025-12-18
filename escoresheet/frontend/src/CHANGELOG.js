@@ -3,6 +3,14 @@
 
 export const changelog = [
   {
+    version: '0.9.16',
+    date: '18.12.25',
+    changes: [
+      'Add immediate WebSocket sync after coin toss, lineup, and set start',
+      'Add sync timing logs for debugging WebSocket delays'
+    ]
+  },
+  {
     version: '0.9.15',
     date: '18.12.25',
     changes: [
