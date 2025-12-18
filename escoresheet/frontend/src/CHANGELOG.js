@@ -3,6 +3,15 @@
 
 export const changelog = [
   {
+    version: '0.9.1',
+    date: '18.12.25',
+    changes: [
+      'Fix referee/bench dashboard connection toggles - now default to disabled and sync correctly',
+      'Add direct WebSocket sync from MatchSetup when Scoreboard is not mounted',
+      'Ensure connection settings changes propagate immediately to server'
+    ]
+  },
+  {
     version: '0.8.17',
     date: '17.12.25',
     changes: [
