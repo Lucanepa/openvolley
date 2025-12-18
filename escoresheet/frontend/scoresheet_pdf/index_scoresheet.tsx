@@ -62,8 +62,20 @@ const loadMatchData = () => {
   }
 };
 
+// Get action from URL parameters (preview, print, save)
+const getActionFromUrl = (): 'preview' | 'print' | 'save' => {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action');
+  if (action === 'print' || action === 'save') {
+    return action;
+  }
+  return 'preview';
+};
+
+const initialAction = getActionFromUrl();
+
 // Live scoresheet component that updates in real-time from IndexedDB
-const LiveScoresheet: React.FC<{ initialMatchData: any }> = ({ initialMatchData }) => {
+const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'print' | 'save' }> = ({ initialMatchData, action }) => {
   const matchId = initialMatchData?.match?.id;
 
   // Use live queries to get real-time data from IndexedDB
@@ -160,12 +172,12 @@ const LiveScoresheet: React.FC<{ initialMatchData: any }> = ({ initialMatchData 
     sanctions: []
   };
 
-  return <App matchData={liveMatchData} />;
+  return <App matchData={liveMatchData} autoAction={action} />;
 };
 
 // Static scoresheet component (fallback when no matchId available)
-const StaticScoresheet: React.FC<{ matchData: any }> = ({ matchData }) => {
-  return <App matchData={matchData} />;
+const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' | 'save' }> = ({ matchData, action }) => {
+  return <App matchData={matchData} autoAction={action} />;
 };
 
 const initialMatchData = loadMatchData();
@@ -265,9 +277,9 @@ if (initialMatchData) {
       <React.StrictMode>
         <ErrorBoundary>
           {hasMatchId ? (
-            <LiveScoresheet initialMatchData={initialMatchData} />
+            <LiveScoresheet initialMatchData={initialMatchData} action={initialAction} />
           ) : (
-            <StaticScoresheet matchData={initialMatchData} />
+            <StaticScoresheet matchData={initialMatchData} action={initialAction} />
           )}
         </ErrorBoundary>
       </React.StrictMode>

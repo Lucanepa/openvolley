@@ -15,7 +15,6 @@ export const PointBox: React.FC<{
     return (
         <div
             className="flex-1 w-full relative flex items-center justify-center"
-            style={{ borderColor: '#000000' }}
         >
             {/* Background Number - only show if scored or circled */}
             {showNumber && (
@@ -61,10 +60,10 @@ export const PointsColumn: React.FC<{
     const maxPoints = rowsPerColumn * 4;
 
     return (
-        <div className="flex flex-col h-full shrink-0" style={{ width: '15mm', borderRight: isLast ? 'none' : '1px solid #000000' }}>
+        <div className={`flex flex-col h-full shrink-0 border-t border-black ${isLast ? '' : 'border-r border-black'}`} style={{ width: '15mm' }}>
             <div
-                className="grid grid-cols-4 bg-white"
-                style={{ height: '3.0cm', borderBottom: '1px solid #000000', borderLeft: '1px solid #000000' }}
+                className="grid grid-cols-4 bg-white border-b border-black border-l border-black"
+                style={{ height: '2.98cm' }}
             >
                 {offsets.map((offset) => (
                     <div
@@ -85,8 +84,8 @@ export const PointsColumn: React.FC<{
                 ))}
             </div>
               {/* TO Boxes */}
-            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1" style={{ height: '1.5cm', borderLeft: '1px solid #000000' }}>
-            <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>T</span>
+            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1 border-l border-black" style={{ height: '1.498cm' }}>
+            <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
                 <div className="flex flex-col w-full px-2 items-center" style={{ height: '1cm' }}>
                     <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
                         {timeouts[0] ? (
@@ -124,8 +123,8 @@ export const PointsColumn5: React.FC<{
     circledPoints?: number[];
 }> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [] }) => {
     return (
-        <div className="flex flex-col shrink-0" style={{ width: '15mm', height: '3.5cm' }}>
-            <div className="grid grid-cols-3 bg-white shrink-0" style={{ height: '2.48cm', borderBottom: '1px solid #000000' }}>
+        <div className="flex flex-col shrink-0 border-t border-black" style={{ width: '15mm', height: '3.5cm' }}>
+            <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black border-l" style={{ height: '2.47cm' }}>
                 <div className="h-full"></div>
                 <div className="flex flex-col h-full">
                     {Array.from({ length: 8 }).map((_, i) => {
@@ -140,7 +139,7 @@ export const PointsColumn5: React.FC<{
                 <div className="h-full"></div>
             </div>
 
-            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1 shrink-0" style={{ height: '1cm' }}>
+            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1 shrink-0 border-l border-black" style={{ height: '1.5cm' }}>
             <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
                 <div className="flex flex-col w-full px-2 items-center ">
                     <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
@@ -186,8 +185,8 @@ export const PointsColumn30: React.FC<{
     const maxPoints = rowsPerColumn * 4;
 
     return (
-        <div className="flex flex-col shrink-0" style={{ width: '15mm', height: '3.5cm', borderLeft: isLast ? 'none' : '1px solid #000000' }}>
-            <div className="grid grid-cols-4 bg-white shrink-0" style={{ height: '2.5cm', borderBottom: '1px solid #000000' }}>
+        <div className={`flex flex-col shrink-0 border-t border-black`} style={{ width: '15mm', height: '3.5cm' }}>
+            <div className="grid grid-cols-4 bg-white shrink-0 border-b border-black border-l" style={{ height: '2.47cm' }}>
                 {offsets.map((offset) => (
                     <div key={offset} className="flex flex-col h-full">
                         {Array.from({ length: rowsPerColumn }).map((_, i) => {
@@ -219,7 +218,7 @@ export const PointsColumn30: React.FC<{
                     </div>
                 ))}
             </div>
-            <div className="bg-white flex flex-col items-center justify-start py-1 shrink-0 " style={{ height: '1.5cm' }}>
+            <div className="bg-white flex flex-col items-center justify-start py-1 shrink-0 border-l border-black " style={{ height: '1.5cm' }}>
                 <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
                 <div className="flex flex-col w-full px-2 items-center">
                     <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>

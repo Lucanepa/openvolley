@@ -272,11 +272,11 @@ const requestHandler = (req, res) => {
             // Check if connection is enabled
             let connectionEnabled = true
             if (type === 'referee') {
-              connectionEnabled = match.refereeConnectionEnabled !== false
+              connectionEnabled = match.refereeConnectionEnabled === true
             } else if (type === 'homeTeam') {
-              connectionEnabled = match.homeTeamConnectionEnabled !== false
+              connectionEnabled = match.homeTeamConnectionEnabled === true
             } else if (type === 'awayTeam') {
-              connectionEnabled = match.awayTeamConnectionEnabled !== false
+              connectionEnabled = match.awayTeamConnectionEnabled === true
             }
             
             if (connectionEnabled && match.status !== 'final') {
@@ -426,7 +426,7 @@ const requestHandler = (req, res) => {
         dateTime,
         status: match.status,
         refereePin: match.refereePin,
-        refereeConnectionEnabled: match.refereeConnectionEnabled !== false
+        refereeConnectionEnabled: match.refereeConnectionEnabled === true
       }
     }).filter(m => {
       // Only show matches that are:

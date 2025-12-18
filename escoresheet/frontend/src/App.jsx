@@ -224,24 +224,6 @@ export default function App() {
     }
   }, [wakeLockActive, reEnableWakeLock])
 
-  // Log backend configuration on mount
-  useEffect(() => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL
-    const isDev = import.meta.env.DEV
-    const mode = import.meta.env.MODE
-
-    console.log('🔧 Backend Configuration:')
-    console.log('  VITE_BACKEND_URL:', backendUrl || '(not set)')
-    console.log('  Mode:', mode)
-    console.log('  Is Dev:', isDev)
-    console.log('  Expected behavior:', backendUrl ? 'Connect to Railway backend' : 'Standalone mode (no backend)')
-
-    if (backendUrl) {
-      console.log('  ✅ Backend URL configured - WebSocket will connect to:', backendUrl)
-    } else {
-      console.log('  ℹ️  No backend URL - Running in standalone mode')
-    }
-  }, [])
 
   // Fetch server status periodically
   useEffect(() => {
@@ -514,6 +496,14 @@ export default function App() {
     }
     
     // Check WebSocket server availability
+    // Skip WebSocket check for static deployments without backend URL
+    if (isGitHubPages && !hasBackendUrl) {
+      statuses.websocket = 'not_available'
+      debugInfo.websocket = {
+        status: 'not_available',
+        message: 'WebSocket not available in static deployment (using local database only)'
+      }
+    } else {
     try {
       // Check if we have a configured backend URL (Railway/cloud backend)
       const backendUrl = import.meta.env.VITE_BACKEND_URL
@@ -616,13 +606,14 @@ export default function App() {
       })
     } catch (err) {
       statuses.websocket = 'disconnected'
-      debugInfo.websocket = { 
-        status: 'disconnected', 
+      debugInfo.websocket = {
+        status: 'disconnected',
         message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
         details: 'Check if WebSocket server is running'
       }
     }
-    
+    } // end of else block for static deployment check
+
     // Check Scoreboard connection (same as server for now)
     statuses.scoreboard = statuses.server
     debugInfo.scoreboard = debugInfo.server
@@ -1308,13 +1299,13 @@ export default function App() {
 
         if (pinType === 'referee') {
           matchPin = currentMatchData.refereePin
-          connectionEnabled = currentMatchData.refereeConnectionEnabled !== false
+          connectionEnabled = currentMatchData.refereeConnectionEnabled === true
         } else if (pinType === 'homeTeam') {
           matchPin = currentMatchData.homeTeamPin
-          connectionEnabled = currentMatchData.homeTeamConnectionEnabled !== false
+          connectionEnabled = currentMatchData.homeTeamConnectionEnabled === true
         } else if (pinType === 'awayTeam') {
           matchPin = currentMatchData.awayTeamPin
-          connectionEnabled = currentMatchData.awayTeamConnectionEnabled !== false
+          connectionEnabled = currentMatchData.awayTeamConnectionEnabled === true
         }
 
         if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && currentMatchData.status !== 'final') {
@@ -2540,6 +2531,9 @@ export default function App() {
   }
 
   async function createTestMatchData() {
+    // Clear any stray draft data from previous sessions
+    await db.match_setup.clear()
+
     const seededTeams = await ensureSeedTestTeams()
     const { referees, scorers } = await ensureSeedTestOfficials()
     if (seededTeams.length < 2) {
@@ -2591,7 +2585,9 @@ export default function App() {
         lastName: assistantScorer?.lastName || 'Baumann',
         country: assistantScorer?.country || 'CHE',
         dob: assistantScorer?.dob ? formatISODateToDisplay(assistantScorer.dob) : formatISODateToDisplay('1988-06-27')
-      }
+      },
+      { role: 'line judge 1', name: 'Andrea Müller' },
+      { role: 'line judge 2', name: 'Thomas Fischer' }
     ]
 
     let createdMatchId = null

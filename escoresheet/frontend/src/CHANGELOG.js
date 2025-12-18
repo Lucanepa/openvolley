@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.8.17',
+    date: '17.12.25',
+    changes: [
+      'Update version to 0.8.16, add html-to-image dependency, and enhance PDF generation features in scoresheet component.'
+    ]
+  },
+  {
     version: '0.8.15',
     date: '17.12.25',
     changes: [
