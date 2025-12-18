@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.21',
+    date: '18.12.25',
+    changes: [
+      'Refactor HomePage component to conditionally render match buttons. The "Continue Match" and "Delete Match" buttons are now only displayed when there is an active match, improving UI clarity and user experience.'
+    ]
+  },
+  {
     version: '0.9.20',
     date: '18.12.25',
     changes: [

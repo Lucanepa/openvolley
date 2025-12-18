@@ -124,81 +124,75 @@ export default function HomePage({
 
           {/* Other buttons row */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative', zIndex: 1 }}>
-            {/* Continue Match Button */}
-          <button
-            onClick={() => {
-              if (currentOfficialMatch) {
-                continueMatch(currentOfficialMatch.id)
-              } else if (currentTestMatch) {
-                continueTestMatch()
-              }
-            }}
-            disabled={!currentOfficialMatch && !currentTestMatch}
-            style={{
-              width: '180px',
-              padding: '16px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.3)' : '#fff',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: (!currentOfficialMatch && !currentTestMatch) ? 'not-allowed' : 'pointer',
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              if (currentOfficialMatch || currentTestMatch) {
-                e.currentTarget.style.transform = 'translateY(-2px)'
-                e.currentTarget.style.boxShadow = '0 8px 16px rgba(16, 185, 129, 0.3)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (currentOfficialMatch || currentTestMatch) {
-                e.currentTarget.style.transform = 'translateY(0)'
-                e.currentTarget.style.boxShadow = 'none'
-              }
-            }}
-          >
-            Continue Match
-          </button>
+            {/* Continue Match Button - only show when there's a match */}
+            {(currentOfficialMatch || currentTestMatch) && (
+              <button
+                onClick={() => {
+                  if (currentOfficialMatch) {
+                    continueMatch(currentOfficialMatch.id)
+                  } else if (currentTestMatch) {
+                    continueTestMatch()
+                  }
+                }}
+                style={{
+                  width: '180px',
+                  padding: '16px 24px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)'
+                  e.currentTarget.style.boxShadow = '0 8px 16px rgba(16, 185, 129, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                Continue Match
+              </button>
+            )}
 
-          {/* Delete Match Button */}
-          <button
-            onClick={() => {
-              if (currentOfficialMatch) {
-                showDeleteMatchModal()
-              } else if (currentTestMatch) {
-                restartTestMatch()
-              }
-            }}
-            disabled={!currentOfficialMatch && !currentTestMatch}
-            style={{
-              width: '180px',
-              padding: '16px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-              color: (!currentOfficialMatch && !currentTestMatch) ? 'rgba(255, 255, 255, 0.3)' : '#fff',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: (!currentOfficialMatch && !currentTestMatch) ? 'not-allowed' : 'pointer',
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              if (currentOfficialMatch || currentTestMatch) {
-                e.currentTarget.style.transform = 'translateY(-2px)'
-                e.currentTarget.style.boxShadow = '0 8px 16px rgba(239, 68, 68, 0.3)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (currentOfficialMatch || currentTestMatch) {
-                e.currentTarget.style.transform = 'translateY(0)'
-                e.currentTarget.style.boxShadow = 'none'
-              }
-            }}
-          >
-            Delete Match
-          </button>
+            {/* Delete Match Button - only show when there's a match */}
+            {(currentOfficialMatch || currentTestMatch) && (
+              <button
+                onClick={() => {
+                  if (currentOfficialMatch) {
+                    showDeleteMatchModal()
+                  } else if (currentTestMatch) {
+                    restartTestMatch()
+                  }
+                }}
+                style={{
+                  width: '180px',
+                  padding: '16px 24px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)'
+                  e.currentTarget.style.boxShadow = '0 8px 16px rgba(239, 68, 68, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                Delete Match
+              </button>
+            )}
 
           {/* Restore Match Button */}
           <button
