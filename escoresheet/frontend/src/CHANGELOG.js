@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.5',
+    date: '18.12.25',
+    changes: [
+      'Fix version.json to match current version for PWA updates'
+    ]
+  },
+  {
     version: '0.9.4',
     date: '18.12.25',
     changes: [
