@@ -1,18 +1,10 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "npm ci && npm run build",
-    "nixpacksPlan": {
-      "phases": {
-        "setup": {
-          "nixPkgs": ["nodejs_20", "npm"]
-        }
-      }
-    }
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "npx serve dist -s -l tcp://0.0.0.0:${PORT:-3000}",
     "healthcheckPath": "/",
     "healthcheckTimeout": 30
   }
