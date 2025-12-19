@@ -1171,10 +1171,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       db: 'unknown'
     }
     const debugInfo = {}
-    
-    // Check API/Server connection
-    try {
-      const response = await fetch('/api/match/list')
+
+    // Get the backend URL - use VITE_BACKEND_URL if configured, otherwise relative URL
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || ''
+    const isStaticHosting = !import.meta.env.DEV && (
+      window.location.hostname.includes('github.io') ||
+      window.location.hostname === 'app.openvolley.app'
+    )
+
+    // Skip API checks if on static hosting AND no backend URL configured
+    if (isStaticHosting && !backendUrl) {
+      statuses.api = 'n/a'
+      statuses.server = 'n/a'
+      statuses.websocket = 'n/a'
+      debugInfo.api = { status: 'n/a', message: 'Static hosting - no backend configured' }
+      debugInfo.server = { status: 'n/a', message: 'Static hosting - no backend configured' }
+      debugInfo.websocket = { status: 'n/a', message: 'Static hosting - no WebSocket configured' }
+    } else try {
+      // Use configured backend URL or relative URL
+      const apiUrl = backendUrl ? `${backendUrl}/api/match/list` : '/api/match/list'
+      const response = await fetch(apiUrl)
       if (response.ok) {
         statuses.api = 'connected'
         statuses.server = 'connected'
@@ -1298,10 +1314,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setConnectionStatuses(statuses)
   }, [data?.match, serverStatus])
 
-  // Periodically check connection statuses
+  // Periodically check connection statuses (60s interval to reduce console spam when server is down)
   useEffect(() => {
     checkConnectionStatuses()
-    const interval = setInterval(checkConnectionStatuses, 5000) // Check every 5 seconds
+    const interval = setInterval(checkConnectionStatuses, 60000) // Check every 60 seconds
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
 
@@ -4499,6 +4515,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             payload: {
               team,
               lineup: restoredLineup,
+              fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
               liberoSubstitution: null // Explicitly clear libero substitution
             },
             ts: new Date().toISOString(),
@@ -4538,6 +4555,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               payload: {
                 team,
                 lineup: restoredLineup,
+                fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
                 liberoSubstitution: null // Explicitly clear libero substitution
               },
               ts: new Date().toISOString(),
@@ -4691,6 +4709,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             payload: {
               team,
               lineup: restoredLineup,
+              fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
               liberoSubstitution: previousLiberoSub || null
             },
             ts: new Date().toISOString(),
@@ -4775,6 +4794,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               payload: {
                 team,
                 lineup: restoredLineup,
+                fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
                 liberoSubstitution: restoredLiberoSub
               },
               ts: new Date().toISOString(),
@@ -4790,6 +4810,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               payload: {
                 team,
                 lineup: restoredLineup,
+                fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
                 liberoSubstitution: null
               },
               ts: new Date().toISOString(),
@@ -7571,6 +7592,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       payload: {
         team: teamKey,
         lineup: finalLineup,
+        fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
         liberoSubstitution: null // Explicitly clear libero substitution
       },
       ts: new Date().toISOString(),
