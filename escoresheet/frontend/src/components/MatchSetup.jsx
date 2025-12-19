@@ -2114,6 +2114,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     }
   }
 
+  // Callback for opening database selector - MUST be before any early returns to satisfy React hooks rules
+  const handleOpenDatabase = useCallback((e, selectorKey) => {
+    setRefereeSelectorPosition({ element: e.currentTarget })
+    setShowRefereeSelector(selectorKey)
+  }, [])
+
   if (currentView === 'info') {
     return (
       <MatchSetupInfoView>
@@ -2267,12 +2273,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       </MatchSetupInfoView>
     )
   }
-
-  // Callback for opening database selector
-  const handleOpenDatabase = useCallback((e, selectorKey) => {
-    setRefereeSelectorPosition({ element: e.currentTarget })
-    setShowRefereeSelector(selectorKey)
-  }, [])
 
   if (currentView === 'officials') {
     return (

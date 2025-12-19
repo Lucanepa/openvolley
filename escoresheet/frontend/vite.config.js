@@ -61,11 +61,7 @@ export default defineConfig({
     include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks']
   },
   resolve: {
-    dedupe: ['react', 'react-dom', 'dexie'],
-    alias: {
-      // Force Dexie to use development wrapper to avoid TDZ issues
-      'dexie': 'dexie/dist/dexie.mjs'
-    }
+    dedupe: ['react', 'react-dom', 'dexie']
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion)
@@ -269,13 +265,6 @@ export default defineConfig({
     // WebSocket server runs on port 8080 (or WS_PORT env var)
   },
   build: {
-    // Re-enable minification with proper chunking
-    minify: 'esbuild',
-    target: 'es2015',
-    commonjsOptions: {
-      include: [/dexie/, /node_modules/],
-      transformMixedEsModules: true
-    },
     rollupOptions: {
       input: {
         main: './index.html',
@@ -286,12 +275,15 @@ export default defineConfig({
         upload_roster: './upload_roster/index.html'
       },
       output: {
-        // Avoid eval in production builds
         format: 'es',
-        // Manually chunk to isolate Dexie
-        manualChunks: {
-          'dexie-vendor': ['dexie', 'dexie-react-hooks'],
-          'react-vendor': ['react', 'react-dom']
+        // Keep React and Dexie in separate chunks to avoid initialization issues
+        manualChunks: (id) => {
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
+            return 'react-vendor'
+          }
+          if (id.includes('node_modules/dexie')) {
+            return 'dexie-vendor'
+          }
         }
       }
     }
