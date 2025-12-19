@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.26',
+    date: '19.12.25',
+    changes: [
+      'Add menu title support in MenuList and implement options for showing player names and auto-downloading data in Scoreboard'
+    ]
+  },
+  {
     version: '0.9.25',
     date: '19.12.25',
     changes: [

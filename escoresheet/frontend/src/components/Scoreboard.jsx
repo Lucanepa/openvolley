@@ -199,6 +199,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Header collapse state
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
+  const [showNamesOnCourt, setShowNamesOnCourt] = useState(true)
+  const [autoDownloadAtSetEnd, setAutoDownloadAtSetEnd] = useState(true)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
   // Compact mode: landscape (width >= height) = width <= 960 OR height < 768
@@ -2005,6 +2007,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const playerData = {
           id: player?.id ?? `placeholder-${idx}`,
           number: hasPlayerNumber ? String(playerNumber) : '',
+          name: player?.name || '',
+          lastName: player?.lastName || '',
           isPlaceholder: !hasPlayerNumber,
           position: pos, // Fixed position on court
           isCaptain: player?.isCaptain || false,
@@ -2052,6 +2056,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             : player.placeholder
               ? '–'
               : '',
+        name: player.name || '',
+        lastName: player.lastName || '',
         isPlaceholder: !!player.placeholder,
         position: assignedPos,
         isCaptain: player.isCaptain || false
@@ -3526,6 +3532,47 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     } else {
       // Trigger event backup for Safari/Firefox (set end)
       onTriggerEventBackup?.('set_end')
+
+      // Auto-download game data at set end if enabled
+      if (autoDownloadAtSetEnd) {
+        (async () => {
+          try {
+            const allMatches = await db.matches.toArray()
+            const allTeams = await db.teams.toArray()
+            const allPlayers = await db.players.toArray()
+            const allSets = await db.sets.toArray()
+            const allEvents = await db.events.toArray()
+            const allReferees = await db.referees.toArray()
+            const allScorers = await db.scorers.toArray()
+
+            const exportData = {
+              exportDate: new Date().toISOString(),
+              exportReason: `set_${setIndex}_end`,
+              matchId: matchId,
+              matches: allMatches,
+              teams: allTeams,
+              players: allPlayers,
+              sets: allSets,
+              events: allEvents,
+              referees: allReferees,
+              scorers: allScorers
+            }
+
+            const jsonString = JSON.stringify(exportData, null, 2)
+            const blob = new Blob([jsonString], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = `backup_set${setIndex}_${matchId}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            URL.revokeObjectURL(url)
+          } catch (error) {
+            console.error('Auto-download at set end failed:', error)
+          }
+        })()
+      }
 
       // Start countdown immediately when set ends (not match end)
       // Reset dismissed flag and start countdown
@@ -8573,6 +8620,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <MenuList
             buttonLabel="📄"
             buttonTitle="Scoresheet"
+            menuTitle="Scoresheet"
             buttonClassName="secondary"
             buttonStyle={{
               background: '#22c55e',
@@ -8729,6 +8777,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           />
           <MenuList
             buttonLabel="☰"
+            buttonTitle="Menu"
+            menuTitle="Menu"
             buttonClassName="secondary"
             buttonStyle={{
               background: '#22c55e',
@@ -11543,6 +11593,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
+                        {/* Player last name rectangle */}
+                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '-7px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0, 0, 0, 0.85)',
+                            border: '1px solid rgba(255, 255, 255, 0.3)',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#fff',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '70px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            zIndex: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.3px'
+                          }}>
+                            {player.lastName}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -11738,6 +11813,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 )}
                               </div>
                             )}
+                          </div>
+                        )}
+                        {/* Player last name rectangle */}
+                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '-7px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0, 0, 0, 0.85)',
+                            border: '1px solid rgba(255, 255, 255, 0.3)',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#fff',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '70px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            zIndex: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.3px'
+                          }}>
+                            {player.lastName}
                           </div>
                         )}
                       </div>
@@ -11986,6 +12086,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
+                        {/* Player last name rectangle */}
+                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '-7px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0, 0, 0, 0.85)',
+                            border: '1px solid rgba(255, 255, 255, 0.3)',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#fff',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '70px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            zIndex: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.3px'
+                          }}>
+                            {player.lastName}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -12180,6 +12305,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 )}
                               </div>
                             )}
+                          </div>
+                        )}
+                        {/* Player last name rectangle */}
+                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '-7px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0, 0, 0, 0.85)',
+                            border: '1px solid rgba(255, 255, 255, 0.3)',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#fff',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '70px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            zIndex: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.3px'
+                          }}>
+                            {player.lastName}
                           </div>
                         )}
                       </div>
@@ -14116,7 +14266,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           setDisplayMode,
           detectedDisplayMode,
           enterDisplayMode,
-          exitDisplayMode
+          exitDisplayMode,
+          showNamesOnCourt,
+          setShowNamesOnCourt,
+          autoDownloadAtSetEnd,
+          setAutoDownloadAtSetEnd
         }}
       />
 

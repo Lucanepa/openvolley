@@ -19,6 +19,7 @@ function InfoDot({ title }) {
         cursor: 'help'
       }}
       title={title}
+      onClick={() => alert(title)}
     >
       i
     </div>
@@ -428,7 +429,16 @@ export default function ScoreboardOptionsModal({
               }}
             />
           </Row>
-
+          <Row style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>Show Names on Court</div>
+              <InfoDot title="Display player last names below the court position circles" />
+            </div>
+            <ToggleSwitch
+              value={displayOptions?.showNamesOnCourt ?? true}
+              onToggle={() => displayOptions?.setShowNamesOnCourt?.(!displayOptions?.showNamesOnCourt)}
+            />
+          </Row>
           <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '15px' }}>Manage Captain on Court</div>
@@ -495,7 +505,7 @@ export default function ScoreboardOptionsModal({
             />
           </Row>
 
-          <Row>
+          <Row style={{ marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: keybindingsEnabled && onOpenKeybindings ? '8px' : 0 }}>
                 <div style={{ fontWeight: 600, fontSize: '15px' }}>Keyboard Shortcuts</div>
@@ -526,6 +536,17 @@ export default function ScoreboardOptionsModal({
                 setKeybindingsEnabled(newValue)
                 localStorage.setItem('keybindingsEnabled', String(newValue))
               }}
+            />
+          </Row>
+          
+          <Row style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>Auto-download Data at Set End</div>
+              <InfoDot title="Automatically download game data when a set ends for backup. In case of emergencies, the local data can be used to restore the game." />
+            </div>
+            <ToggleSwitch
+              value={displayOptions?.autoDownloadAtSetEnd ?? true}
+              onToggle={() => displayOptions?.setAutoDownloadAtSetEnd?.(!displayOptions?.autoDownloadAtSetEnd)}
             />
           </Row>
         </Section>
