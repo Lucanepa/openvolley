@@ -20,6 +20,7 @@ export default function MainHeader({
   setOfflineMode,
   onOpenSetup,
   dashboardServer = null, // { enabled, dashboardCount, refereePin, onOpenOptions }
+  collapsible = false, // Only allow collapsing on Scoreboard page
 }) {
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -40,10 +41,13 @@ export default function MainHeader({
   // Check if compact mode (viewport width <= 960px)
   const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960
 
+  // Effective collapsed state - only collapse when collapsible is true
+  const effectivelyCollapsed = collapsible && isCollapsed
+
   // Handle touch events for swipe to show/hide header (compact mode only for touch)
   useEffect(() => {
-    // Touch swipe only works in compact mode, but click-to-collapse works in all modes
-    if (!isCompactMode) {
+    // Touch swipe only works in compact mode when collapsible
+    if (!isCompactMode || !collapsible) {
       return
     }
 
@@ -72,7 +76,7 @@ export default function MainHeader({
       document.removeEventListener('touchstart', handleTouchStart)
       document.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [isCompactMode, isCollapsed])
+  }, [isCompactMode, isCollapsed, collapsible])
 
   // Track viewport dimensions
   useEffect(() => {
@@ -296,15 +300,15 @@ export default function MainHeader({
         </button>
         
         {/* Collapsible Match Info Menu - hide when header is collapsed */}
-        {matchInfoMenuOpen && matchInfoData && !isCollapsed && renderMatchInfoMenu(match, matchInfoData)}
+        {matchInfoMenuOpen && matchInfoData && !effectivelyCollapsed && renderMatchInfoMenu(match, matchInfoData)}
       </div>
     )
   }
 
   return (
     <div style={{ position: 'relative', zIndex: 1000 }}>
-      {/* Collapsed header indicator - tap to expand */}
-      {isCompactMode && isCollapsed && (
+      {/* Collapsed header indicator - tap to expand (only when collapsible) */}
+      {collapsible && isCompactMode && isCollapsed && (
         <div
           onClick={() => setIsCollapsed(false)}
           style={{
@@ -333,17 +337,17 @@ export default function MainHeader({
         ref={headerRef}
         style={{
           display: 'flex',
-          height: isCollapsed ? '0px' : '40px',
-          minHeight: isCollapsed ? '0px' : '40px',
-          maxHeight: isCollapsed ? '0px' : '40px',
+          height: effectivelyCollapsed ? '0px' : '40px',
+          minHeight: effectivelyCollapsed ? '0px' : '40px',
+          maxHeight: effectivelyCollapsed ? '0px' : '40px',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: isCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
+          padding: effectivelyCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
           background: 'rgba(0, 0, 0, 0.2)',
-          borderBottom: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+          borderBottom: effectivelyCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           flexShrink: 0,
           gap: 'clamp(8px, 1.5vw, 16px)',
-          overflow: isCollapsed ? 'hidden' : 'visible',
+          overflow: effectivelyCollapsed ? 'hidden' : 'visible',
           transition: 'all 0.3s ease-in-out'
         }}>
       {/* Left: Online/Offline Toggle + Connection Status */}
@@ -468,7 +472,7 @@ export default function MainHeader({
       </div>
 
       {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}
-      {!isCollapsed && (((showMatchSetup || matchId) && currentMatch) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch))) ? (
+      {!effectivelyCollapsed && (((showMatchSetup || matchId) && currentMatch) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch))) ? (
         <div style={{
           position: 'absolute',
           left: '50%',
@@ -1010,40 +1014,42 @@ export default function MainHeader({
       </div>
 
     </div>
-    {/* Collapse/Expand arrow button at bottom center - positioned outside the container */}
-    <div
-      onClick={() => setIsCollapsed(!isCollapsed)}
-      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.25'}
-      style={{
-        position: 'absolute',
-        top: isCollapsed ? '0' : '40px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '40px',
-        height: '24px',
-        background: '#22c55e',
-        borderRadius: '0 0 8px 8px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        zIndex: 1001,
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-        transition: 'all 0.2s ease',
-        opacity: 0.25
-      }}
-    >
-      <span style={{
-        fontSize: '14px',
-        color: '#000',
-        fontWeight: 700,
-        transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-        transition: 'transform 0.2s ease'
-      }}>
-        ▲
-      </span>
-    </div>
+    {/* Collapse/Expand arrow button at bottom center - only shown when collapsible */}
+    {collapsible && (
+      <div
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.25'}
+        style={{
+          position: 'absolute',
+          top: isCollapsed ? '0' : '40px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '40px',
+          height: '24px',
+          background: '#22c55e',
+          borderRadius: '0 0 8px 8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          zIndex: 1001,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          transition: 'all 0.2s ease',
+          opacity: 0.25
+        }}
+      >
+        <span style={{
+          fontSize: '14px',
+          color: '#000',
+          fontWeight: 700,
+          transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease'
+        }}>
+          ▲
+        </span>
+      </div>
+    )}
     </div>
   )
 }
