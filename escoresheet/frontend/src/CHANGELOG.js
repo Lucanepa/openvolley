@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.11.0',
+    date: '19.12.25',
+    changes: [
+      'Add html-to-image dependency for PDF generation in scoresheet_pdf component. Enhance PDF generation with improved image capture and zoom level management. Update package version to 0.11.0 and replace mikasa_v200w.png with a new image file to avoid issues of copyright.'
+    ]
+  },
+  {
     version: '0.10.9',
     date: '19.12.25',
     changes: [
