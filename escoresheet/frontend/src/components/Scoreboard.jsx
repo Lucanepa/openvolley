@@ -5937,6 +5937,40 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setDropTargetPosition(null)
   }, [])
 
+  // Check if a libero is unable to play (injured, expelled, disqualified, or declared unable)
+  // MUST be defined before handlers that use it in dependency arrays
+  const isLiberoUnable = useCallback((teamKey, liberoNumber) => {
+    if (!data?.events) return false
+
+    // Check for expulsion or disqualification
+    const sanctions = data.events.filter(e =>
+      e.type === 'sanction' &&
+      e.payload?.team === teamKey &&
+      e.payload?.playerNumber === liberoNumber &&
+      (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
+    )
+    if (sanctions.length > 0) return true
+
+    // Check for libero_unable event (declared by coach)
+    const unableEvents = data.events.filter(e =>
+      e.type === 'libero_unable' &&
+      e.payload?.team === teamKey &&
+      e.payload?.liberoNumber === liberoNumber
+    )
+    if (unableEvents.length > 0) return true
+
+    // Check if libero was injured (substituted due to injury)
+    const injurySubs = data.events.filter(e =>
+      e.type === 'substitution' &&
+      e.payload?.team === teamKey &&
+      e.payload?.playerOut === liberoNumber &&
+      e.payload?.isInjury === true
+    )
+    if (injurySubs.length > 0) return true
+
+    return false
+  }, [data?.events])
+
   // Handle drop on court player - triggers substitution or libero exchange
   const handleCourtDrop = useCallback((e, teamKey, position, courtPlayerNumber) => {
     e.preventDefault()
@@ -6299,39 +6333,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setSubstitutionDropdown(null)
     setLiberoDropdown(null) // Close libero dropdown when selecting substitution
   }, [substitutionDropdown, isSubstitutionLegal, data?.events])
-
-  // Check if a libero is unable to play (injured, expelled, disqualified, or declared unable)
-  const isLiberoUnable = useCallback((teamKey, liberoNumber) => {
-    if (!data?.events) return false
-    
-    // Check for expulsion or disqualification
-    const sanctions = data.events.filter(e => 
-      e.type === 'sanction' && 
-      e.payload?.team === teamKey &&
-      e.payload?.playerNumber === liberoNumber &&
-      (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
-    )
-    if (sanctions.length > 0) return true
-    
-    // Check for libero_unable event (declared by coach)
-    const unableEvents = data.events.filter(e => 
-      e.type === 'libero_unable' && 
-      e.payload?.team === teamKey &&
-      e.payload?.liberoNumber === liberoNumber
-    )
-    if (unableEvents.length > 0) return true
-    
-    // Check if libero was injured (substituted due to injury)
-    const injurySubs = data.events.filter(e => 
-      e.type === 'substitution' && 
-      e.payload?.team === teamKey &&
-      e.payload?.playerOut === liberoNumber &&
-      e.payload?.isInjury === true
-    )
-    if (injurySubs.length > 0) return true
-    
-    return false
-  }, [data?.events])
 
   // Get available players for libero re-designation (not on court, not already libero, not re-designated)
   const getAvailablePlayersForRedesignation = useCallback((teamKey, unableLiberoNumber) => {
