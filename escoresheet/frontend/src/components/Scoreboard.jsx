@@ -2535,7 +2535,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const logEvent = useCallback(
     async (type, payload = {}, options = {}) => {
       if (!data?.set) return null
-      
+
+      // Get all existing events to validate sequence ordering
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const maxExistingSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
+
       // If parentSeq is provided, create a sub-event with decimal ID (e.g., 1.1, 1.2)
       // Otherwise, create a main event with integer ID
       let nextSeq
@@ -2544,20 +2548,43 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       } else {
         nextSeq = await getNextSeq()
       }
-      
+
+      // CRITICAL: Validate sequence number is always increasing
+      if (nextSeq <= maxExistingSeq && Math.floor(nextSeq) !== Math.floor(maxExistingSeq)) {
+        console.error(`[SEQUENCE ERROR] New seq ${nextSeq} is not greater than existing max ${maxExistingSeq}! Type: ${type}`)
+        debugLogger.log('SEQUENCE_ERROR', {
+          error: 'Sequence number not incrementing correctly',
+          newSeq: nextSeq,
+          maxExistingSeq,
+          eventType: type,
+          payload
+        })
+      }
+
       // Simple timestamp for reference (not used for ordering)
       const timestamp = options.timestamp ? new Date(options.timestamp) : new Date()
-      
+
+      // Capture state BEFORE the event (for undo purposes)
+      const stateBefore = getStateSnapshot()
+
       const eventId = await db.events.add({
         matchId,
         setIndex: data.set.index,
         type,
         payload,
         ts: timestamp.toISOString(), // Store as ISO string for reference
-        seq: nextSeq // Use sequence for ordering
+        seq: nextSeq, // Use sequence for ordering
+        stateBefore // Save state before this event for easy undo
       })
-      
-      // Sequence tracking (no logging)
+
+      // Log the event with state snapshots
+      debugLogger.log('EVENT_CREATED', {
+        eventId,
+        type,
+        payload,
+        seq: nextSeq,
+        setIndex: data.set.index
+      }, stateBefore)
       
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
@@ -2586,7 +2613,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Return the sequence number so it can be used for related events
       return nextSeq
     },
-    [data?.set, matchId, getNextSeq, syncToReferee]
+    [data?.set, matchId, getNextSeq, getNextSubSeq, getStateSnapshot, syncToReferee]
   )
 
   const checkSetEnd = useCallback(async (set, homePoints, awayPoints) => {
@@ -4064,56 +4091,55 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
 
     // Find the most recent event (highest sequence)
-    const lastEvent = sortedEvents[0]
-    if (!lastEvent) return
+    // IMPORTANT: Undo should ALWAYS select the event with the highest sequence number
+    // Events with decimal sequences (like 7.1) are sub-events that should be undone with their parent
 
-    // If it's a rotation lineup, find the point before it and undo that instead
-    if (lastEvent.type === 'lineup' && !lastEvent.payload?.isInitial && !lastEvent.payload?.fromSubstitution && !lastEvent.payload?.liberoSubstitution) {
-      // This is a rotation lineup - find the point that triggered it
-      const pointBefore = sortedEvents.find(e => e.type === 'point' && (e.seq || 0) < (lastEvent.seq || 0))
-      if (pointBefore) {
-        const description = getActionDescription(pointBefore)
-        setUndoConfirm({ event: pointBefore, description })
-        return
-      }
+    // Helper to check if an event is a sub-event (decimal sequence like 7.1, 8.1)
+    const isSubEvent = (event) => {
+      const seq = event.seq || 0
+      return seq !== Math.floor(seq) // Has decimal component
     }
 
-    const lastUndoableEvent = lastEvent
+    // Helper to check if an event is a rotation lineup (not initial, not from substitution, is a sub-event)
+    const isRotationLineup = (event) => {
+      if (event.type !== 'lineup') return false
+      if (event.payload?.isInitial) return false
+      if (event.payload?.fromSubstitution) return false
+      // Rotation lineups are sub-events (decimal sequence like 7.1)
+      return isSubEvent(event)
+    }
+
+    // Find the first undoable event in chronological order (highest sequence)
+    let lastUndoableEvent = null
+    for (const event of sortedEvents) {
+      // Skip sub-events (they'll be undone with their parent)
+      if (isSubEvent(event)) {
+        // If it's a rotation lineup, find the parent point to undo
+        if (isRotationLineup(event)) {
+          const baseSeq = Math.floor(event.seq || 0)
+          const parentPoint = sortedEvents.find(e => e.type === 'point' && Math.floor(e.seq || 0) === baseSeq)
+          if (parentPoint) {
+            lastUndoableEvent = parentPoint
+            break
+          }
+        }
+        continue // Skip other sub-events
+      }
+
+      // This is a main event (integer sequence) - it's undoable
+      lastUndoableEvent = event
+      break
+    }
 
     if (!lastUndoableEvent) return
 
     const description = getActionDescription(lastUndoableEvent)
-    // getActionDescription returns null for rotation lineups, but we've already filtered those out
-    // So if it returns null here, try to find the next undoable event
-    if (!description || description === 'Unknown action') {
-      // Find the next undoable event after this one
-      const currentIndex = sortedEvents.findIndex(e => e.id === lastUndoableEvent.id)
-      const nextUndoableEvent = sortedEvents.slice(currentIndex + 1).find(e => {
-          if (e.type === 'lineup') {
-            const hasInitial = e.payload?.isInitial === true
-            const hasSubstitution = e.payload?.fromSubstitution === true
-            // Skip libero substitution lineups and rotation lineups
-            if (!hasInitial && !hasSubstitution) {
-              return false
-            }
-          }
-        // Allow rally_start, set_start, and replay events to be undone
-        const desc = getActionDescription(e)
-        return desc && desc !== 'Unknown action'
-      })
+    // If we can't get a description, still allow undo but show the event type
+    const displayDescription = description && description !== 'Unknown action'
+      ? description
+      : `${lastUndoableEvent.type} (seq: ${lastUndoableEvent.seq})`
 
-      if (nextUndoableEvent) {
-        const nextDesc = getActionDescription(nextUndoableEvent)
-        if (nextDesc && nextDesc !== 'Unknown action') {
-          setUndoConfirm({ event: nextUndoableEvent, description: nextDesc })
-          return
-        }
-      }
-      // No undoable events found
-      return
-    }
-
-    setUndoConfirm({ event: lastUndoableEvent, description })
+    setUndoConfirm({ event: lastUndoableEvent, description: displayDescription })
   }, [data?.events, data?.set, getActionDescription])
 
   // Check if there's anything that can be undone (mirrors showUndoConfirm logic)
@@ -4138,23 +4164,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return bTime - aTime
     })
 
+    // Helper to check if an event is a sub-event (decimal sequence like 7.1, 8.1)
+    const isSubEvent = (event) => {
+      const seq = event.seq || 0
+      return seq !== Math.floor(seq)
+    }
+
     // Check if there's at least one undoable event
     for (const event of sortedEvents) {
-      // Skip rotation lineups (they get undone with their triggering point)
-      if (event.type === 'lineup' && !event.payload?.isInitial && !event.payload?.fromSubstitution && !event.payload?.liberoSubstitution) {
-        // Check if there's a point before it that we can undo
-        const pointBefore = sortedEvents.find(e => e.type === 'point' && (e.seq || 0) < (event.seq || 0))
-        if (pointBefore) {
-          const desc = getActionDescription(pointBefore)
-          if (desc && desc !== 'Unknown action') return true
-        }
+      // Skip sub-events (they get undone with their parent)
+      if (isSubEvent(event)) {
+        // If it's a rotation lineup sub-event, check if parent point exists
+        const baseSeq = Math.floor(event.seq || 0)
+        const parentPoint = sortedEvents.find(e => e.type === 'point' && Math.floor(e.seq || 0) === baseSeq)
+        if (parentPoint) return true
         continue
       }
 
-      const description = getActionDescription(event)
-      if (description && description !== 'Unknown action') {
-        return true
-      }
+      // Main events (integer sequence) are undoable
+      return true
     }
 
     return false
@@ -8595,10 +8623,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         {/* Column 4: Right team OR Last action (compact/laptop) */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {(isCompactMode || isLaptopMode) ? (() => {
-            if (!data?.events || data.events.length === 0) {
+            if (!data?.events || data.events.length === 0 || !data?.set) {
               return null
             }
-            const allEvents = [...data.events].sort((a, b) => {
+            // IMPORTANT: Only show events from the CURRENT SET
+            const currentSetIndex = data.set.index
+            const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
+            if (currentSetEvents.length === 0) return null
+
+            const sortedEvents = [...currentSetEvents].sort((a, b) => {
               const aSeq = a.seq || 0
               const bSeq = b.seq || 0
               if (aSeq !== 0 || bSeq !== 0) return bSeq - aSeq
@@ -8606,8 +8639,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
               return bTime - aTime
             })
+
+            // Helper to check if an event is a sub-event (decimal sequence)
+            const isSubEvent = (event) => {
+              const seq = event.seq || 0
+              return seq !== Math.floor(seq)
+            }
+
             let lastEvent = null
-            for (const e of allEvents) {
+            for (const e of sortedEvents) {
+              // Skip sub-events (they're part of their parent)
+              if (isSubEvent(e)) continue
               if (e.type === 'rally_start' || e.type === 'replay') continue
               if (e.type === 'lineup') {
                 const hasInitial = e.payload?.isInitial === true
@@ -10429,11 +10471,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               className="to-sub-counter"
               style={{
                 flex: 1,
-                background: 'rgba(255, 255, 255, 0.05)',
+                background: getSubstitutionsUsed('left') >= 6
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : getSubstitutionsUsed('left') >= 5
+                    ? 'rgba(234, 179, 8, 0.2)'
+                    : 'rgba(255, 255, 255, 0.05)',
                 borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
                 padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: getSubstitutionsUsed('left') >= 6
+                  ? '1px solid rgba(239, 68, 68, 0.4)'
+                  : getSubstitutionsUsed('left') >= 5
+                    ? '1px solid rgba(234, 179, 8, 0.4)'
+                    : '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
               }}
             >
@@ -12833,10 +12883,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
                       </span>
                     </div>
-                    {/* Last action */}
-                    {data?.events && data.events.length > 0 && (() => {
-                      // Find the last undoable event by sequence number
-                      const allEvents = [...data.events].sort((a, b) => {
+                    {/* Last action - filtered to current set */}
+                    {data?.events && data.events.length > 0 && data?.set && (() => {
+                      // IMPORTANT: Only show events from the CURRENT SET
+                      const currentSetIndex = data.set.index
+                      const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
+
+                      if (currentSetEvents.length === 0) return null
+
+                      // Sort by sequence number (highest first)
+                      const sortedEvents = [...currentSetEvents].sort((a, b) => {
                         const aSeq = a.seq || 0
                         const bSeq = b.seq || 0
                         if (aSeq !== 0 || bSeq !== 0) {
@@ -12848,9 +12904,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         return bTime - aTime
                       })
 
-                      // Find events with valid descriptions
+                      // Helper to check if an event is a sub-event (decimal sequence like 7.1)
+                      const isSubEvent = (event) => {
+                        const seq = event.seq || 0
+                        return seq !== Math.floor(seq)
+                      }
+
+                      // Find the last main event (integer sequence)
                       let lastEvent = null
-                      for (const e of allEvents) {
+                      for (const e of sortedEvents) {
+                        // Skip sub-events (they're part of their parent)
+                        if (isSubEvent(e)) continue
+
                         // Skip rally_start and replay from display
                         if (e.type === 'rally_start' || e.type === 'replay') continue
 
@@ -12877,7 +12942,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         <div style={{ fontSize: '12px', wordBreak: 'break-word', margin: '0 auto', whiteSpace: 'normal' }}>
                           <span className="summary-label" style={{ whiteSpace: 'normal' }}>Last action: </span>
                           <span className="summary-value" style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
-                            {description}
+                            {description} <span style={{ opacity: 0.5, fontSize: '10px' }}>(seq: {lastEvent.seq})</span>
                           </span>
                         </div>
                       )
@@ -13054,11 +13119,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               className="to-sub-counter"
               style={{
                 flex: 1,
-                background: 'rgba(255, 255, 255, 0.05)',
+                background: getSubstitutionsUsed('right') >= 6
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : getSubstitutionsUsed('right') >= 5
+                    ? 'rgba(234, 179, 8, 0.2)'
+                    : 'rgba(255, 255, 255, 0.05)',
                 borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
                 padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: getSubstitutionsUsed('right') >= 6
+                  ? '1px solid rgba(239, 68, 68, 0.4)'
+                  : getSubstitutionsUsed('right') >= 5
+                    ? '1px solid rgba(234, 179, 8, 0.4)'
+                    : '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
               }}
             >

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.2',
+    date: '19.12.25',
+    changes: [
+      'Enhance MatchEntry, Referee, and Scoreboard components with improved styling for timeouts and substitutions. Updated background colors and borders based on usage thresholds to provide clearer visual feedback during matches. Refined event handling in Scoreboard for better state management and undo functionality, ensuring a more responsive user experience.'
+    ]
+  },
+  {
     version: '0.10.1',
     date: '19.12.25',
     changes: [
