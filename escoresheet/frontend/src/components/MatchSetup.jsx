@@ -3042,6 +3042,59 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setCurrentView('main')
           }}>Confirm</button>
         </div>
+        {/* PDF Import Summary Modal - shown immediately after import */}
+        {importSummaryModal && importSummaryModal.team === 'home' && (
+          <Modal
+            title="Home Team Import Complete"
+            open={true}
+            onClose={() => setImportSummaryModal(null)}
+            width={400}
+          >
+            <div style={{ padding: '20px' }}>
+              <div style={{
+                background: 'rgba(34, 197, 94, 0.1)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
+                  {importSummaryModal.players} Players
+                </div>
+                <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                  Successfully imported
+                </div>
+                {importSummaryModal.benchOfficials > 0 && (
+                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
+                    + {importSummaryModal.benchOfficials} bench official{importSummaryModal.benchOfficials > 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
+              <div style={{
+                background: 'rgba(234, 179, 8, 0.1)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
+                  Please review the imported data:
+                </div>
+                <ul style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
+                  <li>Add any missing bench officials (Doctor, Physio, etc.)</li>
+                  <li>Verify dates of birth are correct</li>
+                  <li>Set captain and libero designations</li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setImportSummaryModal(null)}
+                style={{ width: '100%', padding: '12px', background: 'var(--accent)', border: 'none', borderRadius: '8px', color: '#000', fontWeight: 600, cursor: 'pointer' }}
+              >
+                OK
+              </button>
+            </div>
+          </Modal>
+        )}
       </MatchSetupHomeTeamView>
     )
   }
@@ -3673,6 +3726,59 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setCurrentView('main')
           }}>Confirm</button>
         </div>
+        {/* PDF Import Summary Modal - shown immediately after import */}
+        {importSummaryModal && importSummaryModal.team === 'away' && (
+          <Modal
+            title="Away Team Import Complete"
+            open={true}
+            onClose={() => setImportSummaryModal(null)}
+            width={400}
+          >
+            <div style={{ padding: '20px' }}>
+              <div style={{
+                background: 'rgba(34, 197, 94, 0.1)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
+                  {importSummaryModal.players} Players
+                </div>
+                <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                  Successfully imported
+                </div>
+                {importSummaryModal.benchOfficials > 0 && (
+                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
+                    + {importSummaryModal.benchOfficials} bench official{importSummaryModal.benchOfficials > 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
+              <div style={{
+                background: 'rgba(234, 179, 8, 0.1)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
+                  Please review the imported data:
+                </div>
+                <ul style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
+                  <li>Add any missing bench officials (Doctor, Physio, etc.)</li>
+                  <li>Verify dates of birth are correct</li>
+                  <li>Set captain and libero designations</li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setImportSummaryModal(null)}
+                style={{ width: '100%', padding: '12px', background: 'var(--accent)', border: 'none', borderRadius: '8px', color: '#000', fontWeight: 600, cursor: 'pointer' }}
+              >
+                OK
+              </button>
+            </div>
+          </Modal>
+        )}
       </MatchSetupAwayTeamView>
     )
   }
@@ -4094,7 +4200,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <h3 style={{ margin: 0 }}>Match officials</h3>
               </div>
             </div>
-            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '75px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
+            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '85px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
               <span>1st Referee:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
               <span>2nd Referee:</span>

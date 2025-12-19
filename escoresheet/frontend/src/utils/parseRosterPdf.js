@@ -145,12 +145,10 @@ function parseRosterText(text) {
       const lastName = match[3].trim()
       // Normalize date - remove spaces and normalize separators
       const dob = normalizeDate(match[4].replace(/\s+/g, '').trim())
-      
-      // Since player numbers aren't in the PDF, assign sequential numbers starting from 1
-      const playerNumber = svFormatPlayers.length + 1
-      
+
+      // Don't assign automatic numbers - user should see which players need numbers
       svFormatPlayers.push({
-        number: playerNumber,
+        number: null,
         firstName,
         lastName,
         dob
@@ -168,11 +166,10 @@ function parseRosterText(text) {
         const lastName = matchOriginal[3].trim()
         // Normalize date - remove spaces and normalize separators
         const dob = normalizeDate(matchOriginal[4].replace(/\s+/g, '').trim())
-        
-        const playerNumber = svFormatPlayers.length + 1
-        
+
+        // Don't assign automatic numbers - user should see which players need numbers
         svFormatPlayers.push({
-          number: playerNumber,
+          number: null,
           firstName,
           lastName,
           dob

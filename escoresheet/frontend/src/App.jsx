@@ -224,6 +224,17 @@ export default function App() {
     }
   }, [wakeLockActive, reEnableWakeLock])
 
+  // Preload assets that are used later (e.g., coin toss volleyball image)
+  useEffect(() => {
+    const assetsToPreload = [
+      '/volleyball_simple.png'
+    ]
+
+    assetsToPreload.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
 
   // Fetch server status periodically
   useEffect(() => {

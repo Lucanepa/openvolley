@@ -329,8 +329,69 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
   }
 
   async function confirmCoinToss() {
-    // Only check signatures for official matches
+    // Validation checks (skip for test matches)
     if (!match?.test) {
+      const validationErrors = []
+
+      // 1. Check team names are set (not default "Home"/"Away" or empty)
+      if (!home || home === 'Home' || home.trim() === '') {
+        validationErrors.push('Home team name is not set')
+      }
+      if (!away || away === 'Away' || away.trim() === '') {
+        validationErrors.push('Away team name is not set')
+      }
+
+      // 2. Check at least 1 referee and 1 scorer with names
+      const ref1 = match?.officials?.find(o => o.role === '1st referee')
+      const scorer = match?.officials?.find(o => o.role === 'scorer')
+      if (!ref1?.lastName || !ref1?.firstName) {
+        validationErrors.push('1st Referee name is not set')
+      }
+      if (!scorer?.lastName || !scorer?.firstName) {
+        validationErrors.push('Scorer name is not set')
+      }
+
+      // 3. Check match info (hall, city, league, date)
+      if (!match?.hall || match.hall.trim() === '') {
+        validationErrors.push('Hall is not set')
+      }
+      if (!match?.city || match.city.trim() === '') {
+        validationErrors.push('City is not set')
+      }
+      if (!match?.league || match.league.trim() === '') {
+        validationErrors.push('League is not set')
+      }
+      if (!match?.scheduledAt) {
+        validationErrors.push('Match date/time is not set')
+      }
+
+      // 4. Check at least 6 non-libero players per team with numbers
+      const homeNonLiberoWithNumbers = homeRoster.filter(p => !p.libero && p.number != null && p.number !== '')
+      const awayNonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
+      if (homeNonLiberoWithNumbers.length < 6) {
+        validationErrors.push(`Home team needs at least 6 players with numbers (not liberos). Currently: ${homeNonLiberoWithNumbers.length}`)
+      }
+      if (awayNonLiberoWithNumbers.length < 6) {
+        validationErrors.push(`Away team needs at least 6 players with numbers (not liberos). Currently: ${awayNonLiberoWithNumbers.length}`)
+      }
+
+      // 5. Check at least 1 coach per team
+      const homeCoach = benchHome.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
+      const awayCoach = benchAway.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
+      if (!homeCoach) {
+        validationErrors.push('Home team coach is not set')
+      }
+      if (!awayCoach) {
+        validationErrors.push('Away team coach is not set')
+      }
+
+      // Show validation errors if any
+      if (validationErrors.length > 0) {
+        setNoticeModal({ message: validationErrors.join('\n') })
+        return
+      }
+
+      // Check signatures for official matches
       if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
         setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
         return
@@ -684,39 +745,39 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           </div>
 
           {/* Team A Signatures */}
-          <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '140px' }}>
               <button
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 className={`sign ${teamACoachSig && teamACaptainSig ? 'signed' : ''}`}
-                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, minWidth: 'auto' }}
+                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%' }}
               >
                 Sign A {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
               </button>
+              {signatureMenuA && (
+                <div style={{
+                  marginTop: '8px',
+                  background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px', padding: isCompact ? '8px' : '12px',
+                  display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
+                }}>
+                  <button
+                    onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
+                    className={`sign ${teamACoachSig ? 'signed' : ''}`}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                  >
+                    Coach {teamACoachSig ? '✓' : ''}
+                  </button>
+                  <button
+                    onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
+                    className={`sign ${teamACaptainSig ? 'signed' : ''}`}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                  >
+                    Captain {teamACaptainSig ? '✓' : ''}
+                  </button>
+                </div>
+              )}
             </div>
-            {signatureMenuA && (
-              <div style={{
-                marginTop: '8px',
-                background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '8px', padding: isCompact ? '8px' : '12px',
-                display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
-              }}>
-                <button
-                  onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
-                  className={`sign ${teamACoachSig ? 'signed' : ''}`}
-                  style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px' }}
-                >
-                  Coach {teamACoachSig ? '✓' : ''}
-                </button>
-                <button
-                  onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
-                  className={`sign ${teamACaptainSig ? 'signed' : ''}`}
-                  style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px' }}
-                >
-                  Captain {teamACaptainSig ? '✓' : ''}
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -771,39 +832,39 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           </div>
 
           {/* Team B Signatures */}
-          <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '140px' }}>
               <button
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 className={`sign ${teamBCoachSig && teamBCaptainSig ? 'signed' : ''}`}
-                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, minWidth: 'auto' }}
+                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%' }}
               >
                 Sign B {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
               </button>
+              {signatureMenuB && (
+                <div style={{
+                  marginTop: '8px',
+                  background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px', padding: isCompact ? '8px' : '12px',
+                  display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
+                }}>
+                  <button
+                    onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
+                    className={`sign ${teamBCoachSig ? 'signed' : ''}`}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                  >
+                    Coach {teamBCoachSig ? '✓' : ''}
+                  </button>
+                  <button
+                    onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
+                    className={`sign ${teamBCaptainSig ? 'signed' : ''}`}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                  >
+                    Captain {teamBCaptainSig ? '✓' : ''}
+                  </button>
+                </div>
+              )}
             </div>
-            {signatureMenuB && (
-              <div style={{
-                marginTop: '8px',
-                background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '8px', padding: isCompact ? '8px' : '12px',
-                display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
-              }}>
-                <button
-                  onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
-                  className={`sign ${teamBCoachSig ? 'signed' : ''}`}
-                  style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px' }}
-                >
-                  Coach {teamBCoachSig ? '✓' : ''}
-                </button>
-                <button
-                  onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
-                  className={`sign ${teamBCaptainSig ? 'signed' : ''}`}
-                  style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px' }}
-                >
-                  Captain {teamBCaptainSig ? '✓' : ''}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>

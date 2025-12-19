@@ -202,6 +202,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                   key={referee.id}
                   onClick={() => {
                     onSelect(referee)
+                    setSearchQuery('') // Reset search for next use
                     onClose()
                   }}
                   style={{
