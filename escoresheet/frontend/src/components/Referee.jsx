@@ -2613,10 +2613,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }}>
           <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>TO</span>
           <span style={{
-            background: 'rgba(255, 255, 255, 0.15)',
+            background: leftStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
             padding: '4px 10px',
             borderRadius: '4px',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
             minWidth: '32px',
             textAlign: 'center',
             display: 'flex',
@@ -2626,10 +2626,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>{leftStats.timeouts}</span>
           <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>SUB</span>
           <span style={{
-            background: 'rgba(255, 255, 255, 0.15)',
+            background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
             padding: '4px 10px',
             borderRadius: '4px',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
             minWidth: '32px',
             textAlign: 'center',
             display: 'flex',
@@ -2710,10 +2710,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           height: '100%'
         }}>
           <span style={{
-            background: 'rgba(255, 255, 255, 0.15)',
+            background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
             padding: '4px 10px',
             borderRadius: '4px',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
             minWidth: '32px',
             textAlign: 'center',
             display: 'flex',
@@ -2723,10 +2723,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>{rightStats.timeouts}</span>
           <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', textAlign: 'left', display: 'flex', alignItems: 'center' }}>TO</span>
           <span style={{
-            background: 'rgba(255, 255, 255, 0.15)',
+            background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
             padding: '4px 10px',
             borderRadius: '4px',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
             minWidth: '32px',
             textAlign: 'center',
             display: 'flex',

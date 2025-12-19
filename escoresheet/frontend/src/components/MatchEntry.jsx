@@ -1255,30 +1255,32 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             }}>
               {/* Timeouts */}
               <div style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)',
                 borderRadius: '8px',
                 padding: '12px',
-                textAlign: 'center'
+                textAlign: 'center',
+                border: timeoutsUsed >= 2 ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid transparent'
               }}>
                 <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
                   TO
                 </div>
-                <div style={{ fontSize: '20px', fontWeight: 700 }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: timeoutsUsed >= 2 ? '#ef4444' : 'inherit' }}>
                   {timeoutsUsed} / 2
                 </div>
               </div>
 
               {/* Substitutions */}
               <div style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.05)',
                 borderRadius: '8px',
                 padding: '12px',
-                textAlign: 'center'
+                textAlign: 'center',
+                border: substitutionsUsed >= 6 ? '1px solid rgba(239, 68, 68, 0.4)' : substitutionsUsed >= 5 ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid transparent'
               }}>
                 <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
                   Sub
                 </div>
-                <div style={{ fontSize: '20px', fontWeight: 700 }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: substitutionsUsed >= 6 ? '#ef4444' : substitutionsUsed >= 5 ? '#eab308' : 'inherit' }}>
                   {substitutionsUsed} / 6
                 </div>
               </div>
