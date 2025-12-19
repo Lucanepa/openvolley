@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.9',
+    date: '19.12.25',
+    changes: [
+      'Make header collapsible only on Scoreboard page'
+    ]
+  },
+  {
     version: '0.10.8',
     date: '19.12.25',
     changes: [

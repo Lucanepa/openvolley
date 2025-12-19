@@ -2920,6 +2920,7 @@ export default function App() {
           refereePin: currentMatch?.refereePin,
           onOpenOptions: () => setHomeOptionsModal(true)
         } : null}
+        collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
       />
       <div className="container" style={{
         minHeight: 0,
