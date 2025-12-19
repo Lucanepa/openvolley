@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.29',
+    date: '19.12.25',
+    changes: [
+      'Enhance Scoreboard component with improved substitution and set reopening logic. Updated confirmation messages for deletion actions, added functionality to restore lineups after substitutions, and refined the reopening process for sets, including event deletions and score adjustments. This improves match data management and user experience during live matches.'
+    ]
+  },
+  {
     version: '0.9.28',
     date: '19.12.25',
     changes: [
