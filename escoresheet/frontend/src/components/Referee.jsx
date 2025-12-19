@@ -241,7 +241,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   useEffect(() => {
     checkConnectionStatuses()
-    const interval = setInterval(checkConnectionStatuses, 5000)
+    const interval = setInterval(checkConnectionStatuses, 60000) // 60s to reduce console spam
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
 
