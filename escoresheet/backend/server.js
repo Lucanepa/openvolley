@@ -391,6 +391,16 @@ wss.on('connection', (ws, req) => {
           ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }))
           break
 
+        case 'subscribe-match':
+          // Frontend format for joining a match room (used by referee/bench/livescore)
+          // Adapt to join_match format
+          handleJoinMatch(clientInfo, {
+            ...message,
+            matchId: message.matchId,
+            role: message.role || 'subscriber'
+          })
+          break
+
         default:
           console.log(`❓ Unknown message type: ${message.type}`)
       }
