@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.11.3',
+    date: '20.12.25',
+    changes: [
+      'Enhance CORS handling and validation checks in CoinToss component'
+    ]
+  },
+  {
     version: '0.11.2',
     date: '19.12.25',
     changes: [

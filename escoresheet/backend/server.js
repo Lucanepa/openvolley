@@ -23,12 +23,44 @@ const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
 
+// Allowed origins for CORS
+const ALLOWED_ORIGINS = [
+  'https://openvolley.app',
+  'https://app.openvolley.app',
+  'https://referee.openvolley.app',
+  'https://bench.openvolley.app',
+  'https://livescore.openvolley.app',
+  'https://roster.openvolley.app',
+  // Local development
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000'
+]
+
+function getCorsOrigin(req) {
+  const origin = req.headers.origin
+  // In development or local network, allow all origins
+  if (!IS_CLOUD) return '*'
+  // In production, check against allowed list
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    return origin
+  }
+  // Allow any openvolley.app subdomain
+  if (origin && origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/)) {
+    return origin
+  }
+  return ALLOWED_ORIGINS[0] // Default to main domain
+}
+
 // Create HTTP server
 const server = createServer((req, res) => {
-  // Enable CORS for all origins
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  // Enable CORS with proper origin handling
+  const corsOrigin = getCorsOrigin(req)
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
@@ -620,12 +652,15 @@ function handleSyncMatchData(clientInfo, message) {
   }
 
   // Broadcast to other clients in the room
+  // Use remapped variables (homeTeam, awayTeam, etc.) for consistency with storage and client
   broadcastToRoom(matchId, {
     type: 'match-data-update',
     matchId,
     match,
-    teams,
-    players,
+    homeTeam,
+    awayTeam,
+    homePlayers,
+    awayPlayers,
     sets,
     events,
     timestamp: new Date().toISOString()

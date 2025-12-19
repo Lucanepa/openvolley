@@ -2369,7 +2369,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                           top: `${topPercent}%`,
                           transform: 'translate(50%, -50%) scale(0.8)',
                           zIndex: 3,
-                          cursor: 'grab'
+                          cursor: 'grab',
+                          touchAction: 'none'
                         }}
                       >
                         <PlayerCircle number={leftLineup?.[pos]} position={pos} team={leftTeam} isServing={leftServing} />
@@ -2531,7 +2532,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                           top: `${topPercent}%`,
                           transform: 'translate(-50%, -50%) scale(0.8)',
                           zIndex: 3,
-                          cursor: 'grab'
+                          cursor: 'grab',
+                          touchAction: 'none'
                         }}
                       >
                         <PlayerCircle number={rightLineup?.[pos]} position={pos} team={rightTeam} isServing={rightServing} />

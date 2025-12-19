@@ -314,10 +314,17 @@ export function subscribeToMatchData(matchId, onUpdate) {
           if (message.type === 'match-data-update' && String(message.matchId) === matchIdStr) {
             // Match data updated, notify all subscribers
             // Pass through timestamp fields for latency tracking
+            // Server sends data directly on message, not in a .data wrapper
             const dataWithTimestamps = {
-              ...message.data,
-              _timestamp: message._timestamp,
-              _scoreboardTimestamp: message._scoreboardTimestamp
+              match: message.match,
+              homeTeam: message.homeTeam || message.teams?.[0],
+              awayTeam: message.awayTeam || message.teams?.[1],
+              homePlayers: message.homePlayers || message.players?.filter(p => p.teamId === message.match?.homeTeamId) || [],
+              awayPlayers: message.awayPlayers || message.players?.filter(p => p.teamId === message.match?.awayTeamId) || [],
+              sets: message.sets || [],
+              events: message.events || [],
+              _timestamp: message._timestamp || message.timestamp,
+              _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
             }
             connection.subscribers.forEach(subscriber => {
               try {
