@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.30',
+    date: '19.12.25',
+    changes: [
+      'Update Scoreboard and Referee components for improved styling and functionality. Changed border colors for recently substituted players, refined event handling in Scoreboard, and removed unnecessary debug logging. Enhanced user interface elements for better clarity and responsiveness during live matches.'
+    ]
+  },
+  {
     version: '0.9.29',
     date: '19.12.25',
     changes: [
