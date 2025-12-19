@@ -10,6 +10,7 @@ import ConnectionSetupModal from './options/ConnectionSetupModal'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { syncStatus } = useSyncQueue()
@@ -642,6 +643,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     return result
   }, [matchId])
+
+  // Helper to create state snapshot for debug logging
+  const getStateSnapshot = useCallback(() => {
+    if (!data) return null
+    return {
+      matchId: data.match?.id,
+      setIndex: data.set?.index,
+      homeScore: data.set?.homeScore,
+      awayScore: data.set?.awayScore,
+      currentServe: data.set?.currentServe,
+      homeRotation: data.set?.homeRotation,
+      awayRotation: data.set?.awayRotation,
+      homeOnCourt: data.set?.homeOnCourt,
+      awayOnCourt: data.set?.awayOnCourt,
+      homeLiberoIn: data.set?.homeLiberoIn,
+      awayLiberoIn: data.set?.awayLiberoIn,
+      homeLiberoFor: data.set?.homeLiberoFor,
+      awayLiberoFor: data.set?.awayLiberoFor,
+      homeTimeouts: data.set?.homeTimeouts,
+      awayTimeouts: data.set?.awayTimeouts,
+      rallyInProgress: data.set?.rallyInProgress,
+      homeSetsWon: data.sets?.filter(s => s.winner === 'home').length,
+      awaySetsWon: data.sets?.filter(s => s.winner === 'away').length,
+      totalEvents: data.events?.length
+    }
+  }, [data])
 
   // Connect to WebSocket server and sync match data
   useEffect(() => {
@@ -2844,6 +2871,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       })
       const pointSeq = await logEvent('point', { team: teamKey })
 
+      // Debug log: point awarded
+      debugLogger.log('POINT_AWARDED', {
+        team: teamKey,
+        side,
+        newScore: { home: homePoints, away: awayPoints },
+        serveBeforePoint,
+        scoringTeamHadServe,
+        setIndex: data.set.index,
+        pointSeq
+      }, getStateSnapshot())
+
       // Track when point was awarded (for accidental rally start check)
       lastPointAwardedTimeRef.current = Date.now()
       // Reset rally start time since rally ended
@@ -3085,14 +3123,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
-              payload: { 
-                team: teamKey, 
+              payload: {
+                team: teamKey,
                 lineup: cleanedRotatedLineup,
                 liberoSubstitution: rotatedLiberoSubstitution // Include rotated libero substitution if it exists
               },
               ts: new Date().toISOString(),
               seq: rotationSeq // Decimal ID for ordering (e.g., 1.1)
             })
+
+            // Debug log: rotation
+            debugLogger.log('ROTATION', {
+              team: teamKey,
+              newLineup: cleanedRotatedLineup,
+              liberoSubstitution: rotatedLiberoSubstitution,
+              rotationSeq
+            }, getStateSnapshot())
+
             // Don't add to sync_queue for rotation lineups
             // But sync to referee so they see the updated lineup after rotation
             syncToReferee()
@@ -3265,6 +3312,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     setLiberoReminder(null)
     await logEvent('rally_start')
+
+    // Debug log: rally start
+    debugLogger.log('RALLY_START', {
+      setIndex: data?.set?.index,
+      homeScore: data?.set?.homePoints,
+      awayScore: data?.set?.awayPoints
+    }, getStateSnapshot())
+
     // Track when rally started (for accidental point award check)
     rallyStartTimeRef.current = Date.now()
 
@@ -3357,7 +3412,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       team: teamKey,
       type: type
     })
-    
+
+    // Debug log: sanction
+    debugLogger.log('SANCTION', {
+      team: teamKey,
+      type,
+      side
+    }, getStateSnapshot())
+
     // If delay penalty, award point to the other team (but only if lineups are set)
     if (type === 'delay_penalty') {
       // Check if both lineups are set before awarding point
@@ -3421,6 +3483,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       seq: nextSeq1
     })
 
+    // Debug log: set start
+    debugLogger.log('SET_START', {
+      setIndex: setStartTimeModal.setIndex,
+      startTime: time
+    }, getStateSnapshot())
+
     setSetStartTimeModal(null)
 
     // Trigger event backup for Safari/Firefox
@@ -3473,6 +3541,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       startTime: startTime,
       endTime: time
     })
+
+    // Debug log: set end
+    debugLogger.log('SET_END', {
+      winner,
+      winnerLabel,
+      setIndex,
+      homePoints,
+      awayPoints,
+      startTime,
+      endTime: time
+    }, getStateSnapshot())
 
     // Update set with end time and finished status
     await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
@@ -4094,6 +4173,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setUndoConfirm(null)
       return
     }
+
+    // Debug log: undo started
+    debugLogger.log('UNDO_STARTED', {
+      eventType: undoConfirm.event?.type,
+      eventPayload: undoConfirm.event?.payload,
+      eventSeq: undoConfirm.event?.seq
+    }, getStateSnapshot())
 
     const lastEvent = undoConfirm.event
     const lastEventSeq = lastEvent.seq || 0
@@ -4795,6 +4881,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!timeoutModal) return
     // Log the timeout event
     await logEvent('timeout', { team: timeoutModal.team })
+
+    // Debug log: timeout
+    debugLogger.log('TIMEOUT', {
+      team: timeoutModal.team
+    }, getStateSnapshot())
+
     // Start the timeout countdown
     setTimeoutModal({ ...timeoutModal, started: true })
     
@@ -6212,16 +6304,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
 
     // Log the substitution event
-    await logEvent('substitution', { 
-      team, 
-      position, 
-      playerOut, 
+    await logEvent('substitution', {
+      team,
+      position,
+      playerOut,
       playerIn,
       isExceptional: isExceptional || false,
       isExpelled: isExpelled || false,
       isDisqualified: isDisqualified || false
     })
-    
+
+    // Debug log: substitution
+    debugLogger.log('SUBSTITUTION', {
+      team,
+      position,
+      playerOut,
+      playerIn,
+      isExceptional,
+      isExpelled,
+      isDisqualified,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
     // If injury or exceptional substitution, add automatic remarks
     if ((isInjury || isExceptional) && data?.set) {
       const setIndex = data.set.index
@@ -7087,14 +7191,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
 
     // Log the libero entry event
-    await logEvent('libero_entry', { 
-      team, 
-      position, 
-      playerOut, 
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
       liberoIn: liberoPlayer.number,
       liberoType: liberoIn
     })
-    
+
+    // Debug log: libero entry
+    debugLogger.log('LIBERO_ENTRY', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoIn,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
     setLiberoConfirm(null)
     
     // Check if captain is on court after libero entry
@@ -7196,14 +7310,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
 
     // Log the libero entry event
-    await logEvent('libero_entry', { 
-      team, 
-      position, 
-      playerOut, 
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
       liberoIn: liberoNumber,
       liberoType: liberoType
     })
-    
+
+    // Debug log: libero reentry
+    debugLogger.log('LIBERO_REENTRY', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoNumber,
+      liberoType,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
     setLiberoReentryModal(null)
     
     // Check if captain is on court after libero reentry (playerOut is leaving)
@@ -8885,6 +9009,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   }
                 }
               },
+              {
+                key: 'debug-logs',
+                label: '📋 Download Debug Logs',
+                onClick: () => {
+                  debugLogger.downloadLogs(`debug_logs_${matchId}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
+                }
+              },
+              {
+                key: 'clear-debug-logs',
+                label: '🗑️ Clear Debug Logs',
+                onClick: () => {
+                  if (confirm(`Clear all debug logs? (${debugLogger.getCount()} entries)`)) {
+                    debugLogger.clear()
+                    alert('Debug logs cleared')
+                  }
+                }
+              },
+              { separator: true },
               {
                 key: 'options',
                 label: '⚙️ Options',
@@ -14838,7 +14980,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           value={data.set.homePoints || 0}
                           onChange={async (e) => {
                             const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                            const oldPoints = data.set.homePoints || 0
                             await db.sets.update(data.set.id, { homePoints: newPoints })
+                            debugLogger.log('MANUAL_SCORE_CHANGE', {
+                              team: 'home',
+                              oldPoints,
+                              newPoints,
+                              setIndex: data.set.index
+                            }, getStateSnapshot())
                           }}
                           style={{
                             width: '60px',
@@ -14862,7 +15011,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           value={data.set.awayPoints || 0}
                           onChange={async (e) => {
                             const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                            const oldPoints = data.set.awayPoints || 0
                             await db.sets.update(data.set.id, { awayPoints: newPoints })
+                            debugLogger.log('MANUAL_SCORE_CHANGE', {
+                              team: 'away',
+                              oldPoints,
+                              newPoints,
+                              setIndex: data.set.index
+                            }, getStateSnapshot())
                           }}
                           style={{
                             width: '60px',

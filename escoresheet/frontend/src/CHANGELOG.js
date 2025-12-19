@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.27',
+    date: '19.12.25',
+    changes: [
+      'Add debug logging functionality to Scoreboard component. Implemented state snapshot creation for various events, including point awards, rotations, rallies, and substitutions. Added options to download and clear debug logs, enhancing debugging capabilities for match data management.'
+    ]
+  },
+  {
     version: '0.9.26',
     date: '19.12.25',
     changes: [
