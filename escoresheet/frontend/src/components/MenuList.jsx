@@ -5,6 +5,7 @@ export default function MenuList({
   position = 'right', // 'left' | 'right' | 'center'
   buttonLabel = 'Menu',
   buttonTitle = '',
+  menuTitle = '',
   buttonStyle = {},
   buttonClassName = '',
   showArrow = true
@@ -124,6 +125,18 @@ export default function MenuList({
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
           }}
         >
+          {menuTitle && (
+            <div style={{
+              padding: '8px 12px 12px 12px',
+              fontSize: '14px',
+              fontWeight: 700,
+              color: '#fff',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
+              marginBottom: '8px'
+            }}>
+              {menuTitle}
+            </div>
+          )}
           {items.map((item, index) => {
             if (item.separator) {
               return (
