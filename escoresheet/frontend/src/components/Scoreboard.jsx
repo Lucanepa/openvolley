@@ -3146,6 +3146,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             // Save the rotated lineup as a new lineup event (but don't log it - it's automatic rotation)
             // Use decimal ID based on the point's action ID (e.g., if point is 1, rotation is 1.1)
             const rotationSeq = await getNextSubSeq(pointSeq)
+            const rotationStateBefore = getStateSnapshot()
             const rotationEventId = await db.events.add({
               matchId,
               setIndex: data.set.index,
@@ -3156,7 +3157,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 liberoSubstitution: rotatedLiberoSubstitution // Include rotated libero substitution if it exists
               },
               ts: new Date().toISOString(),
-              seq: rotationSeq // Decimal ID for ordering (e.g., 1.1)
+              seq: rotationSeq, // Decimal ID for ordering (e.g., 1.1)
+              stateBefore: rotationStateBefore
             })
 
             // Debug log: rotation
@@ -3488,6 +3490,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Get the highest sequence number for this match
     const nextSeq1 = await getNextSeq()
     const nextSeq2 = nextSeq1 + 1
+    const setStartStateBefore = getStateSnapshot()
 
     // Log set_start event
     const setStartEventId = await db.events.add({
@@ -3499,14 +3502,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         startTime: time
       },
       ts: time,
-      seq: nextSeq1
+      seq: nextSeq1,
+      stateBefore: setStartStateBefore
     })
 
     // Debug log: set start
     debugLogger.log('SET_START', {
       setIndex: setStartTimeModal.setIndex,
-      startTime: time
-    }, getStateSnapshot())
+      startTime: time,
+      seq: nextSeq1
+    }, setStartStateBefore)
 
     setSetStartTimeModal(null)
 
@@ -3514,13 +3519,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     onTriggerEventBackup?.('set_start')
 
     // Now actually start the rally
+    const rallyStartStateBefore = getStateSnapshot()
     await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'rally_start',
       payload: {},
       ts: new Date().toISOString(),
-      seq: nextSeq2
+      seq: nextSeq2,
+      stateBefore: rallyStartStateBefore
     })
 
     // Sync to referee immediately after set start
@@ -3817,6 +3824,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     // Log the set 5 coin toss event so it can be undone
     const nextSeq = await getNextSeq()
+    const set5CoinTossStateBefore = getStateSnapshot()
     await db.events.add({
       matchId,
       setIndex: setIndex,
@@ -3828,7 +3836,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         firstServeTeamKey
       },
       ts: new Date().toISOString(),
-      seq: nextSeq
+      seq: nextSeq,
+      stateBefore: set5CoinTossStateBefore
     })
 
     // Get match to check if it's a test match
@@ -4856,6 +4865,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Log the replay event (this is important for match records)
       const nextSeq = await getNextSeq()
+      const replayStateBefore = getStateSnapshot()
 
       await db.events.add({
         matchId,
@@ -4870,7 +4880,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           newAwayPoints
         },
         ts: new Date().toISOString(),
-        seq: nextSeq
+        seq: nextSeq,
+        stateBefore: replayStateBefore
       })
 
       // Go back to idle state - user can then click "Start rally" or "Undo"
@@ -6314,13 +6325,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Save the updated lineup (mark as from substitution)
     const subSeq = await getNextSeq()
+    const subStateBefore = getStateSnapshot()
     const subEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
       payload: { team, lineup: finalLineup, fromSubstitution: true },
       ts: new Date().toISOString(),
-      seq: subSeq
+      seq: subSeq,
+      stateBefore: subStateBefore
     })
 
     // Log the substitution event
@@ -6987,6 +7000,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     // Save the updated lineup with libero substitution info
     const nextSeq = await getNextSeq()
+    const liberoDropdownStateBefore = getStateSnapshot()
 
     await db.events.add({
       matchId,
@@ -7003,7 +7017,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: nextSeq
+      seq: nextSeq,
+      stateBefore: liberoDropdownStateBefore
     })
 
     // Log the libero entry event
@@ -7085,6 +7100,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     // Save the updated lineup with libero substitution info
     const nextSeq = await getNextSeq()
+    const liberoRotationStateBefore = getStateSnapshot()
 
     await db.events.add({
       matchId,
@@ -7101,7 +7117,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: nextSeq
+      seq: nextSeq,
+      stateBefore: liberoRotationStateBefore
     })
 
     // Log the libero entry event
@@ -7191,13 +7208,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Save the updated lineup with libero substitution info
     const nextSeq = await getNextSeq()
-    
+    const liberoEntryStateBefore = getStateSnapshot()
+
     const liberoEntryEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
-      payload: { 
-        team, 
+      payload: {
+        team,
         lineup: finalLineup,
         liberoSubstitution: {
           position,
@@ -7207,7 +7225,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: nextSeq
+      seq: nextSeq,
+      stateBefore: liberoEntryStateBefore
     })
 
     // Log the libero entry event
@@ -7311,12 +7330,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Save the updated lineup with libero substitution info
     const liberoExitSeq = await getNextSeq()
+    const liberoExitStateBefore = getStateSnapshot()
     const liberoExitEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
-      payload: { 
-        team, 
+      payload: {
+        team,
         lineup: finalLineup,
         liberoSubstitution: {
           position,
@@ -7326,7 +7346,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: liberoExitSeq
+      seq: liberoExitSeq,
+      stateBefore: liberoExitStateBefore
     })
 
     // Log the libero entry event
@@ -7461,17 +7482,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Save the updated lineup (explicitly without libero substitution)
     const liberoClearSeq = await getNextSeq()
+    const liberoClearStateBefore = getStateSnapshot()
     const liberoClearEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
-      payload: { 
-        team: teamKey, 
+      payload: {
+        team: teamKey,
         lineup: finalLineup,
         liberoSubstitution: null // Explicitly clear libero substitution
       },
       ts: new Date().toISOString(),
-      seq: liberoClearSeq
+      seq: liberoClearSeq,
+      stateBefore: liberoClearStateBefore
     })
 
     // Log the libero exit event
@@ -7666,12 +7689,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Save the updated lineup with libero substitution info
     const liberoExchangeSeq = await getNextSeq()
+    const liberoExchangeStateBefore = getStateSnapshot()
     const liberoExchangeEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
-      payload: { 
-        team: teamKey, 
+      payload: {
+        team: teamKey,
         lineup: newLineup,
         liberoSubstitution: {
           position: liberoOnCourt.position,
@@ -7681,7 +7705,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: liberoExchangeSeq
+      seq: liberoExchangeSeq,
+      stateBefore: liberoExchangeStateBefore
     })
 
     // Log the libero exchange event

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.3',
+    date: '19.12.25',
+    changes: [
+      'Add state snapshot logging to Scoreboard events for improved traceability. Enhanced event handling by including stateBefore for various actions such as rotations, set starts, and substitutions, ensuring better state management during live matches.'
+    ]
+  },
+  {
     version: '0.10.2',
     date: '19.12.25',
     changes: [
