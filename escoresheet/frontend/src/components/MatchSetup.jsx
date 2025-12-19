@@ -770,27 +770,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           setAwayCaptainSignature(match.awayCaptainSignature)
           setSavedSignatures(prev => ({ ...prev, awayCaptain: match.awayCaptainSignature }))
         }
-        
-        // Load coin toss data if available
-        if (match.coinTossTeamA && match.coinTossTeamB !== undefined) {
-          // Load saved coin toss result
-          setTeamA(match.coinTossTeamA)
-          setTeamB(match.coinTossTeamB)
-          setServeA(match.coinTossServeA !== undefined ? match.coinTossServeA : true)
-          setServeB(match.coinTossServeB !== undefined ? match.coinTossServeB : false)
-        } else if (match.firstServe) {
-          // Fallback: use firstServe to determine serve (but not team assignment)
-          // Default team assignment
-          setTeamA('home')
-          setTeamB('away')
-          if (match.firstServe === 'home') {
-            setServeA(true)
-            setServeB(false)
-          } else {
-            setServeA(false)
-            setServeB(true)
-          }
-        }
+
+        // Note: Coin toss data is loaded and managed by CoinToss.jsx component
       } catch (error) {
         console.error('Error loading initial match data:', error)
       }

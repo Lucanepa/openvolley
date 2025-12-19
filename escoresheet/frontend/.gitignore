@@ -11,7 +11,13 @@ node_modules
 dist
 dist-electron
 dist-ssr
+dist-app
+dist-referee
+dist-bench
+dist-livescore
+dist-roster
 *.local
+_build_*.html
 
 # Editor directories and files
 .vscode/*

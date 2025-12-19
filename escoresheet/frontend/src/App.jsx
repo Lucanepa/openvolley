@@ -227,7 +227,7 @@ export default function App() {
   // Preload assets that are used later (e.g., coin toss volleyball image)
   useEffect(() => {
     const assetsToPreload = [
-      '/volleyball_simple.png'
+      '../mikasa_v200w.png'
     ]
 
     assetsToPreload.forEach(src => {

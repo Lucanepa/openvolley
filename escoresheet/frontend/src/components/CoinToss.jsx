@@ -385,10 +385,74 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         validationErrors.push('Away team coach is not set')
       }
 
+      // 6. Check captain is set for each team
+      const homeCaptainPlayer = homeRoster.find(p => p.isCaptain)
+      const awayCaptainPlayer = awayRoster.find(p => p.isCaptain)
+      if (!homeCaptainPlayer) {
+        validationErrors.push('Home team captain is not set')
+      }
+      if (!awayCaptainPlayer) {
+        validationErrors.push('Away team captain is not set')
+      }
+
+      // 7. Check for duplicate jersey numbers
+      const homeNumbers = homeRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
+      const homeDuplicateNumbers = homeNumbers.filter((num, idx) => homeNumbers.indexOf(num) !== idx)
+      if (homeDuplicateNumbers.length > 0) {
+        validationErrors.push(`Home team has duplicate jersey numbers: ${[...new Set(homeDuplicateNumbers)].join(', ')}`)
+      }
+      const awayNumbers = awayRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
+      const awayDuplicateNumbers = awayNumbers.filter((num, idx) => awayNumbers.indexOf(num) !== idx)
+      if (awayDuplicateNumbers.length > 0) {
+        validationErrors.push(`Away team has duplicate jersey numbers: ${[...new Set(awayDuplicateNumbers)].join(', ')}`)
+      }
+
+      // 8. Check for duplicate players (same last name and first name)
+      const homePlayerNames = homeRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
+      const homeDuplicatePlayers = homePlayerNames.filter((name, idx) => name && homePlayerNames.indexOf(name) !== idx)
+      if (homeDuplicatePlayers.length > 0) {
+        validationErrors.push(`Home team has duplicate players: ${[...new Set(homeDuplicatePlayers)].join(', ')}`)
+      }
+      const awayPlayerNames = awayRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
+      const awayDuplicatePlayers = awayPlayerNames.filter((name, idx) => name && awayPlayerNames.indexOf(name) !== idx)
+      if (awayDuplicatePlayers.length > 0) {
+        validationErrors.push(`Away team has duplicate players: ${[...new Set(awayDuplicatePlayers)].join(', ')}`)
+      }
+
+      // 9. Check no birthdate is exactly 01.01.1900 (placeholder/error date)
+      const allRosterPlayers = [...homeRoster, ...awayRoster]
+      const allBenchOfficials = [...benchHome, ...benchAway]
+      const playersWithBadDate = allRosterPlayers.filter(p => p.dob === '01.01.1900' || p.dob === '01/01/1900')
+      const benchWithBadDate = allBenchOfficials.filter(b => b.dob === '01.01.1900' || b.dob === '01/01/1900')
+      if (playersWithBadDate.length > 0 || benchWithBadDate.length > 0) {
+        validationErrors.push('Some players or officials have invalid birthdate (01.01.1900). Please correct these dates.')
+      }
+
       // Show validation errors if any
       if (validationErrors.length > 0) {
         setNoticeModal({ message: validationErrors.join('\n') })
         return
+      }
+
+      // 10. Check for dates that might be import errors (01.01.yyyy for any year) - ask for confirmation
+      const suspiciousDates = []
+      allRosterPlayers.forEach(p => {
+        if (p.dob && (p.dob.startsWith('01.01.') || p.dob.startsWith('01/01/'))) {
+          suspiciousDates.push(`${p.lastName || ''} ${p.firstName || ''}: ${p.dob}`)
+        }
+      })
+      allBenchOfficials.forEach(b => {
+        if (b.dob && (b.dob.startsWith('01.01.') || b.dob.startsWith('01/01/'))) {
+          suspiciousDates.push(`${b.lastName || ''} ${b.firstName || ''} (${b.role}): ${b.dob}`)
+        }
+      })
+      if (suspiciousDates.length > 0) {
+        const confirmed = window.confirm(
+          `The following people have birthdates on January 1st, which may indicate import errors:\n\n${suspiciousDates.join('\n')}\n\nAre these dates correct?`
+        )
+        if (!confirmed) {
+          return
+        }
       }
 
       // Check signatures for official matches
@@ -985,7 +1049,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {rosterEntries.map(({ player: p, index: originalIdx }) => (
+                    {rosterEntries.map(({ player: p, index: originalIdx }) => {
+                      // Check for duplicate jersey number
+                      const isDuplicate = p.number != null && p.number !== '' &&
+                        roster.some((other, idx) => idx !== originalIdx && other.number === p.number)
+
+                      return (
                       <tr key={`roster-${originalIdx}`}>
                         <td style={{ verticalAlign: 'middle', padding: '6px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1001,13 +1070,16 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                                 updated[originalIdx] = { ...updated[originalIdx], number: val }
                                 setRoster(updated)
                               }}
+                              title={isDuplicate ? 'Duplicate jersey number!' : ''}
                               style={{
                                 width: p.isCaptain ? '24px' : '28px',
                                 height: p.isCaptain ? '24px' : 'auto',
-                                padding: '0', margin: '0', background: 'transparent',
-                                border: p.isCaptain ? '2px solid var(--accent)' : 'none',
-                                borderRadius: p.isCaptain ? '50%' : '0',
-                                color: 'var(--text)', textAlign: 'center', fontSize: '12px'
+                                padding: '0', margin: '0',
+                                background: isDuplicate ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
+                                border: isDuplicate ? '2px solid #ef4444' : (p.isCaptain ? '2px solid var(--accent)' : 'none'),
+                                borderRadius: p.isCaptain ? '50%' : (isDuplicate ? '4px' : '0'),
+                                color: isDuplicate ? '#ef4444' : 'var(--text)',
+                                textAlign: 'center', fontSize: '12px'
                               }}
                             />
                             {p.libero && (
@@ -1104,7 +1176,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
