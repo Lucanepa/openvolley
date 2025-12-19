@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.1',
+    date: '19.12.25',
+    changes: [
+      'Update package version to 0.10.0 and replace mikasa_v200w.png with a new image file to avoid issues of copyright.'
+    ]
+  },
+  {
     version: '0.9.30',
     date: '19.12.25',
     changes: [
