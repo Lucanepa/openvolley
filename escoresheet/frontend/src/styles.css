@@ -434,9 +434,9 @@
 
   .match-toolbar {
     display: grid;
-    grid-template-columns: 220px 1fr 220px;
+    grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
     align-items: center;
-    gap: 16px;
+    gap: 8px;
     padding: 14px 16px;
     background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -449,45 +449,13 @@
 
   @media (max-width: 1400px) {
     .match-toolbar {
-      grid-template-columns: 220px 1fr 220px;
-      gap: 12px;
       padding: 10px 12px;
-    }
-  }
-
-  @media (max-width: 1280px) {
-    .match-toolbar {
-      grid-template-columns: 200px 1fr 200px;
-      gap: 10px;
-    }
-  }
-
-  @media (max-width: 1100px) {
-    .match-toolbar {
-      grid-template-columns: 180px 1fr 180px;
-      gap: 8px;
-    }
-  }
-
-  @media (max-width: 1000px) {
-    .match-toolbar {
-      grid-template-columns: 120px 1fr 120px;
-      gap: 2px;
     }
   }
 
   @media (max-width: 960px) {
     .match-toolbar {
-      grid-template-columns: 140px 1fr 140px;
-      gap: 4px;
       padding: 6px 8px;
-    }
-  }
-
-  @media (max-width: 800px) {
-    .match-toolbar {
-      grid-template-columns: 120px 1fr 120px;
-      gap: 3px;
     }
   }
 
@@ -1235,6 +1203,13 @@
     }
   }
 
+  /* Mid-height on wide screens: reduce court size to 85% */
+  @media (min-width: 1401px) and (max-height: 970px) and (min-height: 768px) {
+    .court {
+      width: 85%;
+    }
+  }
+
 
   .court-side {
     position: relative;
@@ -1515,6 +1490,23 @@
       min-height: 63px;
       font-size: 18px;
       padding: 12px 18px;
+    }
+  }
+
+  /* Compact mode (height < 768): add more gap between court and rally controls */
+  @media (max-height: 768px) {
+    .rally-controls {
+      margin-top: 8px;
+      gap: 4px;
+    }
+    .rally-controls-row {
+      gap: 8px;
+    }
+    .rally-point-button {
+      min-width: 90px;
+      min-height: 55px;
+      font-size: 16px;
+      padding: 10px 14px;
     }
   }
 

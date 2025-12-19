@@ -191,6 +191,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string } | null
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }] - for flashing effect
   const recentSubFlashTimeoutRef = useRef(null) // Timeout ref for clearing flash
+
+  // Drag and drop state for substitution/libero
+  const [draggedPlayer, setDraggedPlayer] = useState(null) // { team, playerNumber, type: 'bench'|'libero'|'court', isLibero?: boolean, position?: string } | null
+  const [dropTargetPosition, setDropTargetPosition] = useState(null) // { team, position } | null
+  const [dropTargetBench, setDropTargetBench] = useState(null) // { team, playerNumber, isLibero?: boolean } | null - for reverse drag (court to bench)
+
+  // Header collapse state
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
   // Compact mode: landscape (width >= height) = width <= 960 OR height < 768
@@ -2798,7 +2806,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           return bTime - aTime // Most recent first
         })
       
-      let serveBeforePoint = data?.match?.firstServe || 'home'
+      // Calculate first serve for current set based on alternation pattern
+      // Set 1: firstServe, Set 2: opposite, Set 3: same as Set 1, etc.
+      const setIndex = data.set.index
+      const set1FirstServe = data?.match?.firstServe || 'home'
+      let currentSetFirstServe
+
+      if (setIndex === 5 && data.match?.set5FirstServe) {
+        const teamAKey = data.match.coinTossTeamA || 'home'
+        const teamBKey = data.match.coinTossTeamB || 'away'
+        currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+      } else if (setIndex === 5) {
+        currentSetFirstServe = set1FirstServe
+      } else {
+        // Sets 1-4: odd sets (1, 3) same as set 1, even sets (2, 4) opposite
+        currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+      }
+
+      let serveBeforePoint = currentSetFirstServe
       if (pointEventsBefore.length > 0) {
         // The last point event shows who has serve now (before this new point)
         const lastPoint = pointEventsBefore[0] // Most recent is first after sorting
@@ -3815,7 +3840,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const liberoIn = event.payload?.liberoIn || '?'
       const liberoOutType = event.payload?.liberoOutType === 'libero1' ? 'L1' : 'L2'
       const liberoInType = event.payload?.liberoInType === 'libero1' ? 'L1' : 'L2'
-      eventDescription = `Libero substitution — ${teamName} (${liberoOutType} ${liberoOut} ↔ ${liberoInType} ${liberoIn})`
+      eventDescription = `Libero exchange — ${teamName} (${liberoOutType} ${liberoOut} ↔ ${liberoInType} ${liberoIn})`
     } else if (event.type === 'libero_unable') {
       const liberoNumber = event.payload?.liberoNumber || '?'
       const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
@@ -4622,7 +4647,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const sortedPoints = pointEvents.sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
         // Get the team that had the point before this one (to determine who had serve)
-        let previousServeTeam = data?.match?.firstServe || 'home'
+        // Calculate first serve for current set based on alternation pattern
+        const replaySetIndex = data.set.index
+        const replaySet1FirstServe = data?.match?.firstServe || 'home'
+        let replayCurrentSetFirstServe
+        if (replaySetIndex === 5 && data.match?.set5FirstServe) {
+          const replayTeamAKey = data.match.coinTossTeamA || 'home'
+          const replayTeamBKey = data.match.coinTossTeamB || 'away'
+          replayCurrentSetFirstServe = data.match.set5FirstServe === 'A' ? replayTeamAKey : replayTeamBKey
+        } else if (replaySetIndex === 5) {
+          replayCurrentSetFirstServe = replaySet1FirstServe
+        } else {
+          // Sets 1-4: odd sets (1, 3) same as set 1, even sets (2, 4) opposite
+          replayCurrentSetFirstServe = replaySetIndex % 2 === 1 ? replaySet1FirstServe : (replaySet1FirstServe === 'home' ? 'away' : 'home')
+        }
+        let previousServeTeam = replayCurrentSetFirstServe
         if (sortedPoints.length > 1) {
           // The second point is the one before the current one
           previousServeTeam = sortedPoints[1].payload?.team || previousServeTeam
@@ -5496,6 +5535,237 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return eventsAfter.length > 0
   }, [data?.events, data?.set])
 
+  // ========== Drag and Drop Handlers for Substitution/Libero ==========
+
+  // Handle drag start from bench player or libero
+  const handleBenchDragStart = useCallback((e, teamKey, playerNumber, isLibero = false) => {
+    if (rallyStatus !== 'idle') return
+
+    setDraggedPlayer({ team: teamKey, playerNumber, type: 'bench', isLibero })
+    e.dataTransfer.setData('text/plain', JSON.stringify({ team: teamKey, playerNumber, isLibero, type: 'bench' }))
+    e.dataTransfer.effectAllowed = 'move'
+
+    // Create custom drag image showing the player number
+    const dragImage = document.createElement('div')
+    dragImage.textContent = String(playerNumber)
+    dragImage.style.cssText = `
+      position: absolute;
+      top: -1000px;
+      left: -1000px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: ${isLibero ? '#3b82f6' : '#4ade80'};
+      color: ${isLibero ? '#fff' : '#000'};
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `
+    document.body.appendChild(dragImage)
+    e.dataTransfer.setDragImage(dragImage, 25, 25)
+
+    setTimeout(() => {
+      document.body.removeChild(dragImage)
+    }, 0)
+  }, [rallyStatus])
+
+  // Handle drag start from court player (for substitution out)
+  const handleCourtDragStart = useCallback((e, teamKey, position, playerNumber, isLibero = false) => {
+    if (rallyStatus !== 'idle') return
+
+    setDraggedPlayer({ team: teamKey, playerNumber, position, type: 'court', isLibero })
+    e.dataTransfer.setData('text/plain', JSON.stringify({ team: teamKey, playerNumber, position, isLibero, type: 'court' }))
+    e.dataTransfer.effectAllowed = 'move'
+
+    // Create custom drag image showing the player number
+    const dragImage = document.createElement('div')
+    dragImage.textContent = String(playerNumber)
+    dragImage.style.cssText = `
+      position: absolute;
+      top: -1000px;
+      left: -1000px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: ${isLibero ? '#FFF8E7' : '#ef4444'};
+      color: #000;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      border: 2px solid ${isLibero ? '#3b82f6' : '#dc2626'};
+    `
+    document.body.appendChild(dragImage)
+    e.dataTransfer.setDragImage(dragImage, 25, 25)
+
+    setTimeout(() => {
+      document.body.removeChild(dragImage)
+    }, 0)
+  }, [rallyStatus])
+
+  const handleBenchDragEnd = useCallback(() => {
+    setDraggedPlayer(null)
+    setDropTargetPosition(null)
+  }, [])
+
+  // Handle drag over court player position
+  const handleCourtDragOver = useCallback((e, teamKey, position) => {
+    e.preventDefault()
+    if (!draggedPlayer) return
+
+    // Only allow drop if teams match
+    if (draggedPlayer.team !== teamKey) return
+
+    // If libero, only allow back row positions (I, V, VI) and not serving position I
+    if (draggedPlayer.isLibero) {
+      const isBackRow = position === 'I' || position === 'V' || position === 'VI'
+      const currentServe = getCurrentServe()
+      const isServing = currentServe === teamKey && position === 'I'
+      if (!isBackRow || isServing) return
+    }
+
+    e.dataTransfer.dropEffect = 'move'
+    setDropTargetPosition({ team: teamKey, position })
+  }, [draggedPlayer, getCurrentServe])
+
+  const handleCourtDragLeave = useCallback(() => {
+    setDropTargetPosition(null)
+  }, [])
+
+  // Handle drop on court player - triggers substitution or libero exchange
+  const handleCourtDrop = useCallback((e, teamKey, position, courtPlayerNumber) => {
+    e.preventDefault()
+    if (!draggedPlayer) return
+    if (draggedPlayer.team !== teamKey) return
+
+    const benchPlayerNumber = draggedPlayer.playerNumber
+    const isLibero = draggedPlayer.isLibero
+
+    setDraggedPlayer(null)
+    setDropTargetPosition(null)
+
+    if (isLibero) {
+      // Libero exchange - show confirmation
+      const isBackRow = position === 'I' || position === 'V' || position === 'VI'
+      const currentServe = getCurrentServe()
+      const isServing = currentServe === teamKey && position === 'I'
+
+      if (!isBackRow || isServing) return
+
+      // Check if a libero is already on court
+      const liberoOnCourt = getLiberoOnCourt(teamKey)
+      if (liberoOnCourt) return // Already have a libero on court
+
+      // Find libero type
+      const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+      const liberoPlayer = teamPlayers?.find(p => p.number === benchPlayerNumber)
+      const liberoType = liberoPlayer?.libero || 'libero1'
+
+      setLiberoConfirm({
+        team: teamKey,
+        position,
+        playerOut: courtPlayerNumber,
+        liberoIn: liberoType
+      })
+    } else {
+      // Regular substitution - show confirmation
+      const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
+      if (teamSubstitutions >= 6) return // Max substitutions reached
+
+      setSubstitutionConfirm({
+        team: teamKey,
+        position,
+        playerOut: courtPlayerNumber,
+        playerIn: benchPlayerNumber,
+        isInjury: false,
+        isExceptional: false,
+        isExpelled: false,
+        isDisqualified: false
+      })
+    }
+  }, [draggedPlayer, getCurrentServe, getLiberoOnCourt, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
+
+  // Handle drag end for court players (used when dragging court player to bench)
+  const handleCourtDragEnd = useCallback(() => {
+    setDraggedPlayer(null)
+    setDropTargetBench(null)
+  }, [])
+
+  // Handle drag over bench player (for court-to-bench substitution)
+  const handleBenchDropOver = useCallback((e, teamKey, playerNumber, isLibero = false) => {
+    e.preventDefault()
+    if (!draggedPlayer) return
+    if (draggedPlayer.type !== 'court') return // Only accept court players
+    if (draggedPlayer.team !== teamKey) return
+
+    // For libero bench drop, check if it's a libero exit
+    if (isLibero && !draggedPlayer.isLibero) {
+      // Regular court player cannot go to libero bench
+      return
+    }
+
+    e.dataTransfer.dropEffect = 'move'
+    setDropTargetBench({ team: teamKey, playerNumber, isLibero })
+  }, [draggedPlayer])
+
+  const handleBenchDropLeave = useCallback(() => {
+    setDropTargetBench(null)
+  }, [])
+
+  // Handle drop on bench player - triggers substitution out or libero exit
+  const handleBenchDrop = useCallback((e, teamKey, benchPlayerNumber, isLibero = false) => {
+    e.preventDefault()
+    if (!draggedPlayer) return
+    if (draggedPlayer.type !== 'court') return
+    if (draggedPlayer.team !== teamKey) return
+
+    const courtPlayerNumber = draggedPlayer.playerNumber
+    const courtPosition = draggedPlayer.position
+    const isCourtPlayerLibero = draggedPlayer.isLibero
+
+    setDraggedPlayer(null)
+    setDropTargetBench(null)
+
+    if (isCourtPlayerLibero && isLibero) {
+      // Libero on court being dragged to libero bench - libero exit
+      // Find the replaced player from the lineup state
+      const liberoOnCourt = getLiberoOnCourt(teamKey)
+      if (liberoOnCourt) {
+        setLiberoConfirm({
+          team: teamKey,
+          position: liberoOnCourt.position,
+          playerOut: liberoOnCourt.liberoNumber,
+          liberoIn: null, // This signals a libero exit
+          isExit: true,
+          replacedPlayer: liberoOnCourt.playerNumber
+        })
+      }
+    } else if (!isLibero && !isCourtPlayerLibero) {
+      // Regular court player to bench - substitution out
+      // The bench player comes in, the court player goes out
+      const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
+      if (teamSubstitutions >= 6) return // Max substitutions reached
+
+      setSubstitutionConfirm({
+        team: teamKey,
+        position: courtPosition,
+        playerOut: courtPlayerNumber,
+        playerIn: benchPlayerNumber,
+        isInjury: false,
+        isExceptional: false,
+        isExpelled: false,
+        isDisqualified: false
+      })
+    }
+  }, [draggedPlayer, getLiberoOnCourt, substitutionsUsed])
+
+  // ========== End Drag and Drop Handlers ==========
+
   // Handle player click for substitution/libero/sanction/injury (only when rally is not in play and lineup is set)
   const handlePlayerClick = useCallback((teamKey, position, playerNumber, event) => {
     // Only allow when rally is not in play and lineup is set
@@ -5552,6 +5822,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       return
     }
     
+    // Check if clicked player is a libero currently on court
+    const isLiberoOnCourt = isLibero && liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(playerNumber)
+
     // Show action menu with buttons
     setPlayerActionMenu({
       team: teamKey,
@@ -5561,7 +5834,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       x: centerX + offset,
       y: centerY,
       canSubstitute,
-      canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero
+      canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero,
+      isLiberoOnCourt,
+      liberoOnCourt: isLiberoOnCourt ? liberoOnCourt : null
     })
   }, [rallyStatus, isRallyReplayed, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers])
 
@@ -8059,30 +8334,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </p>
         </div>
       )}
-      <ScoreboardToolbar>
-        {/* Left: Date/Time */}
-        <div className="toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: isCompactMode ? '6px' : '12px' }}>
+      <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)}>
+        {/* Column 1: Date/Time */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
           <span className="toolbar-clock" style={{ fontSize: isCompactMode ? '11px' : '14px' }}>{formatTimestamp(now)}</span>
         </div>
 
-        {/* Center: Set Counter fixed in center, Rally Status (left) and Last Action (right) on sides */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: (isCompactMode || isLaptopMode) ? (isNarrowMode ? '1fr 150px 1fr' : (isCompactMode ? '1fr 150px 1fr' : '1fr 150px 1fr')) : '1fr',
-          alignItems: 'center',
-          gap: isNarrowMode ? '2px' : (isCompactMode ? '4px' : '8px'),
-          flex: '1 1 auto'
-        }}>
-          
-          {/* Rally Status - Left of set counter (compact and laptop) */}
-          {(isCompactMode || isLaptopMode) && (
+        {/* Column 2: Left team OR Rally status (compact/laptop) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {(isCompactMode || isLaptopMode) ? (
             <div
               onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
               style={{
                 fontSize: isCompactMode ? '10px' : '11px',
                 color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c',
                 cursor: 'pointer',
-                textAlign: 'right',
+                textAlign: 'center',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -8091,50 +8358,82 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             >
               Rally: {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
             </div>
-          )}
-
-          {/* Set Counter - Always centered */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: isCompactMode ? '6px' : '12px'
-          }}>
-            <span style={{
-              padding: isCompactMode ? '2px 6px' : '4px 10px',
-              borderRadius: '4px',
-              fontSize: isCompactMode ? '12px' : '16px',
-              fontWeight: 700,
-              background: leftTeam?.color || '#ef4444',
-              color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff'
-            }}>
-              {setScore?.left || 0}
-            </span>
+          ) : (
             <div style={{
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
-              fontSize: isCompactMode ? '10px' : '14px'
+              justifyContent: 'center',
+              gap: '8px',
+              overflow: 'hidden'
             }}>
-              <span style={{ color: 'var(--muted)', fontWeight: 600 }}>SET</span>
-              <span style={{ fontWeight: 700 }}>{data?.set?.index || 1}</span>
+              <span style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'var(--text)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {leftTeam.name || (leftIsHome ? 'Home' : 'Away')}
+              </span>
+              <div style={{
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 700,
+                background: leftTeam.color || '#ef4444',
+                color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
+                flexShrink: 0
+              }}>
+                {teamALabel}
+              </div>
             </div>
-            <span style={{
-              padding: isCompactMode ? '2px 6px' : '4px 10px',
-              borderRadius: '4px',
-              fontSize: isCompactMode ? '12px' : '16px',
-              fontWeight: 700,
-              background: rightTeam?.color || '#3b82f6',
-              color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff'
-            }}>
-              {setScore?.right || 0}
-            </span>
-          </div>
+          )}
+        </div>
 
-          {/* Last Action - Right of set counter (compact and laptop) */}
-          {(isCompactMode || isLaptopMode) && (() => {
+        {/* Column 3: Set Counter (centered) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: isCompactMode ? '6px' : '12px'
+        }}>
+          <span style={{
+            padding: isCompactMode ? '2px 6px' : '4px 10px',
+            borderRadius: '4px',
+            fontSize: isCompactMode ? '12px' : '16px',
+            fontWeight: 700,
+            background: leftTeam?.color || '#ef4444',
+            color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff'
+          }}>
+            {setScore?.left || 0}
+          </span>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            fontSize: isCompactMode ? '10px' : '14px'
+          }}>
+            <span style={{ color: 'var(--muted)', fontWeight: 600 }}>SET</span>
+            <span style={{ fontWeight: 700 }}>{data?.set?.index || 1}</span>
+          </div>
+          <span style={{
+            padding: isCompactMode ? '2px 6px' : '4px 10px',
+            borderRadius: '4px',
+            fontSize: isCompactMode ? '12px' : '16px',
+            fontWeight: 700,
+            background: rightTeam?.color || '#3b82f6',
+            color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff'
+          }}>
+            {setScore?.right || 0}
+          </span>
+        </div>
+
+        {/* Column 4: Right team OR Last action (compact/laptop) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {(isCompactMode || isLaptopMode) ? (() => {
             if (!data?.events || data.events.length === 0) {
-              return <div /> // Empty placeholder to maintain grid
+              return null
             }
             const allEvents = [...data.events].sort((a, b) => {
               const aSeq = a.seq || 0
@@ -8158,9 +8457,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 break
               }
             }
-            if (!lastEvent) return <div /> // Empty placeholder to maintain grid
+            if (!lastEvent) return null
             const fullDescription = getActionDescription(lastEvent)
-            // Simplified action type for compact display
             const getSimpleActionType = (event) => {
               switch (event.type) {
                 case 'point': return 'Point'
@@ -8195,23 +8493,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             }
             const simpleAction = getSimpleActionType(lastEvent)
             return (
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', textAlign: 'center' }}>
                 <div
                   onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
                   style={{
                     fontSize: isCompactMode ? '10px' : '11px',
                     color: 'var(--muted)',
                     cursor: 'pointer',
-                    textAlign: 'left',
+                    textAlign: 'center',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    whiteSpace:'nowrap'
+                    whiteSpace: 'nowrap'
                   }}
                 >
-                  <span style={{ opacity: 0.7 }}>Last action: </span>
+                  <span style={{ opacity: 0.7 }}>Last: </span>
                   <span>{simpleAction}</span>
                 </div>
-                {/* Tooltip popup with full description */}
                 {rallyStatusExpanded && (
                   <div
                     onClick={() => setRallyStatusExpanded(false)}
@@ -8237,21 +8534,52 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 )}
               </div>
             )
-          })()}
+          })() : (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 700,
+                background: rightTeam.color || '#3b82f6',
+                color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
+                flexShrink: 0
+              }}>
+                {teamBLabel}
+              </div>
+              <span style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'var(--text)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {rightTeam.name || (leftIsHome ? 'Away' : 'Home')}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Right: Scoresheet, Menu (Home button moved to MainHeader) */}
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isCompactMode ? '4px' : '12px' }}>
           {/* Scoresheet dropdown menu */}
           <MenuList
-            buttonLabel={isCompactMode ? "📄" : (isNarrowMode ? "📄" : "📄 Scoresheet")}
+            buttonLabel="📄"
+            buttonTitle="Scoresheet"
             buttonClassName="secondary"
             buttonStyle={{
               background: '#22c55e',
               color: '#000',
               fontWeight: 600,
-              padding: isCompactMode ? '4px 8px' : (isNarrowMode ? '4px 8px' : '8px 16px'),
-              fontSize: isCompactMode ? '12px' : (isNarrowMode ? '10px' : '14px')
+              padding: '6px 10px',
+              fontSize: '16px'
             }}
             showArrow={true}
             position="right"
@@ -8871,86 +9199,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
-      {/* Team Names Container - Hide on compact mode (info is now in toolbar) and when height < 900px */}
-      {!isCompactMode && viewportHeight >= 900 && (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        width: 'auto',
-        padding: '8px 16px',
-        background: 'rgba(15, 23, 42, 0.4)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-      }}>
-        {/* Left Team */}
-        <div style={{
-          flex: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gap: '8px',
-          paddingRight: '12px'
-        }}>
-          <span style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: 'var(--text)',
-            lineHeight: '1.2'
-          }}>
-            {leftTeam.name || (leftIsHome ? 'Home' : 'Away')}
-          </span>
-          <div style={{
-            padding: '3px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 700,
-            background: leftTeam.color || '#ef4444',
-            color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff'
-          }}>
-            {teamALabel}
-          </div>
-        </div>
-
-        {/* VS divider */}
-        <div style={{
-          padding: '0 16px',
-          fontSize: '12px',
-          color: 'var(--muted)',
-          fontWeight: 600
-        }}>
-          vs
-        </div>
-
-        {/* Right Team */}
-        <div style={{
-          flex: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          gap: '8px',
-          paddingLeft: '12px'
-        }}>
-          <div style={{
-            padding: '3px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 700,
-            background: rightTeam.color || '#3b82f6',
-            color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff'
-          }}>
-            {teamBLabel}
-          </div>
-          <span style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: 'var(--text)',
-            lineHeight: '1.2'
-          }}>
-            {rightTeam.name || (leftIsHome ? 'Away' : 'Home')}
-          </span>
-        </div>
-      </div>
-      )}
-
       {/* Display Mode Suggestion Banner */}
       {showDisplayModeSuggestion && displayModeSuggestion && (
         <div style={{
@@ -9526,7 +9774,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       // Determine which team serves first in the next set
                       const currentSetIndex = data?.set?.index || 1
                       const nextSetIndex = currentSetIndex + 1
-                      const currentFirstServe = data?.match?.firstServe || 'home'
+                      const set1FirstServe = data?.match?.firstServe || 'home'
 
                       // For set 5, use set5FirstServe if available; otherwise alternate from set 4
                       let nextSetServeTeam
@@ -9535,8 +9783,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         const teamBKey = data?.match?.coinTossTeamB || 'away'
                         nextSetServeTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
                       } else {
-                        // Serve alternates each set, so next set's first serve is opposite of current
-                        nextSetServeTeam = currentFirstServe === 'home' ? 'away' : 'home'
+                        // Serve alternates: odd sets (1, 3, 5) same as Set 1, even sets (2, 4) opposite
+                        nextSetServeTeam = nextSetIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
                       }
 
                       // Teams switch sides between sets, so next set's left side is opposite of current
@@ -9973,46 +10221,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
             <div
               onClick={() => {
-                if (isCompactMode || isShortHeight) {
-                  // In compact/short mode, clicking calls timeout if available
-                  const canCallTimeout = getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
-                  if (canCallTimeout) {
-                    handleTimeout('left')
-                  }
-                } else {
-                  // In normal mode, clicking shows timeout details
-                  const timeouts = getTimeoutDetails('left')
-                  if (timeouts.length > 0) {
-                    setToSubDetailsModal({ type: 'timeout', side: 'left' })
-                  }
+                // Clicking calls timeout if available
+                const canCallTimeout = getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                if (canCallTimeout) {
+                  handleTimeout('left')
                 }
               }}
               className="to-sub-counter"
               style={{
                 flex: 1,
-                background: (isCompactMode || isShortHeight)
-                  ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
-                    ? 'rgba(239, 68, 68, 0.2)'
-                    : 'rgba(34, 197, 94, 0.2)')
-                  : 'rgba(255, 255, 255, 0.05)',
+                background: getTimeoutsUsed('left') >= 2
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : (rallyStatus === 'in_play' || isRallyReplayed
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(34, 197, 94, 0.2)'),
                 borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
                 padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
-                border: (isCompactMode || isShortHeight)
-                  ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
-                    ? '1px solid rgba(239, 68, 68, 0.4)'
-                    : '1px solid rgba(34, 197, 94, 0.4)')
-                  : '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: (isCompactMode || isShortHeight)
-                  ? (getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer')
-                  : (getTimeoutDetails('left').length > 0 ? 'pointer' : 'default')
+                border: getTimeoutsUsed('left') >= 2
+                  ? '1px solid rgba(239, 68, 68, 0.4)'
+                  : (rallyStatus === 'in_play' || isRallyReplayed
+                    ? '1px solid rgba(255, 255, 255, 0.1)'
+                    : '1px solid rgba(34, 197, 94, 0.4)'),
+                cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
               }}
             >
               <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>TO</div>
               <div className="to-sub-value" style={{
                 fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
-                color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : ((isCompactMode || isShortHeight) && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
+                color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
               }}>{getTimeoutsUsed('left')}</div>
             </div>
             <div
@@ -10041,15 +10279,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}>{getSubstitutionsUsed('left')}</div>
             </div>
           </div>
-          {!isCompactMode && !isShortHeight && (
-            <button
-              onClick={() => handleTimeout('left')}
-              disabled={getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
-              style={{ width: '100%', marginBottom: '8px' }}
-            >
-              Time-out
-            </button>
-          )}
           {(() => {
             const teamKey = leftIsHome ? 'home' : 'away'
             const teamPlayers = leftIsHome ? data?.homePlayers : data?.awayPlayers
@@ -10097,67 +10326,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               )
             }
 
-            const liberoOutDisabled = rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)
-            const exchangeLiberoDisabled = (() => {
-              const liberoOnCourt = getLiberoOnCourt(teamKey)
-              const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-              const otherLibero = liberos.find(p =>
-                String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-              )
-              const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-              return rallyStatus === 'in_play' || isRallyReplayed || !liberoOnCourt || !hasPointSinceLastLiberoExchange(teamKey) || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
-            })()
-
-            if (isNarrowMode) {
-              return (
-                <div style={{ marginBottom: '4px', width: '100%' }}>
-                  <button
-                    onClick={() => setLeftLiberoDropdownOpen(!leftLiberoDropdownOpen)}
-                    style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
-                  >
-                    Libero {leftLiberoDropdownOpen ? '▲' : '▼'}
-                  </button>
-                  {leftLiberoDropdownOpen && (
-                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        onClick={() => { handleLiberoOut('left'); setLeftLiberoDropdownOpen(false) }}
-                        disabled={liberoOutDisabled}
-                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
-                      >
-                        Libero out
-                      </button>
-                      <button
-                        onClick={() => { handleExchangeLibero('left'); setLeftLiberoDropdownOpen(false) }}
-                        disabled={exchangeLiberoDisabled}
-                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
-                      >
-                        Exchange libero
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            }
-
-            return (
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', width: '100%' }}>
-                <button
-                  onClick={() => handleLiberoOut('left')}
-                  disabled={liberoOutDisabled}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
-                >
-                  Libero out
-                </button>
-                <button
-                  onClick={() => handleExchangeLibero('left')}
-                  disabled={exchangeLiberoDisabled}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
-                >
-                  Exchange libero
-                </button>
-              </div>
-            )
+            // Libero out/exchange controls moved to player action menu when clicking libero on court
+            return null
           })()}
           
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
@@ -10300,52 +10470,52 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const canComeBack = canPlayerComeBack(teamKey, player.number)
                     const hasComeBack = hasPlayerComeBack(teamKey, player.number)
                     const isSubstitutedByLibero = player.substitutedByLibero !== null
-                    
+
                     // Check if player was substituted out but waiting for point to allow comeback
                     const substitutions = getSubstitutionHistory(teamKey)
                     const wasSubstitutedOut = substitutions.some(s => String(s.payload?.playerOut) === String(player.number))
                     const waitingForPoint = wasSubstitutedOut && !canComeBack && !hasComeBack
-                    
+
                     // Find which player on court this bench player replaced (if they were substituted in)
                     const substitutionWherePlayerIn = substitutions
                       .filter(s => String(s.payload?.playerIn) === String(player.number))
                       .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
                     const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
-                    
+
                     // Check if player was substituted due to expulsion (cannot re-enter for rest of set)
                     const wasExpelledSub = wasSubstitutedDueToExpulsion(teamKey, player.number)
-                    const expulsionSub = wasExpelledSub ? data.events?.find(e => 
-                      e.type === 'substitution' && 
+                    const expulsionSub = wasExpelledSub ? data.events?.find(e =>
+                      e.type === 'substitution' &&
                       e.payload?.team === teamKey &&
                       String(e.payload?.playerOut) === String(player.number) &&
                       e.payload?.isExpelled === true
                     ) : null
                     const isExpelledInSet = wasExpelledSub && expulsionSub && expulsionSub.setIndex === data.set.index
-                    
+
                     // Check if player was substituted due to disqualification (cannot re-enter for rest of game)
                     const isDisqualifiedSub = wasSubstitutedDueToDisqualification(teamKey, player.number)
-                    
+
                     // Check if player was exceptionally substituted (cannot re-enter for rest of game)
                     const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
-                    
+
                     // Also check for sanction-based expulsion/disqualification (for display)
-                    const hasExpulsionSanction = data.events?.some(e => 
-                      e.type === 'sanction' && 
+                    const hasExpulsionSanction = data.events?.some(e =>
+                      e.type === 'sanction' &&
                       e.payload?.team === teamKey &&
                       e.payload?.playerNumber === player.number &&
                       e.payload?.type === 'expulsion' &&
                       e.setIndex === data.set.index
                     )
-                    const hasDisqualificationSanction = data.events?.some(e => 
-                      e.type === 'sanction' && 
+                    const hasDisqualificationSanction = data.events?.some(e =>
+                      e.type === 'sanction' &&
                       e.payload?.team === teamKey &&
                       e.payload?.playerNumber === player.number &&
                       e.payload?.type === 'disqualification'
                     )
-                    
+
                     // Show X if substituted due to expulsion, disqualification, or exceptional substitution
                     const showX = isExpelledInSet || isDisqualifiedSub || isExceptionallySub || hasExpulsionSanction || hasDisqualificationSanction
-                    
+
                     // Get sanctions for this player
                     const sanctions = getPlayerSanctions(teamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
@@ -10353,7 +10523,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
-                    // Determine if bench player can substitute
+                    // Determine if bench player can substitute (LEFT TEAM)
                     // Case 1: Player was substituted out - can only come back for the player who replaced them
                     // Case 2: Player never played - can substitute for any court player (if team has subs left)
                     // BUT: If player is currently replaced by libero, they cannot substitute at all
@@ -10376,10 +10546,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       }
                     }
                     // For neverPlayed case, courtPlayerToSwapWith stays null - we'll show expandable list
+                    const isDragging = draggedPlayer?.team === teamKey && draggedPlayer?.playerNumber === player.number && draggedPlayer?.type === 'bench'
+                    const isDropTargetForCourt = dropTargetBench?.team === teamKey && dropTargetBench?.playerNumber === player.number && !dropTargetBench?.isLibero
 
                     return (
                       <div
                         key={`${teamKey}-bench-${player.id || player.number}`}
+                        draggable={rallyStatus === 'idle' && canSubBenchPlayer}
+                        onDragStart={(e) => canSubBenchPlayer && handleBenchDragStart(e, teamKey, player.number, false)}
+                        onDragEnd={handleBenchDragEnd}
+                        onDragOver={(e) => canSubBenchPlayer && handleBenchDropOver(e, teamKey, player.number, false)}
+                        onDragLeave={handleBenchDropLeave}
+                        onDrop={(e) => canSubBenchPlayer && handleBenchDrop(e, teamKey, player.number, false)}
                         onClick={(e) => {
                           if (rallyStatus === 'idle') {
                             const rect = e.currentTarget.getBoundingClientRect()
@@ -10397,20 +10575,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                         style={{
                           padding: '5px 10px',
-                          background: isSubstitutedByLibero
-                            ? '#ffffff'  // White for libero-replaced
-                            : wasSubstitutedOut
-                              ? '#fde047'  // Yellow for substituted-out
-                              : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
+                          background: isDropTargetForCourt
+                            ? 'rgba(239, 68, 68, 0.4)'  // Red highlight for court player drop
+                            : isSubstitutedByLibero
+                              ? '#ffffff'  // White for libero-replaced
+                              : wasSubstitutedOut
+                                ? '#fde047'  // Yellow for substituted-out
+                                : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
                           borderRadius: '4px',
                           fontSize: '14px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
                           position: 'relative',
-                          opacity: (hasComeBack || showX) ? 0.4 : 1,
+                          border: isDropTargetForCourt ? '2px solid #ef4444' : undefined,
+                          boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
+                          opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
                           color: (isSubstitutedByLibero || wasSubstitutedOut) ? '#000' : undefined,
-                          cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                          cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                         }}
                       >
                         <span style={{ fontWeight: 600 }}>{player.number}</span>
@@ -10584,24 +10766,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   {leftTeamBench.liberos.map(player => {
                     const teamKey = leftIsHome ? 'home' : 'away'
                     const isUnable = isLiberoUnable(teamKey, player.number)
-                    
-                    // Get sanctions for this libero
+                    const liberoOnCourt = getLiberoOnCourt(teamKey)
+                    const canDragLibero = rallyStatus === 'idle' && !isUnable && !liberoOnCourt && hasPointSinceLastLiberoExchange(teamKey)
+                    const isDraggingLibero = draggedPlayer?.team === teamKey && draggedPlayer?.playerNumber === player.number && draggedPlayer?.type === 'bench'
+                    // Can receive libero from court (libero exit)
+                    const canReceiveLiberoFromCourt = liberoOnCourt && liberoOnCourt.liberoNumber === player.number && hasPointSinceLastLiberoExchange(teamKey)
+                    const isLiberoDropTarget = dropTargetBench?.team === teamKey && dropTargetBench?.playerNumber === player.number && dropTargetBench?.isLibero
+
+                    // Get sanctions for this libero (LEFT TEAM)
                     const sanctions = getPlayerSanctions(teamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    
+
                     return (
-                      <div 
+                      <div
                         key={`${teamKey}-bench-libero-${player.id || player.number}`}
-                        style={{ 
+                        style={{
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px'
                         }}
                       >
-                        <div 
+                        <div
+                          draggable={canDragLibero}
+                          onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
+                          onDragEnd={handleBenchDragEnd}
+                          onDragOver={(e) => canReceiveLiberoFromCourt && handleBenchDropOver(e, teamKey, player.number, true)}
+                          onDragLeave={handleBenchDropLeave}
+                          onDrop={(e) => canReceiveLiberoFromCourt && handleBenchDrop(e, teamKey, player.number, true)}
                           onClick={(e) => {
                             if (rallyStatus === 'idle' && !isUnable) {
                               // Open action menu for libero on bench
@@ -10618,15 +10812,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }}
                           style={{
                             padding: '5px 10px',
-                            background: isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                            background: isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                             borderRadius: '4px',
                             fontSize: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
-                            border: `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                            cursor: (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
-                            opacity: isUnable ? 0.6 : 1
+                            border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                            boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
+                            cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
+                            opacity: isDraggingLibero ? 0.5 : isUnable ? 0.6 : 1
                           }}
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
@@ -10637,8 +10832,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
                               {hasExpulsion ? (
                                 <div style={{ position: 'relative', width: '9px', height: '9px' }}>
-                                  <div className="sanction-card yellow" style={{ 
-                                    width: '5px', 
+                                  <div className="sanction-card yellow" style={{
+                                    width: '5px',
                                     height: '7px',
                                     position: 'absolute',
                                     left: '0',
@@ -10647,8 +10842,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                     zIndex: 1,
                                     borderRadius: '1px'
                                   }}></div>
-                                  <div className="sanction-card red" style={{ 
-                                    width: '5px', 
+                                  <div className="sanction-card red" style={{
+                                    width: '5px',
                                     height: '7px',
                                     position: 'absolute',
                                     right: '0',
@@ -11078,7 +11273,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
 
           {/* 1st Referee - above court, minimal margin */}
-          {!isCompactMode && refereeConnectionEnabled && (() => {
+          {!isCompactMode && (() => {
             const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
             const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
             if (!ref1Name) return null
@@ -11194,28 +11389,43 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                    const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
+                    const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
+
                     return (
                       <div
                         key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
                         className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
+                        draggable={canSubstitute && !player.isLibero}
+                        onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
+                        onDragEnd={handleCourtDragEnd}
                         onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
+                        onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
+                        onDragLeave={handleCourtDragLeave}
+                        onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
                         style={{
-                          cursor: 'pointer',
-                          transition: 'transform 0.2s',
-                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
+                          opacity: isDragging ? 0.5 : undefined,
+                          transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
                           position: 'relative',
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isRecentlySub ? '3px solid #dc2626' : undefined
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'scale(1.05)'
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                            if (!isDropTarget) {
+                              e.currentTarget.style.transform = 'scale(1.05)'
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                            }
                         }}
                         onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'scale(1)'
-                            e.currentTarget.style.boxShadow = 'none'
+                            if (!isDropTarget) {
+                              e.currentTarget.style.transform = 'scale(1)'
+                              e.currentTarget.style.boxShadow = 'none'
+                            }
                         }}
                       >
                         {replacementNumber && (
@@ -11359,29 +11569,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                    const isDropTarget = dropTargetPosition?.team === leftTeamKey && dropTargetPosition?.position === player.position
+                    const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === leftTeamKey && draggedPlayer?.position === player.position
+                    // For liberos on court, they can be dragged back to libero bench
+                    const canDragCourtPlayer = canSubstitute || (rallyStatus === 'idle' && player.isLibero)
+
                     return (
                       <div
                         key={`${leftTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
                         className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
+                        draggable={canDragCourtPlayer}
+                        onDragStart={(e) => canDragCourtPlayer && handleCourtDragStart(e, leftTeamKey, player.position, player.number, player.isLibero)}
+                        onDragEnd={handleCourtDragEnd}
                         style={{
                           position: 'relative',
-                          cursor: player.number && player.number !== '' ? 'pointer' : 'default',
-                          transition: 'transform 0.2s',
-                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
+                          opacity: isDragging ? 0.5 : undefined,
+                          transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isRecentlySub ? '3px solid #dc2626' : undefined
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(leftTeamKey, player.position, player.number, e)}
+                        onDragOver={(e) => handleCourtDragOver(e, leftTeamKey, player.position)}
+                        onDragLeave={handleCourtDragLeave}
+                        onDrop={(e) => handleCourtDrop(e, leftTeamKey, player.position, player.number)}
                         onMouseEnter={(e) => {
-                          if (player.number && player.number !== '') {
+                          if (player.number && player.number !== '' && !isDropTarget) {
                             e.currentTarget.style.transform = 'scale(1.05)'
                             e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
                           }
                         }}
                         onMouseLeave={(e) => {
-                          if (player.number && player.number !== '') {
+                          if (player.number && player.number !== '' && !isDropTarget) {
                             e.currentTarget.style.transform = 'scale(1)'
                             e.currentTarget.style.boxShadow = 'none'
                           }
@@ -11609,28 +11832,43 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
                     )
 
+                    const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
+                    const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
+
                     return (
                       <div
                         key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
                         className="court-player"
+                        draggable={canSubstitute && !player.isLibero}
+                        onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
+                        onDragEnd={handleCourtDragEnd}
                         onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
+                        onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
+                        onDragLeave={handleCourtDragLeave}
+                        onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
                         style={{
-                          cursor: 'pointer',
-                          transition: 'transform 0.2s',
-                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
+                          opacity: isDragging ? 0.5 : undefined,
+                          transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isRecentlySub ? '3px solid #dc2626' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
                           position: 'relative'
                         }}
                         onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'scale(1.05)'
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                            if (!isDropTarget) {
+                              e.currentTarget.style.transform = 'scale(1.05)'
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                            }
                         }}
                         onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'scale(1)'
-                            e.currentTarget.style.boxShadow = 'none'
+                            if (!isDropTarget) {
+                              e.currentTarget.style.transform = 'scale(1)'
+                              e.currentTarget.style.boxShadow = 'none'
+                            }
                         }}
                       >
                         {replacementNumber && (
@@ -11774,29 +12012,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       sub => sub.team === rightTeamKey && String(sub.playerNumber) === String(player.number)
                     )
 
+                    const isDropTarget = dropTargetPosition?.team === rightTeamKey && dropTargetPosition?.position === player.position
+                    const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === rightTeamKey && draggedPlayer?.position === player.position
+                    // For liberos on court, they can be dragged back to libero bench
+                    const canDragCourtPlayer = canSubstitute || (rallyStatus === 'idle' && player.isLibero)
+
                     return (
                       <div
                         key={`${rightTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
                         className="court-player"
+                        draggable={canDragCourtPlayer}
+                        onDragStart={(e) => canDragCourtPlayer && handleCourtDragStart(e, rightTeamKey, player.position, player.number, player.isLibero)}
+                        onDragEnd={handleCourtDragEnd}
                         style={{
                           position: 'relative',
-                          cursor: player.number && player.number !== '' ? 'pointer' : 'default',
-                          transition: 'transform 0.2s',
-                          background: isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
+                          opacity: isDragging ? 0.5 : undefined,
+                          transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isRecentlySub ? '3px solid #dc2626' : undefined
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(rightTeamKey, player.position, player.number, e)}
+                        onDragOver={(e) => handleCourtDragOver(e, rightTeamKey, player.position)}
+                        onDragLeave={handleCourtDragLeave}
+                        onDrop={(e) => handleCourtDrop(e, rightTeamKey, player.position, player.number)}
                         onMouseEnter={(e) => {
-                          if (player.number && player.number !== '') {
+                          if (player.number && player.number !== '' && !isDropTarget) {
                             e.currentTarget.style.transform = 'scale(1.05)'
                             e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
                           }
                         }}
                         onMouseLeave={(e) => {
-                          if (player.number && player.number !== '') {
+                          if (player.number && player.number !== '' && !isDropTarget) {
                             e.currentTarget.style.transform = 'scale(1)'
                             e.currentTarget.style.boxShadow = 'none'
                           }
@@ -12004,7 +12255,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           </div>
 
           {/* 2nd Referee - below court, minimal margin */}
-          {!isCompactMode && refereeConnectionEnabled && (() => {
+          {!isCompactMode && (() => {
             const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
             const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}`.trim() : null
             if (!ref2Name) return null
@@ -12166,7 +12417,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     // Determine which team serves first in the next set
                     const currentSetIndex = data?.set?.index || 1
                     const nextSetIndex = currentSetIndex + 1
-                    const currentFirstServe = data?.match?.firstServe || 'home'
+                    const set1FirstServe = data?.match?.firstServe || 'home'
 
                     // For set 5, use set5FirstServe if available; otherwise alternate from set 4
                     let nextSetServeTeam
@@ -12175,8 +12426,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       const teamBKey = data?.match?.coinTossTeamB || 'away'
                       nextSetServeTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
                     } else {
-                      // Serve alternates each set, so next set's first serve is opposite of current
-                      nextSetServeTeam = currentFirstServe === 'home' ? 'away' : 'home'
+                      // Serve alternates: odd sets (1, 3, 5) same as Set 1, even sets (2, 4) opposite
+                      nextSetServeTeam = nextSetIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
                     }
 
                     // Teams switch sides between sets, so next set's left side is opposite of current
@@ -12495,46 +12746,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{ display: 'flex', gap: '4px', marginBottom: (isCompactMode || isShortHeight) ? '4px' : '8px' }}>
             <div
               onClick={() => {
-                if (isCompactMode || isShortHeight) {
-                  // In compact/short mode, clicking calls timeout if available
-                  const canCallTimeout = getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
-                  if (canCallTimeout) {
-                    handleTimeout('right')
-                  }
-                } else {
-                  // In normal mode, clicking shows timeout details
-                  const timeouts = getTimeoutDetails('right')
-                  if (timeouts.length > 0) {
-                    setToSubDetailsModal({ type: 'timeout', side: 'right' })
-                  }
+                // Clicking calls timeout if available
+                const canCallTimeout = getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                if (canCallTimeout) {
+                  handleTimeout('right')
                 }
               }}
               className="to-sub-counter"
               style={{
                 flex: 1,
-                background: (isCompactMode || isShortHeight)
-                  ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
-                    ? 'rgba(239, 68, 68, 0.2)'
-                    : 'rgba(34, 197, 94, 0.2)')
-                  : 'rgba(255, 255, 255, 0.05)',
+                background: getTimeoutsUsed('right') >= 2
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : (rallyStatus === 'in_play' || isRallyReplayed
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(34, 197, 94, 0.2)'),
                 borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
                 padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
                 textAlign: 'center',
-                border: (isCompactMode || isShortHeight)
-                  ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed
-                    ? '1px solid rgba(239, 68, 68, 0.4)'
-                    : '1px solid rgba(34, 197, 94, 0.4)')
-                  : '1px solid rgba(255, 255, 255, 0.1)',
-                cursor: (isCompactMode || isShortHeight)
-                  ? (getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer')
-                  : (getTimeoutDetails('right').length > 0 ? 'pointer' : 'default')
+                border: getTimeoutsUsed('right') >= 2
+                  ? '1px solid rgba(239, 68, 68, 0.4)'
+                  : (rallyStatus === 'in_play' || isRallyReplayed
+                    ? '1px solid rgba(255, 255, 255, 0.1)'
+                    : '1px solid rgba(34, 197, 94, 0.4)'),
+                cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
               }}
             >
               <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>TO</div>
               <div className="to-sub-value" style={{
                 fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
-                color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : ((isCompactMode || isShortHeight) && !(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
+                color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
               }}>{getTimeoutsUsed('right')}</div>
             </div>
             <div
@@ -12563,15 +12804,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }}>{getSubstitutionsUsed('right')}</div>
             </div>
           </div>
-          {!isCompactMode && !isShortHeight && (
-            <button
-              onClick={() => handleTimeout('right')}
-              disabled={getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed}
-              style={{ width: '100%', marginBottom: '8px' }}
-            >
-              Time-out
-            </button>
-          )}
           {(() => {
             const teamKey = leftIsHome ? 'away' : 'home'
             const teamPlayers = leftIsHome ? data?.awayPlayers : data?.homePlayers
@@ -12619,67 +12851,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               )
             }
 
-            const liberoOutDisabled = rallyStatus === 'in_play' || isRallyReplayed || !getLiberoOnCourt(teamKey) || !hasPointSinceLastLiberoExchange(teamKey)
-            const exchangeLiberoDisabled = (() => {
-              const liberoOnCourt = getLiberoOnCourt(teamKey)
-              const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)
-              const otherLibero = liberos.find(p =>
-                String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
-              )
-              const otherLiberoUnable = otherLibero && isLiberoUnable(teamKey, otherLibero.number)
-              return rallyStatus === 'in_play' || isRallyReplayed || !liberoOnCourt || !hasPointSinceLastLiberoExchange(teamKey) || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
-            })()
-
-            if (isNarrowMode) {
-              return (
-                <div style={{ marginBottom: '4px', width: '100%' }}>
-                  <button
-                    onClick={() => setRightLiberoDropdownOpen(!rightLiberoDropdownOpen)}
-                    style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
-                  >
-                    Libero {rightLiberoDropdownOpen ? '▲' : '▼'}
-                  </button>
-                  {rightLiberoDropdownOpen && (
-                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        onClick={() => { handleLiberoOut('right'); setRightLiberoDropdownOpen(false) }}
-                        disabled={liberoOutDisabled}
-                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
-                      >
-                        Libero out
-                      </button>
-                      <button
-                        onClick={() => { handleExchangeLibero('right'); setRightLiberoDropdownOpen(false) }}
-                        disabled={exchangeLiberoDisabled}
-                        style={{ width: '100%', fontSize: '10px', background: 'white', color: '#000', padding: '8px 4px' }}
-                      >
-                        Exchange libero
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            }
-
-            return (
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', width: '100%' }}>
-                <button
-                  onClick={() => handleLiberoOut('right')}
-                  disabled={liberoOutDisabled}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
-                >
-                  Libero out
-                </button>
-                <button
-                  onClick={() => handleExchangeLibero('right')}
-                  disabled={exchangeLiberoDisabled}
-                  style={{ flex: 1, fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#000' }}
-                >
-                  Exchange libero
-                </button>
-              </div>
-            )
+            // Libero out/exchange controls moved to player action menu when clicking libero on court
+            return null
           })()}
 
           {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
@@ -12868,14 +13041,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     // Show X if substituted due to expulsion, disqualification, or exceptional substitution
                     const showX = isExpelledInSet || isDisqualifiedSub || isExceptionallySub || hasExpulsionSanction || hasDisqualificationSanction
                     
-                    // Get sanctions for this player
+                    // Get sanctions for this player (RIGHT TEAM)
                     const sanctions = getPlayerSanctions(teamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
-                    // Determine if bench player can substitute
+                    // Determine if bench player can substitute (RIGHT TEAM)
                     // Case 1: Player was substituted out - can only come back for the player who replaced them
                     // Case 2: Player never played - can substitute for any court player (if team has subs left)
                     // BUT: If player is currently replaced by libero, they cannot substitute at all
@@ -12898,10 +13071,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       }
                     }
                     // For neverPlayed case, courtPlayerToSwapWith stays null - we'll show expandable list
+                    const isDragging = draggedPlayer?.team === teamKey && draggedPlayer?.playerNumber === player.number && draggedPlayer?.type === 'bench'
+                    const isDropTargetForCourt = dropTargetBench?.team === teamKey && dropTargetBench?.playerNumber === player.number && !dropTargetBench?.isLibero
 
                     return (
                       <div
                         key={`${teamKey}-bench-${player.id || player.number}`}
+                        draggable={rallyStatus === 'idle' && canSubBenchPlayer}
+                        onDragStart={(e) => canSubBenchPlayer && handleBenchDragStart(e, teamKey, player.number, false)}
+                        onDragEnd={handleBenchDragEnd}
+                        onDragOver={(e) => canSubBenchPlayer && handleBenchDropOver(e, teamKey, player.number, false)}
+                        onDragLeave={handleBenchDropLeave}
+                        onDrop={(e) => canSubBenchPlayer && handleBenchDrop(e, teamKey, player.number, false)}
                         onClick={(e) => {
                           if (rallyStatus === 'idle') {
                             const rect = e.currentTarget.getBoundingClientRect()
@@ -12919,20 +13100,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                         style={{
                           padding: '5px 10px',
-                          background: isSubstitutedByLibero
-                            ? '#ffffff'  // White for libero-replaced
-                            : wasSubstitutedOut
-                              ? '#fde047'  // Yellow for substituted-out
-                              : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
+                          background: isDropTargetForCourt
+                            ? 'rgba(239, 68, 68, 0.4)'  // Red highlight for court player drop
+                            : isSubstitutedByLibero
+                              ? '#ffffff'  // White for libero-replaced
+                              : wasSubstitutedOut
+                                ? '#fde047'  // Yellow for substituted-out
+                                : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
                           borderRadius: '4px',
                           fontSize: '14px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
                           position: 'relative',
-                          opacity: (hasComeBack || showX) ? 0.4 : 1,
+                          border: isDropTargetForCourt ? '2px solid #ef4444' : undefined,
+                          boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
+                          opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
                           color: (isSubstitutedByLibero || wasSubstitutedOut) ? '#000' : undefined,
-                          cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                          cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                         }}
                       >
                         <span style={{ fontWeight: 600 }}>{player.number}</span>
@@ -13106,24 +13291,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   {rightTeamBench.liberos.map(player => {
                     const teamKey = leftIsHome ? 'away' : 'home'
                     const isUnable = isLiberoUnable(teamKey, player.number)
-                    
-                    // Get sanctions for this libero
+                    const liberoOnCourt = getLiberoOnCourt(teamKey)
+                    const canDragLibero = rallyStatus === 'idle' && !isUnable && !liberoOnCourt && hasPointSinceLastLiberoExchange(teamKey)
+                    const isDraggingLibero = draggedPlayer?.team === teamKey && draggedPlayer?.playerNumber === player.number && draggedPlayer?.type === 'bench'
+                    // Can receive libero from court (libero exit)
+                    const canReceiveLiberoFromCourt = liberoOnCourt && liberoOnCourt.liberoNumber === player.number && hasPointSinceLastLiberoExchange(teamKey)
+                    const isLiberoDropTarget = dropTargetBench?.team === teamKey && dropTargetBench?.playerNumber === player.number && dropTargetBench?.isLibero
+
+                    // Get sanctions for this libero (RIGHT TEAM)
                     const sanctions = getPlayerSanctions(teamKey, player.number)
                     const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
                     const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                     const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                     const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    
+
                     return (
-                      <div 
+                      <div
                         key={`${teamKey}-bench-libero-${player.id || player.number}`}
-                        style={{ 
+                        style={{
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px'
                         }}
                       >
-                        <div 
+                        <div
+                          draggable={canDragLibero}
+                          onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
+                          onDragEnd={handleBenchDragEnd}
+                          onDragOver={(e) => canReceiveLiberoFromCourt && handleBenchDropOver(e, teamKey, player.number, true)}
+                          onDragLeave={handleBenchDropLeave}
+                          onDrop={(e) => canReceiveLiberoFromCourt && handleBenchDrop(e, teamKey, player.number, true)}
                           onClick={(e) => {
                             if (rallyStatus === 'idle' && !isUnable) {
                               // Open action menu for libero on bench
@@ -13140,15 +13337,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }}
                           style={{
                             padding: '5px 10px',
-                            background: isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                            background: isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                             borderRadius: '4px',
                             fontSize: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
-                            border: `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                            cursor: (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
-                            opacity: isUnable ? 0.6 : 1
+                            border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                            boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
+                            cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
+                            opacity: isDraggingLibero ? 0.5 : isUnable ? 0.6 : 1
                           }}
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
@@ -17086,11 +17284,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textAlign: 'center', marginBottom: '4px' }}>
                   # {playerNumber}
                 </div>
-                {/* Substitution - expandable */}
+                {/* Substitution - auto-fire if only 1 legal substitute, otherwise expandable */}
                 {playerActionMenu.canSubstitute && availableSubs.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <button
-                      onClick={() => setCourtSubExpanded(!courtSubExpanded)}
+                      onClick={() => {
+                        // If only 1 legal substitute, go directly to confirmation
+                        if (availableSubs.length === 1) {
+                          handleSubFromMenu(availableSubs[0])
+                        } else {
+                          setCourtSubExpanded(!courtSubExpanded)
+                        }
+                      }}
                       style={{
                         padding: '8px 12px',
                         fontSize: '12px',
@@ -17118,9 +17323,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       }}
                     >
                       <span>Substitution</span>
-                      <span style={{ fontSize: '14px', lineHeight: '1', transform: courtSubExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+                      {/* Only show arrow if more than 1 substitute available */}
+                      {availableSubs.length > 1 && (
+                        <span style={{ fontSize: '14px', lineHeight: '1', transform: courtSubExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+                      )}
                     </button>
-                    {courtSubExpanded && (
+                    {courtSubExpanded && availableSubs.length > 1 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
                         {availableSubs.map(sub => (
                           <button
@@ -17303,6 +17511,111 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             </button>
                           ))}
                         </div>
+                      )}
+                    </div>
+                  )
+                })()}
+                {/* Libero on court controls - Libero Out and Exchange */}
+                {playerActionMenu.isLiberoOnCourt && (() => {
+                  const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+                  const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+                  const hasPointSinceLibero = hasPointSinceLastLiberoExchange(team)
+                  const side = (team === 'home' && leftIsHome) || (team === 'away' && !leftIsHome) ? 'left' : 'right'
+
+                  // Libero out disabled if no point since libero exchange
+                  const liberoOutDisabled = !hasPointSinceLibero
+
+                  // Exchange libero disabled if only 1 libero or the other libero is unable
+                  const liberoOnCourt = playerActionMenu.liberoOnCourt
+                  const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(team, liberoOnCourt.liberoNumber)
+                  const otherLibero = liberos.find(p =>
+                    String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
+                    (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+                  )
+                  const otherLiberoUnable = otherLibero && isLiberoUnable(team, otherLibero.number)
+                  const exchangeLiberoDisabled = !hasPointSinceLibero || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {/* Libero Out button */}
+                      <button
+                        onClick={() => {
+                          setPlayerActionMenu(null)
+                          setCourtSubExpanded(false)
+                          setCourtLiberoExpanded(false)
+                          setCourtSanctionExpanded(false)
+                          handleLiberoOut(side)
+                        }}
+                        disabled={liberoOutDisabled}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: liberoOutDisabled ? '#888' : '#FFF8E7',
+                          color: '#000',
+                          border: '1px solid rgba(0, 0, 0, 0.2)',
+                          borderRadius: '6px',
+                          cursor: liberoOutDisabled ? 'not-allowed' : 'pointer',
+                          textAlign: 'center',
+                          transition: 'all 0.2s',
+                          width: '100%',
+                          opacity: liberoOutDisabled ? 0.5 : 1
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!liberoOutDisabled) {
+                            e.currentTarget.style.background = '#FFF0C0'
+                            e.currentTarget.style.transform = 'scale(1.02)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!liberoOutDisabled) {
+                            e.currentTarget.style.background = '#FFF8E7'
+                            e.currentTarget.style.transform = 'scale(1)'
+                          }
+                        }}
+                      >
+                        Libero Out
+                      </button>
+                      {/* Exchange Libero button - only if 2 liberos */}
+                      {liberos.length >= 2 && (
+                        <button
+                          onClick={() => {
+                            setPlayerActionMenu(null)
+                            setCourtSubExpanded(false)
+                            setCourtLiberoExpanded(false)
+                            setCourtSanctionExpanded(false)
+                            handleExchangeLibero(side)
+                          }}
+                          disabled={exchangeLiberoDisabled}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            background: exchangeLiberoDisabled ? '#888' : '#FFF8E7',
+                            color: '#000',
+                            border: '1px solid rgba(0, 0, 0, 0.2)',
+                            borderRadius: '6px',
+                            cursor: exchangeLiberoDisabled ? 'not-allowed' : 'pointer',
+                            textAlign: 'center',
+                            transition: 'all 0.2s',
+                            width: '100%',
+                            opacity: exchangeLiberoDisabled ? 0.5 : 1
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!exchangeLiberoDisabled) {
+                              e.currentTarget.style.background = '#FFF0C0'
+                              e.currentTarget.style.transform = 'scale(1.02)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!exchangeLiberoDisabled) {
+                              e.currentTarget.style.background = '#FFF8E7'
+                              e.currentTarget.style.transform = 'scale(1)'
+                            }
+                          }}
+                        >
+                          Exchange Libero
+                        </button>
                       )}
                     </div>
                   )
@@ -20924,8 +21237,54 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   )
 }
 
-function ScoreboardToolbar({ children }) {
-  return <div className="match-toolbar">{children}</div>
+function ScoreboardToolbar({ children, collapsed, onToggle }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        className="match-toolbar"
+        style={{
+          display: collapsed ? 'none' : 'grid',
+          transition: 'all 0.2s ease'
+        }}
+      >
+        {children}
+      </div>
+      {/* Collapse/Expand arrow button at bottom center */}
+      <div
+        onClick={onToggle}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.25'}
+        style={{
+          position: 'absolute',
+          top: collapsed ? '0' : '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '40px',
+          height: '24px',
+          background: '#22c55e',
+          borderRadius: '0 0 8px 8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          zIndex: 100,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          transition: 'all 0.2s ease',
+          opacity: 0.25
+        }}
+      >
+        <span style={{
+          fontSize: '14px',
+          color: '#000',
+          fontWeight: 700,
+          transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease'
+        }}>
+          ▲
+        </span>
+      </div>
+    </div>
+  )
 }
 
 function ScoreboardTeamColumn({ side, children }) {
@@ -21036,6 +21395,71 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         break
       }
     }
+  }
+
+  // Drag and drop state
+  const [draggedPlayer, setDraggedPlayer] = useState(null)
+  const [dragOverPosition, setDragOverPosition] = useState(null)
+
+  // Handle drag start for available players
+  const handleDragStart = (e, playerNumber) => {
+    setDraggedPlayer(playerNumber)
+    e.dataTransfer.setData('text/plain', String(playerNumber))
+    e.dataTransfer.effectAllowed = 'move'
+
+    // Create custom drag image showing the player number
+    const dragImage = document.createElement('div')
+    dragImage.textContent = String(playerNumber)
+    dragImage.style.cssText = `
+      position: absolute;
+      top: -1000px;
+      left: -1000px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #4ade80;
+      color: #000;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `
+    document.body.appendChild(dragImage)
+    e.dataTransfer.setDragImage(dragImage, 25, 25)
+
+    // Clean up drag image after a short delay
+    setTimeout(() => {
+      document.body.removeChild(dragImage)
+    }, 0)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedPlayer(null)
+    setDragOverPosition(null)
+  }
+
+  // Handle drag over for position inputs
+  const handleDragOver = (e, positionIndex) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverPosition(positionIndex)
+  }
+
+  const handleDragLeave = () => {
+    setDragOverPosition(null)
+  }
+
+  // Handle drop on position input
+  const handleDrop = (e, positionIndex) => {
+    e.preventDefault()
+    const playerNumber = e.dataTransfer.getData('text/plain')
+    if (playerNumber) {
+      handleInputChange(positionIndex, playerNumber)
+    }
+    setDraggedPlayer(null)
+    setDragOverPosition(null)
   }
 
   // Undo the last edit
@@ -21391,8 +21815,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 }}>
                   {pos}
                 </div>
-                {/* Input square with captain indicator (circled number) */}
-                <div style={{ position: 'relative', width: '60px' }}>
+                {/* Input square with captain indicator (circled number) - droppable */}
+                <div
+                  style={{ position: 'relative', width: '60px' }}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, idx)}
+                >
                   <input
                     type="text"
                     inputMode="numeric"
@@ -21412,11 +21841,12 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       fontSize: '18px',
                       fontWeight: 700,
                       textAlign: 'center',
-                      background: 'var(--bg-secondary)',
-                      border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                      background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
+                      border: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
                       borderTop: 'none',
                       borderRadius: '0 0 8px 8px',
-                      color: 'var(--text)'
+                      color: 'var(--text)',
+                      transition: 'background 0.15s, border-color 0.15s'
                     }}
                   />
                   {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
@@ -21471,8 +21901,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 }}>
                   {pos}
                 </div>
-                {/* Input square with captain indicator (circled number) */}
-                <div style={{ position: 'relative', width: '60px' }}>
+                {/* Input square with captain indicator (circled number) - droppable */}
+                <div
+                  style={{ position: 'relative', width: '60px' }}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, idx)}
+                >
                   <input
                     type="text"
                     inputMode="numeric"
@@ -21492,11 +21927,12 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       fontSize: '18px',
                       fontWeight: 700,
                       textAlign: 'center',
-                      background: 'var(--bg-secondary)',
-                      border: `2px solid ${errors[idx] ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                      background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
+                      border: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
                       borderTop: 'none',
                       borderRadius: '0 0 8px 8px',
-                      color: 'var(--text)'
+                      color: 'var(--text)',
+                      transition: 'background 0.15s, border-color 0.15s'
                     }}
                   />
                   {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
@@ -21615,13 +22051,16 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             }).sort((a, b) => a.number - b.number).map(p => (
               <div
                 key={p.number}
+                draggable
                 onClick={() => handlePlayerClick(p.number)}
+                onDragStart={(e) => handleDragStart(e, p.number)}
+                onDragEnd={handleDragEnd}
                 style={{
                   position: 'relative',
                   width: '40px',
                   height: '40px',
                   borderRadius: '50%',
-                  background: 'rgba(74, 222, 128, 0.2)',
+                  background: draggedPlayer === p.number ? 'rgba(74, 222, 128, 0.4)' : 'rgba(74, 222, 128, 0.2)',
                   border: '2px solid #4ade80',
                   display: 'flex',
                   alignItems: 'center',
@@ -21629,19 +22068,24 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   fontSize: '14px',
                   fontWeight: 700,
                   color: '#4ade80',
-                  cursor: 'pointer',
+                  cursor: 'grab',
                   transition: 'all 0.2s',
-                  userSelect: 'none'
+                  userSelect: 'none',
+                  opacity: draggedPlayer === p.number ? 0.5 : 1
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
-                  e.currentTarget.style.transform = 'scale(1.1)'
+                  if (!draggedPlayer) {
+                    e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
+                    e.currentTarget.style.transform = 'scale(1.1)'
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
-                  e.currentTarget.style.transform = 'scale(1)'
+                  if (!draggedPlayer) {
+                    e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }
                 }}
-                title="Click to add to first available position (I to VI order)"
+                title="Click or drag to assign to a position"
               >
                 {p.isCaptain && (
                   <span style={{
@@ -21667,6 +22111,17 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Instruction text */}
+        <div style={{
+          textAlign: 'center',
+          fontSize: '12px',
+          color: 'var(--muted)',
+          marginBottom: '16px',
+          fontStyle: 'italic'
+        }}>
+          Please write the number, drag and drop it, or click on available player to fill each of the available positions
         </div>
 
         {/* Undo, Clear, and Rotate buttons - hidden when lineup is confirmed */}

@@ -40,10 +40,10 @@ export default function MainHeader({
   // Check if compact mode (viewport width <= 960px)
   const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960
 
-  // Handle touch events for swipe to show/hide header in compact mode
+  // Handle touch events for swipe to show/hide header (compact mode only for touch)
   useEffect(() => {
+    // Touch swipe only works in compact mode, but click-to-collapse works in all modes
     if (!isCompactMode) {
-      setIsCollapsed(false)
       return
     }
 
@@ -295,14 +295,14 @@ export default function MainHeader({
           </span>
         </button>
         
-        {/* Collapsible Match Info Menu */}
-        {matchInfoMenuOpen && matchInfoData && renderMatchInfoMenu(match, matchInfoData)}
+        {/* Collapsible Match Info Menu - hide when header is collapsed */}
+        {matchInfoMenuOpen && matchInfoData && !isCollapsed && renderMatchInfoMenu(match, matchInfoData)}
       </div>
     )
   }
 
   return (
-    <>
+    <div style={{ position: 'relative', zIndex: 1000 }}>
       {/* Collapsed header indicator - tap to expand */}
       {isCompactMode && isCollapsed && (
         <div
@@ -333,20 +333,17 @@ export default function MainHeader({
         ref={headerRef}
         style={{
           display: 'flex',
-          height: isCompactMode && isCollapsed ? '0px' : '40px',
-          minHeight: isCompactMode && isCollapsed ? '0px' : '40px',
-          maxHeight: isCompactMode && isCollapsed ? '0px' : '40px',
+          height: isCollapsed ? '0px' : '40px',
+          minHeight: isCollapsed ? '0px' : '40px',
+          maxHeight: isCollapsed ? '0px' : '40px',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: isCompactMode && isCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
+          padding: isCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
           background: 'rgba(0, 0, 0, 0.2)',
-          borderBottom: isCompactMode && isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+          borderBottom: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           flexShrink: 0,
           gap: 'clamp(8px, 1.5vw, 16px)',
-          zIndex: 1000,
-          position: 'sticky',
-          top: isCompactMode && isCollapsed ? '-40px' : 0,
-          overflow: isCompactMode && isCollapsed ? 'hidden' : 'visible',
+          overflow: isCollapsed ? 'hidden' : 'visible',
           transition: 'all 0.3s ease-in-out'
         }}>
       {/* Left: Online/Offline Toggle + Connection Status */}
@@ -471,7 +468,7 @@ export default function MainHeader({
       </div>
 
       {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}
-      {((showMatchSetup || matchId) && currentMatch) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch)) ? (
+      {!isCollapsed && (((showMatchSetup || matchId) && currentMatch) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch))) ? (
         <div style={{
           position: 'absolute',
           left: '50%',
@@ -1011,8 +1008,43 @@ export default function MainHeader({
           </>
         )}
       </div>
+
     </div>
-    </>
+    {/* Collapse/Expand arrow button at bottom center - positioned outside the container */}
+    <div
+      onClick={() => setIsCollapsed(!isCollapsed)}
+      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.25'}
+      style={{
+        position: 'absolute',
+        top: isCollapsed ? '0' : '40px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '40px',
+        height: '24px',
+        background: '#22c55e',
+        borderRadius: '0 0 8px 8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        zIndex: 1001,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+        transition: 'all 0.2s ease',
+        opacity: 0.25
+      }}
+    >
+      <span style={{
+        fontSize: '14px',
+        color: '#000',
+        fontWeight: 700,
+        transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition: 'transform 0.2s ease'
+      }}>
+        ▲
+      </span>
+    </div>
+    </div>
   )
 }
 
