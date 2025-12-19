@@ -169,11 +169,15 @@ const server = createServer((req, res) => {
         }
       }
 
+      // Get team names - handle both object format {name: 'Team'} and string format 'Team'
+      const homeTeamName = typeof m.homeTeam === 'object' ? m.homeTeam?.name : m.homeTeam
+      const awayTeamName = typeof m.awayTeam === 'object' ? m.awayTeam?.name : m.awayTeam
+
       return {
         id: m.matchId,
-        gameNumber: m.gameNumber || m.match?.gameNumber || m.matchId,
-        homeTeam: m.homeTeam || 'Home',
-        awayTeam: m.awayTeam || 'Away',
+        gameNumber: m.gameNumber || m.match?.gameNumber || m.match?.game_n || m.matchId,
+        homeTeam: homeTeamName || 'Home',
+        awayTeam: awayTeamName || 'Away',
         scheduledAt: m.match?.scheduledAt,
         dateTime,
         status: m.match?.status || 'scheduled',
@@ -187,6 +191,59 @@ const server = createServer((req, res) => {
       success: true,
       matches: formattedMatches
     }))
+    return
+  }
+
+  // Get match data by ID
+  if (url.pathname.startsWith('/api/match/') &&
+      url.pathname !== '/api/match/list' &&
+      url.pathname !== '/api/match/validate-pin' &&
+      url.pathname !== '/api/match/by-game-number' &&
+      req.method === 'GET') {
+    const matchId = url.pathname.replace('/api/match/', '')
+
+    if (!matchId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, error: 'Match ID required' }))
+      return
+    }
+
+    // Try to find match in activeMatches
+    let matchData = activeMatches.get(matchId)
+
+    // Also try with/without leading zeros or string conversion
+    if (!matchData) {
+      matchData = activeMatches.get(String(matchId))
+    }
+    if (!matchData) {
+      matchData = activeMatches.get(Number(matchId))
+    }
+
+    if (matchData) {
+      console.log(`[API] /api/match/${matchId} - Found match`)
+      // Ensure team objects have the correct format
+      const homeTeam = typeof matchData.homeTeam === 'object' ? matchData.homeTeam : { name: matchData.homeTeam || 'Home' }
+      const awayTeam = typeof matchData.awayTeam === 'object' ? matchData.awayTeam : { name: matchData.awayTeam || 'Away' }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: true,
+        match: matchData.match,
+        homeTeam,
+        awayTeam,
+        homePlayers: matchData.homePlayers || [],
+        awayPlayers: matchData.awayPlayers || [],
+        sets: matchData.sets || [],
+        events: matchData.events || []
+      }))
+    } else {
+      console.log(`[API] /api/match/${matchId} - Match not found. Active matches: ${Array.from(activeMatches.keys()).join(', ')}`)
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Match not found. Make sure the main scoresheet is running and connected.'
+      }))
+    }
     return
   }
 
@@ -503,7 +560,14 @@ function handleClientDisconnect(clientInfo) {
 
 // Handle sync-match-data from frontend scoreboard
 function handleSyncMatchData(clientInfo, message) {
+  // Support both formats:
+  // Frontend format: { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
+  // Legacy format: { matchId, match, teams, players, sets, events }
   const { matchId, match, teams, players, sets, events } = message
+  const homeTeam = message.homeTeam || teams?.[0]
+  const awayTeam = message.awayTeam || teams?.[1]
+  const homePlayers = message.homePlayers || players?.filter(p => p.teamId === match?.homeTeamId) || []
+  const awayPlayers = message.awayPlayers || players?.filter(p => p.teamId === match?.awayTeamId) || []
 
   if (!matchId) {
     clientInfo.ws.send(JSON.stringify({
@@ -514,16 +578,16 @@ function handleSyncMatchData(clientInfo, message) {
   }
 
   // Store/update match in activeMatches with all the data
-  activeMatches.set(matchId, {
-    matchId,
+  activeMatches.set(String(matchId), {
+    matchId: String(matchId),
     match,
-    teams,
-    players,
+    homeTeam,
+    awayTeam,
+    homePlayers,
+    awayPlayers,
     sets,
     events,
-    gameNumber: match?.gameN || match?.gameNumber,
-    homeTeam: teams?.[0]?.name || 'Home',
-    awayTeam: teams?.[1]?.name || 'Away',
+    gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
   })
