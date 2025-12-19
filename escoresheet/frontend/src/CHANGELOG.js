@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.25',
+    date: '19.12.25',
+    changes: [
+      'Refactor LivescoreApp and Scoreboard components for improved first serve logic and UI enhancements. Simplified first serve calculation based on set index and alternation pattern. Updated ScoreboardToolbar for better collapsible functionality and adjusted styles for match-toolbar. Enhanced drag-and-drop functionality for player substitutions in LineupModal, improving user experience.'
+    ]
+  },
+  {
     version: '0.9.24',
     date: '18.12.25',
     changes: [

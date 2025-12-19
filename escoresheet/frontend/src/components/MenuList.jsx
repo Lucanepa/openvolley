@@ -4,6 +4,7 @@ export default function MenuList({
   items = [],
   position = 'right', // 'left' | 'right' | 'center'
   buttonLabel = 'Menu',
+  buttonTitle = '',
   buttonStyle = {},
   buttonClassName = '',
   showArrow = true
@@ -76,6 +77,7 @@ export default function MenuList({
       <button
         ref={buttonRef}
         className={buttonClassName}
+        title={buttonTitle || undefined}
         onClick={(e) => {
           e.stopPropagation()
           setShowMenu(!showMenu)

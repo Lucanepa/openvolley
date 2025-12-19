@@ -465,29 +465,25 @@ export default function LivescoreApp() {
     if (!data?.set || !data?.match) {
       return data?.match?.firstServe || 'home'
     }
-    
-    if (data.set.index === 5 && data.match?.set5FirstServe) {
-      const firstServeTeamKey = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-      if (!data?.events || data.events.length === 0) {
-        return firstServeTeamKey
-      }
-      const pointEvents = data.events
-        .filter(e => e.type === 'point' && e.setIndex === data.set.index)
-        .sort((a, b) => {
-          const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-          const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-          return bTime - aTime
-        })
-      if (pointEvents.length === 0) {
-        return firstServeTeamKey
-      }
-      return pointEvents[0].payload?.team || firstServeTeamKey
+
+    const setIndex = data.set.index
+    const set1FirstServe = data.match.firstServe || 'home'
+
+    // Calculate first serve for current set based on alternation pattern
+    let currentSetFirstServe
+    if (setIndex === 5 && data.match?.set5FirstServe) {
+      currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+    } else if (setIndex === 5) {
+      currentSetFirstServe = set1FirstServe
+    } else {
+      // Sets 1-4: odd sets (1, 3) same as Set 1, even sets (2, 4) opposite
+      currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
     }
-    
+
     if (!data?.events || data.events.length === 0) {
-      return data.match.firstServe || 'home'
+      return currentSetFirstServe
     }
-    
+
     const pointEvents = data.events
       .filter(e => e.type === 'point' && e.setIndex === data.set.index)
       .sort((a, b) => {
@@ -495,12 +491,12 @@ export default function LivescoreApp() {
         const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
         return bTime - aTime
       })
-    
+
     if (pointEvents.length === 0) {
-      return data.match.firstServe || 'home'
+      return currentSetFirstServe
     }
-    
-    return pointEvents[0].payload?.team || (data.match.firstServe || 'home')
+
+    return pointEvents[0].payload?.team || currentSetFirstServe
   }, [data?.set, data?.match, data?.events, teamAKey, teamBKey])
 
   // Get team labels
