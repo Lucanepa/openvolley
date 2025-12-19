@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.7',
+    date: '19.12.25',
+    changes: [
+      'Refactor railway.json to switch from Nixpacks to Dockerfile for building the frontend application. This change simplifies the build process and aligns with current deployment practices.'
+    ]
+  },
+  {
     version: '0.10.6',
     date: '19.12.25',
     changes: [
