@@ -15796,8 +15796,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this substitution event?`)) {
+                                    if (confirm(`Delete this substitution event? The lineup will be restored (player OUT returns to court).`)) {
+                                      const subTeam = event.payload?.team
+                                      const subPosition = event.payload?.position
+                                      const subPlayerOut = event.payload?.playerOut
+                                      const subSetIndex = event.setIndex
+
+                                      // Delete the substitution event
                                       await db.events.delete(event.id)
+
+                                      // Find and delete the lineup event created by this substitution
+                                      // Then restore the previous lineup with the original player
+                                      if (subTeam && subPosition && subPlayerOut) {
+                                        const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+                                        const lineupEvents = allEvents
+                                          .filter(e => e.type === 'lineup' && e.payload?.team === subTeam && e.setIndex === subSetIndex)
+                                          .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+
+                                        if (lineupEvents.length > 1) {
+                                          // Delete the most recent lineup (created by the substitution)
+                                          const mostRecentLineup = lineupEvents[0]
+                                          await db.events.delete(mostRecentLineup.id)
+
+                                          // Get the previous lineup and restore it with the original player
+                                          const previousLineup = lineupEvents[1]?.payload?.lineup || {}
+                                          const restoredLineup = { ...previousLineup }
+                                          restoredLineup[subPosition] = String(subPlayerOut)
+
+                                          // Get next sequence number
+                                          const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
+                                          const nextSeq = Math.floor(maxSeq) + 1
+
+                                          // Create restored lineup event
+                                          await db.events.add({
+                                            matchId,
+                                            setIndex: subSetIndex,
+                                            type: 'lineup',
+                                            payload: { team: subTeam, lineup: restoredLineup, fromSubstitution: true },
+                                            ts: new Date().toISOString(),
+                                            seq: nextSeq
+                                          })
+                                        } else if (lineupEvents.length === 1) {
+                                          // Only one lineup - just update it to restore the original player
+                                          const currentLineup = lineupEvents[0]
+                                          const restoredLineup = { ...currentLineup.payload?.lineup }
+                                          restoredLineup[subPosition] = String(subPlayerOut)
+                                          await db.events.update(currentLineup.id, {
+                                            payload: { ...currentLineup.payload, lineup: restoredLineup }
+                                          })
+                                        }
+                                      }
                                     }
                                   }}
                                   style={{
@@ -20145,29 +20193,96 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Reopen Set {reopenSetConfirm.setIndex}? This will delete all subsequent sets and their events.
+              Reopen Set {reopenSetConfirm.setIndex}? This will undo the winning point, delete all subsequent sets and their events.
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
                 onClick={async () => {
-                  // Mark the set as not finished
-                  await db.sets.update(reopenSetConfirm.setId, { finished: false })
-                  
+                  const reopenSetIndex = reopenSetConfirm.setIndex
+
+                  // Get the set to reopen
+                  const setToReopen = await db.sets.get(reopenSetConfirm.setId)
+                  if (!setToReopen) {
+                    setReopenSetConfirm(null)
+                    return
+                  }
+
+                  // Get all events for this set
+                  const setEvents = await db.events.where('matchId').equals(matchId).and(e => e.setIndex === reopenSetIndex).toArray()
+
+                  // Delete the set_end event for this set
+                  const setEndEvent = setEvents.find(e => e.type === 'set_end')
+                  if (setEndEvent) {
+                    await db.events.delete(setEndEvent.id)
+                  }
+
+                  // Find the last point event (the winning point) by highest seq
+                  const pointEvents = setEvents.filter(e => e.type === 'point')
+                  if (pointEvents.length > 0) {
+                    const lastPoint = pointEvents.reduce((max, e) =>
+                      (e.seq || 0) > (max.seq || 0) ? e : max
+                    , pointEvents[0])
+
+                    const lastPointSeq = lastPoint.seq || 0
+                    const lastPointBaseSeq = Math.floor(lastPointSeq)
+
+                    // Delete the point and all related events (rotation lineups, libero exits, rally_start)
+                    // Related events share the same base seq or are the rally_start just before
+                    const eventsToDelete = setEvents.filter(e => {
+                      const eSeq = e.seq || 0
+                      const eBaseSeq = Math.floor(eSeq)
+                      // Same base seq (point + rotation + libero_exit)
+                      if (eBaseSeq === lastPointBaseSeq) return true
+                      return false
+                    })
+
+                    // Also delete the rally_start that preceded this point
+                    const rallyStartBefore = setEvents
+                      .filter(e => e.type === 'rally_start' && (e.seq || 0) < lastPointSeq)
+                      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+                    if (rallyStartBefore) {
+                      eventsToDelete.push(rallyStartBefore)
+                    }
+
+                    // Delete all these events
+                    for (const ev of eventsToDelete) {
+                      await db.events.delete(ev.id)
+                    }
+
+                    // Decrement the score for the winning team
+                    const winningTeam = lastPoint.payload?.team
+                    if (winningTeam) {
+                      const scoreField = winningTeam === 'home' ? 'homePoints' : 'awayPoints'
+                      const currentScore = setToReopen[scoreField] || 0
+                      await db.sets.update(reopenSetConfirm.setId, {
+                        [scoreField]: Math.max(0, currentScore - 1),
+                        finished: false,
+                        winner: null
+                      })
+                    } else {
+                      // Just mark as not finished if we can't determine the team
+                      await db.sets.update(reopenSetConfirm.setId, { finished: false, winner: null })
+                    }
+                  } else {
+                    // No point events found, just mark as not finished
+                    await db.sets.update(reopenSetConfirm.setId, { finished: false, winner: null })
+                  }
+
                   // Delete all subsequent sets
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                  const setsToDelete = allSets.filter(s => s.index > reopenSetConfirm.setIndex)
+                  const setsToDelete = allSets.filter(s => s.index > reopenSetIndex)
                   for (const s of setsToDelete) {
                     // Delete events for this set
                     await db.events.where('matchId').equals(matchId).and(e => e.setIndex === s.index).delete()
                     // Delete the set
                     await db.sets.delete(s.id)
                   }
-                  
+
                   // Update match status back to 'live' if it was 'final'
                   if (data.match?.status === 'final') {
                     await db.matches.update(matchId, { status: 'live' })
                   }
-                  
+
                   setReopenSetConfirm(null)
                 }}
                 style={{
