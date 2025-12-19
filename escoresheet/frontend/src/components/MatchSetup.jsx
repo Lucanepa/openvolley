@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
@@ -9,6 +9,193 @@ import { useTeamHistory } from '../hooks/useTeamHistory'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
+
+// Date formatting helpers (outside component to avoid recreation)
+function formatDateToDDMMYYYY(dateStr) {
+  if (!dateStr) return ''
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+    return dateStr.replace(/\./g, '/')
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-')
+    return `${day}/${month}/${year}`
+  }
+  const date = new Date(dateStr)
+  if (!isNaN(date.getTime())) {
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+  return dateStr
+}
+
+function formatDateToISO(dateStr) {
+  if (!dateStr) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('/')
+    return `${year}-${month}-${day}`
+  }
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('.')
+    return `${year}-${month}-${day}`
+  }
+  const date = new Date(dateStr)
+  if (!isNaN(date.getTime())) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  return dateStr
+}
+
+// OfficialCard component - defined outside to prevent focus loss on re-render
+const OfficialCard = memo(function OfficialCard({
+  title,
+  officialKey,
+  lastName,
+  firstName,
+  country,
+  dob,
+  setLastName,
+  setFirstName,
+  setCountry,
+  setDob,
+  hasDatabase = false,
+  selectorKey = null,
+  isExpanded,
+  onToggleExpanded,
+  onOpenDatabase
+}) {
+  const displayName = lastName || firstName
+    ? `${lastName || ''}${firstName ? ', ' + firstName.charAt(0) + '.' : ''}`
+    : 'Not set'
+
+  return (
+    <div style={{
+      border: '1px solid rgba(255, 255, 255, 0.2)',
+      borderRadius: '8px',
+      background: 'rgba(15, 23, 42, 0.2)',
+      overflow: 'hidden'
+    }}>
+      <div
+        onClick={onToggleExpanded}
+        style={{
+          padding: '12px 16px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+          <span style={{ fontWeight: 600, fontSize: '14px' }}>{title}</span>
+          {!isExpanded && (
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayName}</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {hasDatabase && isExpanded && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenDatabase(e, selectorKey)
+              }}
+              style={{
+                padding: '4px 8px',
+                fontSize: '11px',
+                fontWeight: 500,
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#60a5fa',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Database
+            </button>
+          )}
+          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      {isExpanded && (
+        <div style={{ padding: '16px' }}>
+          <div className="row">
+            <div className="field"><label>Last Name</label><input className="w-name capitalize" value={lastName} onChange={e=>setLastName(e.target.value)} /></div>
+            <div className="field"><label>First Name</label><input className="w-name capitalize" value={firstName} onChange={e=>setFirstName(e.target.value)} /></div>
+            <div className="field"><label>Country</label><input className="w-90" value={country} onChange={e=>setCountry(e.target.value)} /></div>
+            <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e=>setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})
+
+// LineJudgesCard component - defined outside to prevent focus loss on re-render
+const LineJudgesCard = memo(function LineJudgesCard({
+  lineJudge1,
+  lineJudge2,
+  lineJudge3,
+  lineJudge4,
+  setLineJudge1,
+  setLineJudge2,
+  setLineJudge3,
+  setLineJudge4,
+  isExpanded,
+  onToggleExpanded
+}) {
+  const filledCount = [lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).length
+  const displayText = filledCount > 0 ? `${filledCount} set` : 'Not set'
+
+  return (
+    <div style={{
+      border: '1px solid rgba(255, 255, 255, 0.2)',
+      borderRadius: '8px',
+      background: 'rgba(15, 23, 42, 0.2)',
+      overflow: 'hidden'
+    }}>
+      <div
+        onClick={onToggleExpanded}
+        style={{
+          padding: '12px 16px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+          <span style={{ fontWeight: 600, fontSize: '14px' }}>Line Judges</span>
+          {!isExpanded && (
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayText}</span>
+          )}
+        </div>
+        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
+      </div>
+      {isExpanded && (
+        <div style={{ padding: '16px' }}>
+          <div className="row">
+            <div className="field"><label>Line Judge 1</label><input className="w-name capitalize" value={lineJudge1} onChange={e=>setLineJudge1(e.target.value)} placeholder="Name" /></div>
+            <div className="field"><label>Line Judge 2</label><input className="w-name capitalize" value={lineJudge2} onChange={e=>setLineJudge2(e.target.value)} placeholder="Name" /></div>
+          </div>
+          <div className="row">
+            <div className="field"><label>Line Judge 3</label><input className="w-name capitalize" value={lineJudge3} onChange={e=>setLineJudge3(e.target.value)} placeholder="Name" /></div>
+            <div className="field"><label>Line Judge 4</label><input className="w-name capitalize" value={lineJudge4} onChange={e=>setLineJudge4(e.target.value)} placeholder="Name" /></div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})
 
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const [home, setHome] = useState('Home')
@@ -153,6 +340,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const [awayPdfError, setAwayPdfError] = useState('')
   const homeFileInputRef = useRef(null)
   const awayFileInputRef = useRef(null)
+
+  // PDF import summary modal state
+  const [importSummaryModal, setImportSummaryModal] = useState(null) // { team: 'home'|'away', players: number, errors: string[], benchOfficials: number }
 
   // Upload mode toggle state (local or remote)
   const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
@@ -1061,56 +1251,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return isBrightColor(color) ? '#000000' : '#ffffff'
   }
 
-  // Date formatting helpers
-  function formatDateToDDMMYYYY(dateStr) {
-    if (!dateStr) return ''
-    // If already in DD/MM/YYYY format (slashes), return as-is
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr
-    // If in DD.MM.YYYY format (dots), convert to slashes
-    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
-      return dateStr.replace(/\./g, '/')
-    }
-    // If in ISO format (YYYY-MM-DD), convert to DD/MM/YYYY
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      const [year, month, day] = dateStr.split('-')
-      return `${day}/${month}/${year}`
-    }
-    // Try to parse as date
-    const date = new Date(dateStr)
-    if (!isNaN(date.getTime())) {
-      const day = String(date.getDate()).padStart(2, '0')
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const year = date.getFullYear()
-      return `${day}/${month}/${year}`
-    }
-    return dateStr
-  }
-
-  function formatDateToISO(dateStr) {
-    if (!dateStr) return ''
-    // If already in ISO format (YYYY-MM-DD), return as-is
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
-    // If in DD/MM/YYYY format (slashes), convert to YYYY-MM-DD
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-      const [day, month, year] = dateStr.split('/')
-      return `${year}-${month}-${day}`
-    }
-    // If in DD.MM.YYYY format (dots), convert to YYYY-MM-DD
-    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
-      const [day, month, year] = dateStr.split('.')
-      return `${year}-${month}-${day}`
-    }
-    // Try to parse as date
-    const date = new Date(dateStr)
-    if (!isNaN(date.getTime())) {
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-    return dateStr
-  }
-
   function handleSignatureSave(signatureImage) {
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
@@ -1845,12 +1985,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         })
       }
       
+      // Clear file input and state
       if (homeFileInputRef.current) {
         homeFileInputRef.current.value = ''
       }
+      setHomePdfFile(null)
+
+      // Show import summary modal
+      setImportSummaryModal({
+        team: 'home',
+        players: mergedPlayers.length,
+        benchOfficials: importedBenchOfficials.length,
+        errors: []
+      })
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setHomePdfError(`Failed to parse PDF: ${err.message}`)
+      // Clear file state on error too
+      setHomePdfFile(null)
+      if (homeFileInputRef.current) {
+        homeFileInputRef.current.value = ''
+      }
     } finally {
       setHomePdfLoading(false)
     }
@@ -1933,12 +2088,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         })
       }
       
+      // Clear file input and state
       if (awayFileInputRef.current) {
         awayFileInputRef.current.value = ''
       }
+      setAwayPdfFile(null)
+
+      // Show import summary modal
+      setImportSummaryModal({
+        team: 'away',
+        players: mergedPlayers.length,
+        benchOfficials: importedBenchOfficials.length,
+        errors: []
+      })
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setAwayPdfError(`Failed to parse PDF: ${err.message}`)
+      // Clear file state on error too
+      setAwayPdfFile(null)
+      if (awayFileInputRef.current) {
+        awayFileInputRef.current.value = ''
+      }
     } finally {
       setAwayPdfLoading(false)
     }
@@ -2098,128 +2268,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     )
   }
 
+  // Callback for opening database selector
+  const handleOpenDatabase = useCallback((e, selectorKey) => {
+    setRefereeSelectorPosition({ element: e.currentTarget })
+    setShowRefereeSelector(selectorKey)
+  }, [])
+
   if (currentView === 'officials') {
-    // Helper to render collapsible official card
-    const OfficialCard = ({ title, officialKey, lastName, firstName, country, dob, setLastName, setFirstName, setCountry, setDob, hasDatabase = false, selectorKey = null }) => {
-      const isExpanded = expandedOfficials[officialKey]
-      const displayName = lastName || firstName
-        ? `${lastName || ''}${firstName ? ', ' + firstName.charAt(0) + '.' : ''}`
-        : 'Not set'
-
-      return (
-        <div style={{
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          background: 'rgba(15, 23, 42, 0.2)',
-          overflow: 'hidden'
-        }}>
-          <div
-            onClick={() => toggleOfficialExpanded(officialKey)}
-            style={{
-              padding: '12px 16px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>{title}</span>
-              {!isExpanded && (
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayName}</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {hasDatabase && isExpanded && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setRefereeSelectorPosition({ element: e.currentTarget })
-                    setShowRefereeSelector(selectorKey)
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    background: 'rgba(59, 130, 246, 0.2)',
-                    color: '#60a5fa',
-                    border: '1px solid rgba(59, 130, 246, 0.4)',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Database
-                </button>
-              )}
-              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
-            </div>
-          </div>
-          {isExpanded && (
-            <div style={{ padding: '16px' }}>
-              <div className="row">
-                <div className="field"><label>Last Name</label><input className="w-name capitalize" value={lastName} onChange={e=>setLastName(e.target.value)} /></div>
-                <div className="field"><label>First Name</label><input className="w-name capitalize" value={firstName} onChange={e=>setFirstName(e.target.value)} /></div>
-                <div className="field"><label>Country</label><input className="w-90" value={country} onChange={e=>setCountry(e.target.value)} /></div>
-                <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e=>setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
-              </div>
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    // Line Judges collapsible card
-    const LineJudgesCard = () => {
-      const isExpanded = expandedOfficials['lineJudges']
-      const filledCount = [lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).length
-      const displayText = filledCount > 0 ? `${filledCount} set` : 'Not set'
-
-      return (
-        <div style={{
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          background: 'rgba(15, 23, 42, 0.2)',
-          overflow: 'hidden'
-        }}>
-          <div
-            onClick={() => toggleOfficialExpanded('lineJudges')}
-            style={{
-              padding: '12px 16px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>Line Judges</span>
-              {!isExpanded && (
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayText}</span>
-              )}
-            </div>
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
-          </div>
-          {isExpanded && (
-            <div style={{ padding: '16px' }}>
-              <div className="row">
-                <div className="field"><label>Line Judge 1</label><input className="w-name capitalize" value={lineJudge1} onChange={e=>setLineJudge1(e.target.value)} placeholder="Name" /></div>
-                <div className="field"><label>Line Judge 2</label><input className="w-name capitalize" value={lineJudge2} onChange={e=>setLineJudge2(e.target.value)} placeholder="Name" /></div>
-              </div>
-              <div className="row">
-                <div className="field"><label>Line Judge 3</label><input className="w-name capitalize" value={lineJudge3} onChange={e=>setLineJudge3(e.target.value)} placeholder="Name" /></div>
-                <div className="field"><label>Line Judge 4</label><input className="w-name capitalize" value={lineJudge4} onChange={e=>setLineJudge4(e.target.value)} placeholder="Name" /></div>
-              </div>
-            </div>
-          )}
-        </div>
-      )
-    }
-
     return (
       <MatchSetupOfficialsView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
@@ -2246,6 +2301,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setDob={setRef1Dob}
             hasDatabase={true}
             selectorKey="ref1"
+            isExpanded={expandedOfficials['ref1']}
+            onToggleExpanded={() => toggleOfficialExpanded('ref1')}
+            onOpenDatabase={handleOpenDatabase}
           />
           <OfficialCard
             title="2nd Referee"
@@ -2260,6 +2318,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setDob={setRef2Dob}
             hasDatabase={true}
             selectorKey="ref2"
+            isExpanded={expandedOfficials['ref2']}
+            onToggleExpanded={() => toggleOfficialExpanded('ref2')}
+            onOpenDatabase={handleOpenDatabase}
           />
           <OfficialCard
             title="Scorer"
@@ -2274,6 +2335,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setDob={setScorerDob}
             hasDatabase={false}
             selectorKey="scorer"
+            isExpanded={expandedOfficials['scorer']}
+            onToggleExpanded={() => toggleOfficialExpanded('scorer')}
+            onOpenDatabase={handleOpenDatabase}
           />
           <OfficialCard
             title="Assistant Scorer"
@@ -2286,8 +2350,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             setFirstName={setAsstFirst}
             setCountry={setAsstCountry}
             setDob={setAsstDob}
+            isExpanded={expandedOfficials['asst']}
+            onToggleExpanded={() => toggleOfficialExpanded('asst')}
+            onOpenDatabase={handleOpenDatabase}
           />
-          <LineJudgesCard />
+          <LineJudgesCard
+            lineJudge1={lineJudge1}
+            lineJudge2={lineJudge2}
+            lineJudge3={lineJudge3}
+            lineJudge4={lineJudge4}
+            setLineJudge1={setLineJudge1}
+            setLineJudge2={setLineJudge2}
+            setLineJudge3={setLineJudge3}
+            setLineJudge4={setLineJudge4}
+            isExpanded={expandedOfficials['lineJudges']}
+            onToggleExpanded={() => toggleOfficialExpanded('lineJudges')}
+          />
         </div>
         {/* Referee Selector */}
         <RefereeSelector
@@ -4976,6 +5054,98 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 OK
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* PDF Import Summary Modal */}
+      {importSummaryModal && (
+        <Modal
+          title={`${importSummaryModal.team === 'home' ? 'Home' : 'Away'} Team Import Complete`}
+          open={true}
+          onClose={() => setImportSummaryModal(null)}
+          width={400}
+        >
+          <div style={{ padding: '20px' }}>
+            {/* Success summary */}
+            <div style={{
+              background: 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
+                {importSummaryModal.players} Players
+              </div>
+              <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                Successfully imported
+              </div>
+              {importSummaryModal.benchOfficials > 0 && (
+                <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
+                  + {importSummaryModal.benchOfficials} bench official{importSummaryModal.benchOfficials > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+
+            {/* Errors if any */}
+            {importSummaryModal.errors && importSummaryModal.errors.length > 0 && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#ef4444', marginBottom: '8px' }}>
+                  {importSummaryModal.errors.length} Error{importSummaryModal.errors.length > 1 ? 's' : ''}
+                </div>
+                {importSummaryModal.errors.map((err, i) => (
+                  <div key={i} style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{err}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Warning */}
+            <div style={{
+              background: 'rgba(234, 179, 8, 0.1)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
+                Please review the imported data:
+              </div>
+              <ul style={{
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.7)',
+                margin: '8px 0 0 0',
+                paddingLeft: '20px',
+                lineHeight: '1.6'
+              }}>
+                <li>Add any missing bench officials (Doctor, Physio, etc.)</li>
+                <li>Verify dates of birth are correct</li>
+                <li>Set captain and libero designations</li>
+              </ul>
+            </div>
+
+            <button
+              onClick={() => setImportSummaryModal(null)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: 'var(--accent)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '14px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Got it
+            </button>
           </div>
         </Modal>
       )}
