@@ -118,7 +118,10 @@ export async function getMatchData(matchId) {
 }
 
 // Global WebSocket connection manager to prevent multiple connections
-const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTimeout, reconnectAttempts, isIntentionallyClosed }>
+const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTimeout, reconnectAttempts, isIntentionallyClosed, pingInterval }>
+
+// Ping interval in ms - keeps connection alive on mobile networks (NAT timeout is usually 30-60s)
+const PING_INTERVAL = 25000
 
 /**
  * Subscribe to match data updates via WebSocket
@@ -135,7 +138,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
       subscribers: new Set(),
       reconnectTimeout: null,
       reconnectAttempts: 0,
-      isIntentionallyClosed: false
+      isIntentionallyClosed: false,
+      pingInterval: null
     }
     wsConnections.set(matchIdStr, connection)
   }
@@ -178,6 +182,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
         if (connection.isIntentionallyClosed || !connection.ws) return
 
         connection.reconnectAttempts = 0 // Reset on successful connection
+        console.log('[ServerDataSync] WebSocket connected')
+
         // Request match data subscription
         try {
           connection.ws.send(JSON.stringify({
@@ -187,15 +193,34 @@ export function subscribeToMatchData(matchId, onUpdate) {
         } catch (err) {
           // Error sending subscription
         }
+
+        // Start ping interval to keep connection alive (important for mobile networks)
+        if (connection.pingInterval) {
+          clearInterval(connection.pingInterval)
+        }
+        connection.pingInterval = setInterval(() => {
+          if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
+            try {
+              connection.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }))
+            } catch (err) {
+              console.warn('[ServerDataSync] Error sending ping:', err)
+            }
+          }
+        }, PING_INTERVAL)
       }
 
       connection.ws.onmessage = (event) => {
         // Skip if intentionally closed
         if (connection.isIntentionallyClosed) return
-        
+
         try {
           const message = JSON.parse(event.data)
-          
+
+          // Handle pong (heartbeat response) - just ignore
+          if (message.type === 'pong') {
+            return
+          }
+
           if (message.type === 'match-data-update' && String(message.matchId) === matchIdStr) {
             // Match data updated, notify all subscribers
             // Pass through timestamp fields for latency tracking
@@ -255,6 +280,12 @@ export function subscribeToMatchData(matchId, onUpdate) {
       }
 
       connection.ws.onclose = (event) => {
+        // Clear ping interval
+        if (connection.pingInterval) {
+          clearInterval(connection.pingInterval)
+          connection.pingInterval = null
+        }
+
         // Don't reconnect if intentionally closed or ws is null
         if (connection.isIntentionallyClosed || !connection.ws) return
 
@@ -304,13 +335,17 @@ export function subscribeToMatchData(matchId, onUpdate) {
   return () => {
     // Remove this subscriber
     connection.subscribers.delete(onUpdate)
-    
+
     // If no more subscribers, close the connection
     if (connection.subscribers.size === 0) {
       connection.isIntentionallyClosed = true
       if (connection.reconnectTimeout) {
         clearTimeout(connection.reconnectTimeout)
         connection.reconnectTimeout = null
+      }
+      if (connection.pingInterval) {
+        clearInterval(connection.pingInterval)
+        connection.pingInterval = null
       }
       if (connection.ws) {
         connection.ws.close(1000, 'Unsubscribing') // Normal closure
