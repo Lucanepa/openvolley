@@ -123,6 +123,86 @@ const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTime
 // Ping interval in ms - keeps connection alive on mobile networks (NAT timeout is usually 30-60s)
 const PING_INTERVAL = 25000
 
+// Debug info for mobile debugging
+const wsDebugInfo = {
+  connectedAt: null,
+  lastMessageAt: null,
+  lastPingAt: null,
+  lastPongAt: null,
+  messagesReceived: 0,
+  connectionAttempts: 0,
+  errors: [],
+  wsUrl: null,
+  readyState: null,
+  lastError: null
+}
+
+/**
+ * Get WebSocket debug info for on-screen debugging
+ */
+export function getWsDebugInfo(matchId) {
+  const matchIdStr = String(matchId)
+  const connection = wsConnections.get(matchIdStr)
+
+  return {
+    ...wsDebugInfo,
+    readyState: connection?.ws?.readyState ?? -1,
+    readyStateLabel: connection?.ws ? ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][connection.ws.readyState] : 'NO_CONNECTION',
+    subscriberCount: connection?.subscribers?.size ?? 0,
+    reconnectAttempts: connection?.reconnectAttempts ?? 0,
+    isIntentionallyClosed: connection?.isIntentionallyClosed ?? false
+  }
+}
+
+// Store connect functions for each match to allow force reconnect
+const connectFunctions = new Map()
+
+/**
+ * Force reconnect WebSocket for a match
+ */
+export function forceReconnect(matchId) {
+  const matchIdStr = String(matchId)
+  const connection = wsConnections.get(matchIdStr)
+
+  if (!connection) {
+    console.log('[ServerDataSync] No connection to reconnect for match', matchId)
+    return false
+  }
+
+  console.log('[ServerDataSync] Force reconnecting...')
+
+  // Close existing connection with code 4000 (custom code that triggers reconnect)
+  if (connection.ws) {
+    try {
+      connection.ws.close(4000, 'Force reconnect')
+    } catch (e) {}
+    connection.ws = null
+  }
+
+  // Clear timeouts
+  if (connection.reconnectTimeout) {
+    clearTimeout(connection.reconnectTimeout)
+    connection.reconnectTimeout = null
+  }
+  if (connection.pingInterval) {
+    clearInterval(connection.pingInterval)
+    connection.pingInterval = null
+  }
+
+  // Reset flags
+  connection.isIntentionallyClosed = false
+  connection.reconnectAttempts = 0
+
+  // Trigger reconnect using stored connect function
+  const connectFn = connectFunctions.get(matchIdStr)
+  if (connectFn) {
+    setTimeout(connectFn, 100) // Small delay to ensure cleanup completes
+    return true
+  }
+
+  return false
+}
+
 /**
  * Subscribe to match data updates via WebSocket
  */
@@ -150,6 +230,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
   const maxReconnectDelay = 10000 // Max 10 seconds
 
   const connect = () => {
+    // Store this connect function for force reconnect
+    connectFunctions.set(matchIdStr, connect)
     // Don't reconnect if intentionally closed or already connected
     if (connection.isIntentionallyClosed) return
     if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
@@ -175,6 +257,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
         connection.ws.close()
       }
 
+      wsDebugInfo.wsUrl = wsUrl
+      wsDebugInfo.connectionAttempts++
       connection.ws = new WebSocket(wsUrl)
 
       connection.ws.onopen = () => {
@@ -182,6 +266,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
         if (connection.isIntentionallyClosed || !connection.ws) return
 
         connection.reconnectAttempts = 0 // Reset on successful connection
+        wsDebugInfo.connectedAt = Date.now()
+        wsDebugInfo.lastError = null
         console.log('[ServerDataSync] WebSocket connected')
 
         // Request match data subscription
@@ -201,6 +287,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
         connection.pingInterval = setInterval(() => {
           if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
             try {
+              wsDebugInfo.lastPingAt = Date.now()
               connection.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }))
             } catch (err) {
               console.warn('[ServerDataSync] Error sending ping:', err)
@@ -215,9 +302,12 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
         try {
           const message = JSON.parse(event.data)
+          wsDebugInfo.lastMessageAt = Date.now()
+          wsDebugInfo.messagesReceived++
 
-          // Handle pong (heartbeat response) - just ignore
+          // Handle pong (heartbeat response)
           if (message.type === 'pong') {
+            wsDebugInfo.lastPongAt = Date.now()
             return
           }
 
@@ -267,9 +357,18 @@ export function subscribeToMatchData(matchId, onUpdate) {
       }
 
       connection.ws.onerror = (error) => {
+        // Track error for debugging
+        wsDebugInfo.lastError = {
+          time: Date.now(),
+          message: error?.message || 'WebSocket error',
+          readyState: connection.ws?.readyState
+        }
+        wsDebugInfo.errors.push(wsDebugInfo.lastError)
+        if (wsDebugInfo.errors.length > 10) wsDebugInfo.errors.shift() // Keep last 10 errors
+
         // Skip if ws is null (cleanup already happened) or intentionally closed
         if (!connection.ws || connection.isIntentionallyClosed) return
-        
+
         // Only log if it's not a connection error (which is expected during initial connection)
         // Connection errors are usually handled by onclose
         if (connection.ws.readyState === WebSocket.CONNECTING) {
@@ -351,8 +450,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
         connection.ws.close(1000, 'Unsubscribing') // Normal closure
         connection.ws = null
       }
-      // Remove from map
+      // Remove from maps
       wsConnections.delete(matchIdStr)
+      connectFunctions.delete(matchIdStr)
     }
   }
 }

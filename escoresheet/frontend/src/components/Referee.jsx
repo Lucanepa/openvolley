@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from '../utils/serverDataSync'
+import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import favicon from '../favicon.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
+import WsDebugOverlay from './WsDebugOverlay'
 import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
@@ -1359,6 +1360,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
+      {/* Debug overlay - triple-tap to show */}
+      {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
+
       {/* Between Sets Countdown Modal */}
       {betweenSetsCountdown && (
         <div
