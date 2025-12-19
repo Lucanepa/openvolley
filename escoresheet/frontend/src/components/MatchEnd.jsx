@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
@@ -231,6 +231,21 @@ export default function MatchEnd({ matchId, onGoHome }) {
   const [openSignature, setOpenSignature] = useState(null)
   const [isApproved, setIsApproved] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+
+  // Prevent accidental navigation away before approval
+  useEffect(() => {
+    if (isApproved) return // Allow navigation after approval
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = 'Match data has not been approved and saved. Are you sure you want to leave?'
+      return e.returnValue
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isApproved])
 
   // Calculate set results for Results component - must be before early return to maintain hook order
   const calculateSetResults = useMemo(() => {
@@ -629,23 +644,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
         return
       }
 
-      // Save to sync queue if official match
-      if (!match.test) {
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: String(matchId),
-            status: 'final',
-            approved: true,
-            approvedAt: new Date().toISOString()
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
-      }
-
-      // Export data
+      // Export data first (download)
       const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
       const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
 
@@ -669,26 +668,52 @@ export default function MatchEnd({ matchId, onGoHome }) {
       dataLink.href = URL.createObjectURL(dataBlob)
       dataLink.click()
 
-      // Mark as approved
-      await db.matches.update(matchId, { approved: true, approvedAt: new Date().toISOString() })
-      setIsApproved(true)
+      // Show confirmation dialog after download
+      setIsSaving(false)
+      setShowCloseConfirm(true)
     } catch (error) {
       console.error('Error approving match:', error)
       alert('Error approving match: ' + error.message)
-    } finally {
       setIsSaving(false)
     }
   }
 
-  const handleReopen = async () => {
-    // Reopen match for manual adjustments
-    await db.matches.update(matchId, {
-      approved: false,
-      approvedAt: null,
-      status: 'live'
-    })
-    // Navigate back to scoreboard
-    if (onGoHome) onGoHome()
+  const handleConfirmClose = async (closeMatch) => {
+    setShowCloseConfirm(false)
+
+    if (closeMatch) {
+      // Save to sync queue if official match
+      if (!match.test) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: String(matchId),
+            status: 'final',
+            approved: true,
+            approvedAt: new Date().toISOString()
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      // Mark as approved
+      await db.matches.update(matchId, { approved: true, approvedAt: new Date().toISOString() })
+      setIsApproved(true)
+
+      // Go home
+      if (onGoHome) onGoHome()
+    } else {
+      // Reopen match for manual adjustments
+      await db.matches.update(matchId, {
+        approved: false,
+        approvedAt: null,
+        status: 'live'
+      })
+      // Navigate back to scoreboard
+      if (onGoHome) onGoHome()
+    }
   }
 
   return (
@@ -711,11 +736,6 @@ export default function MatchEnd({ matchId, onGoHome }) {
               { key: 'save', label: '💾 Save PDF', onClick: () => handleShowScoresheet('save') }
             ]}
           />
-          {onGoHome && (
-            <button className="secondary" onClick={onGoHome}>
-              Home
-            </button>
-          )}
         </div>
       </div>
 
@@ -816,41 +836,21 @@ export default function MatchEnd({ matchId, onGoHome }) {
 
       {/* Action Buttons */}
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {!isApproved && (
-          <>
-            <button
-              onClick={handleApprove}
-              disabled={isSaving || (!match.test && !allSignaturesDone)}
-              className="primary"
-              style={{
-                flex: 1,
-                minWidth: '150px',
-                padding: '14px',
-                fontSize: '15px',
-                opacity: (isSaving || (!match.test && !allSignaturesDone)) ? 0.5 : 1,
-                cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isSaving ? 'Saving...' : 'Confirm and Approve'}
-            </button>
-
-            <button
-              onClick={handleReopen}
-              className="danger"
-              style={{ flex: 1, minWidth: '150px', padding: '14px', fontSize: '15px' }}
-            >
-              Reopen Match
-            </button>
-          </>
-        )}
-
-        {isApproved && (
+        {!isApproved && !showCloseConfirm && (
           <button
-            onClick={onGoHome}
+            onClick={handleApprove}
+            disabled={isSaving || (!match.test && !allSignaturesDone)}
             className="primary"
-            style={{ flex: 1, padding: '14px', fontSize: '15px' }}
+            style={{
+              flex: 1,
+              minWidth: '150px',
+              padding: '14px',
+              fontSize: '15px',
+              opacity: (isSaving || (!match.test && !allSignaturesDone)) ? 0.5 : 1,
+              cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
+            }}
           >
-            Done
+            {isSaving ? 'Downloading...' : 'Confirm and Approve'}
           </button>
         )}
 
@@ -867,6 +867,52 @@ export default function MatchEnd({ matchId, onGoHome }) {
           ]}
         />
       </div>
+
+      {/* Close Match Confirmation Modal */}
+      {showCloseConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: 'var(--bg-secondary)',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            textAlign: 'center'
+          }}>
+            <h3 style={{ margin: '0 0 16px 0' }}>Close Match?</h3>
+            <p style={{ margin: '0 0 24px 0', color: 'var(--muted)' }}>
+              Match data has been downloaded. Do you want to close the match?
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => handleConfirmClose(true)}
+                className="primary"
+                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+              >
+                Yes, Close Match
+              </button>
+              <button
+                onClick={() => handleConfirmClose(false)}
+                className="secondary"
+                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+              >
+                No, Manual Adjustments
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Signature Modal - Added open prop */}
       <SignaturePad
