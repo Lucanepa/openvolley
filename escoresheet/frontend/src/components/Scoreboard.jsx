@@ -3312,14 +3312,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     setLiberoReminder(null)
     await logEvent('rally_start')
-
-    // Debug log: rally start
-    debugLogger.log('RALLY_START', {
-      setIndex: data?.set?.index,
-      homeScore: data?.set?.homePoints,
-      awayScore: data?.set?.awayPoints
-    }, getStateSnapshot())
-
     // Track when rally started (for accidental point award check)
     rallyStartTimeRef.current = Date.now()
 
@@ -4058,17 +4050,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     if (currentSetEvents.length === 0) return
 
-    // Debug log: all events being considered for undo
-    const eventSummary = currentSetEvents.map(e => ({
-      type: e.type,
-      seq: e.seq,
-      payload: e.payload?.team || e.payload?.isInitial || e.payload?.fromSubstitution
-    })).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 15)
-    debugLogger.log('SHOW_UNDO_CONFIRM_START', {
-      totalEvents: currentSetEvents.length,
-      topEvents: eventSummary
-    })
-
     // Find the last event by sequence number (highest seq)
     const sortedEvents = [...currentSetEvents].sort((a, b) => {
       const aSeq = a.seq || 0
@@ -4086,20 +4067,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const lastEvent = sortedEvents[0]
     if (!lastEvent) return
 
-    // Debug log: last event found
-    debugLogger.log('SHOW_UNDO_LAST_EVENT', {
-      type: lastEvent.type,
-      seq: lastEvent.seq,
-      payload: lastEvent.payload
-    })
-
     // If it's a rotation lineup, find the point before it and undo that instead
     if (lastEvent.type === 'lineup' && !lastEvent.payload?.isInitial && !lastEvent.payload?.fromSubstitution && !lastEvent.payload?.liberoSubstitution) {
       // This is a rotation lineup - find the point that triggered it
       const pointBefore = sortedEvents.find(e => e.type === 'point' && (e.seq || 0) < (lastEvent.seq || 0))
       if (pointBefore) {
         const description = getActionDescription(pointBefore)
-        debugLogger.log('SHOW_UNDO_ROTATION_REDIRECT', { toPointSeq: pointBefore.seq })
         setUndoConfirm({ event: pointBefore, description })
         return
       }
@@ -4110,14 +4083,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!lastUndoableEvent) return
 
     const description = getActionDescription(lastUndoableEvent)
-
-    // Debug log: description result
-    debugLogger.log('SHOW_UNDO_DESCRIPTION', {
-      type: lastUndoableEvent.type,
-      seq: lastUndoableEvent.seq,
-      description: description || 'NULL/EMPTY'
-    })
-
     // getActionDescription returns null for rotation lineups, but we've already filtered those out
     // So if it returns null here, try to find the next undoable event
     if (!description || description === 'Unknown action') {
@@ -4319,25 +4284,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const team = lastEvent.payload.team
       const position = lastEvent.payload.position
       const playerOut = lastEvent.payload.playerOut
-      const playerIn = lastEvent.payload.playerIn
-
-      debugLogger.log('UNDO_SUBSTITUTION_START', {
-        team,
-        position,
-        playerOut,
-        playerIn
-      })
-
+      
       // Find the lineup event that was created with this substitution
       const lineupEvents = data.events
         .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
         .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-
-      debugLogger.log('UNDO_SUBSTITUTION_LINEUPS', {
-        lineupEventsFound: lineupEvents.length,
-        lineups: lineupEvents.map(e => ({ seq: e.seq, lineup: e.payload?.lineup, fromSub: e.payload?.fromSubstitution }))
-      })
-
+      
       if (lineupEvents.length > 1) {
         // Remove the most recent lineup (the one with the substitution)
         const mostRecentLineup = lineupEvents[0]
@@ -4347,12 +4299,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const previousLineup = lineupEvents[1]?.payload?.lineup || {}
         const restoredLineup = { ...previousLineup }
         restoredLineup[position] = String(playerOut)
-
-        debugLogger.log('UNDO_SUBSTITUTION_RESTORE', {
-          deletedLineupSeq: mostRecentLineup.seq,
-          previousLineup,
-          restoredLineup
-        })
 
         // Save the restored lineup
         const restoredSubSeq = getNextSeqInUndo()
@@ -4778,16 +4724,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     } catch (error) {
       // Error during undo - silently handle
-      debugLogger.log('UNDO_ERROR', { error: error?.message || String(error) })
     } finally {
       // Always close the modal
-      debugLogger.log('UNDO_COMPLETED', {
-        undoneEventType: undoConfirm?.event?.type,
-        undoneEventSeq: undoConfirm?.event?.seq
-      }, getStateSnapshot())
       setUndoConfirm(null)
     }
-  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq, getStateSnapshot])
+  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq])
 
   const cancelUndo = useCallback(() => {
     setUndoConfirm(null)
@@ -9061,24 +9002,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 }
               },
               {
-                key: 'debug-logs',
-                label: '📋 Download Debug Logs',
-                onClick: () => {
-                  debugLogger.downloadLogs(`debug_logs_${matchId}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
-                }
-              },
-              {
-                key: 'clear-debug-logs',
-                label: '🗑️ Clear Debug Logs',
-                onClick: () => {
-                  if (confirm(`Clear all debug logs? (${debugLogger.getCount()} entries)`)) {
-                    debugLogger.clear()
-                    alert('Debug logs cleared')
-                  }
-                }
-              },
-              { separator: true },
-              {
                 key: 'options',
                 label: '⚙️ Options',
                 onClick: () => {
@@ -11651,11 +11574,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
                           background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
-                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           position: 'relative',
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onMouseEnter={(e) => {
@@ -11855,10 +11778,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
                           background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
-                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(leftTeamKey, player.position, player.number, e)}
@@ -12144,10 +12067,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
                           background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
-                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
                           position: 'relative'
                         }}
@@ -12348,10 +12271,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
                           background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
-                          color: isRecentlySub ? '#dc2626' : player.isLibero ? '#000' : undefined,
+                          color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #dc2626' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(rightTeamKey, player.position, player.number, e)}
@@ -15031,14 +14954,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           value={data.set.homePoints || 0}
                           onChange={async (e) => {
                             const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
-                            const oldPoints = data.set.homePoints || 0
                             await db.sets.update(data.set.id, { homePoints: newPoints })
-                            debugLogger.log('MANUAL_SCORE_CHANGE', {
-                              team: 'home',
-                              oldPoints,
-                              newPoints,
-                              setIndex: data.set.index
-                            }, getStateSnapshot())
                           }}
                           style={{
                             width: '60px',
@@ -15062,14 +14978,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           value={data.set.awayPoints || 0}
                           onChange={async (e) => {
                             const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
-                            const oldPoints = data.set.awayPoints || 0
                             await db.sets.update(data.set.id, { awayPoints: newPoints })
-                            debugLogger.log('MANUAL_SCORE_CHANGE', {
-                              team: 'away',
-                              oldPoints,
-                              newPoints,
-                              setIndex: data.set.index
-                            }, getStateSnapshot())
                           }}
                           style={{
                             width: '60px',
@@ -15665,9 +15574,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               padding: '8px',
                               background: 'rgba(255,255,255,0.03)',
                               borderRadius: '4px',
-                              fontSize: '11px'
+                              fontSize: '11px',
+                              flexWrap: 'wrap'
                             }}>
-                              <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                              <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
                               <select
                                 value={team || 'home'}
                                 onChange={async (e) => {
@@ -15682,13 +15592,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   border: '1px solid rgba(255,255,255,0.2)',
                                   borderRadius: '4px',
                                   color: 'var(--text)',
-                                  minWidth: '80px'
+                                  minWidth: '70px'
                                 }}
                               >
-                                <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                                <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                                <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
                               </select>
-                              <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
+                              <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                               <button
                                 className="danger"
                                 onClick={async () => {
@@ -15711,7 +15621,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   )
                 })()}
-                
+
                 {/* Edit Substitutions */}
                 {data?.events && (() => {
                   const substitutionEvents = data.events.filter(e => e.type === 'substitution').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
@@ -15763,222 +15673,216 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           return (
                             <div key={event.id} style={{
                               display: 'flex',
-                              flexDirection: 'column',
-                              gap: '6px',
+                              alignItems: 'center',
+                              gap: '8px',
                               padding: '8px',
                               background: 'rgba(255,255,255,0.03)',
                               borderRadius: '4px',
-                              fontSize: '11px'
+                              fontSize: '11px',
+                              flexWrap: 'wrap'
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
-                                <select
-                                  value={team || 'home'}
+                              <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                              <select
+                                value={team || 'home'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, team: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '70px'
+                                }}
+                              >
+                                <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                              </select>
+                              <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
+                              <select
+                                value={position || 'I'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, position: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  width: '45px'
+                                }}
+                              >
+                                {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
+                                  <option key={pos} value={pos} style={{ background: '#1e293b', color: '#fff' }}>{pos}</option>
+                                ))}
+                              </select>
+                              <span style={{ fontSize: '10px' }}>Out:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={playerOut || ''}
+                                onChange={async (e) => {
+                                  const val = parseInt(e.target.value) || null
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, playerOut: val }
+                                  })
+                                }}
+                                style={{
+                                  width: '40px',
+                                  padding: '4px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)'
+                                }}
+                              />
+                              <span style={{ fontSize: '10px' }}>In:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={playerIn || ''}
+                                onChange={async (e) => {
+                                  const val = parseInt(e.target.value) || null
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, playerIn: val }
+                                  })
+                                }}
+                                style={{
+                                  width: '40px',
+                                  padding: '4px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)'
+                                }}
+                              />
+                              <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={event.payload?.isInjury || false}
                                   onChange={async (e) => {
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, isInjury: e.target.checked }
                                     })
                                   }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '80px'
+                                  style={{ width: '12px', height: '12px', cursor: 'pointer' }}
+                                />
+                                Inj
+                              </label>
+                              <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={event.payload?.isExceptional || false}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, isExceptional: e.target.checked }
+                                    })
                                   }}
-                                >
-                                  <option value="home">Home</option>
-                                  <option value="away">Away</option>
-                                </select>
-                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
-                                <button
-                                  className="danger"
-                                  onClick={async () => {
-                                    if (confirm(`Delete this substitution event? The lineup will be restored (player OUT returns to court).`)) {
-                                      const subTeam = event.payload?.team
-                                      const subPosition = event.payload?.position
-                                      const subPlayerOut = event.payload?.playerOut
-                                      const subSetIndex = event.setIndex
+                                  style={{ width: '12px', height: '12px', cursor: 'pointer' }}
+                                />
+                                Exc
+                              </label>
+                              <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={event.payload?.isExpelled || false}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, isExpelled: e.target.checked }
+                                    })
+                                  }}
+                                  style={{ width: '12px', height: '12px', cursor: 'pointer' }}
+                                />
+                                Exp
+                              </label>
+                              <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={event.payload?.isDisqualified || false}
+                                  onChange={async (e) => {
+                                    await db.events.update(event.id, {
+                                      payload: { ...event.payload, isDisqualified: e.target.checked }
+                                    })
+                                  }}
+                                  style={{ width: '12px', height: '12px', cursor: 'pointer' }}
+                                />
+                                Dsq
+                              </label>
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this substitution event? The lineup will be restored (player OUT returns to court).`)) {
+                                    const subTeam = event.payload?.team
+                                    const subPosition = event.payload?.position
+                                    const subPlayerOut = event.payload?.playerOut
+                                    const subSetIndex = event.setIndex
 
-                                      // Delete the substitution event
-                                      await db.events.delete(event.id)
+                                    // Delete the substitution event
+                                    await db.events.delete(event.id)
 
-                                      // Find and delete the lineup event created by this substitution
-                                      // Then restore the previous lineup with the original player
-                                      if (subTeam && subPosition && subPlayerOut) {
-                                        const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-                                        const lineupEvents = allEvents
-                                          .filter(e => e.type === 'lineup' && e.payload?.team === subTeam && e.setIndex === subSetIndex)
-                                          .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+                                    // Find and delete the lineup event created by this substitution
+                                    // Then restore the previous lineup with the original player
+                                    if (subTeam && subPosition && subPlayerOut) {
+                                      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+                                      const lineupEvents = allEvents
+                                        .filter(e => e.type === 'lineup' && e.payload?.team === subTeam && e.setIndex === subSetIndex)
+                                        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
 
-                                        if (lineupEvents.length > 1) {
-                                          // Delete the most recent lineup (created by the substitution)
-                                          const mostRecentLineup = lineupEvents[0]
-                                          await db.events.delete(mostRecentLineup.id)
+                                      if (lineupEvents.length > 1) {
+                                        // Delete the most recent lineup (created by the substitution)
+                                        const mostRecentLineup = lineupEvents[0]
+                                        await db.events.delete(mostRecentLineup.id)
 
-                                          // Get the previous lineup and restore it with the original player
-                                          const previousLineup = lineupEvents[1]?.payload?.lineup || {}
-                                          const restoredLineup = { ...previousLineup }
-                                          restoredLineup[subPosition] = String(subPlayerOut)
+                                        // Get the previous lineup and restore it with the original player
+                                        const previousLineup = lineupEvents[1]?.payload?.lineup || {}
+                                        const restoredLineup = { ...previousLineup }
+                                        restoredLineup[subPosition] = String(subPlayerOut)
 
-                                          // Get next sequence number
-                                          const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
-                                          const nextSeq = Math.floor(maxSeq) + 1
+                                        // Get next sequence number
+                                        const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
+                                        const nextSeq = Math.floor(maxSeq) + 1
 
-                                          // Create restored lineup event
-                                          await db.events.add({
-                                            matchId,
-                                            setIndex: subSetIndex,
-                                            type: 'lineup',
-                                            payload: { team: subTeam, lineup: restoredLineup, fromSubstitution: true },
-                                            ts: new Date().toISOString(),
-                                            seq: nextSeq
-                                          })
-                                        } else if (lineupEvents.length === 1) {
-                                          // Only one lineup - just update it to restore the original player
-                                          const currentLineup = lineupEvents[0]
-                                          const restoredLineup = { ...currentLineup.payload?.lineup }
-                                          restoredLineup[subPosition] = String(subPlayerOut)
-                                          await db.events.update(currentLineup.id, {
-                                            payload: { ...currentLineup.payload, lineup: restoredLineup }
-                                          })
-                                        }
+                                        // Create restored lineup event
+                                        await db.events.add({
+                                          matchId,
+                                          setIndex: subSetIndex,
+                                          type: 'lineup',
+                                          payload: { team: subTeam, lineup: restoredLineup, fromSubstitution: true },
+                                          ts: new Date().toISOString(),
+                                          seq: nextSeq
+                                        })
+                                      } else if (lineupEvents.length === 1) {
+                                        // Only one lineup - just update it to restore the original player
+                                        const currentLineup = lineupEvents[0]
+                                        const restoredLineup = { ...currentLineup.payload?.lineup }
+                                        restoredLineup[subPosition] = String(subPlayerOut)
+                                        await db.events.update(currentLineup.id, {
+                                          payload: { ...currentLineup.payload, lineup: restoredLineup }
+                                        })
                                       }
                                     }
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <label style={{ fontSize: '10px' }}>Position:</label>
-                                <select
-                                  value={position || 'I'}
-                                  onChange={async (e) => {
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, position: e.target.value }
-                                    })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    width: '50px'
-                                  }}
-                                >
-                                  {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
-                                    <option key={pos} value={pos} style={{ background: '#1e293b', color: 'var(--text)' }}>{pos}</option>
-                                  ))}
-                                </select>
-                                <label style={{ fontSize: '10px' }}>Out:</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="99"
-                                  value={playerOut || ''}
-                                  onChange={async (e) => {
-                                    const val = parseInt(e.target.value) || null
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, playerOut: val }
-                                    })
-                                  }}
-                                  style={{
-                                    width: '50px',
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                                <label style={{ fontSize: '10px' }}>In:</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="99"
-                                  value={playerIn || ''}
-                                  onChange={async (e) => {
-                                    const val = parseInt(e.target.value) || null
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, playerIn: val }
-                                    })
-                                  }}
-                                  style={{
-                                    width: '50px',
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                                <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={event.payload?.isInjury || false}
-                                      onChange={async (e) => {
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, isInjury: e.target.checked }
-                                        })
-                                      }}
-                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
-                                    />
-                                    Injury
-                                  </label>
-                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={event.payload?.isExceptional || false}
-                                      onChange={async (e) => {
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, isExceptional: e.target.checked }
-                                        })
-                                      }}
-                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
-                                    />
-                                    Exceptional
-                                  </label>
-                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={event.payload?.isExpelled || false}
-                                      onChange={async (e) => {
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, isExpelled: e.target.checked }
-                                        })
-                                      }}
-                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
-                                    />
-                                    Expelled
-                                  </label>
-                                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={event.payload?.isDisqualified || false}
-                                      onChange={async (e) => {
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, isDisqualified: e.target.checked }
-                                        })
-                                      }}
-                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
-                                    />
-                                    Disqualified
-                                  </label>
-                                </div>
-                              </div>
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px',
+                                  marginLeft: 'auto'
+                                }}
+                              >
+                                Delete
+                              </button>
                             </div>
                           )
                         })}
@@ -15986,7 +15890,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   )
                 })()}
-                
+
                 {/* Edit Sanctions */}
                 {data?.events && (() => {
                   const sanctionEvents = data.events.filter(e => e.type === 'sanction').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
@@ -16039,159 +15943,150 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           return (
                             <div key={event.id} style={{
                               display: 'flex',
-                              flexDirection: 'column',
-                              gap: '6px',
+                              alignItems: 'center',
+                              gap: '8px',
                               padding: '8px',
                               background: 'rgba(255,255,255,0.03)',
                               borderRadius: '4px',
-                              fontSize: '11px'
+                              fontSize: '11px',
+                              flexWrap: 'wrap'
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                              <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                              <select
+                                value={team || 'home'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, team: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '70px'
+                                }}
+                              >
+                                <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                              </select>
+                              <select
+                                value={sanctionType || 'warning'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, type: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '90px'
+                                }}
+                              >
+                                <option value="warning" style={{ background: '#1e293b', color: '#fff' }}>Warning</option>
+                                <option value="penalty" style={{ background: '#1e293b', color: '#fff' }}>Penalty</option>
+                                <option value="expulsion" style={{ background: '#1e293b', color: '#fff' }}>Expulsion</option>
+                                <option value="disqualification" style={{ background: '#1e293b', color: '#fff' }}>Disqualif.</option>
+                                <option value="improper_request" style={{ background: '#1e293b', color: '#fff' }}>Improper Req</option>
+                                <option value="delay_warning" style={{ background: '#1e293b', color: '#fff' }}>Delay Warn</option>
+                                <option value="delay_penalty" style={{ background: '#1e293b', color: '#fff' }}>Delay Pen</option>
+                              </select>
+                              <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
+                              {playerNumber !== undefined && playerNumber !== null && (
+                                <>
+                                  <span style={{ fontSize: '10px' }}>#</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={playerNumber || ''}
+                                    onChange={async (e) => {
+                                      const val = parseInt(e.target.value) || null
+                                      await db.events.update(event.id, {
+                                        payload: { ...event.payload, playerNumber: val }
+                                      })
+                                    }}
+                                    style={{
+                                      width: '40px',
+                                      padding: '4px',
+                                      fontSize: '11px',
+                                      background: '#1e293b',
+                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text)'
+                                    }}
+                                  />
+                                </>
+                              )}
+                              {position && (
                                 <select
-                                  value={team || 'home'}
+                                  value={position || 'I'}
                                   onChange={async (e) => {
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, position: e.target.value }
                                     })
                                   }}
                                   style={{
-                                    padding: '4px 6px',
+                                    padding: '4px',
                                     fontSize: '11px',
                                     background: '#1e293b',
                                     border: '1px solid rgba(255,255,255,0.2)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
-                                    minWidth: '80px'
+                                    width: '45px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                                  {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
+                                    <option key={pos} value={pos} style={{ background: '#1e293b', color: '#fff' }}>{pos}</option>
+                                  ))}
                                 </select>
+                              )}
+                              {role && (
                                 <select
-                                  value={sanctionType || 'warning'}
+                                  value={role || 'Coach'}
                                   onChange={async (e) => {
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, type: e.target.value }
+                                      payload: { ...event.payload, role: e.target.value }
                                     })
                                   }}
                                   style={{
-                                    padding: '4px 6px',
+                                    padding: '4px',
                                     fontSize: '11px',
                                     background: '#1e293b',
                                     border: '1px solid rgba(255,255,255,0.2)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
-                                    minWidth: '120px'
+                                    minWidth: '70px'
                                   }}
                                 >
-                                  <option value="warning" style={{ background: '#1e293b', color: 'var(--text)' }}>Warning</option>
-                                  <option value="penalty" style={{ background: '#1e293b', color: 'var(--text)' }}>Penalty</option>
-                                  <option value="expulsion" style={{ background: '#1e293b', color: 'var(--text)' }}>Expulsion</option>
-                                  <option value="disqualification" style={{ background: '#1e293b', color: 'var(--text)' }}>Disqualification</option>
-                                  <option value="improper_request" style={{ background: '#1e293b', color: 'var(--text)' }}>Improper Request</option>
-                                  <option value="delay_warning" style={{ background: '#1e293b', color: 'var(--text)' }}>Delay Warning</option>
-                                  <option value="delay_penalty" style={{ background: '#1e293b', color: 'var(--text)' }}>Delay Penalty</option>
+                                  <option value="Coach" style={{ background: '#1e293b', color: '#fff' }}>Coach</option>
+                                  <option value="Assistant Coach 1" style={{ background: '#1e293b', color: '#fff' }}>Asst 1</option>
+                                  <option value="Assistant Coach 2" style={{ background: '#1e293b', color: '#fff' }}>Asst 2</option>
+                                  <option value="Physiotherapist" style={{ background: '#1e293b', color: '#fff' }}>Physio</option>
+                                  <option value="Medic" style={{ background: '#1e293b', color: '#fff' }}>Medic</option>
                                 </select>
-                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
-                                <button
-                                  className="danger"
-                                  onClick={async () => {
-                                    if (confirm(`Delete this sanction event?`)) {
-                                      await db.events.delete(event.id)
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                {playerNumber !== undefined && playerNumber !== null && (
-                                  <>
-                                    <label style={{ fontSize: '10px' }}>Player:</label>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={playerNumber || ''}
-                                      onChange={async (e) => {
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, playerNumber: val }
-                                        })
-                                      }}
-                                      style={{
-                                        width: '50px',
-                                        padding: '4px 6px',
-                                        fontSize: '11px',
-                                        background: 'var(--bg-secondary)',
-                                        border: '1px solid rgba(255,255,255,0.2)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                  </>
-                                )}
-                                {position && (
-                                  <>
-                                    <label style={{ fontSize: '10px' }}>Position:</label>
-                                    <select
-                                      value={position || 'I'}
-                                      onChange={async (e) => {
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, position: e.target.value }
-                                        })
-                                      }}
-                                      style={{
-                                        padding: '4px 6px',
-                                        fontSize: '11px',
-                                        background: 'var(--bg-secondary)',
-                                        border: '1px solid rgba(255,255,255,0.2)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)',
-                                        width: '50px'
-                                      }}
-                                    >
-                                      {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
-                                        <option key={pos} value={pos}>{pos}</option>
-                                      ))}
-                                    </select>
-                                  </>
-                                )}
-                                {role && (
-                                  <>
-                                    <label style={{ fontSize: '10px' }}>Role:</label>
-                                    <select
-                                      value={role || 'Coach'}
-                                      onChange={async (e) => {
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, role: e.target.value }
-                                        })
-                                      }}
-                                      style={{
-                                        padding: '4px 6px',
-                                        fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)',
-                                        minWidth: '120px'
-                                      }}
-                                    >
-                                      <option value="Coach" style={{ background: '#1e293b', color: 'var(--text)' }}>Coach</option>
-                                      <option value="Assistant Coach 1" style={{ background: '#1e293b', color: 'var(--text)' }}>Assistant Coach 1</option>
-                                      <option value="Assistant Coach 2" style={{ background: '#1e293b', color: 'var(--text)' }}>Assistant Coach 2</option>
-                                      <option value="Physiotherapist" style={{ background: '#1e293b', color: 'var(--text)' }}>Physiotherapist</option>
-                                      <option value="Medic" style={{ background: '#1e293b', color: 'var(--text)' }}>Medic</option>
-                                    </select>
-                                  </>
-                                )}
-                              </div>
+                              )}
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this sanction event?`)) {
+                                    await db.events.delete(event.id)
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px',
+                                  marginLeft: 'auto'
+                                }}
+                              >
+                                Delete
+                              </button>
                             </div>
                           )
                         })}
@@ -16255,58 +16150,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           return (
                             <div key={event.id} style={{
                               display: 'flex',
-                              flexDirection: 'column',
-                              gap: '6px',
+                              alignItems: 'center',
+                              gap: '8px',
                               padding: '8px',
                               background: 'rgba(255,255,255,0.03)',
                               borderRadius: '4px',
-                              fontSize: '11px'
+                              fontSize: '11px',
+                              flexWrap: 'wrap'
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
-                                <span style={{ minWidth: '100px', fontSize: '10px', fontWeight: 600 }}>
-                                  {eventType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                </span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
-                                    })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '80px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
-                                </select>
-                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
-                                <button
-                                  className="danger"
-                                  onClick={async () => {
-                                    if (confirm(`Delete this ${eventType} event?`)) {
-                                      await db.events.delete(event.id)
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
+                              <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                              <span style={{ fontSize: '9px', fontWeight: 600, minWidth: '70px' }}>
+                                {eventType === 'libero_entry' ? 'Libero Entry' : eventType === 'libero_exit' ? 'Libero Exit' : 'Libero Unable'}
+                              </span>
+                              <select
+                                value={team || 'home'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, team: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '70px'
+                                }}
+                              >
+                                <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                              </select>
+                              <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                               {eventType === 'libero_entry' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                  <label style={{ fontSize: '10px' }}>Libero #:</label>
+                                <>
+                                  <span style={{ fontSize: '10px' }}>L#:</span>
                                   <input
                                     type="number"
                                     min="1"
@@ -16319,16 +16198,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       })
                                     }}
                                     style={{
-                                      width: '50px',
-                                      padding: '4px 6px',
+                                      width: '40px',
+                                      padding: '4px',
                                       fontSize: '11px',
-                                      background: 'var(--bg-secondary)',
+                                      background: '#1e293b',
                                       border: '1px solid rgba(255,255,255,0.2)',
                                       borderRadius: '4px',
                                       color: 'var(--text)'
                                     }}
                                   />
-                                  <label style={{ fontSize: '10px' }}>Player Out:</label>
+                                  <span style={{ fontSize: '10px' }}>Out:</span>
                                   <input
                                     type="number"
                                     min="1"
@@ -16341,16 +16220,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       })
                                     }}
                                     style={{
-                                      width: '50px',
-                                      padding: '4px 6px',
+                                      width: '40px',
+                                      padding: '4px',
                                       fontSize: '11px',
-                                      background: 'var(--bg-secondary)',
+                                      background: '#1e293b',
                                       border: '1px solid rgba(255,255,255,0.2)',
                                       borderRadius: '4px',
                                       color: 'var(--text)'
                                     }}
                                   />
-                                  <label style={{ fontSize: '10px' }}>Type:</label>
                                   <select
                                     value={event.payload?.liberoType || 'libero1'}
                                     onChange={async (e) => {
@@ -16359,23 +16237,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       })
                                     }}
                                     style={{
-                                      padding: '4px 6px',
+                                      padding: '4px',
                                       fontSize: '11px',
                                       background: '#1e293b',
                                       border: '1px solid rgba(255,255,255,0.2)',
                                       borderRadius: '4px',
                                       color: 'var(--text)',
-                                      minWidth: '80px'
+                                      minWidth: '45px'
                                     }}
                                   >
-                                    <option value="libero1" style={{ background: '#1e293b', color: 'var(--text)' }}>L1</option>
-                                    <option value="libero2" style={{ background: '#1e293b', color: 'var(--text)' }}>L2</option>
+                                    <option value="libero1" style={{ background: '#1e293b', color: '#fff' }}>L1</option>
+                                    <option value="libero2" style={{ background: '#1e293b', color: '#fff' }}>L2</option>
                                   </select>
-                                </div>
+                                </>
                               )}
                               {eventType === 'libero_exit' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                  <label style={{ fontSize: '10px' }}>Libero Out:</label>
+                                <>
+                                  <span style={{ fontSize: '10px' }}>L Out:</span>
                                   <input
                                     type="number"
                                     min="1"
@@ -16388,16 +16266,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       })
                                     }}
                                     style={{
-                                      width: '50px',
-                                      padding: '4px 6px',
+                                      width: '40px',
+                                      padding: '4px',
                                       fontSize: '11px',
-                                      background: 'var(--bg-secondary)',
+                                      background: '#1e293b',
                                       border: '1px solid rgba(255,255,255,0.2)',
                                       borderRadius: '4px',
                                       color: 'var(--text)'
                                     }}
                                   />
-                                  <label style={{ fontSize: '10px' }}>Player In:</label>
+                                  <span style={{ fontSize: '10px' }}>P In:</span>
                                   <input
                                     type="number"
                                     min="1"
@@ -16410,20 +16288,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       })
                                     }}
                                     style={{
-                                      width: '50px',
-                                      padding: '4px 6px',
+                                      width: '40px',
+                                      padding: '4px',
                                       fontSize: '11px',
-                                      background: 'var(--bg-secondary)',
+                                      background: '#1e293b',
                                       border: '1px solid rgba(255,255,255,0.2)',
                                       borderRadius: '4px',
                                       color: 'var(--text)'
                                     }}
                                   />
-                                </div>
+                                </>
                               )}
                               {eventType === 'libero_unable' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                  <label style={{ fontSize: '10px' }}>Libero #:</label>
+                                <>
+                                  <span style={{ fontSize: '10px' }}>L#:</span>
                                   <input
                                     type="number"
                                     min="1"
@@ -16436,16 +16314,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       })
                                     }}
                                     style={{
-                                      width: '50px',
-                                      padding: '4px 6px',
+                                      width: '40px',
+                                      padding: '4px',
                                       fontSize: '11px',
-                                      background: 'var(--bg-secondary)',
+                                      background: '#1e293b',
                                       border: '1px solid rgba(255,255,255,0.2)',
                                       borderRadius: '4px',
                                       color: 'var(--text)'
                                     }}
                                   />
-                                  <label style={{ fontSize: '10px' }}>Reason:</label>
                                   <select
                                     value={event.payload?.reason || 'injury'}
                                     onChange={async (e) => {
@@ -16463,12 +16340,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       minWidth: '120px'
                                     }}
                                   >
-                                    <option value="injury" style={{ background: '#1e293b', color: 'var(--text)' }}>Injury</option>
-                                    <option value="expulsion" style={{ background: '#1e293b', color: 'var(--text)' }}>Expulsion</option>
-                                    <option value="disqualification" style={{ background: '#1e293b', color: 'var(--text)' }}>Disqualification</option>
+                                    <option value="injury" style={{ background: '#1e293b', color: '#fff' }}>Injury</option>
+                                    <option value="expulsion" style={{ background: '#1e293b', color: '#fff' }}>Expulsion</option>
+                                    <option value="disqualification" style={{ background: '#1e293b', color: '#fff' }}>Disqualification</option>
                                   </select>
-                                </div>
+                                </>
                               )}
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this ${eventType} event?`)) {
+                                    await db.events.delete(event.id)
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px',
+                                  marginLeft: 'auto'
+                                }}
+                              >
+                                Delete
+                              </button>
                             </div>
                           )
                         })}
@@ -16513,67 +16405,66 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           return (
                             <div key={event.id} style={{
                               display: 'flex',
-                              flexDirection: 'column',
-                              gap: '6px',
+                              alignItems: 'center',
+                              gap: '8px',
                               padding: '8px',
                               background: 'rgba(255,255,255,0.03)',
                               borderRadius: '4px',
-                              fontSize: '11px'
+                              fontSize: '11px',
+                              flexWrap: 'wrap'
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
-                                    })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '80px'
-                                  }}
-                                >
-                                  <option value="home">Home</option>
-                                  <option value="away">Away</option>
-                                </select>
-                                <button
-                                  className="secondary"
-                                  onClick={() => {
-                                    setLineupModal({ team, mode: 'manual', lineup })
-                                    setShowManualPanel(false)
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px'
-                                  }}
-                                >
-                                  Edit Lineup
-                                </button>
-                                <button
-                                  className="danger"
-                                  onClick={async () => {
-                                    if (confirm(`Delete this lineup event?`)) {
-                                      await db.events.delete(event.id)
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                                I: {lineup.I || '-'} | II: {lineup.II || '-'} | III: {lineup.III || '-'} | IV: {lineup.IV || '-'} | V: {lineup.V || '-'} | VI: {lineup.VI || '-'}
-                              </div>
+                              <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                              <select
+                                value={team || 'home'}
+                                onChange={async (e) => {
+                                  await db.events.update(event.id, {
+                                    payload: { ...event.payload, team: e.target.value }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  background: '#1e293b',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: 'var(--text)',
+                                  minWidth: '70px'
+                                }}
+                              >
+                                <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
+                                <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                              </select>
+                              <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                                {lineup.I || '-'}/{lineup.II || '-'}/{lineup.III || '-'}/{lineup.IV || '-'}/{lineup.V || '-'}/{lineup.VI || '-'}
+                              </span>
+                              <button
+                                className="secondary"
+                                onClick={() => {
+                                  setLineupModal({ team, mode: 'manual', lineup })
+                                  setShowManualPanel(false)
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px'
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  if (confirm(`Delete this lineup event?`)) {
+                                    await db.events.delete(event.id)
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '10px',
+                                  marginLeft: 'auto'
+                                }}
+                              >
+                                Delete
+                              </button>
                             </div>
                           )
                         })}
@@ -16614,7 +16505,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               <label style={{ fontSize: '11px', minWidth: '80px' }}>Start Time:</label>
                               <input
                                 type="datetime-local"
-                                value={(() => {
+                                defaultValue={(() => {
                                   if (!set.startTime) return ''
                                   const d = new Date(set.startTime)
                                   // Format as local datetime for datetime-local input
@@ -16625,7 +16516,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   const minutes = String(d.getMinutes()).padStart(2, '0')
                                   return `${year}-${month}-${day}T${hours}:${minutes}`
                                 })()}
-                                onChange={async (e) => {
+                                onBlur={async (e) => {
                                   const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
                                   await db.sets.update(set.id, { startTime: newTime })
                                 }}
@@ -16643,7 +16534,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               <label style={{ fontSize: '11px', minWidth: '80px' }}>End Time:</label>
                               <input
                                 type="datetime-local"
-                                value={(() => {
+                                defaultValue={(() => {
                                   if (!set.endTime) return ''
                                   const d = new Date(set.endTime)
                                   // Format as local datetime for datetime-local input
@@ -16654,7 +16545,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   const minutes = String(d.getMinutes()).padStart(2, '0')
                                   return `${year}-${month}-${day}T${hours}:${minutes}`
                                 })()}
-                                onChange={async (e) => {
+                                onBlur={async (e) => {
                                   const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
                                   await db.sets.update(set.id, { endTime: newTime })
                                 }}
@@ -20193,96 +20084,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Reopen Set {reopenSetConfirm.setIndex}? This will undo the winning point, delete all subsequent sets and their events.
+              Reopen Set {reopenSetConfirm.setIndex}? This will delete all subsequent sets and their events.
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
                 onClick={async () => {
-                  const reopenSetIndex = reopenSetConfirm.setIndex
-
-                  // Get the set to reopen
-                  const setToReopen = await db.sets.get(reopenSetConfirm.setId)
-                  if (!setToReopen) {
-                    setReopenSetConfirm(null)
-                    return
-                  }
-
-                  // Get all events for this set
-                  const setEvents = await db.events.where('matchId').equals(matchId).and(e => e.setIndex === reopenSetIndex).toArray()
-
-                  // Delete the set_end event for this set
-                  const setEndEvent = setEvents.find(e => e.type === 'set_end')
-                  if (setEndEvent) {
-                    await db.events.delete(setEndEvent.id)
-                  }
-
-                  // Find the last point event (the winning point) by highest seq
-                  const pointEvents = setEvents.filter(e => e.type === 'point')
-                  if (pointEvents.length > 0) {
-                    const lastPoint = pointEvents.reduce((max, e) =>
-                      (e.seq || 0) > (max.seq || 0) ? e : max
-                    , pointEvents[0])
-
-                    const lastPointSeq = lastPoint.seq || 0
-                    const lastPointBaseSeq = Math.floor(lastPointSeq)
-
-                    // Delete the point and all related events (rotation lineups, libero exits, rally_start)
-                    // Related events share the same base seq or are the rally_start just before
-                    const eventsToDelete = setEvents.filter(e => {
-                      const eSeq = e.seq || 0
-                      const eBaseSeq = Math.floor(eSeq)
-                      // Same base seq (point + rotation + libero_exit)
-                      if (eBaseSeq === lastPointBaseSeq) return true
-                      return false
-                    })
-
-                    // Also delete the rally_start that preceded this point
-                    const rallyStartBefore = setEvents
-                      .filter(e => e.type === 'rally_start' && (e.seq || 0) < lastPointSeq)
-                      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
-                    if (rallyStartBefore) {
-                      eventsToDelete.push(rallyStartBefore)
-                    }
-
-                    // Delete all these events
-                    for (const ev of eventsToDelete) {
-                      await db.events.delete(ev.id)
-                    }
-
-                    // Decrement the score for the winning team
-                    const winningTeam = lastPoint.payload?.team
-                    if (winningTeam) {
-                      const scoreField = winningTeam === 'home' ? 'homePoints' : 'awayPoints'
-                      const currentScore = setToReopen[scoreField] || 0
-                      await db.sets.update(reopenSetConfirm.setId, {
-                        [scoreField]: Math.max(0, currentScore - 1),
-                        finished: false,
-                        winner: null
-                      })
-                    } else {
-                      // Just mark as not finished if we can't determine the team
-                      await db.sets.update(reopenSetConfirm.setId, { finished: false, winner: null })
-                    }
-                  } else {
-                    // No point events found, just mark as not finished
-                    await db.sets.update(reopenSetConfirm.setId, { finished: false, winner: null })
-                  }
-
+                  // Mark the set as not finished
+                  await db.sets.update(reopenSetConfirm.setId, { finished: false })
+                  
                   // Delete all subsequent sets
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                  const setsToDelete = allSets.filter(s => s.index > reopenSetIndex)
+                  const setsToDelete = allSets.filter(s => s.index > reopenSetConfirm.setIndex)
                   for (const s of setsToDelete) {
                     // Delete events for this set
                     await db.events.where('matchId').equals(matchId).and(e => e.setIndex === s.index).delete()
                     // Delete the set
                     await db.sets.delete(s.id)
                   }
-
+                  
                   // Update match status back to 'live' if it was 'final'
                   if (data.match?.status === 'final') {
                     await db.matches.update(matchId, { status: 'live' })
                   }
-
+                  
                   setReopenSetConfirm(null)
                 }}
                 style={{
