@@ -726,12 +726,12 @@
 
   @keyframes recentSubFlash {
     0%, 100% {
-      background: #fef08a;
-      box-shadow: 0 0 10px rgba(254, 240, 138, 0.8);
+      background: #86efac;
+      box-shadow: 0 0 10px rgba(134, 239, 172, 0.8);
     }
     50% {
-      background: #fde047;
-      box-shadow: 0 0 20px rgba(253, 224, 71, 1);
+      background: #4ade80;
+      box-shadow: 0 0 20px rgba(74, 222, 128, 1);
     }
   }
 
