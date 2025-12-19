@@ -201,6 +201,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Header collapse state
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [showNamesOnCourt, setShowNamesOnCourt] = useState(true)
+  const [courtPlayerNameMode, setCourtPlayerNameMode] = useState({}) // { 'home-12': 'first', 'away-5': 'first', ... } - tracks which players show first name
   const [autoDownloadAtSetEnd, setAutoDownloadAtSetEnd] = useState(true)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
@@ -2051,6 +2052,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           id: player?.id ?? `placeholder-${idx}`,
           number: hasPlayerNumber ? String(playerNumber) : '',
           name: player?.name || '',
+          firstName: player?.firstName || '',
           lastName: player?.lastName || '',
           isPlaceholder: !hasPlayerNumber,
           position: pos, // Fixed position on court
@@ -2100,6 +2102,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               ? '–'
               : '',
         name: player.name || '',
+        firstName: player.firstName || '',
         lastName: player.lastName || '',
         isPlaceholder: !!player.placeholder,
         position: assignedPos,
@@ -5807,6 +5810,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return eventsAfter.length > 0
   }, [data?.events, data?.set])
 
+  // ========== Court Player Name Toggle Handler ==========
+
+  // Toggle between showing first name and last name for a court player
+  const toggleCourtPlayerName = useCallback((teamKey, playerNumber, e) => {
+    e.stopPropagation() // Prevent triggering player click
+    const key = `${teamKey}-${playerNumber}`
+    setCourtPlayerNameMode(prev => ({
+      ...prev,
+      [key]: prev[key] === 'first' ? 'last' : 'first'
+    }))
+  }, [])
+
+  // Get display name for court player (first or last based on mode)
+  const getCourtPlayerDisplayName = useCallback((teamKey, playerNumber, firstName, lastName) => {
+    const key = `${teamKey}-${playerNumber}`
+    const mode = courtPlayerNameMode[key] || 'last' // default to last name
+    if (mode === 'first') {
+      return firstName || lastName || ''
+    }
+    return lastName || firstName || ''
+  }, [courtPlayerNameMode])
+
   // ========== Drag and Drop Handlers for Substitution/Libero ==========
 
   // Handle drag start from bench player or libero
@@ -5890,6 +5915,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     e.preventDefault()
     if (!draggedPlayer) return
 
+    // Prevent court-to-court drag - only bench players can be dropped on court
+    if (draggedPlayer.type === 'court') return
+
     // Only allow drop if teams match
     if (draggedPlayer.team !== teamKey) return
 
@@ -5915,6 +5943,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!draggedPlayer) return
     if (draggedPlayer.team !== teamKey) return
 
+    // Prevent court-to-court drag - only bench players can be dropped on court
+    if (draggedPlayer.type === 'court') return
+
     const benchPlayerNumber = draggedPlayer.playerNumber
     const isLibero = draggedPlayer.isLibero
 
@@ -5922,7 +5953,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setDropTargetPosition(null)
 
     if (isLibero) {
-      // Libero exchange - show confirmation
+      // Bench libero being dropped on court
       const isBackRow = position === 'I' || position === 'V' || position === 'VI'
       const currentServe = getCurrentServe()
       const isServing = currentServe === teamKey && position === 'I'
@@ -5931,7 +5962,44 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Check if a libero is already on court
       const liberoOnCourt = getLiberoOnCourt(teamKey)
-      if (liberoOnCourt) return // Already have a libero on court
+
+      if (liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(courtPlayerNumber)) {
+        // Bench libero dropped ON the court libero - this is a libero exchange (L1 <-> L2)
+        // Check if there has been a point since last libero exchange
+        if (!hasPointSinceLastLiberoExchange(teamKey)) {
+          alert('A point must be awarded before exchanging liberos')
+          return
+        }
+
+        // Find the bench libero's type
+        const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+        const benchLiberoPlayer = teamPlayers?.find(p => String(p.number) === String(benchPlayerNumber))
+        const benchLiberoType = benchLiberoPlayer?.libero || 'libero1'
+
+        // Check if both liberos are available
+        if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
+          alert('The libero currently on court is unable to play')
+          return
+        }
+        if (isLiberoUnable(teamKey, benchPlayerNumber)) {
+          alert('The other libero is unable to play')
+          return
+        }
+
+        // Set libero exchange confirm (isExchange flag)
+        setLiberoConfirm({
+          team: teamKey,
+          position: liberoOnCourt.position,
+          playerOut: liberoOnCourt.liberoNumber,
+          liberoIn: benchLiberoType,
+          isExchange: true,
+          replacedPlayer: liberoOnCourt.playerNumber,
+          newLiberoNumber: benchPlayerNumber
+        })
+        return
+      }
+
+      if (liberoOnCourt) return // Already have a libero on court (but not dropped on it)
 
       // Find libero type
       const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -5949,6 +6017,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
       if (teamSubstitutions >= 6) return // Max substitutions reached
 
+      // Check if this bench player can substitute for this court player
+      const availableSubs = getAvailableSubstitutes(teamKey, courtPlayerNumber, false)
+      const canSub = availableSubs.some(p => String(p.number) === String(benchPlayerNumber))
+      if (!canSub) {
+        // This substitution is not allowed - check why and alert
+        const availableExceptionalSubs = getAvailableSubstitutes(teamKey, courtPlayerNumber, true)
+        const canExceptionalSub = availableExceptionalSubs.some(p => String(p.number) === String(benchPlayerNumber))
+        if (canExceptionalSub) {
+          alert('This substitution requires an exceptional case (injury, expulsion, etc.)')
+        } else {
+          alert('This player cannot substitute for the selected court player')
+        }
+        return
+      }
+
       setSubstitutionConfirm({
         team: teamKey,
         position,
@@ -5960,13 +6043,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         isDisqualified: false
       })
     }
-  }, [draggedPlayer, getCurrentServe, getLiberoOnCourt, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
+  }, [draggedPlayer, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
 
   // Handle drag end for court players (used when dragging court player to bench)
+  // If a libero on court is dropped outside any valid target, trigger libero exit
   const handleCourtDragEnd = useCallback(() => {
+    if (draggedPlayer && draggedPlayer.type === 'court' && draggedPlayer.isLibero && !dropTargetBench) {
+      // Libero was dragged but not dropped on a valid target - trigger libero exit
+      const teamKey = draggedPlayer.team
+      const liberoOnCourt = getLiberoOnCourt(teamKey)
+      if (liberoOnCourt) {
+        setLiberoConfirm({
+          team: teamKey,
+          position: liberoOnCourt.position,
+          playerOut: liberoOnCourt.liberoNumber,
+          liberoIn: null, // This signals a libero exit
+          isExit: true,
+          replacedPlayer: liberoOnCourt.playerNumber
+        })
+      }
+    }
     setDraggedPlayer(null)
     setDropTargetBench(null)
-  }, [])
+  }, [draggedPlayer, dropTargetBench, getLiberoOnCourt])
 
   // Handle drag over bench player (for court-to-bench substitution)
   const handleBenchDropOver = useCallback((e, teamKey, playerNumber, isLibero = false) => {
@@ -5975,10 +6074,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (draggedPlayer.type !== 'court') return // Only accept court players
     if (draggedPlayer.team !== teamKey) return
 
-    // For libero bench drop, check if it's a libero exit
-    if (isLibero && !draggedPlayer.isLibero) {
-      // Regular court player cannot go to libero bench
-      return
+    // For libero bench drop
+    if (isLibero) {
+      if (!draggedPlayer.isLibero) {
+        // Regular court player cannot go to libero bench
+        return
+      }
+      // Court libero can drop on any libero bench spot (same = exit, different = exchange)
     }
 
     e.dataTransfer.dropEffect = 'move'
@@ -5989,7 +6091,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setDropTargetBench(null)
   }, [])
 
-  // Handle drop on bench player - triggers substitution out or libero exit
+  // Handle drop on bench player - triggers substitution out, libero exit, or libero exchange
   const handleBenchDrop = useCallback((e, teamKey, benchPlayerNumber, isLibero = false) => {
     e.preventDefault()
     if (!draggedPlayer) return
@@ -6004,10 +6106,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setDropTargetBench(null)
 
     if (isCourtPlayerLibero && isLibero) {
-      // Libero on court being dragged to libero bench - libero exit
-      // Find the replaced player from the lineup state
+      // Libero on court being dragged to libero bench
       const liberoOnCourt = getLiberoOnCourt(teamKey)
-      if (liberoOnCourt) {
+      if (!liberoOnCourt) return
+
+      // Check if dropped on the SAME libero (libero exit) or DIFFERENT libero (exchange)
+      if (String(benchPlayerNumber) === String(liberoOnCourt.liberoNumber)) {
+        // Dropped on same libero - libero exit
         setLiberoConfirm({
           team: teamKey,
           position: liberoOnCourt.position,
@@ -6016,12 +6121,60 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           isExit: true,
           replacedPlayer: liberoOnCourt.playerNumber
         })
+      } else {
+        // Dropped on different libero - libero exchange (L1 <-> L2)
+        // Check if there has been a point since last libero exchange
+        if (!hasPointSinceLastLiberoExchange(teamKey)) {
+          alert('A point must be awarded before exchanging liberos')
+          return
+        }
+
+        // Find the bench libero's type
+        const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+        const benchLiberoPlayer = teamPlayers?.find(p => String(p.number) === String(benchPlayerNumber))
+        const benchLiberoType = benchLiberoPlayer?.libero || 'libero1'
+
+        // Check if both liberos are available
+        if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
+          alert('The libero currently on court is unable to play')
+          return
+        }
+        if (isLiberoUnable(teamKey, benchPlayerNumber)) {
+          alert('The other libero is unable to play')
+          return
+        }
+
+        // Set libero exchange confirm
+        setLiberoConfirm({
+          team: teamKey,
+          position: liberoOnCourt.position,
+          playerOut: liberoOnCourt.liberoNumber,
+          liberoIn: benchLiberoType,
+          isExchange: true,
+          replacedPlayer: liberoOnCourt.playerNumber,
+          newLiberoNumber: benchPlayerNumber
+        })
       }
     } else if (!isLibero && !isCourtPlayerLibero) {
       // Regular court player to bench - substitution out
       // The bench player comes in, the court player goes out
       const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
       if (teamSubstitutions >= 6) return // Max substitutions reached
+
+      // Check if this bench player can substitute for this court player
+      const availableSubs = getAvailableSubstitutes(teamKey, courtPlayerNumber, false)
+      const canSub = availableSubs.some(p => String(p.number) === String(benchPlayerNumber))
+      if (!canSub) {
+        // This substitution is not allowed
+        const availableExceptionalSubs = getAvailableSubstitutes(teamKey, courtPlayerNumber, true)
+        const canExceptionalSub = availableExceptionalSubs.some(p => String(p.number) === String(benchPlayerNumber))
+        if (canExceptionalSub) {
+          alert('This substitution requires an exceptional case (injury, expulsion, etc.)')
+        } else {
+          alert('This player cannot substitute for the selected court player')
+        }
+        return
+      }
 
       setSubstitutionConfirm({
         team: teamKey,
@@ -6034,7 +6187,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         isDisqualified: false
       })
     }
-  }, [draggedPlayer, getLiberoOnCourt, substitutionsUsed])
+  }, [draggedPlayer, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
 
   // ========== End Drag and Drop Handlers ==========
 
@@ -11751,12 +11904,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           position: 'relative',
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onMouseEnter={(e) => {
@@ -11887,29 +12040,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player last name rectangle */}
-                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '-7px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'rgba(0, 0, 0, 0.85)',
-                            border: '1px solid rgba(255, 255, 255, 0.3)',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#fff',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '70px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            zIndex: 4,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.3px'
-                          }}>
-                            {player.lastName}
+                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                          <div
+                            onClick={(e) => toggleCourtPlayerName(teamKey, player.number, e)}
+                            style={{
+                              position: 'absolute',
+                              bottom: '-7px',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: 'rgba(0, 0, 0, 0.85)',
+                              border: '1px solid rgba(255, 255, 255, 0.3)',
+                              borderRadius: '3px',
+                              padding: '1px 4px',
+                              fontSize: '9px',
+                              fontWeight: 600,
+                              color: '#fff',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '70px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              zIndex: 4,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.3px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
+                            {getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
                           </div>
                         )}
                       </div>
@@ -11955,11 +12115,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(leftTeamKey, player.position, player.number, e)}
@@ -12109,29 +12269,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player last name rectangle */}
-                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '-7px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'rgba(0, 0, 0, 0.85)',
-                            border: '1px solid rgba(255, 255, 255, 0.3)',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#fff',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '70px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            zIndex: 4,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.3px'
-                          }}>
-                            {player.lastName}
+                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                          <div
+                            onClick={(e) => toggleCourtPlayerName(leftTeamKey, player.number, e)}
+                            style={{
+                              position: 'absolute',
+                              bottom: '-7px',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: 'rgba(0, 0, 0, 0.85)',
+                              border: '1px solid rgba(255, 255, 255, 0.3)',
+                              borderRadius: '3px',
+                              padding: '1px 4px',
+                              fontSize: '9px',
+                              fontWeight: 600,
+                              color: '#fff',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '70px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              zIndex: 4,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.3px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
+                            {getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
                           </div>
                         )}
                       </div>
@@ -12244,11 +12411,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
                           position: 'relative'
                         }}
@@ -12380,29 +12547,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player last name rectangle */}
-                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '-7px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'rgba(0, 0, 0, 0.85)',
-                            border: '1px solid rgba(255, 255, 255, 0.3)',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#fff',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '70px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            zIndex: 4,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.3px'
-                          }}>
-                            {player.lastName}
+                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                          <div
+                            onClick={(e) => toggleCourtPlayerName(teamKey, player.number, e)}
+                            style={{
+                              position: 'absolute',
+                              bottom: '-7px',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: 'rgba(0, 0, 0, 0.85)',
+                              border: '1px solid rgba(255, 255, 255, 0.3)',
+                              borderRadius: '3px',
+                              padding: '1px 4px',
+                              fontSize: '9px',
+                              fontWeight: 600,
+                              color: '#fff',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '70px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              zIndex: 4,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.3px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
+                            {getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
                           </div>
                         )}
                       </div>
@@ -12448,11 +12622,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
                           opacity: isDragging ? 0.5 : undefined,
                           transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fef08a' : player.isLibero ? '#FFF8E7' : undefined,
+                          background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
                           color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
                           animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                           fontWeight: isRecentlySub ? 900 : undefined,
-                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #000' : undefined,
+                          border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
                           boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
                         }}
                         onClick={(e) => handlePlayerClick(rightTeamKey, player.position, player.number, e)}
@@ -12601,29 +12775,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player last name rectangle */}
-                        {showNamesOnCourt && player.lastName && !player.isPlaceholder && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '-7px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'rgba(0, 0, 0, 0.85)',
-                            border: '1px solid rgba(255, 255, 255, 0.3)',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#fff',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '70px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            zIndex: 4,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.3px'
-                          }}>
-                            {player.lastName}
+                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                          <div
+                            onClick={(e) => toggleCourtPlayerName(rightTeamKey, player.number, e)}
+                            style={{
+                              position: 'absolute',
+                              bottom: '-7px',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: 'rgba(0, 0, 0, 0.85)',
+                              border: '1px solid rgba(255, 255, 255, 0.3)',
+                              borderRadius: '3px',
+                              padding: '1px 4px',
+                              fontSize: '9px',
+                              fontWeight: 600,
+                              color: '#fff',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '70px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              zIndex: 4,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.3px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
+                            {getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
                           </div>
                         )}
                       </div>

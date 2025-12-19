@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.8',
+    date: '19.12.25',
+    changes: [
+      'Update styling in Scoreboard and Referee components for better visual feedback during matches. Changed background colors and border styles for recently substituted players, and added functionality to toggle between first and last names for court players. Replaced mikasa_v200w.png with a new image file to address copyright issues.'
+    ]
+  },
+  {
     version: '0.10.7',
     date: '19.12.25',
     changes: [
