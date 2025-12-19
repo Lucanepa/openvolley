@@ -3,6 +3,19 @@
 
 export const changelog = [
   {
+    version: '0.11.2',
+    date: '19.12.25',
+    changes: [
+      'Fix referee dashboard not receiving updates: add subscribe-match handler to backend WebSocket',
+      'Add WebSocket heartbeat (ping every 25s) to keep connections alive on mobile networks',
+      'Add coin toss validation: team names, officials, match info, 6+ players with numbers, coaches',
+      'Fix signature button alignment in coin toss view',
+      'Preload volleyball asset to prevent loading delay',
+      'Remove automatic number assignment when importing players from PDF',
+      'Reset referee selector search query after selection'
+    ]
+  },
+  {
     version: '0.11.0',
     date: '19.12.25',
     changes: [
