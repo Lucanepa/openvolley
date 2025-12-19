@@ -58,10 +58,14 @@ export default defineConfig({
   // For Electron, use './' for relative paths
   base: isElectron ? './' : (process.env.VITE_BASE_PATH || '/'),
   optimizeDeps: {
-    include: ['pdfjs-dist', 'react', 'react-dom']
+    include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks']
   },
   resolve: {
-    dedupe: ['react', 'react-dom']
+    dedupe: ['react', 'react-dom', 'dexie'],
+    alias: {
+      // Force Dexie to use development wrapper to avoid TDZ issues
+      'dexie': 'dexie/dist/dexie.mjs'
+    }
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion)
@@ -265,9 +269,13 @@ export default defineConfig({
     // WebSocket server runs on port 8080 (or WS_PORT env var)
   },
   build: {
-    // Use safer build options to avoid eval in production
+    // Re-enable minification with proper chunking
     minify: 'esbuild',
     target: 'es2015',
+    commonjsOptions: {
+      include: [/dexie/, /node_modules/],
+      transformMixedEsModules: true
+    },
     rollupOptions: {
       input: {
         main: './index.html',
@@ -279,7 +287,12 @@ export default defineConfig({
       },
       output: {
         // Avoid eval in production builds
-        format: 'es'
+        format: 'es',
+        // Manually chunk to isolate Dexie
+        manualChunks: {
+          'dexie-vendor': ['dexie', 'dexie-react-hooks'],
+          'react-vendor': ['react', 'react-dom']
+        }
       }
     }
   }

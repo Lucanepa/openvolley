@@ -74,57 +74,17 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
     })
   }, [referees, searchQuery])
 
-  // Update dropdown position when open
+  // Always center the modal on screen
   useEffect(() => {
     if (!open || !dropdownRef.current) return
 
-    const updatePosition = () => {
-      if (!dropdownRef.current) return
-
-      const { element, x, y } = position
-      if (x !== undefined && y !== undefined) {
-        dropdownRef.current.style.position = 'fixed'
-        dropdownRef.current.style.left = `${x}px`
-        dropdownRef.current.style.top = `${y}px`
-        dropdownRef.current.style.transform = 'translateY(-50%)'
-        dropdownRef.current.style.zIndex = '1000'
-      } else if (element) {
-        const rect = typeof element.getBoundingClientRect === 'function'
-          ? element.getBoundingClientRect()
-          : null
-        if (rect) {
-          dropdownRef.current.style.position = 'fixed'
-          dropdownRef.current.style.left = `${rect.right + 10}px`
-          dropdownRef.current.style.top = `${rect.top + rect.height / 2}px`
-          dropdownRef.current.style.transform = 'translateY(-50%)'
-          dropdownRef.current.style.zIndex = '1000'
-        } else {
-          dropdownRef.current.style.position = 'absolute'
-          dropdownRef.current.style.left = '50%'
-          dropdownRef.current.style.top = '50%'
-          dropdownRef.current.style.transform = 'translate(-50%, -50%)'
-          dropdownRef.current.style.zIndex = '1000'
-        }
-      } else {
-        dropdownRef.current.style.position = 'absolute'
-        dropdownRef.current.style.left = '50%'
-        dropdownRef.current.style.top = '50%'
-        dropdownRef.current.style.transform = 'translate(-50%, -50%)'
-        dropdownRef.current.style.zIndex = '1000'
-      }
-    }
-
-    updatePosition()
-    const interval = setInterval(updatePosition, 100)
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
-
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
-    }
-  }, [open, position])
+    // Always center the modal
+    dropdownRef.current.style.position = 'fixed'
+    dropdownRef.current.style.left = '50%'
+    dropdownRef.current.style.top = '50%'
+    dropdownRef.current.style.transform = 'translate(-50%, -50%)'
+    dropdownRef.current.style.zIndex = '1000'
+  }, [open])
 
   // Handle click outside
   useEffect(() => {
