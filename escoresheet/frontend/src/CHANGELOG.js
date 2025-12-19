@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.9.28',
+    date: '19.12.25',
+    changes: [
+      'Add detailed debug logging to Scoreboard component for undo operations. Enhanced logging includes summaries of events, last event details, substitution actions, and error handling, improving traceability during match data management.'
+    ]
+  },
+  {
     version: '0.9.27',
     date: '19.12.25',
     changes: [

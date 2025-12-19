@@ -4058,6 +4058,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     if (currentSetEvents.length === 0) return
 
+    // Debug log: all events being considered for undo
+    const eventSummary = currentSetEvents.map(e => ({
+      type: e.type,
+      seq: e.seq,
+      payload: e.payload?.team || e.payload?.isInitial || e.payload?.fromSubstitution
+    })).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 15)
+    debugLogger.log('SHOW_UNDO_CONFIRM_START', {
+      totalEvents: currentSetEvents.length,
+      topEvents: eventSummary
+    })
+
     // Find the last event by sequence number (highest seq)
     const sortedEvents = [...currentSetEvents].sort((a, b) => {
       const aSeq = a.seq || 0
@@ -4075,12 +4086,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const lastEvent = sortedEvents[0]
     if (!lastEvent) return
 
+    // Debug log: last event found
+    debugLogger.log('SHOW_UNDO_LAST_EVENT', {
+      type: lastEvent.type,
+      seq: lastEvent.seq,
+      payload: lastEvent.payload
+    })
+
     // If it's a rotation lineup, find the point before it and undo that instead
     if (lastEvent.type === 'lineup' && !lastEvent.payload?.isInitial && !lastEvent.payload?.fromSubstitution && !lastEvent.payload?.liberoSubstitution) {
       // This is a rotation lineup - find the point that triggered it
       const pointBefore = sortedEvents.find(e => e.type === 'point' && (e.seq || 0) < (lastEvent.seq || 0))
       if (pointBefore) {
         const description = getActionDescription(pointBefore)
+        debugLogger.log('SHOW_UNDO_ROTATION_REDIRECT', { toPointSeq: pointBefore.seq })
         setUndoConfirm({ event: pointBefore, description })
         return
       }
@@ -4091,6 +4110,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!lastUndoableEvent) return
 
     const description = getActionDescription(lastUndoableEvent)
+
+    // Debug log: description result
+    debugLogger.log('SHOW_UNDO_DESCRIPTION', {
+      type: lastUndoableEvent.type,
+      seq: lastUndoableEvent.seq,
+      description: description || 'NULL/EMPTY'
+    })
+
     // getActionDescription returns null for rotation lineups, but we've already filtered those out
     // So if it returns null here, try to find the next undoable event
     if (!description || description === 'Unknown action') {
@@ -4292,12 +4319,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const team = lastEvent.payload.team
       const position = lastEvent.payload.position
       const playerOut = lastEvent.payload.playerOut
-      
+      const playerIn = lastEvent.payload.playerIn
+
+      debugLogger.log('UNDO_SUBSTITUTION_START', {
+        team,
+        position,
+        playerOut,
+        playerIn
+      })
+
       // Find the lineup event that was created with this substitution
       const lineupEvents = data.events
         .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
         .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-      
+
+      debugLogger.log('UNDO_SUBSTITUTION_LINEUPS', {
+        lineupEventsFound: lineupEvents.length,
+        lineups: lineupEvents.map(e => ({ seq: e.seq, lineup: e.payload?.lineup, fromSub: e.payload?.fromSubstitution }))
+      })
+
       if (lineupEvents.length > 1) {
         // Remove the most recent lineup (the one with the substitution)
         const mostRecentLineup = lineupEvents[0]
@@ -4307,6 +4347,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const previousLineup = lineupEvents[1]?.payload?.lineup || {}
         const restoredLineup = { ...previousLineup }
         restoredLineup[position] = String(playerOut)
+
+        debugLogger.log('UNDO_SUBSTITUTION_RESTORE', {
+          deletedLineupSeq: mostRecentLineup.seq,
+          previousLineup,
+          restoredLineup
+        })
 
         // Save the restored lineup
         const restoredSubSeq = getNextSeqInUndo()
@@ -4732,11 +4778,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     } catch (error) {
       // Error during undo - silently handle
+      debugLogger.log('UNDO_ERROR', { error: error?.message || String(error) })
     } finally {
       // Always close the modal
+      debugLogger.log('UNDO_COMPLETED', {
+        undoneEventType: undoConfirm?.event?.type,
+        undoneEventSeq: undoConfirm?.event?.seq
+      }, getStateSnapshot())
       setUndoConfirm(null)
     }
-  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq])
+  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq, getStateSnapshot])
 
   const cancelUndo = useCallback(() => {
     setUndoConfirm(null)
