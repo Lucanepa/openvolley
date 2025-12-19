@@ -4084,7 +4084,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const currentSetIndex = data.set.index
     const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
 
-    if (currentSetEvents.length === 0) return
+    // Debug: log all events for this set
+    console.log('[UNDO] Current set events:', currentSetEvents.map(e => ({
+      id: e.id,
+      seq: e.seq,
+      type: e.type,
+      isInitial: e.payload?.isInitial,
+      fromSubstitution: e.payload?.fromSubstitution,
+      hasLiberoSub: !!e.payload?.liberoSubstitution
+    })))
+
+    if (currentSetEvents.length === 0) {
+      console.log('[UNDO] No events in current set')
+      return
+    }
 
     // Find the last event by sequence number (highest seq)
     const sortedEvents = [...currentSetEvents].sort((a, b) => {
@@ -4098,6 +4111,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
       return bTime - aTime
     })
+
+    console.log('[UNDO] Sorted events (highest seq first):', sortedEvents.slice(0, 5).map(e => ({
+      seq: e.seq,
+      type: e.type
+    })))
 
     // Find the most recent event (highest sequence)
     // IMPORTANT: Undo should ALWAYS select the event with the highest sequence number
@@ -4121,6 +4139,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Find the first undoable event in chronological order (highest sequence)
     let lastUndoableEvent = null
     for (const event of sortedEvents) {
+      console.log('[UNDO] Checking event:', {
+        seq: event.seq,
+        type: event.type,
+        isSubEvent: isSubEvent(event),
+        isRotationLineup: isRotationLineup(event)
+      })
+
       // Skip sub-events (they'll be undone with their parent)
       if (isSubEvent(event)) {
         // If it's a rotation lineup, find the parent point to undo
@@ -4128,25 +4153,52 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const baseSeq = Math.floor(event.seq || 0)
           const parentPoint = sortedEvents.find(e => e.type === 'point' && Math.floor(e.seq || 0) === baseSeq)
           if (parentPoint) {
+            console.log('[UNDO] Found parent point for rotation lineup:', parentPoint.seq)
             lastUndoableEvent = parentPoint
             break
           }
         }
+        console.log('[UNDO] Skipping sub-event')
         continue // Skip other sub-events
       }
 
       // This is a main event (integer sequence) - it's undoable
+      console.log('[UNDO] Selected main event:', event.seq, event.type)
       lastUndoableEvent = event
       break
     }
 
-    if (!lastUndoableEvent) return
+    if (!lastUndoableEvent) {
+      console.log('[UNDO] No undoable event found!')
+      debugLogger.log('UNDO_NO_EVENT_FOUND', {
+        eventsChecked: sortedEvents.length,
+        allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
+      })
+      return
+    }
 
     const description = getActionDescription(lastUndoableEvent)
     // If we can't get a description, still allow undo but show the event type
     const displayDescription = description && description !== 'Unknown action'
       ? description
       : `${lastUndoableEvent.type} (seq: ${lastUndoableEvent.seq})`
+
+    console.log('[UNDO] Setting undo confirm:', {
+      seq: lastUndoableEvent.seq,
+      type: lastUndoableEvent.type,
+      description: displayDescription
+    })
+
+    // Log to debug logger for persistence
+    debugLogger.log('UNDO_SELECTED', {
+      selectedEvent: {
+        id: lastUndoableEvent.id,
+        seq: lastUndoableEvent.seq,
+        type: lastUndoableEvent.type
+      },
+      description: displayDescription,
+      allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
+    })
 
     setUndoConfirm({ event: lastUndoableEvent, description: displayDescription })
   }, [data?.events, data?.set, getActionDescription])
@@ -4356,24 +4408,53 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const position = lastEvent.payload.position
       const playerOut = lastEvent.payload.playerOut
       const liberoEntryTimestamp = new Date(lastEvent.ts)
-      
+
       // Find the lineup event that was created with this libero entry
       // Look for lineup events with liberoSubstitution that matches this libero entry
       const liberoNumber = lastEvent.payload?.liberoIn
+
+      // Debug: log what we're looking for
+      debugLogger.log('UNDO_LIBERO_ENTRY_SEARCH', {
+        team,
+        position,
+        playerOut,
+        liberoNumber,
+        liberoEntryTimestamp: liberoEntryTimestamp.toISOString(),
+        totalEvents: data.events.length
+      })
+
       const liberoLineupEvents = data.events
-        .filter(e => 
-          e.type === 'lineup' && 
-          e.payload?.team === team && 
-          e.setIndex === data.set.index &&
-          e.payload?.liberoSubstitution &&
-          String(e.payload.liberoSubstitution.liberoNumber) === String(liberoNumber) &&
-          e.payload.liberoSubstitution.position === position
-        )
+        .filter(e => {
+          const matches = e.type === 'lineup' &&
+            e.payload?.team === team &&
+            e.setIndex === data.set.index &&
+            e.payload?.liberoSubstitution &&
+            String(e.payload.liberoSubstitution.liberoNumber) === String(liberoNumber) &&
+            e.payload.liberoSubstitution.position === position
+          // Debug: log each lineup event being checked
+          if (e.type === 'lineup' && e.payload?.team === team) {
+            console.log('[UNDO] Checking lineup event:', {
+              id: e.id,
+              seq: e.seq,
+              hasLiberoSub: !!e.payload?.liberoSubstitution,
+              liberoNumber: e.payload?.liberoSubstitution?.liberoNumber,
+              position: e.payload?.liberoSubstitution?.position,
+              matches
+            })
+          }
+          return matches
+        })
         .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-      
+
+      debugLogger.log('UNDO_LIBERO_ENTRY_FOUND', {
+        foundCount: liberoLineupEvents.length,
+        foundEvents: liberoLineupEvents.map(e => ({ id: e.id, seq: e.seq }))
+      })
+
       if (liberoLineupEvents.length > 0) {
         // Remove the lineup with the libero entry
         const liberoLineupEvent = liberoLineupEvents[0]
+        console.log('[UNDO] Deleting libero lineup event:', liberoLineupEvent.id, 'seq:', liberoLineupEvent.seq)
         await db.events.delete(liberoLineupEvent.id)
         
         // Find the most recent complete lineup event BEFORE the libero entry
