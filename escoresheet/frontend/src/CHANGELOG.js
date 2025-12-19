@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.10.6',
+    date: '19.12.25',
+    changes: [
+      'Update railway.json to include Nixpacks configuration for Node.js and modify start command for better compatibility with environment variables. This enhances the build and deployment process for the frontend application.'
+    ]
+  },
+  {
     version: '0.10.5',
     date: '19.12.25',
     changes: [
