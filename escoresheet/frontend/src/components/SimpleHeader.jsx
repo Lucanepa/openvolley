@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import changelog from '../CHANGELOG'
 import ConnectionStatus from './ConnectionStatus'
+import DashboardOptionsMenu from './DashboardOptionsMenu'
 
 /**
  * SimpleHeader - A simplified header component for satellite apps (Bench, Upload Roster, Livescore)
@@ -354,6 +355,9 @@ export default function SimpleHeader({
               <span>{backLabel}</span>
             </button>
           )}
+
+          {/* Options Menu */}
+          <DashboardOptionsMenu showConnectionOptions={false} />
         </div>
       </div>
     </>

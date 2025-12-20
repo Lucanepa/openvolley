@@ -735,7 +735,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       alignItems: 'center', justifyContent: 'center', flexShrink: 0
     }}>
       <img
-        src='/volleyball_simple.png'
+        src={mikasaVolleyball}
         alt="Volleyball"
         style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
       />

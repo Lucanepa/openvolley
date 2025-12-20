@@ -1135,7 +1135,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     } catch (error) {
       console.error('Error saving draft:', error)
       if (!silent) {
-        alert('Error saving data')
+        setNoticeModal({ message: 'Error saving data. Please try again.' })
       }
       return false
     }
@@ -1269,15 +1269,60 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     // Validate at least one captain per team
     const homeHasCaptain = homeRoster.some(p => p.isCaptain)
     const awayHasCaptain = awayRoster.some(p => p.isCaptain)
-    
+
     if (!homeHasCaptain) {
       setNoticeModal({ message: 'Home team must have at least one captain.' })
       return
     }
-    
+
     if (!awayHasCaptain) {
       setNoticeModal({ message: 'Away team must have at least one captain.' })
       return
+    }
+
+    // Validate no duplicate player numbers within each team
+    const homeDuplicates = homeRoster.filter((p, i) =>
+      p.number && homeRoster.findIndex(other => other.number === p.number) !== i
+    )
+    if (homeDuplicates.length > 0) {
+      const dupNumbers = [...new Set(homeDuplicates.map(p => p.number))].join(', ')
+      setNoticeModal({
+        message: `${home || 'Home'} team has duplicate player numbers: #${dupNumbers}\n\nPlease fix duplicate numbers before proceeding.`
+      })
+      return
+    }
+
+    const awayDuplicates = awayRoster.filter((p, i) =>
+      p.number && awayRoster.findIndex(other => other.number === p.number) !== i
+    )
+    if (awayDuplicates.length > 0) {
+      const dupNumbers = [...new Set(awayDuplicates.map(p => p.number))].join(', ')
+      setNoticeModal({
+        message: `${away || 'Away'} team has duplicate player numbers: #${dupNumbers}\n\nPlease fix duplicate numbers before proceeding.`
+      })
+      return
+    }
+
+    // Validate birthdates - check for suspicious dates
+    const allPlayers = [...homeRoster, ...awayRoster]
+    const playersWithBadDate = allPlayers.filter(p =>
+      p.dob === '01.01.1900' || p.dob === '01/01/1900' || p.dob === '1900-01-01'
+    )
+    if (playersWithBadDate.length > 0) {
+      const badNames = playersWithBadDate.map(p => `${p.lastName || ''} ${p.firstName || ''} (#${p.number})`).join('\n')
+      setNoticeModal({
+        message: `Some players have invalid birthdate (01.01.1900):\n\n${badNames}\n\nPlease correct these dates before proceeding.`
+      })
+      return
+    }
+
+    // Check for missing birthdates (warning, not blocking)
+    const playersWithoutDob = allPlayers.filter(p => !p.dob && (p.firstName || p.lastName))
+    if (playersWithoutDob.length > 0) {
+      const missingNames = playersWithoutDob.slice(0, 5).map(p => `${p.lastName || ''} ${p.firstName || ''} (#${p.number})`).join('\n')
+      const moreCount = playersWithoutDob.length > 5 ? `\n...and ${playersWithoutDob.length - 5} more` : ''
+      // This is just a warning - show it but continue
+      console.warn(`[MatchSetup] Players missing birthdate:\n${missingNames}${moreCount}`)
     }
 
     await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
@@ -1547,13 +1592,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Open scoresheet in a new window
   async function openScoresheet() {
     if (!matchId) {
-      alert('No match data available')
+      setNoticeModal({ message: 'No match data available.' })
       return
     }
 
     const matchData = await db.matches.get(matchId)
     if (!matchData) {
-      alert('Match not found')
+      setNoticeModal({ message: 'Match not found.' })
       return
     }
 
@@ -1591,7 +1636,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
     if (!scoresheetWindow) {
-      alert('Please allow popups to view the scoresheet')
+      setNoticeModal({ message: 'Please allow popups to view the scoresheet.' })
     }
   }
 
@@ -1604,10 +1649,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         return
       }
     }
-    
+
     if (!matchId) {
       console.error('[COIN TOSS] No match ID available')
-      alert('Error: No match ID found')
+      setNoticeModal({ message: 'Error: No match ID found. Please try again.' })
       return
     }
 
@@ -2785,6 +2830,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   setHomeRoster(updated)
                 }}
                 onBlur={() => {
+                  // Check for duplicate numbers in home roster
+                  const currentNum = homeRoster[i]?.number
+                  if (currentNum) {
+                    const duplicates = homeRoster.filter((p, idx) => idx !== i && p.number === currentNum)
+                    if (duplicates.length > 0) {
+                      const playerName = homeRoster[i].lastName || homeRoster[i].firstName || `Player ${i + 1}`
+                      setNoticeModal({
+                        message: `Duplicate player number #${currentNum} in ${home || 'Home'} roster!\n\n${playerName} has the same number as another player. Please fix this before proceeding.`
+                      })
+                    }
+                  }
                   // Sort roster by player number when done editing
                   const sorted = [...homeRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
                   setHomeRoster(sorted)
@@ -2793,12 +2849,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <input
                 className="w-name capitalize"
                 placeholder="Last Name"
-                value={p.lastName || ''} 
+                value={p.lastName || ''}
                 onChange={e => {
                   const updated = [...homeRoster]
                   updated[i] = { ...updated[i], lastName: e.target.value }
                   setHomeRoster(updated)
-                }} 
+                }}
               />
               <input 
                 className="w-name capitalize" 
@@ -3469,6 +3525,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   setAwayRoster(updated)
                 }}
                 onBlur={() => {
+                  // Check for duplicate numbers in away roster
+                  const currentNum = awayRoster[i]?.number
+                  if (currentNum) {
+                    const duplicates = awayRoster.filter((p, idx) => idx !== i && p.number === currentNum)
+                    if (duplicates.length > 0) {
+                      const playerName = awayRoster[i].lastName || awayRoster[i].firstName || `Player ${i + 1}`
+                      setNoticeModal({
+                        message: `Duplicate player number #${currentNum} in ${away || 'Away'} roster!\n\n${playerName} has the same number as another player. Please fix this before proceeding.`
+                      })
+                    }
+                  }
                   // Sort roster by player number when done editing
                   const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
                   setAwayRoster(sorted)
@@ -3477,12 +3544,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <input
                 className="w-name capitalize"
                 placeholder="Last Name"
-                value={p.lastName || ''} 
+                value={p.lastName || ''}
                 onChange={e => {
                   const updated = [...awayRoster]
                   updated[i] = { ...updated[i], lastName: e.target.value }
                   setAwayRoster(updated)
-                }} 
+                }}
               />
               <input 
                 className="w-name capitalize" 

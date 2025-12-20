@@ -4,6 +4,7 @@ import Referee from './components/Referee'
 import Modal from './components/Modal'
 import ConnectionStatus from './components/ConnectionStatus'
 import UpdateBanner from './components/UpdateBanner'
+import DashboardOptionsMenu from './components/DashboardOptionsMenu'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
 import changelog from './CHANGELOG'
@@ -41,6 +42,18 @@ export default function RefereeApp() {
     db: 'unknown'
   })
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+
+  // Preload assets that are used later (e.g., referee icon)
+  useEffect(() => {
+    const assetsToPreload = [
+      refereeIcon
+    ]
+
+    assetsToPreload.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
 
   // Check connection statuses
   const checkConnectionStatuses = async () => {
@@ -540,9 +553,11 @@ export default function RefereeApp() {
           >
             {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
           </button>
+
+          <DashboardOptionsMenu showConnectionOptions={false} />
         </div>
       </div>
-      
+
       {/* Main content */}
       <div style={{
         flex: '1 1 auto',

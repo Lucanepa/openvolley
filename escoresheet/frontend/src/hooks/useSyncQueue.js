@@ -3,6 +3,10 @@ import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
 
 // Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error'
+
+// Resource processing order - dependencies must be synced first
+const RESOURCE_ORDER = ['team', 'referee', 'scorer', 'match', 'player', 'set', 'event']
+
 export function useSyncQueue() {
   const busy = useRef(false)
   const [syncStatus, setSyncStatus] = useState('offline')
@@ -19,9 +23,8 @@ export function useSyncQueue() {
 
     try {
       setSyncStatus('connecting')
-      // Try a simple query to check connection
-      // Use a table that should exist, or just check auth status
-      const { error } = await supabase.from('events').select('id').limit(1)
+      // Try a simple query to check connection - use teams which has no RLS issues
+      const { error } = await supabase.from('teams').select('id').limit(1)
       if (error) {
         // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
         if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
@@ -39,6 +42,7 @@ export function useSyncQueue() {
           setSyncStatus('error')
           return false
         }
+        console.error('[SyncQueue] Connection check error:', error)
         setSyncStatus('error')
         return false
       }
@@ -49,7 +53,208 @@ export function useSyncQueue() {
         setSyncStatus('offline')
         return false
       }
+      console.error('[SyncQueue] Connection check exception:', err)
       setSyncStatus('error')
+      return false
+    }
+  }, [])
+
+  // Process a single job
+  const processJob = useCallback(async (job) => {
+    try {
+      if (job.resource === 'team' && job.action === 'insert') {
+        // Use upsert to handle existing teams
+        const { error } = await supabase
+          .from('teams')
+          .upsert(job.payload, { onConflict: 'external_id' })
+        if (error) {
+          console.error('[SyncQueue] Team insert error:', error, job.payload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'referee' && job.action === 'insert') {
+        const { data, error } = await supabase
+          .from('referees')
+          .upsert(job.payload, { onConflict: 'seed_key' })
+          .select('id')
+
+        if (error) {
+          // Handle duplicate key gracefully
+          if (error.code === '23505' || error.message?.includes('duplicate key')) {
+            const externalId = Number(job.payload.external_id)
+            if (!Number.isNaN(externalId)) {
+              await db.referees.update(externalId, { synced: true })
+            }
+            return true
+          }
+          console.error('[SyncQueue] Referee insert error:', error, job.payload)
+          return false
+        }
+
+        const externalId = Number(job.payload.external_id)
+        if (!Number.isNaN(externalId)) {
+          const inserted = Array.isArray(data) ? data[0] : data
+          await db.referees.update(externalId, { synced: true, supabaseId: inserted?.id || null })
+        }
+        return true
+      }
+
+      if (job.resource === 'scorer' && job.action === 'insert') {
+        const { data, error } = await supabase
+          .from('scorers')
+          .upsert(job.payload, { onConflict: 'seed_key' })
+          .select('id')
+
+        if (error) {
+          // Handle duplicate key gracefully
+          if (error.code === '23505' || error.message?.includes('duplicate key')) {
+            const externalId = Number(job.payload.external_id)
+            if (!Number.isNaN(externalId)) {
+              await db.scorers.update(externalId, { synced: true })
+            }
+            return true
+          }
+          console.error('[SyncQueue] Scorer insert error:', error, job.payload)
+          return false
+        }
+
+        const externalId = Number(job.payload.external_id)
+        if (!Number.isNaN(externalId)) {
+          const inserted = Array.isArray(data) ? data[0] : data
+          await db.scorers.update(externalId, { synced: true, supabaseId: inserted?.id || null })
+        }
+        return true
+      }
+
+      if (job.resource === 'match' && job.action === 'insert') {
+        // Resolve home_team_id and away_team_id from external_id
+        let matchPayload = { ...job.payload }
+
+        if (matchPayload.home_team_id && typeof matchPayload.home_team_id === 'string') {
+          const { data: homeTeamData } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('external_id', matchPayload.home_team_id)
+            .maybeSingle()
+          matchPayload.home_team_id = homeTeamData?.id || null
+        }
+
+        if (matchPayload.away_team_id && typeof matchPayload.away_team_id === 'string') {
+          const { data: awayTeamData } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('external_id', matchPayload.away_team_id)
+            .maybeSingle()
+          matchPayload.away_team_id = awayTeamData?.id || null
+        }
+
+        const { error } = await supabase
+          .from('matches')
+          .upsert(matchPayload, { onConflict: 'external_id' })
+        if (error) {
+          console.error('[SyncQueue] Match insert error:', error, matchPayload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'match' && job.action === 'update') {
+        const { id, ...updateData } = job.payload
+        const { error } = await supabase
+          .from('matches')
+          .update(updateData)
+          .eq('external_id', id)
+        if (error) {
+          console.error('[SyncQueue] Match update error:', error, job.payload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'player' && job.action === 'insert') {
+        // Resolve team_id from external_id
+        let playerPayload = { ...job.payload }
+
+        if (playerPayload.team_id && typeof playerPayload.team_id === 'string') {
+          const { data: teamData } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('external_id', playerPayload.team_id)
+            .maybeSingle()
+          playerPayload.team_id = teamData?.id || null
+        }
+
+        const { error } = await supabase
+          .from('players')
+          .upsert(playerPayload, { onConflict: 'external_id' })
+        if (error) {
+          console.error('[SyncQueue] Player insert error:', error, playerPayload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'set' && job.action === 'insert') {
+        // Resolve match_id from external_id
+        let setPayload = { ...job.payload }
+
+        if (setPayload.match_id && typeof setPayload.match_id === 'string') {
+          const { data: matchData } = await supabase
+            .from('matches')
+            .select('id')
+            .eq('external_id', setPayload.match_id)
+            .maybeSingle()
+          setPayload.match_id = matchData?.id || null
+        }
+
+        const { error } = await supabase
+          .from('sets')
+          .upsert(setPayload, { onConflict: 'external_id' })
+        if (error) {
+          console.error('[SyncQueue] Set insert error:', error, setPayload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'event' && job.action === 'insert') {
+        // Resolve match_id from external_id
+        let eventPayload = { ...job.payload }
+
+        if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
+          const { data: matchData } = await supabase
+            .from('matches')
+            .select('id')
+            .eq('external_id', eventPayload.match_id)
+            .maybeSingle()
+
+          if (!matchData) {
+            // Match not yet synced - keep job queued for retry
+            console.log('[SyncQueue] Event waiting for match to sync:', eventPayload.match_id)
+            return null // null means "retry later"
+          }
+          eventPayload.match_id = matchData.id
+        }
+
+        // Use upsert with external_id to avoid duplicates on retry
+        const { error } = await supabase
+          .from('events')
+          .upsert(eventPayload, { onConflict: 'external_id' })
+        if (error) {
+          console.error('[SyncQueue] Event insert error:', error, eventPayload)
+          return false
+        }
+        return true
+      }
+
+      // Unknown resource/action
+      console.warn('[SyncQueue] Unknown job type:', job.resource, job.action)
+      return true // Mark as done to avoid infinite loop
+
+    } catch (err) {
+      console.error('[SyncQueue] Job processing error:', err, job)
       return false
     }
   }, [])
@@ -60,219 +265,69 @@ export function useSyncQueue() {
       setSyncStatus('online_no_supabase')
       return
     }
-    
+
     const connected = await checkSupabaseConnection()
     if (!connected) return
 
-    // Check if there's work to do before setting status to syncing
     try {
       const queued = await db.sync_queue.where('status').equals('queued').toArray()
 
       if (queued.length === 0) {
-        // No work to do - keep status as 'synced', don't flicker to 'syncing'
         setSyncStatus('synced')
         return
       }
 
-      // There's work to do - now set to syncing
       busy.current = true
       setSyncStatus('syncing')
+      console.log(`[SyncQueue] Processing ${queued.length} queued items`)
 
       let hasError = false
+      let hasRetry = false
+
+      // Group jobs by resource type for ordered processing
+      const jobsByResource = {}
       for (const job of queued) {
-        try {
-          if (job.resource === 'event' && job.action === 'insert') {
-            // Resolve match_id from external_id if it's a string
-            let eventPayload = { ...job.payload }
-            if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
-              const { data: matchData } = await supabase
-                .from('matches')
-                .select('id')
-                .eq('external_id', eventPayload.match_id)
-                .maybeSingle()
-              eventPayload.match_id = matchData?.id || null
-            }
-            
-            const { error } = await supabase.from('events').insert(eventPayload)
-            if (error) {
-              await db.sync_queue.update(job.id, { status: 'error' })
-              hasError = true
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-            }
-          } else if (job.resource === 'match' && job.action === 'insert') {
-            // Resolve home_team_id and away_team_id from external_id if they're strings
-            let matchPayload = { ...job.payload }
-            if (matchPayload.home_team_id && typeof matchPayload.home_team_id === 'string') {
-              const { data: homeTeamData } = await supabase
-                .from('teams')
-                .select('id')
-                .eq('external_id', matchPayload.home_team_id)
-                .maybeSingle()
-              matchPayload.home_team_id = homeTeamData?.id || null
-            }
-            if (matchPayload.away_team_id && typeof matchPayload.away_team_id === 'string') {
-              const { data: awayTeamData } = await supabase
-                .from('teams')
-                .select('id')
-                .eq('external_id', matchPayload.away_team_id)
-                .maybeSingle()
-              matchPayload.away_team_id = awayTeamData?.id || null
-            }
-            
-            // Use upsert to handle existing matches (e.g., test match recreations)
-            const { error } = await supabase
-              .from('matches')
-              .upsert(matchPayload, { onConflict: 'external_id' })
-            if (error) {
-              await db.sync_queue.update(job.id, { status: 'error' })
-              hasError = true
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-            }
-          } else if (job.resource === 'team' && job.action === 'insert') {
-            // Use upsert to handle existing teams (e.g., test match recreations)
-            const { error } = await supabase
-              .from('teams')
-              .upsert(job.payload, { onConflict: 'external_id' })
-            if (error) {
-              await db.sync_queue.update(job.id, { status: 'error' })
-              hasError = true
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-            }
-          } else if (job.resource === 'player' && job.action === 'insert') {
-            // Resolve team_id from external_id if it's a string (local Dexie ID)
-            let playerPayload = { ...job.payload }
-            if (playerPayload.team_id && typeof playerPayload.team_id === 'string') {
-              // Look up the Supabase team ID using external_id
-              const { data: teamData } = await supabase
-                .from('teams')
-                .select('id')
-                .eq('external_id', playerPayload.team_id)
-                .maybeSingle()
-              
-              // If team not found, set team_id to null
-              playerPayload.team_id = teamData?.id || null
-            }
-            
-            // Use upsert to handle existing players (e.g., test match recreations)
-            const { error } = await supabase
-              .from('players')
-              .upsert(playerPayload, { onConflict: 'external_id' })
-            if (error) {
-              await db.sync_queue.update(job.id, { status: 'error' })
-              hasError = true
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-            }
-          } else if (job.resource === 'set' && job.action === 'insert') {
-            // Resolve match_id from external_id if it's a string
-            let setPayload = { ...job.payload }
-            if (setPayload.match_id && typeof setPayload.match_id === 'string') {
-              const { data: matchData } = await supabase
-                .from('matches')
-                .select('id')
-                .eq('external_id', setPayload.match_id)
-                .maybeSingle()
-              setPayload.match_id = matchData?.id || null
-            }
-            
-            // Use upsert to handle existing sets (e.g., test match recreations)
-            const { error } = await supabase
-              .from('sets')
-              .upsert(setPayload, { onConflict: 'external_id' })
-            if (error) {
-              await db.sync_queue.update(job.id, { status: 'error' })
-              hasError = true
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-            }
-          } else if (job.resource === 'match' && job.action === 'update') {
-            const { id, ...updateData } = job.payload
-            const { error } = await supabase.from('matches').update(updateData).eq('external_id', id)
-            if (error) {
-              await db.sync_queue.update(job.id, { status: 'error' })
-              hasError = true
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-            }
-          } else if (job.resource === 'referee' && job.action === 'insert') {
-            const { data, error } = await supabase
-              .from('referees')
-              .insert(job.payload)
-              .select('id')
+        const resource = job.resource
+        if (!jobsByResource[resource]) {
+          jobsByResource[resource] = []
+        }
+        jobsByResource[resource].push(job)
+      }
 
-            if (error) {
-              if (
-                error.code === '23505' ||
-                error.code === '409' ||
-                error.message?.includes('duplicate key')
-              ) {
-                await db.sync_queue.update(job.id, { status: 'sent' })
-                const externalId = Number(job.payload.external_id)
-                if (!Number.isNaN(externalId)) {
-                  await db.referees.update(externalId, { synced: true })
-                }
-              } else {
-                await db.sync_queue.update(job.id, { status: 'error' })
-                hasError = true
-              }
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-              const externalId = Number(job.payload.external_id)
-              if (!Number.isNaN(externalId)) {
-                const inserted = Array.isArray(data) ? data[0] : data
-                await db.referees.update(externalId, { synced: true, supabaseId: inserted?.id || null })
-              }
-            }
-          } else if (job.resource === 'scorer' && job.action === 'insert') {
-            const { data, error } = await supabase
-              .from('scorers')
-              .insert(job.payload)
-              .select('id')
+      // Process in dependency order
+      for (const resource of RESOURCE_ORDER) {
+        const jobs = jobsByResource[resource] || []
 
-            if (error) {
-              if (
-                error.code === '23505' ||
-                error.code === '409' ||
-                error.message?.includes('duplicate key')
-              ) {
-                await db.sync_queue.update(job.id, { status: 'sent' })
-                const externalId = Number(job.payload.external_id)
-                if (!Number.isNaN(externalId)) {
-                  await db.scorers.update(externalId, { synced: true })
-                }
-              } else {
-                await db.sync_queue.update(job.id, { status: 'error' })
-                hasError = true
-              }
-            } else {
-              await db.sync_queue.update(job.id, { status: 'sent' })
-              const externalId = Number(job.payload.external_id)
-              if (!Number.isNaN(externalId)) {
-                const inserted = Array.isArray(data) ? data[0] : data
-                await db.scorers.update(externalId, { synced: true, supabaseId: inserted?.id || null })
-              }
-            }
+        for (const job of jobs) {
+          const result = await processJob(job)
+
+          if (result === true) {
+            await db.sync_queue.update(job.id, { status: 'sent' })
+          } else if (result === false) {
+            await db.sync_queue.update(job.id, { status: 'error' })
+            hasError = true
+          } else if (result === null) {
+            // Retry later - leave status as 'queued'
+            hasRetry = true
           }
-        } catch (err) {
-          await db.sync_queue.update(job.id, { status: 'error' })
-          hasError = true
         }
       }
-      
+
       if (hasError) {
         setSyncStatus('error')
+      } else if (hasRetry) {
+        // Some items need retry - will be processed next cycle
+        setSyncStatus('syncing')
       } else {
         setSyncStatus('synced')
       }
     } catch (err) {
+      console.error('[SyncQueue] Flush error:', err)
       setSyncStatus('error')
     } finally {
       busy.current = false
     }
-  }, [checkSupabaseConnection])
+  }, [checkSupabaseConnection, processJob])
 
   // Monitor online/offline status
   useEffect(() => {
@@ -293,7 +348,7 @@ export function useSyncQueue() {
         }
       }, 500)
     }
-    
+
     const handleOffline = () => {
       setIsOnline(false)
       setSyncStatus('offline')
@@ -323,7 +378,7 @@ export function useSyncQueue() {
     }
   }, [isOnline, checkSupabaseConnection, flush])
 
-  // Periodically check sync status when online and connected
+  // Real-time sync - check every 2 seconds for new items
   useEffect(() => {
     if (!isOnline || syncStatus === 'offline' || syncStatus === 'online_no_supabase') return
 
@@ -331,12 +386,10 @@ export function useSyncQueue() {
       if (!busy.current) {
         flush()
       }
-    }, 10000) // Check every 10 seconds
+    }, 100) // Sync every 100ms for instantaneous updates
 
     return () => clearInterval(interval)
   }, [isOnline, syncStatus, flush])
 
   return { flush, syncStatus, isOnline }
 }
-
-
