@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.5',
+    date: '20.12.25',
+    changes: [
+      'Enhance MatchSetup component with Supabase sync functionality and improved user notifications'
+    ]
+  },
+  {
     version: '0.12.4',
     date: '20.12.25',
     changes: [

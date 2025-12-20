@@ -1586,9 +1586,61 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         updatedAt: new Date().toISOString()
       })
 
+      // Queue match for Supabase sync (uses upsert internally)
+      const syncJobId = await db.sync_queue.add({
+        resource: 'match',
+        action: 'insert',
+        payload: {
+          external_id: String(matchId),
+          home_team_id: String(homeTeamId),
+          away_team_id: String(awayTeamId),
+          status: 'setup',
+          hall: hall || null,
+          city: city || null,
+          league: league || null,
+          scheduled_at: scheduledAt || null,
+          match_type_1: type1 || null,
+          match_type_1_other: type1Other || null,
+          championship_type: championshipType || null,
+          championship_type_other: championshipTypeOther || null,
+          match_type_2: type2 || null,
+          match_type_3: type3 || null,
+          match_type_3_other: type3Other || null,
+          game_n: gameN ? parseInt(gameN, 10) : null,
+          test: false
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+
       setMatchInfoConfirmed(true)
       setCurrentView('main')
-      setNoticeModal({ message: 'Match info saved successfully!', type: 'success' })
+      setNoticeModal({ message: 'Match info saved! Syncing to database...', type: 'success', syncing: true })
+
+      // Poll to check when sync completes
+      const checkSyncStatus = async () => {
+        let attempts = 0
+        const maxAttempts = 20 // 10 seconds max
+        const interval = setInterval(async () => {
+          attempts++
+          try {
+            const job = await db.sync_queue.get(syncJobId)
+            if (!job || job.status === 'sent') {
+              clearInterval(interval)
+              setNoticeModal({ message: 'Match synced to database!', type: 'success' })
+            } else if (job.status === 'error') {
+              clearInterval(interval)
+              setNoticeModal({ message: 'Match saved locally (sync failed - will retry)', type: 'error' })
+            } else if (attempts >= maxAttempts) {
+              clearInterval(interval)
+              setNoticeModal({ message: 'Match saved locally (sync pending)', type: 'success' })
+            }
+          } catch (err) {
+            clearInterval(interval)
+          }
+        }, 500)
+      }
+      checkSyncStatus()
     } catch (error) {
       console.error('Error confirming match info:', error)
       setNoticeModal({ message: `Error: ${error.message}`, type: 'error' })
@@ -4548,7 +4600,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     )
   }
 
-  const StatusBadge = ({ ready }) => (
+  const StatusBadge = ({ ready, pending }) => (
     <span
       style={{
         display: 'inline-flex',
@@ -4557,16 +4609,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         width: 18,
         height: 18,
         borderRadius: '50%',
-        backgroundColor: ready ? '#22c55e' : '#f97316',
-        color: '#0b1120',
+        backgroundColor: ready ? '#22c55e' : pending ? '#3b82f6' : '#f97316',
+        color: ready || pending ? '#fff' : '#0b1120',
         fontWeight: 700,
         fontSize: 12,
         marginRight: 8
       }}
-      aria-label={ready ? 'Complete' : 'Incomplete'}
-      title={ready ? 'Complete' : 'Incomplete'}
+      aria-label={ready ? 'Complete' : pending ? 'Ready to confirm' : 'Incomplete'}
+      title={ready ? 'Complete' : pending ? 'Ready to confirm' : 'Incomplete'}
     >
-      {ready ? '✓' : '!'}
+      {ready ? '✓' : pending ? '●' : '!'}
     </span>
   )
 
@@ -4923,14 +4975,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, maxWidth: '900px' }}>
         {/* Match Info Card */}
-        <div className="card" style={!matchInfoConfirmed ? { border: '2px solid #f59e0b' } : {}}>
+        <div className="card" style={!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <StatusBadge ready={matchInfoConfirmed} />
+                <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
                 <h3 style={{ margin: 0 }}>Match info</h3>
                 {!matchInfoConfirmed && (
-                  <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: 500 }}>(Confirm to continue)</span>
+                  <span style={{ color: canConfirmMatchInfo ? '#3b82f6' : '#f59e0b', fontSize: '11px', fontWeight: 500 }}>
+                    {canConfirmMatchInfo ? '(Ready to confirm)' : '(Fill required fields)'}
+                  </span>
                 )}
               </div>
             </div>
@@ -5826,39 +5880,44 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
       {noticeModal && (
         <Modal
-          title={noticeModal.type === 'success' ? 'Success' : 'Notice'}
+          title={noticeModal.syncing ? 'Syncing' : noticeModal.type === 'success' ? 'Success' : 'Notice'}
           open={true}
-          onClose={() => setNoticeModal(null)}
+          onClose={() => !noticeModal.syncing && setNoticeModal(null)}
           width={400}
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            {noticeModal.type === 'success' && (
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+            {noticeModal.syncing && (
+              <div style={{ fontSize: '48px', marginBottom: '16px', animation: 'spin 1s linear infinite' }}>⟳</div>
             )}
-            {noticeModal.type === 'error' && (
+            {!noticeModal.syncing && noticeModal.type === 'success' && (
+              <div style={{ fontSize: '48px', marginBottom: '16px', color: '#22c55e' }}>✓</div>
+            )}
+            {!noticeModal.syncing && noticeModal.type === 'error' && (
               <div style={{ fontSize: '48px', marginBottom: '16px', color: '#ef4444' }}>✕</div>
             )}
             <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
               {noticeModal.message}
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={() => setNoticeModal(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: noticeModal.type === 'success' ? '#22c55e' : noticeModal.type === 'error' ? '#ef4444' : 'var(--accent)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                OK
-              </button>
-            </div>
+            {!noticeModal.syncing && (
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => setNoticeModal(null)}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: noticeModal.type === 'success' ? '#22c55e' : noticeModal.type === 'error' ? '#ef4444' : 'var(--accent)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            )}
           </div>
         </Modal>
       )}
