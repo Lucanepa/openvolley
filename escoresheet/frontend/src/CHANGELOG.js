@@ -3,6 +3,16 @@
 
 export const changelog = [
   {
+    version: '0.12.7',
+    date: '20.12.25',
+    changes: [
+      'Add live match state sync to Supabase (match_live_state table)',
+      'Add Supabase realtime subscription in Referee for timeout/substitution/libero triggers',
+      'Sync points, lineups, timeouts, subs, sanctions, and set intervals to database',
+      'Support libero entry/exit/exchange events for flashing in referee app'
+    ]
+  },
+  {
     version: '0.12.6',
     date: '20.12.25',
     changes: [

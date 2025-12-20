@@ -10,6 +10,7 @@ import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 import { changelog } from '../CHANGELOG'
+import { supabase } from '../lib/supabaseClient'
 
 // Get current version from changelog
 const currentVersion = changelog[0]?.version || '1.0.0'
@@ -372,6 +373,96 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [matchId, isMasterMode, fetchFreshData])
+
+  // Track last processed event to avoid duplicates from Supabase realtime
+  const lastProcessedEventRef = useRef(null)
+
+  // Supabase realtime subscription for live state updates (backup/alternative to WebSocket)
+  useEffect(() => {
+    if (!supabase || !matchId || isMasterMode) return
+
+    const channel = supabase
+      .channel(`match_live_state:${matchId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'match_live_state',
+          filter: `match_id=eq.${matchId}`
+        },
+        (payload) => {
+          const state = payload.new
+          if (!state || !state.last_event_type) return
+
+          // Deduplicate based on last_event_ts
+          const eventKey = `${state.last_event_type}_${state.last_event_ts}`
+          if (lastProcessedEventRef.current === eventKey) return
+          lastProcessedEventRef.current = eventKey
+
+          console.log(`[Referee] 📡 Supabase realtime: ${state.last_event_type}`, state)
+
+          // Handle timeout
+          if (state.last_event_type === 'timeout') {
+            const team = state.last_event_team === 'left' ? 'home' : 'away'
+            setTimeoutModal({
+              team,
+              countdown: state.last_event_data?.duration || 30,
+              started: true
+            })
+          }
+
+          // Handle substitution
+          if (state.last_event_type === 'substitution') {
+            const team = state.last_event_team === 'left' ? 'home' : 'away'
+            setSubstitutionModal({
+              team,
+              playerOut: state.last_event_data?.playerOut,
+              playerIn: state.last_event_data?.playerIn,
+              timestamp: Date.now()
+            })
+            setTimeout(() => setSubstitutionModal(null), 5000)
+
+            // Flash effect
+            setRecentlySubstitutedPlayers(prev => [
+              ...prev,
+              { team, playerNumber: state.last_event_data?.playerIn, timestamp: Date.now() }
+            ])
+            if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
+            recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 3000)
+          }
+
+          // Handle libero entry/exit/exchange
+          if (['libero_entry', 'libero_exit', 'libero_exchange'].includes(state.last_event_type)) {
+            const team = state.last_event_team === 'left' ? 'home' : 'away'
+            const playerNumber = state.last_event_data?.liberoNumber || state.last_event_data?.playerIn
+            if (playerNumber) {
+              setRecentlySubstitutedPlayers(prev => [
+                ...prev,
+                { team, playerNumber, timestamp: Date.now() }
+              ])
+              if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
+              recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 3000)
+            }
+          }
+
+          // Handle set end (3-minute interval)
+          if (state.last_event_type === 'set_end' || state.set_interval_active) {
+            setBetweenSetsCountdown({
+              countdown: 180,
+              started: true,
+              setIndex: state.last_event_data?.setIndex || state.current_set,
+              winner: state.last_event_data?.winner
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [matchId, isMasterMode])
 
   // Handle timeout countdown timer
   useEffect(() => {
