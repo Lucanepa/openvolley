@@ -11,6 +11,7 @@ import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
+import { supabase } from '../lib/supabaseClient'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
@@ -1170,6 +1171,169 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     ws.send(JSON.stringify(actionPayload))
   }, [matchId])
+
+  // Sync live state to Supabase for referee.openvolley.app
+  const syncLiveStateToSupabase = useCallback(async (eventType, eventTeam, eventData) => {
+    if (!supabase || !data?.match || !data?.set) return
+
+    // Only sync official matches, not test matches
+    if (data.match.test) return
+
+    try {
+      // Get Supabase match ID from sync queue or external_id
+      const matchRecord = await db.sync_queue
+        .where('resource').equals('match')
+        .and(job => job.payload?.external_id === String(matchId))
+        .first()
+
+      // For now, use the local matchId as external reference
+      const supabaseMatchId = matchId
+
+      // Compute current state
+      const currentSet = data.set
+      const allSets = data.sets || []
+      const finishedSets = allSets.filter(s => s.finished)
+      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+
+      // Determine left/right teams based on set index
+      const setIndex = currentSet.index
+      const teamAKey = data.match.teamAKey || 'home'
+      const is5thSet = setIndex === 5
+      const set5CourtSwitched = data.match.set5CourtSwitched
+      const set5LeftTeam = data.match.set5LeftTeam
+
+      // Check for manual overrides first
+      const setLeftTeamOverrides = data.match.setLeftTeamOverrides || {}
+      let leftIsHome
+      if (setLeftTeamOverrides[setIndex] !== undefined) {
+        leftIsHome = setLeftTeamOverrides[setIndex] === 'home'
+      } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
+        leftIsHome = set5LeftTeam === 'home'
+      } else {
+        leftIsHome = setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
+      }
+
+      const leftTeamKey = leftIsHome ? 'home' : 'away'
+      const rightTeamKey = leftIsHome ? 'away' : 'home'
+
+      // Get team names
+      const leftName = leftIsHome ? data.match.homeName : data.match.awayName
+      const rightName = leftIsHome ? data.match.awayName : data.match.homeName
+      const leftShort = leftIsHome ? data.match.homeShortName : data.match.awayShortName
+      const rightShort = leftIsHome ? data.match.awayShortName : data.match.homeShortName
+
+      // Points
+      const leftPoints = leftIsHome ? currentSet.homePoints : currentSet.awayPoints
+      const rightPoints = leftIsHome ? currentSet.awayPoints : currentSet.homePoints
+
+      // Set score
+      const leftSetsWon = leftIsHome ? homeSetsWon : awaySetsWon
+      const rightSetsWon = leftIsHome ? awaySetsWon : homeSetsWon
+
+      // Timeouts and subs for current set
+      const currentSetEvents = (data.events || []).filter(e => e.setIndex === currentSet.index)
+      const timeouts = currentSetEvents.filter(e => e.type === 'timeout').reduce((acc, e) => {
+        const team = e.payload?.team
+        if (team) acc[team] = (acc[team] || 0) + 1
+        return acc
+      }, { home: 0, away: 0 })
+      const subs = currentSetEvents.filter(e => e.type === 'substitution').reduce((acc, e) => {
+        const team = e.payload?.team
+        if (team) acc[team] = (acc[team] || 0) + 1
+        return acc
+      }, { home: 0, away: 0 })
+
+      const leftTimeouts = leftIsHome ? timeouts.home : timeouts.away
+      const rightTimeouts = leftIsHome ? timeouts.away : timeouts.home
+      const leftSubs = leftIsHome ? subs.home : subs.away
+      const rightSubs = leftIsHome ? subs.away : subs.home
+
+      // Get lineups
+      const getLineupForTeam = (teamKey) => {
+        const lineupEvents = (data.events || [])
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+
+        // Get the most recent lineup
+        const lastLineup = lineupEvents[lineupEvents.length - 1]
+        return lastLineup.payload?.positions || null
+      }
+
+      const leftLineup = getLineupForTeam(leftTeamKey)
+      const rightLineup = getLineupForTeam(rightTeamKey)
+
+      // Check if libero is on court (simplified check)
+      const leftPlayers = leftIsHome ? data.homePlayers : data.awayPlayers
+      const rightPlayers = leftIsHome ? data.awayPlayers : data.homePlayers
+      const leftLiberos = (leftPlayers || []).filter(p => p.libero)
+      const rightLiberos = (rightPlayers || []).filter(p => p.libero)
+
+      // Determine server
+      const servingTeam = currentSet.servingTeam
+      const servingSide = servingTeam === leftTeamKey ? 'left' : 'right'
+      const serverNumber = currentSet.serverNumber || null
+
+      // Get sanctions
+      const getSanctionsForTeam = (teamKey) => {
+        return currentSetEvents
+          .filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
+          .map(e => ({
+            player: e.payload?.playerNumber,
+            type: e.payload?.sanctionType
+          }))
+      }
+
+      const leftSanctions = getSanctionsForTeam(leftTeamKey)
+      const rightSanctions = getSanctionsForTeam(rightTeamKey)
+
+      // Check if we're in a set interval
+      const isSetInterval = eventType === 'set_end'
+
+      // Upsert to Supabase
+      const { error } = await supabase
+        .from('match_live_state')
+        .upsert({
+          match_id: supabaseMatchId,
+          current_set: currentSet.index,
+          set_score_left: leftSetsWon,
+          set_score_right: rightSetsWon,
+          points_left: leftPoints,
+          points_right: rightPoints,
+          team_left_name: leftName,
+          team_right_name: rightName,
+          team_left_short: leftShort || leftName?.substring(0, 3).toUpperCase(),
+          team_right_short: rightShort || rightName?.substring(0, 3).toUpperCase(),
+          lineup_left: leftLineup,
+          lineup_right: rightLineup,
+          libero_on_left: false, // TODO: Track libero exchanges
+          libero_on_right: false,
+          serving_team: servingSide,
+          server_number: serverNumber,
+          timeouts_left: leftTimeouts,
+          timeouts_right: rightTimeouts,
+          subs_left: leftSubs,
+          subs_right: rightSubs,
+          sanctions_left: leftSanctions.length > 0 ? leftSanctions : null,
+          sanctions_right: rightSanctions.length > 0 ? rightSanctions : null,
+          last_event_type: eventType || null,
+          last_event_team: eventTeam || null,
+          last_event_data: eventData || null,
+          last_event_ts: new Date().toISOString(),
+          set_interval_active: isSetInterval,
+          set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
+          match_status: isSetInterval ? 'interval' : 'in_progress',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'match_id' })
+
+      if (error) {
+        console.error('[LiveState] Sync error:', error)
+      }
+    } catch (err) {
+      console.error('[LiveState] Exception:', err)
+    }
+  }, [data, matchId])
 
   // Check connection statuses
   const checkConnectionStatuses = useCallback(async () => {
@@ -2651,11 +2815,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       // Sync to referee after every event
       syncToReferee()
-      
+
+      // Sync live state to Supabase for key events
+      const keyEvents = ['point', 'timeout', 'substitution', 'set_start', 'set_end', 'lineup', 'sanction', 'libero_entry', 'libero_exit', 'libero_exchange']
+      if (keyEvents.includes(type)) {
+        const eventTeam = payload?.team || null
+        let eventData = null
+        if (type === 'substitution') {
+          eventData = { playerIn: payload?.playerIn, playerOut: payload?.playerOut }
+        } else if (type === 'timeout') {
+          eventData = { duration: 30 }
+        } else if (type === 'set_end') {
+          eventData = { setIndex: data.set.index, winner: payload?.winner }
+        } else if (type === 'libero_entry' || type === 'libero_exit') {
+          eventData = { liberoNumber: payload?.liberoNumber, playerNumber: payload?.playerNumber }
+        } else if (type === 'libero_exchange') {
+          eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
+        }
+        syncLiveStateToSupabase(type, eventTeam, eventData)
+      }
+
       // Return the sequence number so it can be used for related events
       return nextSeq
     },
-    [data?.set, matchId, getNextSeq, getNextSubSeq, getStateSnapshot, syncToReferee]
+    [data?.set, matchId, getNextSeq, getNextSubSeq, getStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
 
   const checkSetEnd = useCallback(async (set, homePoints, awayPoints) => {
