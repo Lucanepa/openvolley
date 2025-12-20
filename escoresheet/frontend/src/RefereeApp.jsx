@@ -103,11 +103,17 @@ export default function RefereeApp() {
         const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl = `${protocol}//${url.host}`
       } else {
-        // Fallback to local WebSocket server
+        // Fallback to local WebSocket server or same origin in production
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
         const hostname = window.location.hostname
-        const wsPort = 8080
-        wsUrl = `${protocol}://${hostname}:${wsPort}`
+        // In production (HTTPS), use same origin without port (Cloudflare handles routing)
+        // In development (HTTP), use port 8080
+        if (window.location.protocol === 'https:') {
+          wsUrl = `${protocol}://${hostname}`
+        } else {
+          const wsPort = 8080
+          wsUrl = `${protocol}://${hostname}:${wsPort}`
+        }
       }
 
       const wsTest = new WebSocket(wsUrl)

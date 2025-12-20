@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.2',
+    date: '20.12.25',
+    changes: [
+      'Enhance WebSocket URL handling for production and development environments'
+    ]
+  },
+  {
     version: '0.12.1',
     date: '20.12.25',
     changes: [
