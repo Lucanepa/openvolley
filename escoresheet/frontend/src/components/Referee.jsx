@@ -2655,8 +2655,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <span style={{
             fontSize: 'clamp(14px, 4vw, 24px)',
             fontWeight: 700,
-            color: leftColor,
-            textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+            background: leftColor,
+            color: isBrightColor(leftColor) ? '#000' : '#fff',
+            padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 14px)',
+            borderRadius: '6px',
             textAlign: 'center',
             lineHeight: 1.1,
             wordBreak: 'break-word'
@@ -2695,8 +2697,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <span style={{
             fontSize: 'clamp(14px, 4vw, 24px)',
             fontWeight: 700,
-            color: rightColor,
-            textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+            background: rightColor,
+            color: isBrightColor(rightColor) ? '#000' : '#fff',
+            padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 14px)',
+            borderRadius: '6px',
             textAlign: 'center',
             lineHeight: 1.1,
             wordBreak: 'break-word'

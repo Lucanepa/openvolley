@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.11.4',
+    date: '20.12.25',
+    changes: [
+      'Refactor Referee and Scoreboard components for improved styling and WebSocket handling'
+    ]
+  },
+  {
     version: '0.11.3',
     date: '20.12.25',
     changes: [
