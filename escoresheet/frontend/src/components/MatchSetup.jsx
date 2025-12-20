@@ -277,6 +277,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Match info fields
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
+  const [dateError, setDateError] = useState('')
+  const [timeError, setTimeError] = useState('')
   const [hall, setHall] = useState('')
   const [city, setCity] = useState('')
   const [type1, setType1] = useState('championship') // championship | cup | friendly | tournament
@@ -1313,6 +1315,64 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return isBrightColor(color) ? '#000000' : '#ffffff'
   }
 
+  // Validate and set date with immediate feedback
+  function handleDateChange(value) {
+    setDate(value)
+    if (!value) {
+      setDateError('')
+      return
+    }
+    // Validate format YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      setDateError('Invalid format')
+      return
+    }
+    const [year, month, day] = value.split('-').map(Number)
+    if (year < 1900 || year > 2100) {
+      setDateError(`Invalid year: ${year}`)
+      return
+    }
+    if (month < 1 || month > 12) {
+      setDateError(`Invalid month: ${month}`)
+      return
+    }
+    if (day < 1 || day > 31) {
+      setDateError(`Invalid day: ${day}`)
+      return
+    }
+    // Check if date is valid (e.g., Feb 30 is invalid)
+    const dateObj = new Date(value)
+    if (isNaN(dateObj.getTime()) || dateObj.getMonth() + 1 !== month) {
+      setDateError('Invalid date')
+      return
+    }
+    setDateError('')
+  }
+
+  // Validate and set time with immediate feedback
+  function handleTimeChange(value) {
+    setTime(value)
+    if (!value) {
+      setTimeError('')
+      return
+    }
+    // Validate format HH:MM
+    if (!/^\d{2}:\d{2}$/.test(value)) {
+      setTimeError('Invalid format')
+      return
+    }
+    const [hours, minutes] = value.split(':').map(Number)
+    if (hours < 0 || hours > 23) {
+      setTimeError(`Invalid hour: ${hours}`)
+      return
+    }
+    if (minutes < 0 || minutes > 59) {
+      setTimeError(`Invalid minutes: ${minutes}`)
+      return
+    }
+    setTimeError('')
+  }
+
   function handleSignatureSave(signatureImage) {
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
@@ -1347,6 +1407,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   }
 
   async function createMatch() {
+    // Check for existing validation errors
+    if (dateError) {
+      setNoticeModal({ message: `Invalid date: ${dateError}` })
+      return
+    }
+    if (timeError) {
+      setNoticeModal({ message: `Invalid time: ${timeError}` })
+      return
+    }
+
     // Validate date/time first
     let scheduledAt
     try {
@@ -2245,8 +2315,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Date & Time</h3>
-            <div className="field"><label>Date</label><input className="w-dob" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
-            <div className="field"><label>Time</label><input className="w-90" type="time" value={time} onChange={e=>setTime(e.target.value)} /></div>
+            <div className="field">
+              <label>Date</label>
+              <input
+                className="w-dob"
+                type="date"
+                value={date}
+                onChange={e => handleDateChange(e.target.value)}
+                style={dateError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
+              />
+              {dateError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{dateError}</span>}
+            </div>
+            <div className="field">
+              <label>Time</label>
+              <input
+                className="w-90"
+                type="time"
+                value={time}
+                onChange={e => handleTimeChange(e.target.value)}
+                style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
+              />
+              {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
+            </div>
           </div>
           
           <div className="card">
@@ -4909,6 +4999,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               const hasNoData = sets.length === 0 && !match.homeCoachSignature && !match.homeCaptainSignature && !match.awayCoachSignature && !match.awayCaptainSignature
               
               if (hasNoData) {
+                // Check for existing validation errors
+                if (dateError) {
+                  setNoticeModal({ message: `Invalid date: ${dateError}` })
+                  return
+                }
+                if (timeError) {
+                  setNoticeModal({ message: `Invalid time: ${timeError}` })
+                  return
+                }
+
                 // Validate date/time before going to coin toss
                 let scheduledAt
                 try {
