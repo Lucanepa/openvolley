@@ -13,19 +13,33 @@ export function useSyncQueue() {
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   )
+  // Cache connection state to avoid checking on every flush
+  const connectionVerified = useRef(false)
+  const lastConnectionCheck = useRef(0)
+  const CONNECTION_CHECK_INTERVAL = 30000 // Only recheck every 30 seconds
 
-  // Check Supabase connection
-  const checkSupabaseConnection = useCallback(async () => {
+  // Check Supabase connection (with caching)
+  const checkSupabaseConnection = useCallback(async (forceCheck = false) => {
     if (!supabase) {
       setSyncStatus('online_no_supabase')
       return false
     }
 
+    // Use cached result if recently verified and not forcing
+    const now = Date.now()
+    if (!forceCheck && connectionVerified.current && (now - lastConnectionCheck.current) < CONNECTION_CHECK_INTERVAL) {
+      return true
+    }
+
     try {
-      setSyncStatus('connecting')
+      // Only show 'connecting' on initial check, not during regular syncs
+      if (!connectionVerified.current) {
+        setSyncStatus('connecting')
+      }
       // Try a simple query to check connection - use teams which has no RLS issues
       const { error } = await supabase.from('teams').select('id').limit(1)
       if (error) {
+        connectionVerified.current = false
         // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
         if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
           // Table doesn't exist - this is expected if tables aren't set up yet
@@ -46,8 +60,12 @@ export function useSyncQueue() {
         setSyncStatus('error')
         return false
       }
+      // Cache successful connection
+      connectionVerified.current = true
+      lastConnectionCheck.current = now
       return true
     } catch (err) {
+      connectionVerified.current = false
       // Network errors might mean we're actually offline
       if (err.message?.includes('fetch') || err.message?.includes('network')) {
         setSyncStatus('offline')
@@ -335,10 +353,11 @@ export function useSyncQueue() {
 
     const handleOnline = () => {
       setIsOnline(true)
+      connectionVerified.current = false // Reset cache when coming online
       // Check connection when coming online
       setTimeout(() => {
         if (supabase) {
-          checkSupabaseConnection().then(connected => {
+          checkSupabaseConnection(true).then(connected => {
             if (connected) {
               flush()
             }
@@ -360,7 +379,7 @@ export function useSyncQueue() {
     // Initial check
     if (isOnline) {
       if (supabase) {
-        checkSupabaseConnection().then(connected => {
+        checkSupabaseConnection(true).then(connected => {
           if (connected) {
             flush()
           }
