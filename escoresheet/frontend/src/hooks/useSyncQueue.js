@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 // Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error'
 
 // Resource processing order - dependencies must be synced first
-const RESOURCE_ORDER = ['team', 'referee', 'scorer', 'match', 'player', 'set', 'event']
+const RESOURCE_ORDER = ['team', 'referee', 'scorer', 'match', 'player', 'team_official', 'set', 'event']
 
 // Max retries for jobs waiting on dependencies
 const MAX_DEPENDENCY_RETRIES = 10
@@ -212,6 +212,29 @@ export function useSyncQueue() {
           .upsert(playerPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Player insert error:', error, playerPayload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'team_official' && job.action === 'insert') {
+        // Resolve team_id from external_id
+        let officialPayload = { ...job.payload }
+
+        if (officialPayload.team_id && typeof officialPayload.team_id === 'string') {
+          const { data: teamData } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('external_id', officialPayload.team_id)
+            .maybeSingle()
+          officialPayload.team_id = teamData?.id || null
+        }
+
+        const { error } = await supabase
+          .from('team_officials')
+          .upsert(officialPayload, { onConflict: 'external_id' })
+        if (error) {
+          console.error('[SyncQueue] Team official insert error:', error, officialPayload)
           return false
         }
         return true
