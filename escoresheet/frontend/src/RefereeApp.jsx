@@ -554,7 +554,7 @@ export default function RefereeApp() {
             {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
           </button>
 
-          <DashboardOptionsMenu showConnectionOptions={false} />
+          <DashboardOptionsMenu showConnectionOptions={true} />
         </div>
       </div>
 

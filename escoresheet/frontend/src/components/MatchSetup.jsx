@@ -2807,16 +2807,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {homeRoster.map((p, i) => (
+          {homeRoster.map((p, i) => {
+            // Check if this player's number is a duplicate
+            const isDuplicate = p.number != null && p.number !== '' &&
+              homeRoster.some((other, idx) => idx !== i && other.number === p.number)
+
+            return (
             <div key={`h-${i}`} className="row" style={{ alignItems: 'center' }}>
-              <input 
-                className="w-num" 
-                placeholder="#" 
-                type="number" 
-                inputMode="numeric" 
+              <input
+                className="w-num"
+                placeholder="#"
+                type="number"
+                inputMode="numeric"
                 min="1"
                 max="99"
-                value={p.number ?? ''} 
+                value={p.number ?? ''}
+                style={isDuplicate ? {
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '2px solid #ef4444',
+                  color: '#ef4444'
+                } : undefined}
+                title={isDuplicate ? 'Duplicate jersey number!' : undefined}
                 onKeyPress={e => {
                   if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
                     e.preventDefault()
@@ -2830,17 +2841,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   setHomeRoster(updated)
                 }}
                 onBlur={() => {
-                  // Check for duplicate numbers in home roster
-                  const currentNum = homeRoster[i]?.number
-                  if (currentNum) {
-                    const duplicates = homeRoster.filter((p, idx) => idx !== i && p.number === currentNum)
-                    if (duplicates.length > 0) {
-                      const playerName = homeRoster[i].lastName || homeRoster[i].firstName || `Player ${i + 1}`
-                      setNoticeModal({
-                        message: `Duplicate player number #${currentNum} in ${home || 'Home'} roster!\n\n${playerName} has the same number as another player. Please fix this before proceeding.`
-                      })
-                    }
-                  }
                   // Sort roster by player number when done editing
                   const sorted = [...homeRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
                   setHomeRoster(sorted)
@@ -2936,15 +2936,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 /> 
                 Captain
               </label>
-              <button 
-                type="button" 
-                className="secondary" 
+              <button
+                type="button"
+                className="secondary"
                 onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
               >
                 Remove
               </button>
             </div>
-          ))}
+          )})}
           </div>
         <h4>Bench — Home</h4>
         {sortBenchByHierarchy(benchHome).map((m, i) => {
@@ -3008,6 +3008,63 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
+            console.log('[MatchSetup] Home roster Confirm clicked, validating...')
+
+            // Validate roster before saving
+            const validationErrors = []
+
+            // 1. Check at least 6 non-libero players with numbers
+            const nonLiberoWithNumbers = homeRoster.filter(p => !p.libero && p.number != null && p.number !== '')
+            console.log('[MatchSetup] Home non-libero players with numbers:', nonLiberoWithNumbers.length)
+            if (nonLiberoWithNumbers.length < 6) {
+              validationErrors.push(`Need at least 6 players with numbers (not liberos). Currently: ${nonLiberoWithNumbers.length}`)
+            }
+
+            // 2. Check captain is set
+            const hasCaptain = homeRoster.some(p => p.isCaptain)
+            console.log('[MatchSetup] Home has captain:', hasCaptain)
+            if (!hasCaptain) {
+              validationErrors.push('No captain selected')
+            }
+
+            // 3. Check coach is set
+            const hasCoach = benchHome.some(b => b.role === 'Coach' && (b.lastName || b.firstName))
+            console.log('[MatchSetup] Home has coach:', hasCoach)
+            if (!hasCoach) {
+              validationErrors.push('No coach set')
+            }
+
+            // 4. Check for duplicate numbers
+            const numbers = homeRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
+            const duplicateNumbers = numbers.filter((num, idx) => numbers.indexOf(num) !== idx)
+            if (duplicateNumbers.length > 0) {
+              console.log('[MatchSetup] Home duplicate numbers:', duplicateNumbers)
+              validationErrors.push(`Duplicate jersey numbers: ${[...new Set(duplicateNumbers)].join(', ')}`)
+            }
+
+            // 5. Check for invalid numbers (must be 1-99)
+            const invalidNumbers = homeRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
+            if (invalidNumbers.length > 0) {
+              console.log('[MatchSetup] Home invalid numbers:', invalidNumbers.map(p => p.number))
+              validationErrors.push(`Invalid jersey numbers (must be 1-99): ${invalidNumbers.map(p => p.number).join(', ')}`)
+            }
+
+            // 6. Check for players without numbers
+            const noNumbers = homeRoster.filter(p => p.number == null || p.number === '')
+            if (noNumbers.length > 0) {
+              console.log('[MatchSetup] Home players without numbers:', noNumbers.length)
+              validationErrors.push(`${noNumbers.length} player(s) without jersey numbers`)
+            }
+
+            // Show validation errors if any
+            if (validationErrors.length > 0) {
+              console.log('[MatchSetup] Home roster validation errors:', validationErrors)
+              setNoticeModal({ message: `Please fix the following issues:\n\n• ${validationErrors.join('\n• ')}` })
+              return
+            }
+
+            console.log('[MatchSetup] Home roster validation passed, saving...')
+
             // Save home team data to database if matchId exists
             if (matchId && match?.homeTeamId) {
               await db.teams.update(match.homeTeamId, {
@@ -3502,16 +3559,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {awayRoster.map((p, i) => (
+          {awayRoster.map((p, i) => {
+            // Check if this player's number is a duplicate
+            const isDuplicate = p.number != null && p.number !== '' &&
+              awayRoster.some((other, idx) => idx !== i && other.number === p.number)
+
+            return (
             <div key={`a-${i}`} className="row" style={{ alignItems: 'center' }}>
-              <input 
-                className="w-num" 
-                placeholder="#" 
-                type="number" 
-                inputMode="numeric" 
+              <input
+                className="w-num"
+                placeholder="#"
+                type="number"
+                inputMode="numeric"
                 min="1"
                 max="99"
-                value={p.number ?? ''} 
+                value={p.number ?? ''}
+                style={isDuplicate ? {
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '2px solid #ef4444',
+                  color: '#ef4444'
+                } : undefined}
+                title={isDuplicate ? 'Duplicate jersey number!' : undefined}
                 onKeyPress={e => {
                   if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
                     e.preventDefault()
@@ -3525,17 +3593,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   setAwayRoster(updated)
                 }}
                 onBlur={() => {
-                  // Check for duplicate numbers in away roster
-                  const currentNum = awayRoster[i]?.number
-                  if (currentNum) {
-                    const duplicates = awayRoster.filter((p, idx) => idx !== i && p.number === currentNum)
-                    if (duplicates.length > 0) {
-                      const playerName = awayRoster[i].lastName || awayRoster[i].firstName || `Player ${i + 1}`
-                      setNoticeModal({
-                        message: `Duplicate player number #${currentNum} in ${away || 'Away'} roster!\n\n${playerName} has the same number as another player. Please fix this before proceeding.`
-                      })
-                    }
-                  }
                   // Sort roster by player number when done editing
                   const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
                   setAwayRoster(sorted)
@@ -3631,15 +3688,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 /> 
                 Captain
               </label>
-              <button 
-                type="button" 
-                className="secondary" 
+              <button
+                type="button"
+                className="secondary"
                 onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
               >
                 Remove
               </button>
             </div>
-          ))}
+          )})}
           </div>
         <h4>Bench — Away</h4>
         {sortBenchByHierarchy(benchAway).map((m, i) => {
@@ -3703,6 +3760,63 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
+            console.log('[MatchSetup] Away roster Confirm clicked, validating...')
+
+            // Validate roster before saving
+            const validationErrors = []
+
+            // 1. Check at least 6 non-libero players with numbers
+            const nonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
+            console.log('[MatchSetup] Away non-libero players with numbers:', nonLiberoWithNumbers.length)
+            if (nonLiberoWithNumbers.length < 6) {
+              validationErrors.push(`Need at least 6 players with numbers (not liberos). Currently: ${nonLiberoWithNumbers.length}`)
+            }
+
+            // 2. Check captain is set
+            const hasCaptain = awayRoster.some(p => p.isCaptain)
+            console.log('[MatchSetup] Away has captain:', hasCaptain)
+            if (!hasCaptain) {
+              validationErrors.push('No captain selected')
+            }
+
+            // 3. Check coach is set
+            const hasCoach = benchAway.some(b => b.role === 'Coach' && (b.lastName || b.firstName))
+            console.log('[MatchSetup] Away has coach:', hasCoach)
+            if (!hasCoach) {
+              validationErrors.push('No coach set')
+            }
+
+            // 4. Check for duplicate numbers
+            const numbers = awayRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
+            const duplicateNumbers = numbers.filter((num, idx) => numbers.indexOf(num) !== idx)
+            if (duplicateNumbers.length > 0) {
+              console.log('[MatchSetup] Away duplicate numbers:', duplicateNumbers)
+              validationErrors.push(`Duplicate jersey numbers: ${[...new Set(duplicateNumbers)].join(', ')}`)
+            }
+
+            // 5. Check for invalid numbers (must be 1-99)
+            const invalidNumbers = awayRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
+            if (invalidNumbers.length > 0) {
+              console.log('[MatchSetup] Away invalid numbers:', invalidNumbers.map(p => p.number))
+              validationErrors.push(`Invalid jersey numbers (must be 1-99): ${invalidNumbers.map(p => p.number).join(', ')}`)
+            }
+
+            // 6. Check for players without numbers
+            const noNumbers = awayRoster.filter(p => p.number == null || p.number === '')
+            if (noNumbers.length > 0) {
+              console.log('[MatchSetup] Away players without numbers:', noNumbers.length)
+              validationErrors.push(`${noNumbers.length} player(s) without jersey numbers`)
+            }
+
+            // Show validation errors if any
+            if (validationErrors.length > 0) {
+              console.log('[MatchSetup] Away roster validation errors:', validationErrors)
+              setNoticeModal({ message: `Please fix the following issues:\n\n• ${validationErrors.join('\n• ')}` })
+              return
+            }
+
+            console.log('[MatchSetup] Away roster validation passed, saving...')
+
             // Save away team data to database if matchId exists
             if (matchId && match?.awayTeamId) {
               await db.teams.update(match.awayTeamId, {
@@ -4794,17 +4908,48 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   )
                 }
                 
-                // Check if team names and short names are set before going to coin toss
-                if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
-                  setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+                // Check if all 4 setup cards are ready before going to coin toss
+                const setupIssues = []
+
+                // Check Match Info
+                if (!(date || time || hall || city || league)) {
+                  setupIssues.push('Match Info (date, time, venue, etc.)')
+                }
+
+                // Check Officials - at least 1R and 2R should be set
+                if (!(first1R || first2R)) {
+                  setupIssues.push('Match Officials (1R and 2R referees)')
+                }
+
+                // Check Home Team
+                if (!home || home.trim() === '' || home === 'Home') {
+                  setupIssues.push('Home Team name')
+                } else if (homeRoster.length < 6) {
+                  setupIssues.push('Home Team roster (minimum 6 players)')
+                }
+
+                // Check Away Team
+                if (!away || away.trim() === '' || away === 'Away') {
+                  setupIssues.push('Away Team name')
+                } else if (awayRoster.length < 6) {
+                  setupIssues.push('Away Team roster (minimum 6 players)')
+                }
+
+                // Check short names
+                if (!homeShortName || homeShortName.trim() === '') {
+                  setupIssues.push('Home Team short name')
+                }
+                if (!awayShortName || awayShortName.trim() === '') {
+                  setupIssues.push('Away Team short name')
+                }
+
+                if (setupIssues.length > 0) {
+                  setNoticeModal({
+                    message: `Please complete the following before proceeding to coin toss:\n\n• ${setupIssues.join('\n• ')}`
+                  })
                   return
                 }
 
-                if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
-                  setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
-                  return
-                }
-                
                 // Go to coin toss
                 onOpenCoinToss()
               } else {

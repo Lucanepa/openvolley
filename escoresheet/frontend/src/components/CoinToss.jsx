@@ -173,6 +173,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
   const [deletePlayerModal, setDeletePlayerModal] = useState(null)
   const [noticeModal, setNoticeModal] = useState(null)
   const [openSignature, setOpenSignature] = useState(null)
+  const [birthdateConfirmModal, setBirthdateConfirmModal] = useState(null) // { suspiciousDates: [], onConfirm: fn }
 
   // Signatures
   const [homeCoachSignature, setHomeCoachSignature] = useState(null)
@@ -328,143 +329,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
     setOpenSignature(null)
   }
 
-  async function confirmCoinToss() {
-    // Validation checks (skip for test matches)
-    if (!match?.test) {
-      const validationErrors = []
-
-      // 1. Check team names are set (not default "Home"/"Away" or empty)
-      if (!home || home === 'Home' || home.trim() === '') {
-        validationErrors.push('Home team name is not set')
-      }
-      if (!away || away === 'Away' || away.trim() === '') {
-        validationErrors.push('Away team name is not set')
-      }
-
-      // 2. Check at least 1 referee and 1 scorer with names
-      const ref1 = match?.officials?.find(o => o.role === '1st referee')
-      const scorer = match?.officials?.find(o => o.role === 'scorer')
-      if (!ref1?.lastName || !ref1?.firstName) {
-        validationErrors.push('1st Referee name is not set')
-      }
-      if (!scorer?.lastName || !scorer?.firstName) {
-        validationErrors.push('Scorer name is not set')
-      }
-
-      // 3. Check match info (hall, city, league, date)
-      if (!match?.hall || match.hall.trim() === '') {
-        validationErrors.push('Hall is not set')
-      }
-      if (!match?.city || match.city.trim() === '') {
-        validationErrors.push('City is not set')
-      }
-      if (!match?.league || match.league.trim() === '') {
-        validationErrors.push('League is not set')
-      }
-      if (!match?.scheduledAt) {
-        validationErrors.push('Match date/time is not set')
-      }
-
-      // 4. Check at least 6 non-libero players per team with numbers
-      const homeNonLiberoWithNumbers = homeRoster.filter(p => !p.libero && p.number != null && p.number !== '')
-      const awayNonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
-      if (homeNonLiberoWithNumbers.length < 6) {
-        validationErrors.push(`Home team needs at least 6 players with numbers (not liberos). Currently: ${homeNonLiberoWithNumbers.length}`)
-      }
-      if (awayNonLiberoWithNumbers.length < 6) {
-        validationErrors.push(`Away team needs at least 6 players with numbers (not liberos). Currently: ${awayNonLiberoWithNumbers.length}`)
-      }
-
-      // 5. Check at least 1 coach per team
-      const homeCoach = benchHome.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
-      const awayCoach = benchAway.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
-      if (!homeCoach) {
-        validationErrors.push('Home team coach is not set')
-      }
-      if (!awayCoach) {
-        validationErrors.push('Away team coach is not set')
-      }
-
-      // 6. Check captain is set for each team
-      const homeCaptainPlayer = homeRoster.find(p => p.isCaptain)
-      const awayCaptainPlayer = awayRoster.find(p => p.isCaptain)
-      if (!homeCaptainPlayer) {
-        validationErrors.push('Home team captain is not set')
-      }
-      if (!awayCaptainPlayer) {
-        validationErrors.push('Away team captain is not set')
-      }
-
-      // 7. Check for duplicate jersey numbers
-      const homeNumbers = homeRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
-      const homeDuplicateNumbers = homeNumbers.filter((num, idx) => homeNumbers.indexOf(num) !== idx)
-      if (homeDuplicateNumbers.length > 0) {
-        validationErrors.push(`Home team has duplicate jersey numbers: ${[...new Set(homeDuplicateNumbers)].join(', ')}`)
-      }
-      const awayNumbers = awayRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
-      const awayDuplicateNumbers = awayNumbers.filter((num, idx) => awayNumbers.indexOf(num) !== idx)
-      if (awayDuplicateNumbers.length > 0) {
-        validationErrors.push(`Away team has duplicate jersey numbers: ${[...new Set(awayDuplicateNumbers)].join(', ')}`)
-      }
-
-      // 8. Check for duplicate players (same last name and first name)
-      const homePlayerNames = homeRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
-      const homeDuplicatePlayers = homePlayerNames.filter((name, idx) => name && homePlayerNames.indexOf(name) !== idx)
-      if (homeDuplicatePlayers.length > 0) {
-        validationErrors.push(`Home team has duplicate players: ${[...new Set(homeDuplicatePlayers)].join(', ')}`)
-      }
-      const awayPlayerNames = awayRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
-      const awayDuplicatePlayers = awayPlayerNames.filter((name, idx) => name && awayPlayerNames.indexOf(name) !== idx)
-      if (awayDuplicatePlayers.length > 0) {
-        validationErrors.push(`Away team has duplicate players: ${[...new Set(awayDuplicatePlayers)].join(', ')}`)
-      }
-
-      // 9. Check no birthdate is exactly 01.01.1900 (placeholder/error date)
-      const allRosterPlayers = [...homeRoster, ...awayRoster]
-      const allBenchOfficials = [...benchHome, ...benchAway]
-      const playersWithBadDate = allRosterPlayers.filter(p => p.dob === '01.01.1900' || p.dob === '01/01/1900')
-      const benchWithBadDate = allBenchOfficials.filter(b => b.dob === '01.01.1900' || b.dob === '01/01/1900')
-      if (playersWithBadDate.length > 0 || benchWithBadDate.length > 0) {
-        validationErrors.push('Some players or officials have invalid birthdate (01.01.1900). Please correct these dates.')
-      }
-
-      // Show validation errors if any
-      if (validationErrors.length > 0) {
-        setNoticeModal({ message: validationErrors.join('\n') })
-        return
-      }
-
-      // 10. Check for dates that might be import errors (01.01.yyyy for any year) - ask for confirmation
-      const suspiciousDates = []
-      allRosterPlayers.forEach(p => {
-        if (p.dob && (p.dob.startsWith('01.01.') || p.dob.startsWith('01/01/'))) {
-          suspiciousDates.push(`${p.lastName || ''} ${p.firstName || ''}: ${p.dob}`)
-        }
-      })
-      allBenchOfficials.forEach(b => {
-        if (b.dob && (b.dob.startsWith('01.01.') || b.dob.startsWith('01/01/'))) {
-          suspiciousDates.push(`${b.lastName || ''} ${b.firstName || ''} (${b.role}): ${b.dob}`)
-        }
-      })
-      if (suspiciousDates.length > 0) {
-        const confirmed = window.confirm(
-          `The following people have birthdates on January 1st, which may indicate import errors:\n\n${suspiciousDates.join('\n')}\n\nAre these dates correct?`
-        )
-        if (!confirmed) {
-          return
-        }
-      }
-
-      // Check signatures for official matches
-      if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-        setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
-        return
-      }
-    }
+  // Execute coin toss after all validations pass
+  async function proceedWithCoinToss() {
+    console.log('[CoinToss] proceedWithCoinToss called')
 
     if (!matchId) {
-      console.error('[COIN TOSS] No match ID available')
-      alert('Error: No match ID found')
+      console.error('[CoinToss] No match ID available')
+      setNoticeModal({ message: 'Error: No match ID found. Please try again.' })
       return
     }
 
@@ -650,6 +521,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
 
     // Update match status to 'live'
     await db.matches.update(matchId, { status: 'live' })
+    console.log('[CoinToss] Match status updated to live')
 
     // Update saved signatures
     setSavedSignatures({
@@ -662,8 +534,175 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
     // Small delay to ensure DB commits
     await new Promise(resolve => setTimeout(resolve, 100))
 
+    console.log('[CoinToss] Coin toss complete, navigating to scoreboard')
     // Navigate to scoreboard
     onConfirm(matchId)
+  }
+
+  async function confirmCoinToss() {
+    console.log('[CoinToss] confirmCoinToss called, match:', { id: matchId, test: match?.test })
+
+    // Validation checks (skip for test matches)
+    if (!match?.test) {
+      const validationErrors = []
+
+      // 1. Check team names are set (not default "Home"/"Away" or empty)
+      if (!home || home === 'Home' || home.trim() === '') {
+        validationErrors.push('Home team name is not set')
+      }
+      if (!away || away === 'Away' || away.trim() === '') {
+        validationErrors.push('Away team name is not set')
+      }
+
+      // 2. Check at least 1 referee and 1 scorer with names
+      const ref1 = match?.officials?.find(o => o.role === '1st referee')
+      const scorer = match?.officials?.find(o => o.role === 'scorer')
+      if (!ref1?.lastName || !ref1?.firstName) {
+        validationErrors.push('1st Referee name is not set')
+      }
+      if (!scorer?.lastName || !scorer?.firstName) {
+        validationErrors.push('Scorer name is not set')
+      }
+
+      // 3. Check match info (hall, city, league, date)
+      if (!match?.hall || match.hall.trim() === '') {
+        validationErrors.push('Hall is not set')
+      }
+      if (!match?.city || match.city.trim() === '') {
+        validationErrors.push('City is not set')
+      }
+      if (!match?.league || match.league.trim() === '') {
+        validationErrors.push('League is not set')
+      }
+      if (!match?.scheduledAt) {
+        validationErrors.push('Match date/time is not set')
+      }
+
+      // 4. Check at least 6 non-libero players per team with numbers
+      const homeNonLiberoWithNumbers = homeRoster.filter(p => !p.libero && p.number != null && p.number !== '')
+      const awayNonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
+      if (homeNonLiberoWithNumbers.length < 6) {
+        validationErrors.push(`Home team needs at least 6 players with numbers (not liberos). Currently: ${homeNonLiberoWithNumbers.length}`)
+      }
+      if (awayNonLiberoWithNumbers.length < 6) {
+        validationErrors.push(`Away team needs at least 6 players with numbers (not liberos). Currently: ${awayNonLiberoWithNumbers.length}`)
+      }
+
+      // 5. Check at least 1 coach per team
+      const homeCoach = benchHome.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
+      const awayCoach = benchAway.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
+      if (!homeCoach) {
+        validationErrors.push('Home team coach is not set')
+      }
+      if (!awayCoach) {
+        validationErrors.push('Away team coach is not set')
+      }
+
+      // 6. Check captain is set for each team
+      const homeCaptainPlayer = homeRoster.find(p => p.isCaptain)
+      const awayCaptainPlayer = awayRoster.find(p => p.isCaptain)
+      if (!homeCaptainPlayer) {
+        validationErrors.push('Home team captain is not set')
+      }
+      if (!awayCaptainPlayer) {
+        validationErrors.push('Away team captain is not set')
+      }
+
+      // 7. Check for duplicate jersey numbers
+      const homeNumbers = homeRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
+      const homeDuplicateNumbers = homeNumbers.filter((num, idx) => homeNumbers.indexOf(num) !== idx)
+      if (homeDuplicateNumbers.length > 0) {
+        validationErrors.push(`Home team has duplicate jersey numbers: ${[...new Set(homeDuplicateNumbers)].join(', ')}`)
+      }
+      const awayNumbers = awayRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
+      const awayDuplicateNumbers = awayNumbers.filter((num, idx) => awayNumbers.indexOf(num) !== idx)
+      if (awayDuplicateNumbers.length > 0) {
+        validationErrors.push(`Away team has duplicate jersey numbers: ${[...new Set(awayDuplicateNumbers)].join(', ')}`)
+      }
+
+      // 8. Check for duplicate players (same last name and first name)
+      const homePlayerNames = homeRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
+      const homeDuplicatePlayers = homePlayerNames.filter((name, idx) => name && homePlayerNames.indexOf(name) !== idx)
+      if (homeDuplicatePlayers.length > 0) {
+        validationErrors.push(`Home team has duplicate players: ${[...new Set(homeDuplicatePlayers)].join(', ')}`)
+      }
+      const awayPlayerNames = awayRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
+      const awayDuplicatePlayers = awayPlayerNames.filter((name, idx) => name && awayPlayerNames.indexOf(name) !== idx)
+      if (awayDuplicatePlayers.length > 0) {
+        validationErrors.push(`Away team has duplicate players: ${[...new Set(awayDuplicatePlayers)].join(', ')}`)
+      }
+
+      // 9. Check no birthdate is exactly 01.01.1900 (placeholder/error date)
+      const allRosterPlayers = [...homeRoster, ...awayRoster]
+      const allBenchOfficials = [...benchHome, ...benchAway]
+      const playersWithBadDate = allRosterPlayers.filter(p => p.dob === '01.01.1900' || p.dob === '01/01/1900')
+      const benchWithBadDate = allBenchOfficials.filter(b => b.dob === '01.01.1900' || b.dob === '01/01/1900')
+      if (playersWithBadDate.length > 0 || benchWithBadDate.length > 0) {
+        validationErrors.push('Some players or officials have invalid birthdate (01.01.1900). Please correct these dates.')
+      }
+
+      // 10. Check for invalid player numbers (must be 1-99)
+      const homeInvalidNumbers = homeRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
+      const awayInvalidNumbers = awayRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
+      if (homeInvalidNumbers.length > 0) {
+        validationErrors.push(`Home team has invalid jersey numbers (must be 1-99): ${homeInvalidNumbers.map(p => p.number).join(', ')}`)
+      }
+      if (awayInvalidNumbers.length > 0) {
+        validationErrors.push(`Away team has invalid jersey numbers (must be 1-99): ${awayInvalidNumbers.map(p => p.number).join(', ')}`)
+      }
+
+      // 11. Check for players without numbers
+      const homeNoNumbers = homeRoster.filter(p => p.number == null || p.number === '')
+      const awayNoNumbers = awayRoster.filter(p => p.number == null || p.number === '')
+      if (homeNoNumbers.length > 0) {
+        validationErrors.push(`Home team has ${homeNoNumbers.length} player(s) without jersey numbers`)
+      }
+      if (awayNoNumbers.length > 0) {
+        validationErrors.push(`Away team has ${awayNoNumbers.length} player(s) without jersey numbers`)
+      }
+
+      // Show validation errors if any
+      if (validationErrors.length > 0) {
+        console.log('[CoinToss] Validation errors:', validationErrors)
+        setNoticeModal({ message: validationErrors.join('\n') })
+        return
+      }
+      console.log('[CoinToss] All validations passed')
+
+      // 12. Check for dates that might be import errors (01.01.yyyy for any year) - ask for confirmation
+      const suspiciousDates = []
+      allRosterPlayers.forEach(p => {
+        if (p.dob && (p.dob.startsWith('01.01.') || p.dob.startsWith('01/01/'))) {
+          suspiciousDates.push(`${p.lastName || ''} ${p.firstName || ''}: ${p.dob}`)
+        }
+      })
+      allBenchOfficials.forEach(b => {
+        if (b.dob && (b.dob.startsWith('01.01.') || b.dob.startsWith('01/01/'))) {
+          suspiciousDates.push(`${b.lastName || ''} ${b.firstName || ''} (${b.role}): ${b.dob}`)
+        }
+      })
+      if (suspiciousDates.length > 0) {
+        // Show modal and wait for user confirmation
+        setBirthdateConfirmModal({
+          suspiciousDates,
+          onConfirm: () => {
+            setBirthdateConfirmModal(null)
+            // Continue with coin toss after confirmation
+            proceedWithCoinToss()
+          }
+        })
+        return
+      }
+
+      // Check signatures for official matches
+      if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
+        setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
+        return
+      }
+    }
+
+    // All validations passed, proceed
+    proceedWithCoinToss()
   }
 
   async function handleReturnToMatch() {
@@ -756,9 +795,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
 
   return (
     <div className="setup" style={{
-      maxWidth: isCompact ? '900px' : '1200px',
+      width: '100vw',
+      maxWidth: '100vw',
       alignSelf: 'flex-start',
-      marginTop: '10px'
+      marginTop: '10px',
+      padding: isCompact ? '0 12px' : '0 24px',
+      boxSizing: 'border-box'
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isCompact ? 16 : 24 }}>
         <button className="secondary" onClick={onBack}>← Back</button>
@@ -1442,7 +1484,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)', whiteSpace: 'pre-line' }}>
               {noticeModal.message}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -1455,6 +1497,60 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                 }}
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Birthdate Confirmation Modal */}
+      {birthdateConfirmModal && (
+        <Modal
+          title="Confirm Birthdates"
+          open={true}
+          onClose={() => setBirthdateConfirmModal(null)}
+          width={500}
+          hideCloseButton={true}
+        >
+          <div style={{ padding: '24px' }}>
+            <p style={{ marginBottom: '16px', fontSize: '14px', color: '#eab308' }}>
+              The following people have birthdates on January 1st, which may indicate import errors:
+            </p>
+            <div style={{
+              background: 'rgba(234, 179, 8, 0.1)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '20px',
+              maxHeight: '200px',
+              overflowY: 'auto'
+            }}>
+              {birthdateConfirmModal.suspiciousDates.map((date, idx) => (
+                <div key={idx} style={{ fontSize: '13px', color: 'var(--text)', padding: '4px 0' }}>
+                  {date}
+                </div>
+              ))}
+            </div>
+            <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--text)' }}>
+              Are these dates correct?
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => setBirthdateConfirmModal(null)}
+                className="secondary"
+                style={{ padding: '12px 24px', fontSize: '14px' }}
+              >
+                No, go back
+              </button>
+              <button
+                onClick={birthdateConfirmModal.onConfirm}
+                style={{
+                  padding: '12px 24px', fontSize: '14px', fontWeight: 600,
+                  background: 'var(--accent)', color: '#000',
+                  border: 'none', borderRadius: '8px', cursor: 'pointer'
+                }}
+              >
+                Yes, continue
               </button>
             </div>
           </div>

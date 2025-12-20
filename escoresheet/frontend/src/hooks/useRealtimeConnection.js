@@ -49,6 +49,20 @@ export function useRealtimeConnection({
   const supabaseChannelRef = useRef(null)
   const wsUnsubscribeRef = useRef(null)
   const isMountedRef = useRef(true)
+  const isConnectingRef = useRef(false)
+
+  // Store callbacks in refs to avoid dependency changes
+  const onDataRef = useRef(onData)
+  const onActionRef = useRef(onAction)
+
+  // Update refs when callbacks change (without triggering re-renders)
+  useEffect(() => {
+    onDataRef.current = onData
+  }, [onData])
+
+  useEffect(() => {
+    onActionRef.current = onAction
+  }, [onAction])
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -104,8 +118,8 @@ export function useRealtimeConnection({
 
             // Fetch fresh data when events change
             getMatchData(matchId).then(result => {
-              if (result.success && onData) {
-                onData(result)
+              if (result.success && onDataRef.current) {
+                onDataRef.current(result)
               }
             }).catch(err => {
               console.error('[RealtimeConnection] Error fetching data after event:', err)
@@ -127,8 +141,8 @@ export function useRealtimeConnection({
 
             // Fetch fresh data when sets change
             getMatchData(matchId).then(result => {
-              if (result.success && onData) {
-                onData(result)
+              if (result.success && onDataRef.current) {
+                onDataRef.current(result)
               }
             }).catch(err => {
               console.error('[RealtimeConnection] Error fetching data after set update:', err)
@@ -150,8 +164,8 @@ export function useRealtimeConnection({
 
             // Fetch fresh data when match changes
             getMatchData(matchId).then(result => {
-              if (result.success && onData) {
-                onData(result)
+              if (result.success && onDataRef.current) {
+                onDataRef.current(result)
               }
             }).catch(err => {
               console.error('[RealtimeConnection] Error fetching data after match update:', err)
@@ -180,7 +194,7 @@ export function useRealtimeConnection({
       setError(err.message)
       return false
     }
-  }, [matchId, onData])
+  }, [matchId]) // Removed onData from deps - using ref instead
 
   // Connect to WebSocket
   const connectWebSocket = useCallback(() => {
@@ -196,12 +210,12 @@ export function useRealtimeConnection({
 
         // Check if this is an action
         if (data && data._action) {
-          if (onAction) {
-            onAction(data._action, data._actionData)
+          if (onActionRef.current) {
+            onActionRef.current(data._action, data._actionData)
           }
         } else if (data && data.match) {
-          if (onData) {
-            onData({ success: true, ...data })
+          if (onDataRef.current) {
+            onDataRef.current({ success: true, ...data })
           }
         }
       })
@@ -217,42 +231,7 @@ export function useRealtimeConnection({
       setError(err.message)
       return false
     }
-  }, [matchId, onData, onAction])
-
-  // Main connection logic
-  const connect = useCallback(async () => {
-    if (!enabled || !matchId) return
-
-    cleanup()
-
-    const type = connectionType
-
-    if (type === CONNECTION_TYPES.SUPABASE) {
-      // Force Supabase only
-      const success = await connectSupabase()
-      if (!success) {
-        setStatus(CONNECTION_STATUS.ERROR)
-      }
-    } else if (type === CONNECTION_TYPES.WEBSOCKET) {
-      // Force WebSocket only
-      const success = connectWebSocket()
-      if (!success) {
-        setStatus(CONNECTION_STATUS.ERROR)
-      }
-    } else {
-      // Auto mode: Try Supabase first, fall back to WebSocket
-      const supabaseSuccess = await connectSupabase()
-      if (!supabaseSuccess) {
-        console.log('[RealtimeConnection] Supabase failed, falling back to WebSocket')
-        const wsSuccess = connectWebSocket()
-        if (wsSuccess) {
-          setStatus(CONNECTION_STATUS.FALLBACK)
-        } else {
-          setStatus(CONNECTION_STATUS.ERROR)
-        }
-      }
-    }
-  }, [enabled, matchId, connectionType, cleanup, connectSupabase, connectWebSocket])
+  }, [matchId]) // Removed onData, onAction from deps - using refs instead
 
   // Switch connection type
   const switchConnection = useCallback((newType) => {
@@ -264,11 +243,42 @@ export function useRealtimeConnection({
     } catch (e) {}
   }, [])
 
-  // Force reconnect
+  // Force reconnect - will trigger effect by changing a state
   const reconnect = useCallback(() => {
     console.log('[RealtimeConnection] Force reconnecting...')
-    connect()
-  }, [connect])
+    // Reset connecting flag and trigger reconnection
+    isConnectingRef.current = false
+    cleanup()
+    // Small delay then trigger by toggling enabled state would be complex
+    // Instead, just call the connect functions directly
+    if (!matchId) return
+
+    const doReconnect = async () => {
+      isConnectingRef.current = true
+      try {
+        if (connectionType === CONNECTION_TYPES.SUPABASE) {
+          const success = await connectSupabase()
+          if (!success) setStatus(CONNECTION_STATUS.ERROR)
+        } else if (connectionType === CONNECTION_TYPES.WEBSOCKET) {
+          const success = connectWebSocket()
+          if (!success) setStatus(CONNECTION_STATUS.ERROR)
+        } else {
+          const supabaseSuccess = await connectSupabase()
+          if (!supabaseSuccess) {
+            const wsSuccess = connectWebSocket()
+            if (wsSuccess) {
+              setStatus(CONNECTION_STATUS.FALLBACK)
+            } else {
+              setStatus(CONNECTION_STATUS.ERROR)
+            }
+          }
+        }
+      } finally {
+        isConnectingRef.current = false
+      }
+    }
+    doReconnect()
+  }, [matchId, connectionType, cleanup, connectSupabase, connectWebSocket])
 
   // Load saved preference on mount
   useEffect(() => {
@@ -280,16 +290,58 @@ export function useRealtimeConnection({
     } catch (e) {}
   }, [])
 
-  // Connect when dependencies change
+  // Connect when key dependencies change (not callback refs)
   useEffect(() => {
+    // Prevent multiple simultaneous connections
+    if (isConnectingRef.current) return
+
     isMountedRef.current = true
-    connect()
+
+    const doConnect = async () => {
+      if (!enabled || !matchId) return
+
+      isConnectingRef.current = true
+      cleanup()
+
+      const type = connectionType
+
+      try {
+        if (type === CONNECTION_TYPES.SUPABASE) {
+          const success = await connectSupabase()
+          if (!success) {
+            setStatus(CONNECTION_STATUS.ERROR)
+          }
+        } else if (type === CONNECTION_TYPES.WEBSOCKET) {
+          const success = connectWebSocket()
+          if (!success) {
+            setStatus(CONNECTION_STATUS.ERROR)
+          }
+        } else {
+          // Auto mode: Try Supabase first, fall back to WebSocket
+          const supabaseSuccess = await connectSupabase()
+          if (!supabaseSuccess) {
+            console.log('[RealtimeConnection] Supabase failed, falling back to WebSocket')
+            const wsSuccess = connectWebSocket()
+            if (wsSuccess) {
+              setStatus(CONNECTION_STATUS.FALLBACK)
+            } else {
+              setStatus(CONNECTION_STATUS.ERROR)
+            }
+          }
+        }
+      } finally {
+        isConnectingRef.current = false
+      }
+    }
+
+    doConnect()
 
     return () => {
       isMountedRef.current = false
+      isConnectingRef.current = false
       cleanup()
     }
-  }, [connect, cleanup])
+  }, [matchId, enabled, connectionType]) // Only core dependencies, not callbacks
 
   return {
     // State
