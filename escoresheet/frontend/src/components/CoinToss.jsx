@@ -795,11 +795,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
 
   return (
     <div className="setup" style={{
-      width: '100vw',
+      width: '95vw',
       maxWidth: '100vw',
       alignSelf: 'flex-start',
       marginTop: '10px',
-      padding: isCompact ? '0 12px' : '0 24px',
+      padding: isCompact ? '0 12px' : '5px 24px',
       boxSizing: 'border-box'
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isCompact ? 16 : 24 }}>
@@ -815,9 +815,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, marginBottom: sizes.marginBottom, alignItems: 'start' }}>
         {/* Team A */}
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>Team A</h1>
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', gap: 8, minHeight: isCompact ? '40px' : '56px' }}>
+          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
             <button
               type="button"
               style={{
@@ -825,8 +825,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                 color: isBrightColor(teamAInfo.color) ? '#000' : '#fff',
                 flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                 fontWeight: 600, border: 'none', borderRadius: '8px',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                minWidth: 0
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
               }}
               title={teamAInfo.name}
             >
@@ -846,13 +845,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
               onClick={() => setRosterModal('teamA')}
               style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
             >
-              Roster ({teamAInfo.roster.length})
+              Show Roster ({teamAInfo.roster.length})
             </button>
           </div>
 
           {/* Team A Signatures */}
           <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '140px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '200px' }}>
               <button
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 className={`sign ${teamACoachSig && teamACaptainSig ? 'signed' : ''}`}
@@ -888,8 +887,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         </div>
 
         {/* Middle buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 8 : 14, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
-          <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '41px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 12 : 35, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
+          <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '52px' }}>
             <button className="secondary" onClick={switchTeams} style={{ padding: sizes.switchButtonPadding, fontSize: sizes.switchButtonFont, whiteSpace: 'nowrap' }}>
               ⇄ Teams
             </button>
@@ -902,9 +901,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         </div>
 
         {/* Team B */}
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>Team B</h1>
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', gap: 8, minHeight: isCompact ? '40px' : '56px' }}>
+          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
             <button
               type="button"
               style={{

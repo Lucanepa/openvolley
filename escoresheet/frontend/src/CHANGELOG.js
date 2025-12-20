@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.1',
+    date: '20.12.25',
+    changes: [
+      'Update MatchSetup component with new team name input fields and short name generation'
+    ]
+  },
+  {
     version: '0.11.10',
     date: '20.12.25',
     changes: [
