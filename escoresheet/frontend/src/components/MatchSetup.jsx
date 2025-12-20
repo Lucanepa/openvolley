@@ -52,6 +52,77 @@ function formatDateToISO(dateStr) {
   return dateStr
 }
 
+// Helper to safely parse a date and extract components for input fields
+function safeParseScheduledAt(scheduledAt) {
+  if (!scheduledAt) return { date: '', time: '' }
+  try {
+    const dateObj = new Date(scheduledAt)
+    if (isNaN(dateObj.getTime())) return { date: '', time: '' }
+    const date = dateObj.toISOString().split('T')[0]
+    const hours = String(dateObj.getHours()).padStart(2, '0')
+    const minutes = String(dateObj.getMinutes()).padStart(2, '0')
+    return { date, time: `${hours}:${minutes}` }
+  } catch {
+    return { date: '', time: '' }
+  }
+}
+
+// Helper to validate and create an ISO string from date and time inputs
+// Throws an error if the date/time is invalid (unless allowEmpty is true and both are empty)
+function createScheduledAt(date, time, options = {}) {
+  const { allowEmpty = false } = options
+
+  // If no date/time and allowEmpty, return null
+  if (!date && !time) {
+    if (allowEmpty) return null
+    throw new Error('Date is required')
+  }
+
+  // Date is required if time is set
+  if (!date && time) {
+    throw new Error('Date is required when time is set')
+  }
+
+  // Validate date format (YYYY-MM-DD)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`Invalid date format: "${date}". Expected YYYY-MM-DD.`)
+  }
+
+  // Validate date components are reasonable
+  const [year, month, day] = date.split('-').map(Number)
+  if (year < 1900 || year > 2100) {
+    throw new Error(`Invalid year: ${year}. Must be between 1900 and 2100.`)
+  }
+  if (month < 1 || month > 12) {
+    throw new Error(`Invalid month: ${month}. Must be between 1 and 12.`)
+  }
+  if (day < 1 || day > 31) {
+    throw new Error(`Invalid day: ${day}. Must be between 1 and 31.`)
+  }
+
+  // Validate time format (HH:MM) if provided
+  const timeToUse = time || '00:00'
+  if (!/^\d{2}:\d{2}$/.test(timeToUse)) {
+    throw new Error(`Invalid time format: "${time}". Expected HH:MM.`)
+  }
+
+  // Validate time components
+  const [hours, minutes] = timeToUse.split(':').map(Number)
+  if (hours < 0 || hours > 23) {
+    throw new Error(`Invalid hour: ${hours}. Must be between 0 and 23.`)
+  }
+  if (minutes < 0 || minutes > 59) {
+    throw new Error(`Invalid minutes: ${minutes}. Must be between 0 and 59.`)
+  }
+
+  const dateObj = new Date(`${date}T${timeToUse}:00`)
+  if (isNaN(dateObj.getTime())) {
+    throw new Error(`Invalid date/time combination: ${date} ${timeToUse}`)
+  }
+
+  return dateObj.toISOString()
+}
+
 // OfficialCard component - defined outside to prevent focus loss on re-render
 const OfficialCard = memo(function OfficialCard({
   title,
@@ -575,13 +646,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           }
         }, 100)
         
-        // Load match info
+        // Load match info - use safe parser to handle invalid dates
         if (match.scheduledAt) {
-          const scheduledDate = new Date(match.scheduledAt)
-          setDate(scheduledDate.toISOString().split('T')[0])
-          const hours = String(scheduledDate.getHours()).padStart(2, '0')
-          const minutes = String(scheduledDate.getMinutes()).padStart(2, '0')
-          setTime(`${hours}:${minutes}`)
+          const parsed = safeParseScheduledAt(match.scheduledAt)
+          if (parsed.date) setDate(parsed.date)
+          if (parsed.time) setTime(parsed.time)
         }
         if (match.hall) setHall(match.hall)
         if (match.city) setCity(match.city)
@@ -1043,11 +1112,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       
       // Also update the actual match record if matchId exists
       if (matchId) {
-        const scheduledAt = (() => {
-          if (!date && !time) return match?.scheduledAt || new Date().toISOString()
-          const iso = new Date(`${date}T${time || '00:00'}:00`).toISOString()
-          return iso
-        })()
+        let scheduledAt = match?.scheduledAt // Default to existing value
+
+        // Only validate date/time if at least one is set
+        if (date || time) {
+          try {
+            scheduledAt = createScheduledAt(date, time, { allowEmpty: true })
+          } catch (err) {
+            // For silent saves, just log and use existing value
+            // For explicit saves, show error to user
+            if (!silent) {
+              console.error('[MatchSetup] Date/time validation error:', err.message)
+              setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+              return // Don't save with invalid data
+            }
+            console.warn('[MatchSetup] Auto-save skipping invalid date/time:', err.message)
+          }
+        }
         
         await db.matches.update(matchId, {
           hall,
@@ -1266,6 +1347,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   }
 
   async function createMatch() {
+    // Validate date/time first
+    let scheduledAt
+    try {
+      scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
+    } catch (err) {
+      setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+      return
+    }
+
     // Validate at least one captain per team
     const homeHasCaptain = homeRoster.some(p => p.isCaptain)
     const awayHasCaptain = awayRoster.some(p => p.isCaptain)
@@ -1356,12 +1446,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         ts: new Date().toISOString(),
         status: 'queued'
       })
-
-    const scheduledAt = (() => {
-      if (!date && !time) return new Date().toISOString()
-      const iso = new Date(`${date}T${time || '00:00'}:00`).toISOString()
-      return iso
-    })()
 
     // Generate 6-digit PIN code for referee authentication
     const generatePinCode = (existingPins = []) => {
@@ -4825,13 +4909,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               const hasNoData = sets.length === 0 && !match.homeCoachSignature && !match.homeCaptainSignature && !match.awayCoachSignature && !match.awayCaptainSignature
               
               if (hasNoData) {
+                // Validate date/time before going to coin toss
+                let scheduledAt
+                try {
+                  scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
+                } catch (err) {
+                  setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+                  return
+                }
+
                 // Update match with current data before going to coin toss
-                const scheduledAt = (() => {
-                  if (!date && !time) return new Date().toISOString()
-                  const iso = new Date(`${date}T${time || '00:00'}:00`).toISOString()
-                  return iso
-                })()
-                
                 await db.matches.update(matchId, {
                   hall,
                   city,
