@@ -3,6 +3,15 @@
 
 export const changelog = [
   {
+    version: '0.12.6',
+    date: '20.12.25',
+    changes: [
+      'Standardize DOB format for Supabase sync - convert DD.MM.YYYY to YYYY-MM-DD for date columns',
+      'Add team_officials sync for bench staff (Coach, AC1, AC2, Physio)',
+      'Add missing DOB field to away team players sync'
+    ]
+  },
+  {
     version: '0.12.5',
     date: '20.12.25',
     changes: [

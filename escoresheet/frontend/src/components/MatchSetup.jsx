@@ -280,6 +280,26 @@ function generateShortName(name) {
   return cleaned.substring(0, 4)
 }
 
+// Helper to convert DOB from DD.MM.YYYY to YYYY-MM-DD for Supabase date columns
+function formatDobForSync(dob) {
+  if (!dob) return null
+  // Already in ISO format (YYYY-MM-DD)?
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) return dob
+  // DD.MM.YYYY format?
+  const match = dob.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)
+  if (match) {
+    const [, day, month, year] = match
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  // DD/MM/YYYY format?
+  const match2 = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (match2) {
+    const [, day, month, year] = match2
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  return null // Unknown format, don't sync
+}
+
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const [home, setHome] = useState('Home')
   // Match created popup state
@@ -1504,18 +1524,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           benchStaff: benchHome,
           createdAt: new Date().toISOString()
         })
-        // Queue team for sync
-        await db.sync_queue.add({
-          resource: 'team',
-          action: 'insert',
-          payload: {
-            external_id: String(homeTeamId),
-            name: home.trim(),
-            color: homeColor
-          },
-          status: 'queued',
-          created_at: new Date().toISOString()
-        })
       } else {
         // Update existing team
         await db.teams.update(homeTeamId, {
@@ -1524,6 +1532,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           benchStaff: benchHome
         })
       }
+      // Always queue home team for sync (upsert)
+      await db.sync_queue.add({
+        resource: 'team',
+        action: 'insert',
+        payload: {
+          external_id: String(homeTeamId),
+          name: home.trim(),
+          short_name: homeShortName || generateShortName(home.trim())
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
 
       if (!awayTeamId) {
         awayTeamId = await db.teams.add({
@@ -1531,18 +1551,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           color: awayColor,
           benchStaff: benchAway,
           createdAt: new Date().toISOString()
-        })
-        // Queue team for sync
-        await db.sync_queue.add({
-          resource: 'team',
-          action: 'insert',
-          payload: {
-            external_id: String(awayTeamId),
-            name: away.trim(),
-            color: awayColor
-          },
-          status: 'queued',
-          created_at: new Date().toISOString()
         })
       } else {
         // Update existing team
@@ -1552,6 +1560,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           benchStaff: benchAway
         })
       }
+      // Always queue away team for sync (upsert)
+      await db.sync_queue.add({
+        resource: 'team',
+        action: 'insert',
+        payload: {
+          external_id: String(awayTeamId),
+          name: away.trim(),
+          short_name: awayShortName || generateShortName(away.trim())
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
 
       // Build scheduledAt if date is set
       let scheduledAt = null
@@ -2817,7 +2837,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
         )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-          <button onClick={() => setCurrentView('main')}>Confirm</button>
+          <button
+            onClick={confirmMatchInfo}
+            disabled={!canConfirmMatchInfo}
+            title={!canConfirmMatchInfo ? 'Fill in Home and Away team names to confirm' : ''}
+          >
+            Confirm
+          </button>
         </div>
       </MatchSetupInfoView>
     )
@@ -2953,6 +2979,94 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
                 ]
               })
+
+              // Sync referees to Supabase
+              if (ref1First && ref1Last) {
+                await db.sync_queue.add({
+                  resource: 'referee',
+                  action: 'insert',
+                  payload: {
+                    seed_key: `${ref1First.toLowerCase()}_${ref1Last.toLowerCase()}`,
+                    first_name: ref1First,
+                    last_name: ref1Last,
+                    country: ref1Country || null,
+                    dob: formatDobForSync(ref1Dob)
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
+              }
+              if (ref2First && ref2Last) {
+                await db.sync_queue.add({
+                  resource: 'referee',
+                  action: 'insert',
+                  payload: {
+                    seed_key: `${ref2First.toLowerCase()}_${ref2Last.toLowerCase()}`,
+                    first_name: ref2First,
+                    last_name: ref2Last,
+                    country: ref2Country || null,
+                    dob: formatDobForSync(ref2Dob)
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
+              }
+
+              // Sync scorers to Supabase
+              if (scorerFirst && scorerLast) {
+                await db.sync_queue.add({
+                  resource: 'scorer',
+                  action: 'insert',
+                  payload: {
+                    seed_key: `${scorerFirst.toLowerCase()}_${scorerLast.toLowerCase()}`,
+                    first_name: scorerFirst,
+                    last_name: scorerLast,
+                    country: scorerCountry || null,
+                    dob: formatDobForSync(scorerDob)
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
+              }
+              if (asstFirst && asstLast) {
+                await db.sync_queue.add({
+                  resource: 'scorer',
+                  action: 'insert',
+                  payload: {
+                    seed_key: `${asstFirst.toLowerCase()}_${asstLast.toLowerCase()}`,
+                    first_name: asstFirst,
+                    last_name: asstLast,
+                    country: asstCountry || null,
+                    dob: formatDobForSync(asstDob)
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
+              }
+
+              setNoticeModal({ message: 'Officials saved! Syncing to database...', type: 'success', syncing: true })
+
+              // Poll to check when sync completes
+              const checkSyncStatus = async () => {
+                let attempts = 0
+                const maxAttempts = 20
+                const interval = setInterval(async () => {
+                  attempts++
+                  try {
+                    const queued = await db.sync_queue.where('status').equals('queued').count()
+                    if (queued === 0) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: 'Officials synced to database!', type: 'success' })
+                    } else if (attempts >= maxAttempts) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: 'Officials saved locally (sync pending)', type: 'success' })
+                    }
+                  } catch (err) {
+                    clearInterval(interval)
+                  }
+                }, 500)
+              }
+              checkSyncStatus()
             }
             setCurrentView('main')
           }}>Confirm</button>
@@ -3720,6 +3834,86 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               }
               
               await db.matches.update(matchId, updateData)
+
+              // Sync team to Supabase
+              await db.sync_queue.add({
+                resource: 'team',
+                action: 'insert',
+                payload: {
+                  external_id: String(match.homeTeamId),
+                  name: home?.trim() || '',
+                  short_name: homeShortName || generateShortName(home)
+                },
+                ts: new Date().toISOString(),
+                status: 'queued'
+              })
+
+              // Sync players to Supabase
+              for (const player of homeRoster) {
+                if (player.firstName || player.lastName) {
+                  await db.sync_queue.add({
+                    resource: 'player',
+                    action: 'insert',
+                    payload: {
+                      external_id: `${match.homeTeamId}_${player.number || 'bench'}_${player.firstName}_${player.lastName}`,
+                      team_id: String(match.homeTeamId),
+                      number: player.number || null,
+                      first_name: player.firstName || '',
+                      last_name: player.lastName || '',
+                      dob: formatDobForSync(player.dob),
+                      is_captain: !!player.isCaptain,
+                      libero: player.libero || null
+                    },
+                    ts: new Date().toISOString(),
+                    status: 'queued'
+                  })
+                }
+              }
+
+              // Sync team officials (bench staff) to Supabase
+              for (const official of benchHome) {
+                if (official.firstName || official.lastName) {
+                  await db.sync_queue.add({
+                    resource: 'team_official',
+                    action: 'insert',
+                    payload: {
+                      external_id: `${match.homeTeamId}_${official.role}_${official.firstName}_${official.lastName}`,
+                      team_id: String(match.homeTeamId),
+                      role: official.role || '',
+                      first_name: official.firstName || '',
+                      last_name: official.lastName || '',
+                      country: official.country || null,
+                      dob: formatDobForSync(official.dob)
+                    },
+                    ts: new Date().toISOString(),
+                    status: 'queued'
+                  })
+                }
+              }
+
+              setNoticeModal({ message: 'Home team saved! Syncing to database...', type: 'success', syncing: true })
+
+              // Poll to check when sync completes
+              const checkSyncStatus = async () => {
+                let attempts = 0
+                const maxAttempts = 20
+                const interval = setInterval(async () => {
+                  attempts++
+                  try {
+                    const queued = await db.sync_queue.where('status').equals('queued').count()
+                    if (queued === 0) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: 'Home team synced to database!', type: 'success' })
+                    } else if (attempts >= maxAttempts) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: 'Home team saved locally (sync pending)', type: 'success' })
+                    }
+                  } catch (err) {
+                    clearInterval(interval)
+                  }
+                }, 500)
+              }
+              checkSyncStatus()
             }
             setCurrentView('main')
           }}>Confirm</button>
@@ -4539,6 +4733,86 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               }
               
               await db.matches.update(matchId, updateData)
+
+              // Sync team to Supabase
+              await db.sync_queue.add({
+                resource: 'team',
+                action: 'insert',
+                payload: {
+                  external_id: String(match.awayTeamId),
+                  name: away?.trim() || '',
+                  short_name: awayShortName || generateShortName(away)
+                },
+                ts: new Date().toISOString(),
+                status: 'queued'
+              })
+
+              // Sync players to Supabase
+              for (const player of awayRoster) {
+                if (player.firstName || player.lastName) {
+                  await db.sync_queue.add({
+                    resource: 'player',
+                    action: 'insert',
+                    payload: {
+                      external_id: `${match.awayTeamId}_${player.number || 'bench'}_${player.firstName}_${player.lastName}`,
+                      team_id: String(match.awayTeamId),
+                      number: player.number || null,
+                      first_name: player.firstName || '',
+                      last_name: player.lastName || '',
+                      dob: formatDobForSync(player.dob),
+                      is_captain: !!player.isCaptain,
+                      libero: player.libero || null
+                    },
+                    ts: new Date().toISOString(),
+                    status: 'queued'
+                  })
+                }
+              }
+
+              // Sync team officials (bench staff) to Supabase
+              for (const official of benchAway) {
+                if (official.firstName || official.lastName) {
+                  await db.sync_queue.add({
+                    resource: 'team_official',
+                    action: 'insert',
+                    payload: {
+                      external_id: `${match.awayTeamId}_${official.role}_${official.firstName}_${official.lastName}`,
+                      team_id: String(match.awayTeamId),
+                      role: official.role || '',
+                      first_name: official.firstName || '',
+                      last_name: official.lastName || '',
+                      country: official.country || null,
+                      dob: formatDobForSync(official.dob)
+                    },
+                    ts: new Date().toISOString(),
+                    status: 'queued'
+                  })
+                }
+              }
+
+              setNoticeModal({ message: 'Away team saved! Syncing to database...', type: 'success', syncing: true })
+
+              // Poll to check when sync completes
+              const checkSyncStatus = async () => {
+                let attempts = 0
+                const maxAttempts = 20
+                const interval = setInterval(async () => {
+                  attempts++
+                  try {
+                    const queued = await db.sync_queue.where('status').equals('queued').count()
+                    if (queued === 0) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: 'Away team synced to database!', type: 'success' })
+                    } else if (attempts >= maxAttempts) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: 'Away team saved locally (sync pending)', type: 'success' })
+                    }
+                  } catch (err) {
+                    clearInterval(interval)
+                  }
+                }, 500)
+              }
+              checkSyncStatus()
             }
             setCurrentView('main')
           }}>Confirm</button>
@@ -5015,7 +5289,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 disabled={!canConfirmMatchInfo}
                 title={!canConfirmMatchInfo ? 'Fill in Home and Away team names to confirm' : ''}
               >
-                Confirm
+                Create Match
               </button>
             )}
           </div>
@@ -5164,7 +5438,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             <button className="secondary" onClick={() => setCurrentView('home')}>Edit Roster</button>
           </div>
         </div>
-        
+
         <div className="card" style={{ order: 2 }}>
           {/* Row 1: Status + Team Name */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
