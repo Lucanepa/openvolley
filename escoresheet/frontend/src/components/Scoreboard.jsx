@@ -690,13 +690,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       // Try to clear immediately if WebSocket is open
       clearAllMatches()
-      
+
       // Also set up a connection to clear when WebSocket opens
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const hostname = window.location.hostname
-      const wsPort = 8080
-      const wsUrl = `${protocol}://${hostname}:${wsPort}`
-      
+      // Use configured backend URL if available (Railway/cloud)
+      const backendUrl = import.meta.env.VITE_BACKEND_URL
+      let wsUrl
+      if (backendUrl) {
+        const url = new URL(backendUrl)
+        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        wsUrl = `${protocol}//${url.host}`
+      } else {
+        // Fallback to local WebSocket server
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const hostname = window.location.hostname
+        const wsPort = 8080
+        wsUrl = `${protocol}://${hostname}:${wsPort}`
+      }
+
       const tempWs = new WebSocket(wsUrl)
       tempWs.onopen = () => {
         tempWs.send(JSON.stringify({ type: 'clear-all-matches' }))
@@ -1226,11 +1236,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     } else {
       // Test if WebSocket server is available
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        const wsPort = serverStatus?.wsPort || 8080
-        const wsUrl = `${protocol}://${hostname}:${wsPort}`
-        
+        // Use configured backend URL if available (Railway/cloud)
+        const backendUrlForWs = import.meta.env.VITE_BACKEND_URL
+        let wsUrl
+        if (backendUrlForWs) {
+          const url = new URL(backendUrlForWs)
+          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+          wsUrl = `${protocol}//${url.host}`
+        } else {
+          // Fallback to local WebSocket server
+          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+          const hostname = window.location.hostname
+          const wsPort = serverStatus?.wsPort || 8080
+          wsUrl = `${protocol}://${hostname}:${wsPort}`
+        }
+
         const wsTest = new WebSocket(wsUrl)
         let resolved = false
         
