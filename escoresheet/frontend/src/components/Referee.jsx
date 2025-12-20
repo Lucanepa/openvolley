@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
+import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import favicon from '../favicon.png'
 import { ConnectionManager } from '../utils/connectionManager'
@@ -27,6 +28,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Referee view dropdown state
   const [refViewDropdownOpen, setRefViewDropdownOpen] = useState(false)
+
+  // Connection type state (auto, supabase, websocket)
+  const [connectionType, setConnectionType] = useState(CONNECTION_TYPES.AUTO)
+  const [connectionDropdownOpen, setConnectionDropdownOpen] = useState(false)
 
   // Advanced mode state for reception formations
   const [advancedMode, setAdvancedMode] = useState({ left: false, right: false }) // Per-side advanced mode
@@ -265,112 +270,93 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }
   }, [matchId, updateMatchDataState, isMasterMode])
 
-  // Subscribe to match data updates (skip in master mode)
-  useEffect(() => {
-    if (isMasterMode || !matchId) return
+  // Handle realtime data updates
+  const handleRealtimeData = useCallback((result) => {
+    if (!result || !result.success) return
 
-    let isMounted = true
-
-    // Initial fetch
-    fetchFreshData()
-
-    // Subscribe to WebSocket updates - always replace data, never merge
-    const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
-      if (!isMounted) return
-      
-      // Check if this is an action (timeout, substitution, set_end)
-      if (updatedData && updatedData._action) {
-        const receiveTimestamp = Date.now()
-        const serverTimestamp = updatedData._timestamp || receiveTimestamp
-        const scoreboardTimestamp = updatedData._scoreboardTimestamp || receiveTimestamp
-        const totalLatency = receiveTimestamp - scoreboardTimestamp
-        const serverToRefereeLatency = receiveTimestamp - serverTimestamp
-        
-        const { _action, _actionData } = updatedData
-        console.log(`[Referee] 📥 Received match-action '${_action}' at ${new Date(receiveTimestamp).toISOString()} (${receiveTimestamp}):`, {
-          action: _action,
-          data: _actionData,
-          totalLatency: `${totalLatency}ms (Scoreboard → Referee)`,
-          serverToRefereeLatency: `${serverToRefereeLatency}ms (Server → Referee)`
-        })
-        
-        if (_action === 'timeout') {
-          // Show timeout modal with countdown
-          setTimeoutModal({
-            team: _actionData.team,
-            countdown: _actionData.countdown || 30,
-            started: true
-        })
-        } else if (_action === 'substitution') {
-          // Show substitution modal
-          setSubstitutionModal({
-            team: _actionData.team,
-            teamName: _actionData.teamName,
-            position: _actionData.position,
-            playerOut: _actionData.playerOut,
-            playerIn: _actionData.playerIn,
-            isExceptional: _actionData.isExceptional,
-            timestamp: Date.now()
-          })
-          // Auto-close substitution modal after 5 seconds
-          setTimeout(() => {
-            setSubstitutionModal(null)
-          }, 5000)
-
-          // Add player to recently substituted list for flashing effect
-          setRecentlySubstitutedPlayers(prev => [...prev, { team: _actionData.team, playerNumber: _actionData.playerIn, timestamp: Date.now() }])
-
-          // Clear the flash after 3 seconds
-          if (recentSubFlashTimeoutRef.current) {
-            clearTimeout(recentSubFlashTimeoutRef.current)
-          }
-          recentSubFlashTimeoutRef.current = setTimeout(() => {
-            setRecentlySubstitutedPlayers([])
-          }, 3000)
-        } else if (_action === 'set_end') {
-          // Start between-sets countdown
-          setBetweenSetsCountdown({
-            countdown: _actionData.countdown || 180,
-            started: true,
-            setIndex: _actionData.setIndex,
-            winner: _actionData.winner
-          })
-        }
-        return // Don't process as regular data update
-      }
-      
-      if (updatedData && updatedData.match) {
-        const receiveTimestamp = Date.now()
-        const serverTimestamp = updatedData._timestamp || receiveTimestamp
-        const scoreboardTimestamp = updatedData._scoreboardTimestamp || receiveTimestamp
-        const totalLatency = receiveTimestamp - scoreboardTimestamp
-        const serverToRefereeLatency = receiveTimestamp - serverTimestamp
-        
-        console.log(`[Referee] 📥 Received match-data-update at ${new Date(receiveTimestamp).toISOString()} (${receiveTimestamp}):`, {
-          hasHomeTeam: !!updatedData.homeTeam,
-          hasAwayTeam: !!updatedData.awayTeam,
-          setsCount: updatedData.sets?.length,
-          eventsCount: updatedData.events?.length,
-          totalLatency: `${totalLatency}ms (Scoreboard → Referee)`,
-          serverToRefereeLatency: `${serverToRefereeLatency}ms (Server → Referee)`
-        })
-        // Only update if data is complete (has teams and sets)
-        if (updatedData.homeTeam && updatedData.awayTeam && updatedData.sets?.length > 0) {
-          updateMatchDataState({ success: true, ...updatedData })
-        } else {
-          // This can happen during toggle changes from MatchSetup - expected, not an error
-          console.debug('[Referee] Received partial data (missing teams/sets), skipping UI update')
-        }
-      }
+    const receiveTimestamp = Date.now()
+    console.log(`[Referee] 📥 Received match-data-update at ${new Date(receiveTimestamp).toISOString()}:`, {
+      hasHomeTeam: !!result.homeTeam,
+      hasAwayTeam: !!result.awayTeam,
+      setsCount: result.sets?.length,
+      eventsCount: result.events?.length
     })
 
-    // No polling - data comes from Scoreboard via WebSocket when actions occur
-
-    return () => {
-      isMounted = false
-      unsubscribe()
+    // Only update if data is complete (has teams and sets)
+    if (result.homeTeam && result.awayTeam && result.sets?.length > 0) {
+      updateMatchDataState(result)
+    } else {
+      console.debug('[Referee] Received partial data (missing teams/sets), skipping UI update')
     }
-  }, [matchId, updateMatchDataState, isMasterMode, fetchFreshData])
+  }, [updateMatchDataState])
+
+  // Handle realtime actions (timeout, substitution, set_end)
+  const handleRealtimeAction = useCallback((action, actionData) => {
+    const receiveTimestamp = Date.now()
+    console.log(`[Referee] 📥 Received action '${action}' at ${new Date(receiveTimestamp).toISOString()}:`, actionData)
+
+    if (action === 'timeout') {
+      setTimeoutModal({
+        team: actionData.team,
+        countdown: actionData.countdown || 30,
+        started: true
+      })
+    } else if (action === 'substitution') {
+      setSubstitutionModal({
+        team: actionData.team,
+        teamName: actionData.teamName,
+        position: actionData.position,
+        playerOut: actionData.playerOut,
+        playerIn: actionData.playerIn,
+        isExceptional: actionData.isExceptional,
+        timestamp: Date.now()
+      })
+      // Auto-close substitution modal after 5 seconds
+      setTimeout(() => {
+        setSubstitutionModal(null)
+      }, 5000)
+
+      // Add player to recently substituted list for flashing effect
+      setRecentlySubstitutedPlayers(prev => [...prev, { team: actionData.team, playerNumber: actionData.playerIn, timestamp: Date.now() }])
+
+      // Clear the flash after 3 seconds
+      if (recentSubFlashTimeoutRef.current) {
+        clearTimeout(recentSubFlashTimeoutRef.current)
+      }
+      recentSubFlashTimeoutRef.current = setTimeout(() => {
+        setRecentlySubstitutedPlayers([])
+      }, 3000)
+    } else if (action === 'set_end') {
+      setBetweenSetsCountdown({
+        countdown: actionData.countdown || 180,
+        started: true,
+        setIndex: actionData.setIndex,
+        winner: actionData.winner
+      })
+    }
+  }, [])
+
+  // Use realtime connection hook (handles Supabase + WebSocket with fallback)
+  const {
+    status: realtimeStatus,
+    activeConnection,
+    error: realtimeError,
+    lastUpdate: realtimeLastUpdate,
+    forceReconnect: realtimeReconnect
+  } = useRealtimeConnection({
+    matchId,
+    preferredConnection: connectionType,
+    onData: handleRealtimeData,
+    onAction: handleRealtimeAction,
+    enabled: !isMasterMode && !!matchId
+  })
+
+  // Initial data fetch when connection changes or component mounts
+  useEffect(() => {
+    if (!isMasterMode && matchId && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
+      fetchFreshData()
+    }
+  }, [isMasterMode, matchId, realtimeStatus, fetchFreshData])
 
   // Refetch data when page becomes visible (handles screen wake from sleep)
   useEffect(() => {
@@ -1786,6 +1772,104 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
             v{currentVersion}
           </span>
+          {/* Connection Type Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setConnectionDropdownOpen(!connectionDropdownOpen)}
+              style={{
+                padding: '4px 8px',
+                fontSize: '10px',
+                fontWeight: 600,
+                background: activeConnection === 'supabase' ? 'rgba(34, 197, 94, 0.2)' :
+                           activeConnection === 'websocket' ? 'rgba(59, 130, 246, 0.2)' :
+                           'rgba(156, 163, 175, 0.2)',
+                color: activeConnection === 'supabase' ? '#22c55e' :
+                       activeConnection === 'websocket' ? '#3b82f6' :
+                       '#9ca3af',
+                border: `1px solid ${activeConnection === 'supabase' ? 'rgba(34, 197, 94, 0.4)' :
+                                     activeConnection === 'websocket' ? 'rgba(59, 130, 246, 0.4)' :
+                                     'rgba(156, 163, 175, 0.4)'}`,
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px'
+              }}
+              title={`Connection: ${activeConnection || 'none'} (${realtimeStatus})`}
+            >
+              {activeConnection === 'supabase' ? '🗄️' : activeConnection === 'websocket' ? '📡' : '⚪'}
+              <span style={{ fontSize: '8px' }}>{connectionDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+            {connectionDropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '2px',
+                background: '#1a1a2e',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                zIndex: 1000,
+                minWidth: '140px'
+              }}>
+                <button
+                  onClick={() => { setConnectionType(CONNECTION_TYPES.AUTO); setConnectionDropdownOpen(false); }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    background: connectionType === CONNECTION_TYPES.AUTO ? 'rgba(var(--accent-rgb), 0.3)' : 'transparent',
+                    color: connectionType === CONNECTION_TYPES.AUTO ? 'var(--accent)' : '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  🔄 Auto
+                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>DB → Direct fallback</div>
+                </button>
+                <button
+                  onClick={() => { setConnectionType(CONNECTION_TYPES.SUPABASE); setConnectionDropdownOpen(false); }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    background: connectionType === CONNECTION_TYPES.SUPABASE ? 'rgba(34, 197, 94, 0.2)' : 'transparent',
+                    color: connectionType === CONNECTION_TYPES.SUPABASE ? '#22c55e' : '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  🗄️ DB Only
+                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>Supabase realtime</div>
+                </button>
+                <button
+                  onClick={() => { setConnectionType(CONNECTION_TYPES.WEBSOCKET); setConnectionDropdownOpen(false); }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    background: connectionType === CONNECTION_TYPES.WEBSOCKET ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                    color: connectionType === CONNECTION_TYPES.WEBSOCKET ? '#3b82f6' : '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  📡 Direct Only
+                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>WebSocket direct</div>
+                </button>
+              </div>
+            )}
+          </div>
           {/* Collapsible 1R/2R Dropdown */}
           <div style={{ position: 'relative' }}>
             <button

@@ -310,6 +310,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Match info confirmation state - other sections are disabled until confirmed
   const [matchInfoConfirmed, setMatchInfoConfirmed] = useState(false)
 
+  // Check if match info can be confirmed (all required fields filled)
+  const canConfirmMatchInfo = Boolean(
+    home?.trim() &&
+    away?.trim() &&
+    !dateError &&
+    !timeError
+  )
+
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
   const [awayRoster, setAwayRoster] = useState([])
@@ -397,7 +405,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
-  const [noticeModal, setNoticeModal] = useState(null) // { message: string } | null
+  const [noticeModal, setNoticeModal] = useState(null) // { message: string, type?: 'success' | 'error' } | null
   
   // Show both rosters in match setup
   const [showBothRosters, setShowBothRosters] = useState(false)
@@ -1580,9 +1588,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
+      setNoticeModal({ message: 'Match info saved successfully!', type: 'success' })
     } catch (error) {
       console.error('Error confirming match info:', error)
-      setNoticeModal({ message: `Error: ${error.message}` })
+      setNoticeModal({ message: `Error: ${error.message}`, type: 'error' })
     }
   }
 
@@ -4921,7 +4930,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <StatusBadge ready={matchInfoConfirmed} />
                 <h3 style={{ margin: 0 }}>Match info</h3>
                 {!matchInfoConfirmed && (
-                  <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: 500 }}>(confirm to continue)</span>
+                  <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: 500 }}>(Confirm to continue)</span>
                 )}
               </div>
             </div>
@@ -4946,7 +4955,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           <div className="actions">
             <button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button>
             {!matchInfoConfirmed && (
-              <button className="primary" onClick={confirmMatchInfo}>Confirm</button>
+              <button
+                className="primary"
+                onClick={confirmMatchInfo}
+                disabled={!canConfirmMatchInfo}
+                title={!canConfirmMatchInfo ? 'Fill in Home and Away team names to confirm' : ''}
+              >
+                Confirm
+              </button>
             )}
           </div>
         </div>
@@ -5810,13 +5826,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
       {noticeModal && (
         <Modal
-          title="Notice"
+          title={noticeModal.type === 'success' ? 'Success' : 'Notice'}
           open={true}
           onClose={() => setNoticeModal(null)}
           width={400}
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
+            {noticeModal.type === 'success' && (
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+            )}
+            {noticeModal.type === 'error' && (
+              <div style={{ fontSize: '48px', marginBottom: '16px', color: '#ef4444' }}>✕</div>
+            )}
             <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
               {noticeModal.message}
             </p>
@@ -5827,8 +5849,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
+                  background: noticeModal.type === 'success' ? '#22c55e' : noticeModal.type === 'error' ? '#ef4444' : 'var(--accent)',
+                  color: '#fff',
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer'
