@@ -28,6 +28,18 @@ export default function BenchApp() {
   })
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
 
+  // Preload assets that are used later (e.g., volleyball image)
+  useEffect(() => {
+    const assetsToPreload = [
+      mikasaVolleyball
+    ]
+
+    assetsToPreload.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
     const createNoSleepVideo = () => {

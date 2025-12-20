@@ -13,7 +13,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
-  const { syncStatus } = useSyncQueue()
+  const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -2635,11 +2635,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           resource: 'event',
           action: 'insert',
           payload: {
-            match_id: match?.externalId || null,
+            external_id: String(eventId),
+            match_id: String(matchId), // Use local matchId - sync queue will resolve to Supabase ID
             set_index: data.set.index,
             type,
-            payload,
-            test: false
+            payload: payload || {},
+            seq: nextSeq,
+            test: false,
+            created_at: new Date().toISOString()
           },
           ts: Date.now(),
           status: 'queued'

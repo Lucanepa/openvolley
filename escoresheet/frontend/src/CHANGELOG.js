@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.11.5',
+    date: '20.12.25',
+    changes: [
+      'Implement asset preloading for volleyball and referee images across multiple components'
+    ]
+  },
+  {
     version: '0.11.4',
     date: '20.12.25',
     changes: [

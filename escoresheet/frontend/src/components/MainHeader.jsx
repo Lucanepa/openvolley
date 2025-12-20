@@ -198,6 +198,18 @@ export default function MainHeader({
         <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
           Match {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : 'Not set'}
         </div>
+
+        {/* Match ID - for debugging/support */}
+        {matchId && (
+          <div style={{
+            fontSize: '10px',
+            color: 'rgba(255, 255, 255, 0.4)',
+            textAlign: 'center',
+            fontFamily: 'monospace'
+          }}>
+            ID: {matchId}
+          </div>
+        )}
         
         {/* Teams */}
         <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.9)', textAlign: 'center', fontWeight: 500 }}>

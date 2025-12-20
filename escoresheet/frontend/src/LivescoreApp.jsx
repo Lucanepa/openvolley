@@ -35,6 +35,18 @@ export default function LivescoreApp() {
   const [testModeClicks, setTestModeClicks] = useState(0)
   const testModeTimeoutRef = useRef(null)
 
+  // Preload assets that are used later (e.g., volleyball image)
+  useEffect(() => {
+    const assetsToPreload = [
+      mikasaVolleyball
+    ]
+
+    assetsToPreload.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
     const createNoSleepVideo = () => {
