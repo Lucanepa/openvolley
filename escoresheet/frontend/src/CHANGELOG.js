@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.11.8',
+    date: '20.12.25',
+    changes: [
+      'Implement date and time validation in MatchSetup component'
+    ]
+  },
+  {
     version: '0.11.7',
     date: '20.12.25',
     changes: [
