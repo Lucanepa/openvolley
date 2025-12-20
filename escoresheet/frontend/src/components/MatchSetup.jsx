@@ -268,6 +268,18 @@ const LineJudgesCard = memo(function LineJudgesCard({
   )
 })
 
+// Helper to generate short name from team name (first 3-4 chars uppercase)
+function generateShortName(name) {
+  if (!name) return ''
+  // Remove common prefixes/suffixes and take first word or first 4 chars
+  const cleaned = name.trim().toUpperCase()
+  const words = cleaned.split(/\s+/)
+  if (words.length > 1 && words[0].length <= 4) {
+    return words[0]
+  }
+  return cleaned.substring(0, 4)
+}
+
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const [home, setHome] = useState('Home')
   // Match created popup state
@@ -433,6 +445,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const homeTeamMeasureRef = useRef(null)
   const awayTeamMeasureRef = useRef(null)
 
+  // Refs to store original state for discard on Back button
+  const originalMatchInfoRef = useRef(null)
+  const originalOfficialsRef = useRef(null)
+  const originalHomeTeamRef = useRef(null)
+  const originalAwayTeamRef = useRef(null)
+
   // Team history for autocomplete (online only)
   const { isOnline: teamHistoryOnline, teamNames, fetchTeamHistory, saveTeamHistory, loading: teamHistoryLoading } = useTeamHistory()
   const [loadingTeamHistory, setLoadingTeamHistory] = useState(false)
@@ -579,9 +597,73 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
   const isMatchOngoing = match?.status === 'live'
 
+  // Capture original state when entering a view (for discard on Back)
+  useEffect(() => {
+    if (currentView === 'info') {
+      originalMatchInfoRef.current = {
+        date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
+        type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+      }
+    } else if (currentView === 'officials') {
+      originalOfficialsRef.current = {
+        ref1First, ref1Last, ref1Country, ref1Dob,
+        ref2First, ref2Last, ref2Country, ref2Dob,
+        scorerFirst, scorerLast, scorerCountry, scorerDob,
+        asstFirst, asstLast, asstCountry, asstDob,
+        lineJudge1, lineJudge2, lineJudge3, lineJudge4
+      }
+    } else if (currentView === 'home') {
+      originalHomeTeamRef.current = {
+        homeRoster: JSON.parse(JSON.stringify(homeRoster)),
+        benchHome: JSON.parse(JSON.stringify(benchHome))
+      }
+    } else if (currentView === 'away') {
+      originalAwayTeamRef.current = {
+        awayRoster: JSON.parse(JSON.stringify(awayRoster)),
+        benchAway: JSON.parse(JSON.stringify(benchAway))
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView])
+
+  // Restore original state functions (for Back button)
+  const restoreMatchInfo = () => {
+    const o = originalMatchInfoRef.current
+    if (!o) return
+    setDate(o.date); setTime(o.time); setHall(o.hall); setCity(o.city)
+    setType1(o.type1); setType1Other(o.type1Other); setChampionshipType(o.championshipType); setChampionshipTypeOther(o.championshipTypeOther)
+    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setGameN(o.gameN); setLeague(o.league)
+    setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
+    setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
+  }
+
+  const restoreOfficials = () => {
+    const o = originalOfficialsRef.current
+    if (!o) return
+    setRef1First(o.ref1First); setRef1Last(o.ref1Last); setRef1Country(o.ref1Country); setRef1Dob(o.ref1Dob)
+    setRef2First(o.ref2First); setRef2Last(o.ref2Last); setRef2Country(o.ref2Country); setRef2Dob(o.ref2Dob)
+    setScorerFirst(o.scorerFirst); setScorerLast(o.scorerLast); setScorerCountry(o.scorerCountry); setScorerDob(o.scorerDob)
+    setAsstFirst(o.asstFirst); setAsstLast(o.asstLast); setAsstCountry(o.asstCountry); setAsstDob(o.asstDob)
+    setLineJudge1(o.lineJudge1); setLineJudge2(o.lineJudge2); setLineJudge3(o.lineJudge3); setLineJudge4(o.lineJudge4)
+  }
+
+  const restoreHomeTeam = () => {
+    const o = originalHomeTeamRef.current
+    if (!o) return
+    setHomeRoster(o.homeRoster)
+    setBenchHome(o.benchHome)
+  }
+
+  const restoreAwayTeam = () => {
+    const o = originalAwayTeamRef.current
+    if (!o) return
+    setAwayRoster(o.awayRoster)
+    setBenchAway(o.benchAway)
+  }
+
   // Load match data if matchId is provided
   // Split into two effects: one for initial load (matchId only), one for updates (match changes)
-  
+
   // Initial load effect - only runs when matchId changes or when match becomes available
   useEffect(() => {
     if (!matchId) return
@@ -2435,7 +2517,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return (
       <MatchSetupInfoView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← Back</button>
           <h2>Match info</h2>
           <div style={{ width: 80 }}></div>
         </div>
@@ -2552,6 +2634,85 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             <div className="field"><label>Game #</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
             <div className="field"><label>League</label><input className="w-80 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
           </div>
+
+          {/* Teams Card - Full width row at bottom */}
+          <div className="card" style={{ gridColumn: 'span 5' }}>
+            <h2 style={{ marginTop: 0, marginBottom: 24, textAlign: 'center', fontSize: '24px', fontWeight: 700 }}>TEAMS</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+              {/* Home Team */}
+              <div style={{ flex: 1 }}>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)' }}>Home Team</div>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                    <label>Team name</label>
+                    <input
+                      type="text"
+                      value={home}
+                      onChange={e => setHome(e.target.value)}
+                      placeholder="Home team name"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Short</label>
+                    <input
+                      type="text"
+                      value={homeShortName}
+                      onChange={e => setHomeShortName(e.target.value.toUpperCase())}
+                      maxLength={8}
+                      placeholder={home ? generateShortName(home) : 'HOME'}
+                      style={{ width: '80px', textAlign: 'center' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* VS Divider */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 12px',
+                marginTop: 24
+              }}>
+                <span style={{
+                  fontSize: '22px',
+                  fontWeight: 700,
+                  fontStyle: 'italic',
+                  color: 'rgba(255, 255, 255, 0.5)'
+                }}>VS</span>
+              </div>
+
+              {/* Away Team */}
+              <div style={{ flex: 1 }}>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)' }}>Away Team</div>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                    <label>Team name</label>
+                    <input
+                      type="text"
+                      value={away}
+                      onChange={e => setAway(e.target.value)}
+                      placeholder="Away team name"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Short</label>
+                    <input
+                      type="text"
+                      value={awayShortName}
+                      onChange={e => setAwayShortName(e.target.value.toUpperCase())}
+                      maxLength={8}
+                      placeholder={away ? generateShortName(away) : 'AWAY'}
+                      style={{ width: '80px', textAlign: 'center' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         {match && !match.test && match.gamePin && (
           <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
@@ -2605,7 +2766,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return (
       <MatchSetupOfficialsView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
-          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <button className="secondary" onClick={() => { restoreOfficials(); setCurrentView('main') }}>← Back</button>
           <h2 style={{ marginLeft: 20, marginRight: 20 }}>Match officials</h2>
           <div style={{ width: 80 }}></div>
         </div>
@@ -2743,92 +2904,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return (
       <MatchSetupHomeTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← Back</button>
           <h2>Home team</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h1 style={{ margin: 0 }}>Roster</h1>
-          {/* Player Stats */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-            color: 'rgba(255, 255, 255, 0.8)'
-          }}>
-            <span style={{ fontWeight: 600 }}>
-              {homeRoster.length} player{homeRoster.length !== 1 ? 's' : ''}
-            </span>
-            <span style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
-              ({homeRoster.filter(p => !p.libero || p.libero === '').length}+{homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length} libero)
-            </span>
-            {homeRoster.find(p => p.isCaptain) && (
-              <>
-                <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>•</span>
-                <span style={{ fontWeight: 600, color: '#f59e0b' }}>
-                  Captain #{homeRoster.find(p => p.isCaptain)?.number || '?'}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-        {homeRoster.length < 14 && (
-          <div style={{ 
-            border: '1px solid rgba(255, 255, 255, 0.2)', 
-            borderRadius: '8px', 
-            padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
-            marginBottom: '8px',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
-            <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              
-              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
-              <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
-              <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-              <select className="w-90" value={homeLibero} onChange={e => {
-                let newValue = e.target.value
-                // If L2 is selected but no L1 exists, automatically change L2 to L1
-                if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
-                  newValue = 'libero1'
-                }
-                setHomeLibero(newValue)
-              }}>
-                <option value=""></option>
-                {!homeRoster.some(p => p.libero === 'libero1') && (
-                <option value="libero1">Libero 1</option>
-                )}
-                {!homeRoster.some(p => p.libero === 'libero2') && (
-                <option value="libero2">Libero 2</option>
-                )}
-              </select>
-              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
-              <button type="button" className="secondary" onClick={() => {
-                if (!homeLast || !homeFirst) return
-                const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
-                setHomeRoster(list => {
-                  const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                  const next = [...cleared, newPlayer].sort((a,b) => {
-                    const an = a.number ?? 999
-                    const bn = b.number ?? 999
-                    return an - bn
-                  })
-                  return next
-                })
-                setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
-              }}>Add</button>
-            </div>
-          </div>
-        )}
-        {/* Upload Methods for Home Team */}
-        <div style={{ marginBottom: '12px' }}>
+        <h1 style={{ margin: 0, marginBottom: '12px' }}>Roster</h1>
+        {/* Upload Methods for Home Team + Player Stats */}
+        <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
+          {/* Left: Upload section */}
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)'
+            background: 'rgba(15, 23, 42, 0.2)',
+            flex: 1
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {/* Upload button row with Local/Remote toggle */}
@@ -2852,7 +2941,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                     opacity: homeUploadMode !== 'local' ? 0.5 : 1
                   }}
                 >
-                  Upload Einsatzliste PDF
+                  Upload PDF
                 </button>
                 {/* Local/Remote Toggle */}
                 <div style={{
@@ -3098,15 +3187,152 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               )}
             </div>
           </div>
+          {/* Right: Player Stats */}
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '12px',
+            background: 'rgba(15, 23, 42, 0.2)',
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
+              <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>{homeRoster.length}</span>
+              <span style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                ({homeRoster.filter(p => !p.libero).length} + {homeRoster.filter(p => p.libero).length} libero{homeRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
+              {(() => {
+                const captain = homeRoster.find(p => p.isCaptain)
+                return captain ? (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    border: '2px solid #22c55e',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: '#22c55e'
+                  }}>{captain.number || '?'}</span>
+                ) : (
+                  <span style={{ fontSize: '14px', fontStyle: 'italic', color: 'rgba(255, 255, 255, 0.5)' }}>—</span>
+                )
+              })()}
+            </div>
+          </div>
         </div>
+        {/* Add new player section */}
+        {homeRoster.length < 14 && (
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '12px',
+            background: 'rgba(15, 23, 42, 0.2)',
+            marginBottom: '8px',
+          }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
+            <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+
+              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
+              <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
+              <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
+              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <select className="w-90" value={homeLibero} onChange={e => {
+                let newValue = e.target.value
+                // If L2 is selected but no L1 exists, automatically change L2 to L1
+                if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
+                  newValue = 'libero1'
+                }
+                setHomeLibero(newValue)
+              }}>
+                <option value=""></option>
+                {!homeRoster.some(p => p.libero === 'libero1') && (
+                <option value="libero1">Libero 1</option>
+                )}
+                {!homeRoster.some(p => p.libero === 'libero2') && (
+                <option value="libero2">Libero 2</option>
+                )}
+              </select>
+              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
+              <button type="button" className="secondary" onClick={() => {
+                if (!homeLast || !homeFirst) return
+                const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
+                setHomeRoster(list => {
+                  const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                  const next = [...cleared, newPlayer].sort((a,b) => {
+                    const an = a.number ?? 999
+                    const bn = b.number ?? 999
+                    return an - bn
+                  })
+                  return next
+                })
+                setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
+              }}>Add</button>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Roster Header Row */}
+          <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
+            <div className="w-num" style={{ textAlign: 'center' }}>#</div>
+            <div className="w-name">Last Name</div>
+            <div className="w-name">First Name</div>
+            <div className="w-dob">Date of Birth</div>
+            <div className="w-90" style={{ textAlign: 'center' }}>Role</div>
+            <div style={{ width: '70px', textAlign: 'center' }}>Captain</div>
+            <div style={{ width: '80px' }}></div>
+          </div>
           {homeRoster.map((p, i) => {
             // Check if this player's number is a duplicate
             const isDuplicate = p.number != null && p.number !== '' &&
               homeRoster.some((other, idx) => idx !== i && other.number === p.number)
 
+            // Determine border style based on captain/libero status
+            const isCaptain = p.isCaptain || false
+            const isLibero = !!p.libero
+            // Base style for all rows (transparent border for alignment)
+            let borderStyle = {
+              borderRadius: '6px',
+              padding: '6px 8px',
+              border: '2px solid transparent'
+            }
+            if (isCaptain && isLibero) {
+              // Both: alternating green/white striped border
+              borderStyle = {
+                padding: '6px 8px',
+                background: 'rgba(34, 197, 94, 0.05)',
+                border: '2px solid',
+                borderImage: 'repeating-linear-gradient(90deg, #22c55e 0, #22c55e 6px, #ffffff 6px, #ffffff 12px) 1'
+              }
+            } else if (isCaptain) {
+              // Captain only: green border
+              borderStyle = {
+                border: '2px solid #22c55e',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                background: 'rgba(34, 197, 94, 0.1)'
+              }
+            } else if (isLibero) {
+              // Libero only: white border
+              borderStyle = {
+                border: '2px solid rgba(255, 255, 255, 0.8)',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                background: 'rgba(255, 255, 255, 0.05)'
+              }
+            }
+
             return (
-            <div key={`h-${i}`} className="row" style={{ alignItems: 'center' }}>
+            <div key={`h-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
               <input
                 className="w-num"
                 placeholder="#"
@@ -3240,10 +3466,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )})}
           </div>
         <h4>Bench — Home</h4>
+        {/* Bench Header Row */}
+        <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
+          <div className="w-220">Role</div>
+          <div className="w-name">Last Name</div>
+          <div className="w-name">First Name</div>
+          <div className="w-dob">Date of Birth</div>
+          <div style={{ width: '70px' }}></div>
+        </div>
         {sortBenchByHierarchy(benchHome).map((m, i) => {
           const originalIdx = benchHome.findIndex(b => b === m)
           return (
-            <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
+            <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
               <select className="w-220" value={m.role || 'Coach'} onChange={e=>{
                 const newRole = e.target.value || 'Coach'
                 // Check if this role is already taken by another official
@@ -3490,92 +3724,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     return (
       <MatchSetupAwayTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
+          <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← Back</button>
           <h2>Away team</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h1 style={{ margin: 0 }}>Roster</h1>
-          {/* Player Stats */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-            color: 'rgba(255, 255, 255, 0.8)'
-          }}>
-            <span style={{ fontWeight: 600 }}>
-              {awayRoster.length} player{awayRoster.length !== 1 ? 's' : ''}
-            </span>
-            <span style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
-              ({awayRoster.filter(p => !p.libero || p.libero === '').length}+{awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length} libero)
-            </span>
-            {awayRoster.find(p => p.isCaptain) && (
-              <>
-                <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>•</span>
-                <span style={{ fontWeight: 600, color: '#f59e0b' }}>
-                  Captain #{awayRoster.find(p => p.isCaptain)?.number || '?'}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {awayRoster.length < 14 && (
-          <div style={{ 
-            border: '1px solid rgba(255, 255, 255, 0.2)', 
-            borderRadius: '8px', 
-            padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
-            marginBottom: '8px',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
-            <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
-              <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
-              <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
-              <select className="w-120" value={awayLibero} onChange={e => {
-                let newValue = e.target.value
-                // If L2 is selected but no L1 exists, automatically change L2 to L1
-                if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
-                  newValue = 'libero1'
-                }
-                setAwayLibero(newValue)
-              }}>
-                <option value=""></option>
-                {!awayRoster.some(p => p.libero === 'libero1') && (
-                <option value="libero1">libero 1</option>
-                )}
-                {!awayRoster.some(p => p.libero === 'libero2') && (
-                <option value="libero2">libero 2</option>
-                )}
-              </select>
-              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
-              <button type="button" className="secondary" onClick={() => {
-                if (!awayLast || !awayFirst) return
-                const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
-                setAwayRoster(list => {
-                  const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                  const next = [...cleared, newPlayer].sort((a,b) => {
-                    const an = a.number ?? 999
-                    const bn = b.number ?? 999
-                    return an - bn
-                  })
-                  return next
-                })
-                setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
-              }}>Add</button>
-            </div>
-          </div>
-        )}
-        {/* Upload Methods for Away Team */}
-        <div style={{ marginBottom: '12px' }}>
+        <h1 style={{ margin: 0, marginBottom: '12px' }}>Roster</h1>
+        {/* Upload Methods for Away Team + Player Stats */}
+        <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
+          {/* Left: Upload section */}
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.2)',
             borderRadius: '8px',
             padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)'
+            background: 'rgba(15, 23, 42, 0.2)',
+            flex: 1
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {/* Upload button row with Local/Remote toggle */}
@@ -3599,7 +3761,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                     opacity: awayUploadMode !== 'local' ? 0.5 : 1
                   }}
                 >
-                  Upload Einsatzliste PDF
+                  Upload PDF
                 </button>
                 {/* Local/Remote Toggle */}
                 <div style={{
@@ -3845,16 +4007,151 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               )}
             </div>
           </div>
+          {/* Right: Player Stats */}
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '12px',
+            background: 'rgba(15, 23, 42, 0.2)',
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
+              <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>{awayRoster.length}</span>
+              <span style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                ({awayRoster.filter(p => !p.libero).length} + {awayRoster.filter(p => p.libero).length} libero{awayRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
+              {(() => {
+                const captain = awayRoster.find(p => p.isCaptain)
+                return captain ? (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    border: '2px solid #22c55e',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: '#22c55e'
+                  }}>{captain.number || '?'}</span>
+                ) : (
+                  <span style={{ fontSize: '14px', fontStyle: 'italic', color: 'rgba(255, 255, 255, 0.5)' }}>—</span>
+                )
+              })()}
+            </div>
+          </div>
         </div>
-
+        {/* Add new player section */}
+        {awayRoster.length < 14 && (
+          <div style={{
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            padding: '12px',
+            background: 'rgba(15, 23, 42, 0.2)',
+            marginBottom: '8px',
+          }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
+            <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
+              <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
+              <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
+              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <select className="w-90" value={awayLibero} onChange={e => {
+                let newValue = e.target.value
+                // If L2 is selected but no L1 exists, automatically change L2 to L1
+                if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
+                  newValue = 'libero1'
+                }
+                setAwayLibero(newValue)
+              }}>
+                <option value=""></option>
+                {!awayRoster.some(p => p.libero === 'libero1') && (
+                <option value="libero1">Libero 1</option>
+                )}
+                {!awayRoster.some(p => p.libero === 'libero2') && (
+                <option value="libero2">Libero 2</option>
+                )}
+              </select>
+              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
+              <button type="button" className="secondary" onClick={() => {
+                if (!awayLast || !awayFirst) return
+                const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
+                setAwayRoster(list => {
+                  const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                  const next = [...cleared, newPlayer].sort((a,b) => {
+                    const an = a.number ?? 999
+                    const bn = b.number ?? 999
+                    return an - bn
+                  })
+                  return next
+                })
+                setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
+              }}>Add</button>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Roster Header Row */}
+          <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
+            <div className="w-num" style={{ textAlign: 'center' }}>#</div>
+            <div className="w-name">Last Name</div>
+            <div className="w-name">First Name</div>
+            <div className="w-dob">Date of Birth</div>
+            <div className="w-90" style={{ textAlign: 'center' }}>Role</div>
+            <div style={{ width: '70px', textAlign: 'center' }}>Captain</div>
+            <div style={{ width: '80px' }}></div>
+          </div>
           {awayRoster.map((p, i) => {
             // Check if this player's number is a duplicate
             const isDuplicate = p.number != null && p.number !== '' &&
               awayRoster.some((other, idx) => idx !== i && other.number === p.number)
 
+            // Determine border style based on captain/libero status
+            const isCaptain = p.isCaptain || false
+            const isLibero = !!p.libero
+            // Base style for all rows (transparent border for alignment)
+            let borderStyle = {
+              borderRadius: '6px',
+              padding: '6px 8px',
+              border: '2px solid transparent'
+            }
+            if (isCaptain && isLibero) {
+              // Both: alternating green/white striped border
+              borderStyle = {
+                padding: '6px 8px',
+                background: 'rgba(34, 197, 94, 0.05)',
+                border: '2px solid',
+                borderImage: 'repeating-linear-gradient(90deg, #22c55e 0, #22c55e 6px, #ffffff 6px, #ffffff 12px) 1'
+              }
+            } else if (isCaptain) {
+              // Captain only: green border
+              borderStyle = {
+                border: '2px solid #22c55e',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                background: 'rgba(34, 197, 94, 0.1)'
+              }
+            } else if (isLibero) {
+              // Libero only: white border
+              borderStyle = {
+                border: '2px solid rgba(255, 255, 255, 0.8)',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                background: 'rgba(255, 255, 255, 0.05)'
+              }
+            }
+
             return (
-            <div key={`a-${i}`} className="row" style={{ alignItems: 'center' }}>
+            <div key={`a-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
               <input
                 className="w-num"
                 placeholder="#"
@@ -3988,10 +4285,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )})}
           </div>
         <h4>Bench — Away</h4>
+        {/* Bench Header Row */}
+        <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
+          <div className="w-220">Role</div>
+          <div className="w-name">Last Name</div>
+          <div className="w-name">First Name</div>
+          <div className="w-dob">Date of Birth</div>
+          <div style={{ width: '70px' }}></div>
+        </div>
         {sortBenchByHierarchy(benchAway).map((m, i) => {
           const originalIdx = benchAway.findIndex(b => b === m)
           return (
-            <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center' }}>
+            <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
               <select className="w-220" value={m.role || 'Coach'} onChange={e=>{
                 const newRole = e.target.value || 'Coach'
                 // Check if this role is already taken by another official
@@ -4586,11 +4891,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>Match Setup</h2>
           <button
-          
-           buttonClassName="secondary"
+            className="secondary"
             onClick={openScoresheet}
-            background="#22c55e"
-            style={{ padding: '6px 12px', fontSize: '13px' }}
+            style={{ padding: '6px 12px', fontSize: '13px', background: '#22c55e', color: '#000' }}
           >
           📄 Scoresheet
           </button>
@@ -4627,9 +4930,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}
             >
               <span>Home:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: homeColor }} title={home}>{home || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={home}>{home || 'Not set'}</span>
               <span>Away:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: awayColor }} title={away}>{away || 'Not set'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={away}>{away || 'Not set'}</span>
               <span>Date:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || 'Not set'}</span>
               <span>Time:</span>
@@ -4717,284 +5020,155 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       
       <div className="grid-4" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
         <div className="card" style={{ order: 1 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <StatusBadge ready={homeConfigured} />
-                <h1 style={{ margin: 0 }}>HOME TEAM</h1>
-              </div>
+          {/* Row 1: Status + Team Name */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <StatusBadge ready={homeConfigured} />
+            <h1 style={{ margin: 0 }}>{home && home !== 'Home' ? home.toUpperCase() : 'HOME TEAM'}</h1>
+          </div>
+
+          {/* Row 2: Stats */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+            <div style={{
+              background: 'rgb(0, 0, 0)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontWeight: 500,
+              color: '#fff',
+              fontSize: 13,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              Players: {homeCounts.players}
             </div>
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%', flexWrap: 'wrap' }}>
-                {/* Team Name */}
-                <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>
-                    Team Name
-                    {teamHistoryOnline && teamNames.length > 0 && (
-                      <span style={{ marginLeft: 6, fontSize: '10px', color: 'rgba(59, 130, 246, 0.8)' }}>
-                        (select from history)
-                      </span>
-                    )}
-                  </label>
-                  <TeamAutocomplete
-                    value={home}
-                    onChange={setHome}
-                    onSelectTeam={(team) => handleSelectTeamFromHistory(team, true)}
-                    teamNames={teamNames}
-                    placeholder="Home team name"
-                    isOnline={teamHistoryOnline}
-                    measureRef={homeTeamMeasureRef}
-                    inputRef={homeTeamInputRef}
-                  />
-                  {loadingTeamHistory && (
-                    <div style={{ fontSize: '11px', color: 'rgba(59, 130, 246, 0.8)', marginTop: 4 }}>
-                      Loading team history...
-                    </div>
-                  )}
-                </div>
-                
-                {/* Short Name */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '90px', flexShrink: 0 }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Short</label>
-                  <input
-                    type="text"
-                    value={homeShortName}
-                    onChange={e => setHomeShortName(e.target.value.toUpperCase())}
-                    maxLength={8}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '8px 8px',
-                      borderRadius: 8,
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      background: 'rgba(15, 23, 42, 0.35)',
-                      color: 'var(--text)',
-                      fontSize: '16px',
-                      fontWeight: 500,
-                      minHeight: 48,
-                      boxSizing: 'border-box',
-                      textAlign: 'center'
-                    }}
-                  />
-                </div>
-                
-                {/* Color Selector */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Click to select color</label>
-                  <div 
-                    className="shirt" 
-                    style={{ background: homeColor, cursor: 'pointer' }}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      const centerX = rect.left + rect.width / 2
-                      setColorPickerModal({ 
-                        team: 'home', 
-                        position: { x: centerX, y: rect.bottom + 8 } 
-                      })
-                    }}
-                  >
-                    <div className="collar" style={{ background: homeColor }} />
-                    <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
-                  </div>
-                </div>
-              </div>
+            <div style={{
+              background: 'rgb(255, 255, 255)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontWeight: 500,
+              color: '#000',
+              fontSize: 13,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              o/w Libero(s): {homeCounts.liberos}
             </div>
-            <div
-              className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
-            >
-              <div style={{ display: 'flex', gap: 10 }}>
-                <div style={{
-                  background: 'rgb(0, 0, 0)',
-                  borderRadius: 6,
-                  padding: '4px 10px',
-                  fontWeight: 500,
-                  color: '#fff',
-                  fontSize: 13,
-                  height: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  Players: {homeCounts.players}
-                </div>
-                <div style={{
-                  background: 'rgb(255, 255, 255)',
-                  borderRadius: 6,
-                  padding: '4px 10px',
-                  fontWeight: 500,
-                  color: '#000',
-                  fontSize: 13,
-                  height: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  o/w Libero(s): {homeCounts.liberos}
-                </div>
-                <div style={{
-                  background: 'rgba(34, 197, 94, 0.10)',
-                  borderRadius: 6,
-                  padding: '4px 10px',
-                  fontWeight: 500,
-                  color: '#4ade80',
-                  fontSize: 13,
-                  height: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  Bench: {homeCounts.bench}
-                </div>
-              </div>
+            <div style={{
+              background: 'rgba(34, 197, 94, 0.10)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontWeight: 500,
+              color: '#4ade80',
+              fontSize: 13,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              Bench: {homeCounts.bench}
             </div>
           </div>
-          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('home')}>Edit</button></div>
+
+          {/* Row 3: Color selector + Shirt + Roster */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Select colour</span>
+            <div
+              className="shirt"
+              style={{ background: homeColor, cursor: 'pointer', transform: 'scale(0.85)' }}
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const centerX = rect.left + rect.width / 2
+                setColorPickerModal({
+                  team: 'home',
+                  position: { x: centerX, y: rect.bottom + 8 }
+                })
+              }}
+            >
+              <div className="collar" style={{ background: homeColor }} />
+              <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <button className="secondary" onClick={() => setCurrentView('home')}>Edit Roster</button>
+          </div>
         </div>
         
         <div className="card" style={{ order: 2 }}>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <StatusBadge ready={awayConfigured} />
-                <h1 style={{ margin: 0 }}>AWAY TEAM</h1>
-              </div>
-              
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%', flexWrap: 'wrap' }}>
-                {/* Team Name */}
-                <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>
-                    Team Name
-                    {teamHistoryOnline && teamNames.length > 0 && (
-                      <span style={{ marginLeft: 6, fontSize: '10px', color: 'rgba(59, 130, 246, 0.8)' }}>
-                        (select from history)
-                      </span>
-                    )}
-                  </label>
-                  <TeamAutocomplete
-                    value={away}
-                    onChange={setAway}
-                    onSelectTeam={(team) => handleSelectTeamFromHistory(team, false)}
-                    teamNames={teamNames}
-                    placeholder="Away team name"
-                    isOnline={teamHistoryOnline}
-                    measureRef={awayTeamMeasureRef}
-                    inputRef={awayTeamInputRef}
-                  />
-                  {loadingTeamHistory && (
-                    <div style={{ fontSize: '11px', color: 'rgba(59, 130, 246, 0.8)', marginTop: 4 }}>
-                      Loading team history...
-                    </div>
-                  )}
-                </div>
-
-                {/* Short Name */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '90px', flexShrink: 0 }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Short</label>
-                  <input
-                    type="text"
-                    value={awayShortName}
-                    onChange={e => setAwayShortName(e.target.value.toUpperCase())}
-                    maxLength={8}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '8px 8px',
-                      borderRadius: 8,
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      background: 'rgba(15, 23, 42, 0.35)',
-                      color: 'var(--text)',
-                      fontSize: '16px',
-                      fontWeight: 500,
-                      minHeight: 48,
-                      boxSizing: 'border-box',
-                      textAlign: 'center'
-                    }}
-                  />
-                </div>
-                
-                {/* Color Selector */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-                  <label style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 500 }}>Click to select color</label>
-                  <div 
-                    className="shirt" 
-                    style={{ background: awayColor, cursor: 'pointer' }}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      const centerX = rect.left + rect.width / 2
-                      setColorPickerModal({ 
-                        team: 'away', 
-                        position: { x: centerX, y: rect.bottom + 8 } 
-                      })
-                    }}
-                  >
-                    <div className="collar" style={{ background: awayColor }} />
-                    <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/*<ConnectionBanner
-              team="away"
-              enabled={awayTeamConnectionEnabled}
-              onToggle={handleAwayTeamConnectionToggle}
-              pin={match?.awayTeamPin}
-              onEditPin={() => handleEditPin('benchAway')}
-            />*/}
-            <div
-              className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', rowGap: 4, marginTop: 12 }}
-            >
-              <div style={{ display: 'flex', gap: 10 }}>
-                <div style={{
-                  background: 'rgb(0, 0, 0)',
-                  borderRadius: 6,
-                  padding: '4px 10px',
-                  fontWeight: 500,
-                  color: '#fff',
-                  fontSize: 13,
-                  height: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  Players: {awayCounts.players}
-                </div>
-                <div style={{
-                  background: 'rgb(255, 255, 255)',
-                  borderRadius: 6,
-                  padding: '4px 10px',
-                  fontWeight: 500,
-                  color: '#000',
-                  fontSize: 13,
-                  height: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  o/w Libero(s): {awayCounts.liberos}
-                </div>
-                <div style={{
-                  background: 'rgba(34, 197, 94, 0.10)',
-                  borderRadius: 6,
-                  padding: '4px 10px',
-                  fontWeight: 500,
-                  color: '#4ade80',
-                  fontSize: 13,
-                  height: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  Bench: {awayCounts.bench}
-                </div>
-              </div>
-              </div>
+          {/* Row 1: Status + Team Name */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <StatusBadge ready={awayConfigured} />
+            <h1 style={{ margin: 0 }}>{away && away !== 'Away' ? away.toUpperCase() : 'AWAY TEAM'}</h1>
           </div>
-          <div className="actions"><button className="secondary" onClick={()=>setCurrentView('away')}>Edit</button></div>
+
+          {/* Row 2: Stats */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+            <div style={{
+              background: 'rgb(0, 0, 0)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontWeight: 500,
+              color: '#fff',
+              fontSize: 13,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              Players: {awayCounts.players}
+            </div>
+            <div style={{
+              background: 'rgb(255, 255, 255)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontWeight: 500,
+              color: '#000',
+              fontSize: 13,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              o/w Libero(s): {awayCounts.liberos}
+            </div>
+            <div style={{
+              background: 'rgba(34, 197, 94, 0.10)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              fontWeight: 500,
+              color: '#4ade80',
+              fontSize: 13,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              Bench: {awayCounts.bench}
+            </div>
+          </div>
+
+          {/* Row 3: Color selector + Shirt + Roster */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Select colour</span>
+            <div
+              className="shirt"
+              style={{ background: awayColor, cursor: 'pointer', transform: 'scale(0.85)' }}
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const centerX = rect.left + rect.width / 2
+                setColorPickerModal({
+                  team: 'away',
+                  position: { x: centerX, y: rect.bottom + 8 }
+                })
+              }}
+            >
+              <div className="collar" style={{ background: awayColor }} />
+              <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <button className="secondary" onClick={() => setCurrentView('away')}>Edit Roster</button>
+          </div>
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
         <div className="card" style={{ order: 3 }}>
@@ -5226,9 +5400,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   setupIssues.push('Match Info (date, time, venue, etc.)')
                 }
 
-                // Check Officials - at least 1R and 2R should be set
-                if (!(first1R || first2R)) {
-                  setupIssues.push('Match Officials (1R and 2R referees)')
+                // Check Officials - at least 1R should be set
+                if (!ref1First && !ref1Last) {
+                  setupIssues.push('Match Officials (1st Referee)')
                 }
 
                 // Check Home Team
@@ -5343,7 +5517,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                             <td className="roster-dob">{player.dob || '—'}</td>
                           </>
                         ) : (
-                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
+                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                             )}
                       </tr>
                         ))}
@@ -5382,7 +5556,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                               <td className="roster-dob">{player.dob || '—'}</td>
                             </>
                           ) : (
-                            <td colSpan="3" style={{ height: '2.5em', padding: '0.5em 0' }}></td>
+                            <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                           )}
                         </tr>
                         ))}
@@ -5411,7 +5585,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                             <td>{official.dob || '—'}</td>
                           </>
                         ) : (
-                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
+                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                   )}
                       </tr>
                     ))}
@@ -5454,7 +5628,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                             <td className="roster-dob">{player.dob || '—'}</td>
                           </>
                         ) : (
-                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
+                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                             )}
                       </tr>
                         ))}
@@ -5493,7 +5667,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                               <td className="roster-dob">{player.dob || '—'}</td>
                             </>
                           ) : (
-                            <td colSpan="3" style={{ height: '2.5em', padding: '0.5em 0' }}></td>
+                            <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                           )}
                         </tr>
                         ))}
@@ -5522,7 +5696,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                             <td>{official.dob || '—'}</td>
                           </>
                         ) : (
-                          <td colSpan="3" style={{ padding: '10px 8px', minHeight: '34px' }}></td>
+                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                   )}
                       </tr>
                     ))}
