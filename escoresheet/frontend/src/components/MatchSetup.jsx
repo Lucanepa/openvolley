@@ -295,6 +295,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
 
+  // Match info confirmation state - other sections are disabled until confirmed
+  const [matchInfoConfirmed, setMatchInfoConfirmed] = useState(false)
+
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
   const [awayRoster, setAwayRoster] = useState([])
@@ -843,11 +846,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         }
 
         // Note: Coin toss data is loaded and managed by CoinToss.jsx component
+
+        // If match has home and away teams, mark match info as confirmed
+        // This handles existing matches that already have teams set
+        if (match.homeTeamId && match.awayTeamId && homeTeam && awayTeam) {
+          setMatchInfoConfirmed(true)
+        }
       } catch (error) {
         console.error('Error loading initial match data:', error)
       }
     }
-    
+
     loadInitialData()
   }, [matchId, match]) // Depend on both matchId and match - but only load once per matchId due to rosterLoadedRef check
   
@@ -1371,6 +1380,128 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       return
     }
     setTimeError('')
+  }
+
+  // Confirm match info - validates all required fields and creates/updates match
+  async function confirmMatchInfo() {
+    // Validate required fields
+    if (!home || !home.trim()) {
+      setNoticeModal({ message: 'Home team name is required' })
+      return
+    }
+    if (!away || !away.trim()) {
+      setNoticeModal({ message: 'Away team name is required' })
+      return
+    }
+    if (dateError) {
+      setNoticeModal({ message: `Invalid date: ${dateError}` })
+      return
+    }
+    if (timeError) {
+      setNoticeModal({ message: `Invalid time: ${timeError}` })
+      return
+    }
+
+    try {
+      // Create teams if they don't exist
+      let homeTeamId = match?.homeTeamId
+      let awayTeamId = match?.awayTeamId
+
+      if (!homeTeamId) {
+        homeTeamId = await db.teams.add({
+          name: home.trim(),
+          color: homeColor,
+          benchStaff: benchHome,
+          createdAt: new Date().toISOString()
+        })
+        // Queue team for sync
+        await db.sync_queue.add({
+          resource: 'team',
+          action: 'insert',
+          payload: {
+            external_id: String(homeTeamId),
+            name: home.trim(),
+            color: homeColor
+          },
+          status: 'queued',
+          created_at: new Date().toISOString()
+        })
+      } else {
+        // Update existing team
+        await db.teams.update(homeTeamId, {
+          name: home.trim(),
+          color: homeColor,
+          benchStaff: benchHome
+        })
+      }
+
+      if (!awayTeamId) {
+        awayTeamId = await db.teams.add({
+          name: away.trim(),
+          color: awayColor,
+          benchStaff: benchAway,
+          createdAt: new Date().toISOString()
+        })
+        // Queue team for sync
+        await db.sync_queue.add({
+          resource: 'team',
+          action: 'insert',
+          payload: {
+            external_id: String(awayTeamId),
+            name: away.trim(),
+            color: awayColor
+          },
+          status: 'queued',
+          created_at: new Date().toISOString()
+        })
+      } else {
+        // Update existing team
+        await db.teams.update(awayTeamId, {
+          name: away.trim(),
+          color: awayColor,
+          benchStaff: benchAway
+        })
+      }
+
+      // Build scheduledAt if date is set
+      let scheduledAt = null
+      if (date) {
+        scheduledAt = createScheduledAt(date, time, { allowEmpty: true })
+      }
+
+      // Update match with team IDs and match info
+      await db.matches.update(matchId, {
+        homeTeamId,
+        awayTeamId,
+        homeName: home.trim(),
+        awayName: away.trim(),
+        homeShortName: homeShortName || generateShortName(home.trim()),
+        awayShortName: awayShortName || generateShortName(away.trim()),
+        homeColor,
+        awayColor,
+        scheduledAt,
+        hall: hall || null,
+        city: city || null,
+        league: league || null,
+        match_type_1: type1 || null,
+        match_type_1_other: type1Other || null,
+        championshipType: championshipType || null,
+        championshipTypeOther: championshipTypeOther || null,
+        match_type_2: type2 || null,
+        match_type_3: type3 || null,
+        match_type_3_other: type3Other || null,
+        game_n: gameN ? parseInt(gameN, 10) : null,
+        bench_home: benchHome,
+        bench_away: benchAway,
+        updatedAt: new Date().toISOString()
+      })
+
+      setMatchInfoConfirmed(true)
+      setCurrentView('main')
+    } catch (error) {
+      console.error('Error confirming match info:', error)
+      setNoticeModal({ message: `Error: ${error.message}` })
+    }
   }
 
   function handleSignatureSave(signatureImage) {
@@ -2306,11 +2437,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Match info</h2>
-          {onGoHome ? (
-            <button className="secondary" onClick={onGoHome}>Home</button>
-          ) : (
           <div style={{ width: 80 }}></div>
-          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
           <div className="card">
@@ -2480,11 +2607,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2 style={{ marginLeft: 20, marginRight: 20 }}>Match officials</h2>
-          {onGoHome ? (
-            <button className="secondary" onClick={onGoHome}>Home</button>
-          ) : (
           <div style={{ width: 80 }}></div>
-          )}
         </div>
 
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -2622,11 +2745,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Home team</h2>
-          {onGoHome ? (
-            <button className="secondary" onClick={onGoHome}>Home</button>
-          ) : (
           <div style={{ width: 80 }}></div>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <h1 style={{ margin: 0 }}>Roster</h1>
@@ -3373,11 +3492,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={()=>setCurrentView('main')}>← Back</button>
           <h2>Away team</h2>
-          {onGoHome ? (
-            <button className="secondary" onClick={onGoHome}>Home</button>
-          ) : (
           <div style={{ width: 80 }}></div>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <h1 style={{ margin: 0 }}>Roster</h1>
@@ -4496,18 +4611,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, maxWidth: '900px' }}>
         {/* Match Info Card */}
-        <div className="card">
+        <div className="card" style={!matchInfoConfirmed ? { border: '2px solid #f59e0b' } : {}}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <StatusBadge ready={matchInfoConfigured} />
+                <StatusBadge ready={matchInfoConfirmed} />
                 <h3 style={{ margin: 0 }}>Match info</h3>
+                {!matchInfoConfirmed && (
+                  <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: 500 }}>(confirm to continue)</span>
+                )}
               </div>
             </div>
             <div
               className="text-sm"
               style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}
             >
+              <span>Home:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: homeColor }} title={home}>{home || 'Not set'}</span>
+              <span>Away:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: awayColor }} title={away}>{away || 'Not set'}</span>
               <span>Date:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || 'Not set'}</span>
               <span>Time:</span>
@@ -4516,19 +4638,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={city}>{city || 'Not set'}</span>
               <span>Hall:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hall}>{hall || 'Not set'}</span>
-              <span>Game #:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gameN || 'Not set'}</span>
-              <span>League:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={league}>{league || 'Not set'}</span>
             </div>
           </div>
           <div className="actions">
             <button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button>
+            {!matchInfoConfirmed && (
+              <button className="primary" onClick={confirmMatchInfo}>Confirm</button>
+            )}
           </div>
         </div>
 
         {/* Match Officials Card */}
-        <div className="card">
+        <div className="card" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -4556,7 +4677,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
           </div>
           <div className="actions">
-            <button className="secondary" onClick={()=>setCurrentView('officials')}>Edit</button>
+            <button className="secondary" onClick={()=>setCurrentView('officials')} disabled={!matchInfoConfirmed}>Edit</button>
           </div>
         </div>
       </div>
@@ -4566,7 +4687,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         padding: '12px',
         background: 'rgba(255, 255, 255, 0.03)',
         borderRadius: '8px',
-        border: '1px solid rgba(255, 255, 255, 0.08)'
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' })
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
           <span style={{ fontWeight: 600, fontSize: '14px', textAlign: 'center', alignItems: 'center' }}>Dashboards</span>
@@ -4593,7 +4715,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         </div>
       </div>
       
-      <div className="grid-4">
+      <div className="grid-4" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
         <div className="card" style={{ order: 1 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -4976,7 +5098,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         
       </div>
 
-      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
         <button
           className="secondary"
           style={{
@@ -4986,6 +5108,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             fontWeight: 700
           }}
           onClick={() => setShowBothRosters(!showBothRosters)}
+          disabled={!matchInfoConfirmed}
         >
           {showBothRosters ? 'Hide' : 'Show'} Rosters
         </button>
