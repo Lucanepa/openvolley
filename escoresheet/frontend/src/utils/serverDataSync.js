@@ -15,7 +15,11 @@ function getServerUrl() {
   // Fallback to local server (development or Electron)
   const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
   const hostname = window.location.hostname
-  const port = window.location.port || (protocol === 'https' ? '443' : '5173')
+  // In production (HTTPS), use same origin without port (Cloudflare handles routing)
+  if (window.location.protocol === 'https:') {
+    return `${protocol}://${hostname}`
+  }
+  const port = window.location.port || '5173'
   return `${protocol}://${hostname}:${port}`
 }
 
@@ -33,7 +37,11 @@ function getWebSocketUrl() {
   // Fallback to local WebSocket server (development or Electron)
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const hostname = window.location.hostname
-  const wsPort = 8080 // Default WebSocket port
+  // In production (HTTPS), use same origin without port (Cloudflare handles routing)
+  if (window.location.protocol === 'https:') {
+    return `${protocol}://${hostname}`
+  }
+  const wsPort = 8080 // Default WebSocket port for development
   return `${protocol}://${hostname}:${wsPort}`
 }
 

@@ -16,6 +16,10 @@ function getWsServerUrl() {
   }
   const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
   const hostname = window.location.hostname
+  // In production (HTTPS), use same origin without port (Cloudflare handles routing)
+  if (window.location.protocol === 'https:') {
+    return `${protocol}://${hostname}`
+  }
   return `${protocol}://${hostname}:8080`
 }
 
