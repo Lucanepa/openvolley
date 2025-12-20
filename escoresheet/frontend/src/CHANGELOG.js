@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.11.7',
+    date: '20.12.25',
+    changes: [
+      'Enhance WebSocket handling and sync queue retry logic'
+    ]
+  },
+  {
     version: '0.11.6',
     date: '20.12.25',
     changes: [
