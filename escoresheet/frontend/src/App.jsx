@@ -514,6 +514,10 @@ export default function App() {
         status: 'not_available',
         message: 'WebSocket not available in static deployment (using local database only)'
       }
+    } else if (typeof wsRef !== 'undefined' && wsRef.current?.readyState === WebSocket.OPEN) {
+      // Reuse main WebSocket connection status - no need to create test connection
+      statuses.websocket = 'connected'
+      debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable (active connection)' }
     } else {
     try {
       // Check if we have a configured backend URL (Railway/cloud backend)

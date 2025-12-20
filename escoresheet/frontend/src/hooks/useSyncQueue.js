@@ -7,6 +7,9 @@ import { supabase } from '../lib/supabaseClient'
 // Resource processing order - dependencies must be synced first
 const RESOURCE_ORDER = ['team', 'referee', 'scorer', 'match', 'player', 'set', 'event']
 
+// Max retries for jobs waiting on dependencies
+const MAX_DEPENDENCY_RETRIES = 10
+
 export function useSyncQueue() {
   const busy = useRef(false)
   const [syncStatus, setSyncStatus] = useState('offline')
@@ -249,8 +252,7 @@ export function useSyncQueue() {
             .maybeSingle()
 
           if (!matchData) {
-            // Match not yet synced - keep job queued for retry
-            console.log('[SyncQueue] Event waiting for match to sync:', eventPayload.match_id)
+            // Match not yet synced - keep job queued for retry (will be limited by MAX_DEPENDENCY_RETRIES)
             return null // null means "retry later"
           }
           eventPayload.match_id = matchData.id
@@ -320,13 +322,22 @@ export function useSyncQueue() {
           const result = await processJob(job)
 
           if (result === true) {
-            await db.sync_queue.update(job.id, { status: 'sent' })
+            await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0 })
           } else if (result === false) {
             await db.sync_queue.update(job.id, { status: 'error' })
             hasError = true
           } else if (result === null) {
-            // Retry later - leave status as 'queued'
-            hasRetry = true
+            // Retry later - increment retry count
+            const currentRetries = job.retry_count || 0
+            if (currentRetries >= MAX_DEPENDENCY_RETRIES) {
+              // Give up after max retries
+              console.warn(`[SyncQueue] Job ${job.id} (${job.resource}) exceeded max retries, marking as error`)
+              await db.sync_queue.update(job.id, { status: 'error', retry_count: currentRetries })
+              hasError = true
+            } else {
+              await db.sync_queue.update(job.id, { retry_count: currentRetries + 1 })
+              hasRetry = true
+            }
           }
         }
       }
@@ -405,7 +416,7 @@ export function useSyncQueue() {
       if (!busy.current) {
         flush()
       }
-    }, 100) // Sync every 100ms for instantaneous updates
+    }, 1000) // Sync every 1 second
 
     return () => clearInterval(interval)
   }, [isOnline, syncStatus, flush])
