@@ -1527,7 +1527,7 @@ export default function App() {
           home_points: 0,
           away_points: 0,
           finished: false,
-          created_at: new Date().toISOString()
+          start_time: new Date().toISOString()
         },
         ts: new Date().toISOString(),
         status: 'queued'

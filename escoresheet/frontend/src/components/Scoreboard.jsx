@@ -1575,7 +1575,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           away_points: 0,
           finished: false,
           test: isTest,
-          created_at: new Date().toISOString()
+          start_time: new Date().toISOString()
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -2817,6 +2817,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       // Only sync official matches to Supabase, not test matches
       if (!isTest) {
+        // Compute current lineups and serve info for event context
+        const getLineupForTeam = (teamKey) => {
+          const lineupEvents = (data.events || [])
+            .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data.set.index)
+            .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+          if (lineupEvents.length === 0) return null
+          const lastLineup = lineupEvents[lineupEvents.length - 1]
+          return lastLineup.payload?.positions || null
+        }
+
+        // Determine which team is on which side based on set index
+        const setIndex = data.set.index
+        const teamAKey = data.match?.teamAKey || 'home'
+        const setLeftTeamOverrides = data.match?.setLeftTeamOverrides || {}
+        let leftIsHome
+        if (setLeftTeamOverrides[setIndex] !== undefined) {
+          leftIsHome = setLeftTeamOverrides[setIndex] === 'home'
+        } else if (setIndex === 5 && data.match?.set5CourtSwitched && data.match?.set5LeftTeam) {
+          leftIsHome = data.match.set5LeftTeam === 'home'
+        } else {
+          leftIsHome = setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
+        }
+
+        const leftTeamKey = leftIsHome ? 'home' : 'away'
+        const rightTeamKey = leftIsHome ? 'away' : 'home'
+
         await db.sync_queue.add({
           resource: 'event',
           action: 'insert',
@@ -2828,7 +2854,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             payload: payload || {},
             seq: nextSeq,
             test: false,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            lineup_left: getLineupForTeam(leftTeamKey),
+            lineup_right: getLineupForTeam(rightTeamKey),
+            serve_team: data.set.servingTeam || null,
+            serve_player: data.set.serverNumber || null
           },
           ts: Date.now(),
           status: 'queued'
@@ -4021,7 +4051,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             away_points: 0,
             finished: false,
             test: isTest,
-            created_at: new Date().toISOString()
+            start_time: new Date().toISOString()
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -4104,7 +4134,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           away_points: 0,
           finished: false,
           test: isTest,
-          created_at: new Date().toISOString()
+          start_time: new Date().toISOString()
         },
         ts: new Date().toISOString(),
         status: 'queued'
