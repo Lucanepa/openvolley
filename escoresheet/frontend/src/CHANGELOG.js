@@ -3,6 +3,17 @@
 
 export const changelog = [
   {
+    version: '0.12.9',
+    date: '21.12.25',
+    changes: [
+      'Fix player sync: remove extra columns (name, role, created_at) causing 400 errors',
+      'Fix match status sync: status now updates to live after coin toss',
+      'Fix officials sync: referee_1, referee_2, scorer, assistant_scorer now sync to matches table',
+      'Fix scoresheet: hide assistant scorer DOB when no name is set',
+      'Fix scoresheet: use separate post-game captain signature fields (not coin toss signatures)'
+    ]
+  },
+  {
     version: '0.12.8',
     date: '21.12.25',
     changes: [

@@ -421,9 +421,11 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
         return null;
     };
 
+    // Post-game captain signatures (separate from pre-game coin toss signatures)
     const getCaptainSignature = (side: 'home' | 'away'): string | null => {
-        if (side === 'home') return match?.homeCaptainSignature || null;
-        return match?.awayCaptainSignature || null;
+        // Use post-game signature fields if available, NOT the pre-game coin toss signatures
+        if (side === 'home') return match?.homePostGameCaptainSignature || null;
+        return match?.awayPostGameCaptainSignature || null;
     };
 
     // Determine which team is A and which is B
@@ -472,7 +474,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                         </div>
 
                          <div className="w-16 border-r border-black shrink-0 flex items-center justify-center">
-                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{official?.dob || ''}</div>
+                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? (official?.dob || '') : ''}</div>
                         </div>
 
                         <div

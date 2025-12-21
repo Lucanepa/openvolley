@@ -211,7 +211,7 @@ export function useSyncQueue() {
           .from('players')
           .upsert(playerPayload, { onConflict: 'external_id' })
         if (error) {
-          console.error('[SyncQueue] Player insert error:', error, playerPayload)
+          console.error('[SyncQueue] Player insert error:', JSON.stringify(error), 'Payload:', JSON.stringify(playerPayload))
           return false
         }
         return true
