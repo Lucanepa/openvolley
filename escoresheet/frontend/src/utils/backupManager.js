@@ -359,6 +359,55 @@ export async function restoreMatchFromJson(jsonData) {
 }
 
 /**
+ * Restore match in place - overwrite existing match with backup data
+ * Used for cloud backup restore during active match
+ */
+export async function restoreMatchInPlace(matchId, jsonData) {
+  if (!jsonData.version || !jsonData.match) {
+    throw new Error('Invalid backup file format')
+  }
+
+  const { match, sets, events } = jsonData
+
+  await db.transaction('rw', db.matches, db.sets, db.events, async () => {
+    // Update match data (keep same ID)
+    await db.matches.update(matchId, {
+      ...match,
+      id: matchId,
+      restoredAt: new Date().toISOString()
+    })
+
+    // Delete existing sets and events for this match
+    await db.sets.where('matchId').equals(matchId).delete()
+    await db.events.where('matchId').equals(matchId).delete()
+
+    // Recreate sets
+    if (sets?.length) {
+      for (const set of sets) {
+        await db.sets.add({
+          ...set,
+          id: undefined,
+          matchId
+        })
+      }
+    }
+
+    // Recreate events
+    if (events?.length) {
+      for (const event of events) {
+        await db.events.add({
+          ...event,
+          id: undefined,
+          matchId
+        })
+      }
+    }
+  })
+
+  return matchId
+}
+
+/**
  * Fetch match from Supabase by Match ID and PIN
  */
 export async function fetchMatchByPin(gamePin, matchId) {

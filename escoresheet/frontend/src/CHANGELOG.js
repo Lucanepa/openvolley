@@ -3,6 +3,14 @@
 
 export const changelog = [
   {
+    version: '0.12.15',
+    date: '21.12.25',
+    changes: [
+      'Add Restore from Cloud Backup UI in Options modal',
+      'Show backups with Set number and score (e.g. Set 2: 15-12)'
+    ]
+  },
+  {
     version: '0.12.14',
     date: '21.12.25',
     changes: [
@@ -13,7 +21,7 @@ export const changelog = [
     version: '0.12.13',
     date: '21.12.25',
     changes: [
-      'Fix storage bucket name: use 'backup' instead of 'backups''
+      "Fix storage bucket name: use 'backup' instead of 'backups'"
     ]
   },
   {
