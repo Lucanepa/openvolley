@@ -13,7 +13,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { supabase } from '../lib/supabaseClient'
 import { exportMatchData } from '../utils/backupManager'
-import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
@@ -2887,6 +2887,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
         }
         syncLiveStateToSupabase(type, eventTeam, eventData)
+      }
+
+      // Continuous cloud backup after every event (non-blocking, throttled)
+      if (!isTest) {
+        triggerContinuousBackup(matchId, () => exportMatchData(matchId))
       }
 
       // Return the sequence number so it can be used for related events
