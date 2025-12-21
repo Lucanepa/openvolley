@@ -3,6 +3,48 @@
 
 export const changelog = [
   {
+    version: '0.12.20',
+    date: '21.12.25',
+    changes: [
+      'Fix Match Setup spacing: 30px gaps on desktop, responsive padding in cards',
+      'Fix auto-confirm issue: Match Info now requires explicit Create Match click',
+      'Add matchInfoConfirmedAt flag to prevent auto-unlock of team sections'
+    ]
+  },
+  {
+    version: '0.12.19',
+    date: '21.12.25',
+    changes: [
+      'Tablets/mobile devices automatically connect to cloud relay server',
+      'Add platform detection for desktop vs tablet/mobile devices'
+    ]
+  },
+  {
+    version: '0.12.18',
+    date: '21.12.25',
+    changes: [
+      'Add sticky header with close button in HomeOptionsModal (home page)',
+      'Use drag handle style instead of arrow for header collapse on touch devices',
+      'Add custom scrollbar styling to match app theme'
+    ]
+  },
+  {
+    version: '0.12.17',
+    date: '21.12.25',
+    changes: [
+      'Add sticky header with close button in Options modal',
+      'Add dashboard connection info dropdown showing IP address, URLs, and connected devices',
+      'Fix dropdown menu positioning to prevent overflow outside screen'
+    ]
+  },
+  {
+    version: '0.12.16',
+    date: '21.12.25',
+    changes: [
+      'Add Exchange Libero button next to bench libero when another libero is on court'
+    ]
+  },
+  {
     version: '0.12.15',
     date: '21.12.25',
     changes: [

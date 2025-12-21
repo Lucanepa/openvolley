@@ -11658,6 +11658,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             </span>
                           )}
                         </div>
+                        {/* Exchange Libero button - show when another libero is on court */}
+                        {liberoOnCourt &&
+                         liberoOnCourt.liberoNumber !== player.number &&
+                         leftTeamBench.liberos.length > 1 &&
+                         hasPointSinceLastLiberoExchange(teamKey) &&
+                         !isUnable && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleExchangeLibero('left')
+                            }}
+                            style={{
+                              padding: '4px 8px',
+                              background: '#fff',
+                              color: '#000',
+                              border: '1px solid #ccc',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="Exchange liberos (swap L1 ↔ L2)"
+                          >
+                            <span style={{ fontSize: '12px' }}>⇄</span>
+                            Exch.
+                          </button>
+                        )}
                       </div>
                     )
                   })}
@@ -14334,6 +14364,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             </span>
                           )}
                         </div>
+                        {/* Exchange Libero button - show when another libero is on court */}
+                        {liberoOnCourt &&
+                         liberoOnCourt.liberoNumber !== player.number &&
+                         rightTeamBench.liberos.length > 1 &&
+                         hasPointSinceLastLiberoExchange(teamKey) &&
+                         !isUnable && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleExchangeLibero('right')
+                            }}
+                            style={{
+                              padding: '4px 8px',
+                              background: '#fff',
+                              color: '#000',
+                              border: '1px solid #ccc',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="Exchange liberos (swap L1 ↔ L2)"
+                          >
+                            <span style={{ fontSize: '12px' }}>⇄</span>
+                            Exch.
+                          </button>
+                        )}
                       </div>
                     )
                   })}

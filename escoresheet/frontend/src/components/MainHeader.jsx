@@ -26,6 +26,9 @@ export default function MainHeader({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [editingSize, setEditingSize] = useState({ width: '', height: '' })
   const [isEditing, setIsEditing] = useState(false)
+  const [dashboardMenuOpen, setDashboardMenuOpen] = useState(false)
+  const [dashboardMenuPos, setDashboardMenuPos] = useState({ top: 0, right: 12 })
+  const dashboardButtonRef = useRef(null)
   // WxH indicator hidden by default - can be toggled via settings if needed
   const [showViewportSize] = useState(() => {
     const saved = localStorage.getItem('showViewportSize')
@@ -110,6 +113,37 @@ export default function MainHeader({
     window.addEventListener('resize', updateViewportSize)
     return () => window.removeEventListener('resize', updateViewportSize)
   }, [isEditing])
+
+  // Close dashboard menu when clicking outside
+  useEffect(() => {
+    if (!dashboardMenuOpen) return
+    const handleClickOutside = (e) => {
+      if (dashboardButtonRef.current && !dashboardButtonRef.current.contains(e.target)) {
+        setDashboardMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [dashboardMenuOpen])
+
+  // Calculate dashboard menu position
+  const openDashboardMenu = () => {
+    if (dashboardButtonRef.current) {
+      const rect = dashboardButtonRef.current.getBoundingClientRect()
+      const menuWidth = 280
+      // Calculate right position, ensuring menu stays within viewport
+      let rightPos = window.innerWidth - rect.right
+      // If menu would overflow left side, align to left edge with padding
+      if (rect.right - menuWidth < 12) {
+        rightPos = window.innerWidth - menuWidth - 12
+      }
+      setDashboardMenuPos({
+        top: rect.bottom + 8,
+        right: Math.max(12, rightPos)
+      })
+    }
+    setDashboardMenuOpen(!dashboardMenuOpen)
+  }
 
   // Handle viewport resize
   const handleResizeViewport = () => {
@@ -433,53 +467,214 @@ export default function MainHeader({
 
         {/* Dashboard Server Indicator */}
         {dashboardServer?.enabled && (
-          <button
-            onClick={dashboardServer.onOpenOptions}
-            title={`${dashboardServer.dashboardCount || 0} dashboard(s) connected${dashboardServer.refereePin ? ` | PIN: ${dashboardServer.refereePin}` : ''}`}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 10px',
-              fontSize: 'clamp(9px, 1.1vw, 11px)',
-              fontWeight: 600,
-              background: dashboardServer.dashboardCount > 0
-                ? 'rgba(34, 197, 94, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)',
-              color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)',
-              border: `1px solid ${dashboardServer.dashboardCount > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.15)'}`,
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              whiteSpace: 'nowrap'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = dashboardServer.dashboardCount > 0
-                ? 'rgba(34, 197, 94, 0.25)'
-                : 'rgba(255, 255, 255, 0.15)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = dashboardServer.dashboardCount > 0
-                ? 'rgba(34, 197, 94, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)'
-            }}
-          >
-            <span style={{ fontSize: '12px' }}>&#128225;</span>
-            <span>{dashboardServer.dashboardCount || 0}</span>
-            {dashboardServer.refereePin && (
-              <span style={{
-                padding: '2px 6px',
-                background: 'rgba(59, 130, 246, 0.2)',
-                borderRadius: '4px',
-                fontSize: 'clamp(8px, 1vw, 10px)',
-                fontFamily: 'monospace',
-                color: '#3b82f6',
-                letterSpacing: '1px'
-              }}>
-                {dashboardServer.refereePin}
-              </span>
+          <div ref={dashboardButtonRef} style={{ position: 'relative' }}>
+            <button
+              onClick={openDashboardMenu}
+              title={`${dashboardServer.dashboardCount || 0} dashboard(s) connected${dashboardServer.refereePin ? ` | PIN: ${dashboardServer.refereePin}` : ''}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                fontSize: 'clamp(9px, 1.1vw, 11px)',
+                fontWeight: 600,
+                background: dashboardServer.dashboardCount > 0
+                  ? 'rgba(34, 197, 94, 0.15)'
+                  : 'rgba(255, 255, 255, 0.08)',
+                color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)',
+                border: `1px solid ${dashboardServer.dashboardCount > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.15)'}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = dashboardServer.dashboardCount > 0
+                  ? 'rgba(34, 197, 94, 0.25)'
+                  : 'rgba(255, 255, 255, 0.15)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = dashboardServer.dashboardCount > 0
+                  ? 'rgba(34, 197, 94, 0.15)'
+                  : 'rgba(255, 255, 255, 0.08)'
+              }}
+            >
+              <span style={{ fontSize: '12px' }}>&#128225;</span>
+              <span>{dashboardServer.dashboardCount || 0}</span>
+              {dashboardServer.refereePin && (
+                <span style={{
+                  padding: '2px 6px',
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  borderRadius: '4px',
+                  fontSize: 'clamp(8px, 1vw, 10px)',
+                  fontFamily: 'monospace',
+                  color: '#3b82f6',
+                  letterSpacing: '1px'
+                }}>
+                  {dashboardServer.refereePin}
+                </span>
+              )}
+              <span style={{ fontSize: '8px', marginLeft: '2px' }}>{dashboardMenuOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {/* Dashboard Connection Info Dropdown */}
+            {dashboardMenuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'fixed',
+                  top: `${dashboardMenuPos.top}px`,
+                  right: `${dashboardMenuPos.right}px`,
+                  maxWidth: 'calc(100vw - 24px)',
+                  width: '280px',
+                  background: 'rgba(0, 0, 0, 0.95)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  zIndex: 1000,
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)'
+                }}
+              >
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  marginBottom: '10px',
+                  paddingBottom: '6px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  Dashboard Connection Info
+                </div>
+
+                {/* Server Status */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <span style={{
+                      display: 'inline-block',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
+                    }}></span>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                      {dashboardServer.serverRunning ? 'Server Running' : 'Server Not Running'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* IP Address - Prominent Display */}
+                <div style={{
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '6px',
+                  padding: '10px',
+                  marginBottom: '12px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                    Connect devices to this IP
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'monospace', color: '#22c55e' }}>
+                    {dashboardServer.serverIP || 'Not available'}
+                    {dashboardServer.serverPort && dashboardServer.serverPort !== 80 && dashboardServer.serverPort !== 443 && (
+                      <span style={{ color: 'rgba(255,255,255,0.7)' }}>:{dashboardServer.serverPort}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Connection URLs */}
+                {dashboardServer.serverIP && (
+                  <div style={{
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '6px',
+                    padding: '10px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.8)' }}>
+                      Dashboard URLs
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', fontFamily: 'monospace' }}>
+                      {dashboardServer.connectionUrl && (
+                        <div style={{ wordBreak: 'break-all' }}>
+                          <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>Referee:</span>
+                          <span>{dashboardServer.connectionUrl}/referee</span>
+                        </div>
+                      )}
+                      {dashboardServer.connectionUrl && (
+                        <div style={{ wordBreak: 'break-all' }}>
+                          <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>Bench:</span>
+                          <span>{dashboardServer.connectionUrl}/bench</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Connected Dashboards Count */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '6px',
+                  padding: '10px',
+                  marginBottom: '12px'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.8)' }}>
+                    Connected Devices
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '12px' }}>
+                    <div>
+                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>Total: </span>
+                      <span style={{ fontWeight: 600 }}>{dashboardServer.dashboardCount || 0}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>Referees: </span>
+                      <span style={{ fontWeight: 600 }}>{dashboardServer.refereeCount || 0}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>Bench: </span>
+                      <span style={{ fontWeight: 600 }}>{dashboardServer.benchCount || 0}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PIN */}
+                {dashboardServer.refereePin && (
+                  <div style={{
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    padding: '10px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>Match PIN</div>
+                    <div style={{ fontSize: '18px', fontWeight: 600, fontFamily: 'monospace', color: '#3b82f6', letterSpacing: '2px' }}>
+                      {dashboardServer.refereePin}
+                    </div>
+                  </div>
+                )}
+
+                {/* More Options Button */}
+                <button
+                  onClick={() => {
+                    setDashboardMenuOpen(false)
+                    dashboardServer.onOpenOptions?.()
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  More Options...
+                </button>
+              </div>
             )}
-          </button>
+          </div>
         )}
       </div>
 
@@ -1026,7 +1221,8 @@ export default function MainHeader({
       </div>
 
     </div>
-    {/* Collapse/Expand arrow button at bottom center - only shown when collapsible */}
+    {/* Collapse/Expand button at bottom center - only shown when collapsible */}
+    {/* Uses drag handle style on touch devices, arrow on desktop */}
     {collapsible && (
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -1037,29 +1233,42 @@ export default function MainHeader({
           top: isCollapsed ? '0' : '40px',
           left: '50%',
           transform: 'translateX(-50%)',
-          width: '40px',
-          height: '24px',
+          width: isCompactMode ? '60px' : '40px',
+          height: isCompactMode ? '20px' : '24px',
           background: '#22c55e',
           borderRadius: '0 0 8px 8px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          cursor: 'pointer',
+          flexDirection: 'column',
+          gap: '3px',
+          cursor: isCompactMode ? 'grab' : 'pointer',
           zIndex: 1001,
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
           transition: 'all 0.2s ease',
           opacity: 0.25
         }}
       >
-        <span style={{
-          fontSize: '14px',
-          color: '#000',
-          fontWeight: 700,
-          transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.2s ease'
-        }}>
-          ▲
-        </span>
+        {isCompactMode ? (
+          /* Drag handle for touch - horizontal line like iOS sheet handle */
+          <div style={{
+            width: '32px',
+            height: '4px',
+            background: 'rgba(0, 0, 0, 0.4)',
+            borderRadius: '2px'
+          }} />
+        ) : (
+          /* Arrow for desktop */
+          <span style={{
+            fontSize: '14px',
+            color: '#000',
+            fontWeight: 700,
+            transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease'
+          }}>
+            ▲
+          </span>
+        )}
       </div>
     )}
     </div>

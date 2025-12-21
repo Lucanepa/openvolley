@@ -2595,7 +2595,8 @@ export default function App() {
         awayCaptainSignature: null,
         test: true,
         seedKey: TEST_MATCH_SEED_KEY,
-        externalId: TEST_MATCH_EXTERNAL_ID
+        externalId: TEST_MATCH_EXTERNAL_ID,
+        matchInfoConfirmedAt: timestamp // Test matches are pre-configured
       }
 
       if (existingMatch) {
@@ -2946,7 +2947,15 @@ export default function App() {
           enabled: dashboardServerEnabled,
           dashboardCount: dashboardServerData.dashboardCount,
           refereePin: currentMatch?.refereePin,
-          onOpenOptions: () => setHomeOptionsModal(true)
+          onOpenOptions: () => setHomeOptionsModal(true),
+          serverIP: dashboardServerData.serverIP,
+          serverPort: dashboardServerData.serverPort,
+          wsPort: dashboardServerData.wsPort,
+          connectionUrl: dashboardServerData.connectionUrl,
+          wsConnectionUrl: dashboardServerData.wsConnectionUrl,
+          serverRunning: dashboardServerData.serverRunning,
+          refereeCount: dashboardServerData.refereeCount,
+          benchCount: dashboardServerData.benchCount
         } : null}
         collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
       />

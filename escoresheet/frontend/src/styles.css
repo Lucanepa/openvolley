@@ -38,7 +38,32 @@
   *, *::before, *::after {
     box-sizing: border-box;
   }
-  
+
+  /* Custom scrollbar styling - global */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+  }
+
   /* Allow text selection in form elements */
   input, textarea, [contenteditable="true"] {
     -webkit-user-select: text;
@@ -70,10 +95,19 @@
   .grid-4 {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 16px;
   }
   @media (min-width: 900px) {
-    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-4 {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+  }
+  /* Larger gap on desktop/non-compact screens */
+  @media (min-width: 1200px) {
+    .grid-4 {
+      gap: 30px;
+    }
   }
   /* In landscape mode, make grid-4 cards wider */
   @media (orientation: landscape) and (min-width: 600px) {
@@ -81,6 +115,7 @@
       grid-template-columns: 1fr;
       max-width: 800px;
       margin: 0 auto;
+      gap: 20px;
     }
     .grid-4 .card {
       width: 100%;
@@ -91,21 +126,73 @@
     .grid-4 {
       grid-template-columns: repeat(2, 1fr);
       max-width: 1400px;
+      gap: 30px;
     }
   }
   .card {
     background: var(--panel);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 12px;
-    padding: 14px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: 8px;
+    gap: 10px;
+  }
+  /* Larger padding on non-compact screens */
+  @media (min-width: 900px) {
+    .card {
+      padding: 20px;
+      gap: 12px;
+    }
+  }
+  @media (min-width: 1200px) {
+    .card {
+      padding: 24px;
+      gap: 14px;
+    }
   }
   .card h3 { margin: 0 0 6px; font-size: 16px; }
   .card p { margin: 0; color: var(--muted); }
   .card .actions { display:flex; gap:8px; justify-content:flex-end; }
+
+  /* Setup page grids */
+  .setup-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    max-width: 900px;
+  }
+  @media (min-width: 900px) {
+    .setup-cards-grid {
+      gap: 24px;
+    }
+  }
+  @media (min-width: 1200px) {
+    .setup-cards-grid {
+      gap: 30px;
+    }
+  }
+  @media (max-width: 600px) {
+    .setup-cards-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Vertical spacing in setup page */
+  .setup-section {
+    margin-bottom: 16px;
+  }
+  @media (min-width: 900px) {
+    .setup-section {
+      margin-bottom: 24px;
+    }
+  }
+  @media (min-width: 1200px) {
+    .setup-section {
+      margin-bottom: 30px;
+    }
+  }
   
   .shirt {
     position: relative;

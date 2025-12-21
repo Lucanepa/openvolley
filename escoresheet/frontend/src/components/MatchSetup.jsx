@@ -4,8 +4,6 @@ import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
-import TeamAutocomplete from './TeamAutocomplete'
-import { useTeamHistory } from '../hooks/useTeamHistory'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
@@ -481,80 +479,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   const originalHomeTeamRef = useRef(null)
   const originalAwayTeamRef = useRef(null)
 
-  // Team history for autocomplete (online only)
-  const { isOnline: teamHistoryOnline, teamNames, fetchTeamHistory, saveTeamHistory, loading: teamHistoryLoading } = useTeamHistory()
-  const [loadingTeamHistory, setLoadingTeamHistory] = useState(false)
-
-  // Handler for when a team is selected from history dropdown
-  const handleSelectTeamFromHistory = useCallback(async (team, isHome) => {
-    if (!team?.name) return
-
-    setLoadingTeamHistory(true)
-    try {
-      const history = await fetchTeamHistory(team.name)
-
-      if (isHome) {
-        // Set team info
-        setHome(team.name)
-        if (history.shortName) setHomeShortName(history.shortName)
-        if (history.color) setHomeColor(history.color)
-
-        // Set players (UNION of all historical players)
-        if (history.players.length > 0) {
-          setHomeRoster(history.players.map(p => ({
-            number: p.number,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            dob: p.dob || '',
-            libero: '',
-            isCaptain: false
-          })))
-        }
-
-        // Set bench officials (latest)
-        if (history.officials.length > 0) {
-          setBenchHome(history.officials.map(o => ({
-            role: o.role,
-            firstName: o.firstName,
-            lastName: o.lastName,
-            dob: o.dob || ''
-          })))
-        }
-      } else {
-        // Away team
-        setAway(team.name)
-        if (history.shortName) setAwayShortName(history.shortName)
-        if (history.color) setAwayColor(history.color)
-
-        // Set players
-        if (history.players.length > 0) {
-          setAwayRoster(history.players.map(p => ({
-            number: p.number,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            dob: p.dob || '',
-            libero: '',
-            isCaptain: false
-          })))
-        }
-
-        // Set bench officials
-        if (history.officials.length > 0) {
-          setBenchAway(history.officials.map(o => ({
-            role: o.role,
-            firstName: o.firstName,
-            lastName: o.lastName,
-            dob: o.dob || ''
-          })))
-        }
-      }
-    } catch (error) {
-      console.error('Error loading team history:', error)
-    } finally {
-      setLoadingTeamHistory(false)
-    }
-  }, [fetchTeamHistory])
-
   // Server state
   const [serverRunning, setServerRunning] = useState(false)
   const [serverStatus, setServerStatus] = useState(null)
@@ -959,9 +883,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
         // Note: Coin toss data is loaded and managed by CoinToss.jsx component
 
-        // If match has home and away teams, mark match info as confirmed
-        // This handles existing matches that already have teams set
-        if (match.homeTeamId && match.awayTeamId && homeTeam && awayTeam) {
+        // If match was explicitly confirmed (user clicked "Create Match"), restore that state
+        // This flag is set in confirmMatchInfo and persisted in the database
+        // We check matchInfoConfirmedAt instead of just team IDs to prevent auto-confirm
+        // when auto-save creates teams before user explicitly confirms
+        if (match.matchInfoConfirmedAt && homeTeam && awayTeam) {
           setMatchInfoConfirmed(true)
         }
       } catch (error) {
@@ -1582,6 +1508,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       }
 
       // Update match with team IDs and match info
+      // matchInfoConfirmedAt flag indicates user explicitly clicked "Create Match"
       await db.matches.update(matchId, {
         homeTeamId,
         awayTeamId,
@@ -1605,6 +1532,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         game_n: gameN ? parseInt(gameN, 10) : null,
         bench_home: benchHome,
         bench_away: benchAway,
+        matchInfoConfirmedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })
 
@@ -2305,38 +2233,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     // Ensure all roster updates are committed before navigating
     // Force a small delay to ensure database updates are fully committed
     await new Promise(resolve => setTimeout(resolve, 100))
-
-    // Save team history to Supabase for future autocomplete (official matches only)
-    if (!match?.test && teamHistoryOnline) {
-      try {
-        // Save home team history
-        if (home && home.trim() && homeRoster.length > 0) {
-          await saveTeamHistory(
-            home.trim(),
-            homeShortName || null,
-            homeColor || null,
-            homeRoster,
-            benchHome,
-            matchId
-          )
-        }
-
-        // Save away team history
-        if (away && away.trim() && awayRoster.length > 0) {
-          await saveTeamHistory(
-            away.trim(),
-            awayShortName || null,
-            awayColor || null,
-            awayRoster,
-            benchAway,
-            matchId
-          )
-        }
-      } catch (historyError) {
-        // Don't block match start if history save fails
-        console.error('Error saving team history:', historyError)
-      }
-    }
 
     // Sync to server immediately so referee/bench dashboards receive data before Scoreboard mounts
     const finalMatchData = await db.matches.get(matchId)
@@ -5351,7 +5247,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )}
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, maxWidth: '900px' }}>
+      <div className="setup-cards-grid setup-section">
         {/* Match Info Card */}
         <div className="card" style={!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}}>
           <div>
@@ -5433,9 +5329,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         </div>
       </div>
       {/* Dashboard Connections Row */}
-      <div style={{
-        margin: '12px 0',
-        padding: '12px',
+      <div className="setup-section" style={{
+        padding: '16px',
         background: 'rgba(255, 255, 255, 0.03)',
         borderRadius: '8px',
         border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -5466,7 +5361,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         </div>
       </div>
       
-      <div className="grid-4" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+      <div className="grid-4 setup-section" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
         <div className="card" style={{ order: 1 }}>
           {/* Row 1: Status + Team Name */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -5475,7 +5370,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
 
           {/* Row 2: Stats */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 30 }}>
             <div style={{
               background: 'rgb(0, 0, 0)',
               borderRadius: 6,
@@ -5521,7 +5416,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
 
           {/* Row 3: Color selector + Shirt + Roster */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30 }}>
             <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Select colour</span>
             <div
               className="shirt"
@@ -5551,7 +5446,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
 
           {/* Row 2: Stats */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 30 }}>
             <div style={{
               background: 'rgb(0, 0, 0)',
               borderRadius: 6,
@@ -5597,7 +5492,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           </div>
 
           {/* Row 3: Color selector + Shirt + Roster */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30 }}>
             <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Select colour</span>
             <div
               className="shirt"

@@ -29,10 +29,12 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-            <h3 style={{ margin:0 }}>{title}</h3>
-            {!hideCloseButton && <button className="secondary" onClick={onClose}>Close</button>}
-          </div>
+          {(title || !hideCloseButton) && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+              <h3 style={{ margin:0 }}>{title}</h3>
+              {!hideCloseButton && <button className="secondary" onClick={onClose}>Close</button>}
+            </div>
+          )}
           {children}
         </div>
       </div>
@@ -54,10 +56,12 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
         style={{ width: widthStyle, maxHeight:'90vh', overflow:'auto', background:'#111827', border:'1px solid rgba(255,255,255,.08)', borderRadius:12, padding:16 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-          <h3 style={{ margin:0 }}>{title}</h3>
-          {!hideCloseButton && <button className="secondary" onClick={onClose}>Close</button>}
-        </div>
+        {(title || !hideCloseButton) && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <h3 style={{ margin:0 }}>{title}</h3>
+            {!hideCloseButton && <button className="secondary" onClick={onClose}>Close</button>}
+          </div>
+        )}
         {children}
       </div>
     </div>
