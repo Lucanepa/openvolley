@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.12',
+    date: '21.12.25',
+    changes: [
+      'Add logging system with cloud backup to Supabase storage'
+    ]
+  },
+  {
     version: '0.12.11',
     date: '21.12.25',
     changes: [

@@ -5,6 +5,8 @@ import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { exportMatchData } from '../utils/backupManager'
+import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 
 // Hook to detect if we should use compact sizing
 function useCompactMode() {
@@ -534,6 +536,14 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       ts: new Date().toISOString(),
       status: 'queued'
     })
+
+    // Cloud backup at coin toss (non-blocking)
+    if (!match?.test) {
+      exportMatchData(matchId).then(backupData => {
+        uploadBackupToCloud(matchId, backupData)
+        uploadLogsToCloud(matchId)
+      }).catch(err => console.warn('[CoinToss] Cloud backup failed:', err))
+    }
 
     // Update saved signatures
     setSavedSignatures({

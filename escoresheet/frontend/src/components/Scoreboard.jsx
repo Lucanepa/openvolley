@@ -12,6 +12,8 @@ import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { supabase } from '../lib/supabaseClient'
+import { exportMatchData } from '../utils/backupManager'
+import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
@@ -3921,12 +3923,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Trigger event backup for Safari/Firefox (match end)
       onTriggerEventBackup?.('match_end')
 
+      // Cloud backup at match end (non-blocking)
+      if (matchRecord?.test !== true) {
+        exportMatchData(matchId).then(backupData => {
+          uploadBackupToCloud(matchId, backupData)
+          uploadLogsToCloud(matchId)
+        }).catch(err => console.warn('[Scoreboard] Cloud backup at match end failed:', err))
+      }
+
       // Only call onFinishSet for match end, not between sets
       // (Scoreboard now handles set creation internally)
       if (onFinishSet) onFinishSet(data.set)
     } else {
       // Trigger event backup for Safari/Firefox (set end)
       onTriggerEventBackup?.('set_end')
+
+      // Cloud backup at set end (non-blocking)
+      if (matchRecord?.test !== true) {
+        exportMatchData(matchId).then(backupData => {
+          uploadBackupToCloud(matchId, backupData)
+          uploadLogsToCloud(matchId)
+        }).catch(err => console.warn('[Scoreboard] Cloud backup at set end failed:', err))
+      }
 
       // Auto-download game data at set end if enabled
       if (autoDownloadAtSetEnd) {

@@ -9,6 +9,8 @@ import { useTeamHistory } from '../hooks/useTeamHistory'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
+import { exportMatchData } from '../utils/backupManager'
+import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -1636,6 +1638,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       setMatchInfoConfirmed(true)
       setCurrentView('main')
       setNoticeModal({ message: 'Match info saved! Syncing to database...', type: 'success', syncing: true })
+
+      // Cloud backup at match setup (non-blocking)
+      exportMatchData(matchId).then(backupData => {
+        uploadBackupToCloud(matchId, backupData)
+        uploadLogsToCloud(matchId)
+      }).catch(err => console.warn('[MatchSetup] Cloud backup failed:', err))
 
       // Poll to check when sync completes
       const checkSyncStatus = async () => {
