@@ -2770,7 +2770,7 @@ const handlePrint = () => {
 
             {/* Row 2: Sets 3 and 4 - Full Width 50/50 */}
             <div className="flex mt-1">
-                      <LeftInfoBox 
+                      <LeftInfoBox
                         lineup={set3Data.leftLineup}
                         subs={set3Data.leftSubs}
                         serviceRounds={set3Data.leftServiceRounds}
@@ -2806,9 +2806,9 @@ const handlePrint = () => {
                             <div className="font-black text-sm mt-1">4</div>
                         </div>
                         <div className="flex-1">
-                            <StandardSet 
-                                setNumber={4} 
-                                isSwapped={true} 
+                            <StandardSet
+                                setNumber={4}
+                                isSwapped={true}
                                 teamNameLeft={shouldShowSet4 ? teamBShortName : ''}
                                 teamNameRight={shouldShowSet4 ? teamAShortName : ''}
                                 firstServeTeamA={shouldShowSet4 ? match?.coinTossServeA : undefined}

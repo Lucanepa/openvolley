@@ -62,19 +62,32 @@ function parseRosterText(text) {
   
   // Removed console.log('[parseRosterText] Normalized text (first 1000 chars):', normalizedText.substring(0, 1000))
   
+  // Helper: name word pattern with hyphen and apostrophe support
+  // Supports: Jean-Pierre, O'Brien, D'Angelo, Müller, François
+  // Pattern breakdown:
+  //   - Capital letter (including accented: Ä, Ö, Ü, etc.)
+  //   - MUST have either: lowercase letters OR apostrophe+content (prevents matching single letters like M/F)
+  //   - Zero or more: hyphen + capital + lowercase+ (for Jean-Pierre)
+  const upper = 'A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß'
+  const lower = 'a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ'
+  // Either: lowercase+ (optionally with apostrophe after), OR apostrophe+content (for O'Brien, D'Angelo)
+  const nameWord = `[${upper}](?:[${lower}]+(?:'[${upper}]?[${lower}]+)?|'[${upper}]?[${lower}]+)(?:-[${upper}][${lower}]+)*`
+  // Full name: one or more name words separated by spaces
+  const fullName = `${nameWord}(?:\\s+${nameWord})*`
+
   // Common patterns for different languages
   const patterns = {
     // Player patterns - look for number, name, DOB
     // Format variations: "1. LastName FirstName DD/MM/YYYY" or "1 LastName FirstName DD/MM/YYYY"
-    player: /(\d+)[.\s]+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+(\d{1,2}[./]\d{1,2}[./]\d{4})/gi,
-    
+    player: new RegExp(`(\\d+)[.\\s]+(${fullName})\\s+(${fullName})\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4})`, 'gi'),
+
     // Coach patterns - look for "Coach", "Entraîneur", "Allenatore", "Trainer"
-    coach: /(?:Coach|Entraîneur|Allenatore|Trainer)[:\s]+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)(?:\s+(\d{1,2}[./]\d{1,2}[./]\d{4}))?/gi,
-    
+    coach: new RegExp(`(?:Coach|Entraîneur|Allenatore|Trainer)[:\\s]+(${fullName})\\s+(${fullName})(?:\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4}))?`, 'gi'),
+
     // Assistant Coach patterns
-    ac1: /(?:Assistant\s+Coach\s+1|Entraîneur\s+adjoint\s+1|Allenatore\s+assistente\s+1|Assistenttrainer\s+1)[:\s]+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)(?:\s+(\d{1,2}[./]\d{1,2}[./]\d{4}))?/gi,
-    
-    ac2: /(?:Assistant\s+Coach\s+2|Entraîneur\s+adjoint\s+2|Allenatore\s+assistente\s+2|Assistenttrainer\s+2)[:\s]+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)(?:\s+(\d{1,2}[./]\d{1,2}[./]\d{4}))?/gi
+    ac1: new RegExp(`(?:Assistant\\s+Coach\\s+1|Entraîneur\\s+adjoint\\s+1|Allenatore\\s+assistente\\s+1|Assistenttrainer\\s+1)[:\\s]+(${fullName})\\s+(${fullName})(?:\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4}))?`, 'gi'),
+
+    ac2: new RegExp(`(?:Assistant\\s+Coach\\s+2|Entraîneur\\s+adjoint\\s+2|Allenatore\\s+assistente\\s+2|Assistenttrainer\\s+2)[:\\s]+(${fullName})\\s+(${fullName})(?:\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4}))?`, 'gi')
   }
 
     // Extract players
@@ -135,7 +148,7 @@ function parseRosterText(text) {
       // Example French: "323547 | Theresa | Hauck | F | 19.08.1999"
       // Use normalized text for consistent spacing, but also try original text for dates with spaces
       // Note: H = Homme (French for Male), M = Male, F = Female
-    const svPlayerPattern = /(\d{5,6})\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+[MFH]\s+(\d{1,2}[./]\s*\d{1,2}[./]\s*\d{4})/gi
+    const svPlayerPattern = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}[./]\\s*\\d{1,2}[./]\\s*\\d{4})`, 'gi')
     
     // Reset regex lastIndex to avoid issues
     svPlayerPattern.lastIndex = 0
@@ -157,7 +170,7 @@ function parseRosterText(text) {
     
     // If still no SV format players, try with original text (not normalized) to catch dates with spaces
     if (svFormatPlayers.length === 0) {
-      const svPlayerPatternOriginal = /(\d{5,6})\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+[MFH]\s+(\d{1,2}\s*[./]\s*\d{1,2}\s*[./]\s*\d{4})/gi
+      const svPlayerPatternOriginal = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}\\s*[./]\\s*\\d{1,2}\\s*[./]\\s*\\d{4})`, 'gi')
       
       let matchOriginal
       while ((matchOriginal = svPlayerPatternOriginal.exec(text)) !== null) {
@@ -187,8 +200,11 @@ function parseRosterText(text) {
     
     // If still no players, try simpler patterns in the full text
     if (result.players.length === 0) {
-      // Try pattern: number, firstname, lastname, M/F, date
-      const simplePattern = /(\d+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+[MF]\s+(\d{1,2}[./]\d{1,2}[./]\d{4})/gi
+      // Try pattern: number, firstname, lastname, M/F, date (with hyphen/apostrophe support)
+      // Must have lowercase+ OR apostrophe+content (prevents matching single letters like M/F)
+      const simpleNameWord = "[A-Z](?:[a-z]+(?:'[A-Z]?[a-z]+)?|'[A-Z]?[a-z]+)(?:-[A-Z][a-z]+)*"
+      const simpleFullName = `${simpleNameWord}(?:\\s+${simpleNameWord})*`
+      const simplePattern = new RegExp(`(\\d+)\\s+(${simpleFullName})\\s+(${simpleFullName})\\s+[MF]\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4})`, 'gi')
       simplePattern.lastIndex = 0
       while ((match = simplePattern.exec(text)) !== null) {
           const number = parseInt(match[1])
@@ -209,12 +225,12 @@ function parseRosterText(text) {
       
       // Removed console.log('[parseRosterText] Total players found:', result.players.length)
     
-    // Parse Italian/German/French coach format: 
+    // Parse Italian/German/French coach format:
     // Italian: "Allenatore: #52205 | Michelle Howald (1997)"
     // German: "Coach: #80641 | Malcolm Mobétie (2004)"
     // French: "Coach: #313261 | Simon Richle (1994)"
     if (!result.coach) {
-      const coachPattern = /(?:Coach|Allenatore|Trainer|Entraîneur):\s*#\d+\s*\|\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s*\((\d{4})\)/i
+      const coachPattern = new RegExp(`(?:Coach|Allenatore|Trainer|Entraîneur):\\s*#\\d+\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'i')
       const coachMatch = normalizedText.match(coachPattern)
       if (coachMatch) {
         result.coach = {
@@ -226,12 +242,12 @@ function parseRosterText(text) {
       }
     }
     
-    // Parse Italian/German/French assistant coach format: 
+    // Parse Italian/German/French assistant coach format:
     // Italian: "1. Assistente allenatore: #90382 | Luca Canepa (1993)"
     // German: "1. Assistant Coach: #72458 | Sabina Camenzind (2004)"
     // French: "1er coach assistant: #..."
     if (!result.ac1) {
-      const ac1Pattern = /(?:1\.|1er)\s*(?:Assistente\s+allenatore|Assistant\s+Coach|Assistenttrainer|coach\s+assistant):\s*#\d+\s*\|\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s*\((\d{4})\)/i
+      const ac1Pattern = new RegExp(`(?:1\\.|1er)\\s*(?:Assistente\\s+allenatore|Assistant\\s+Coach|Assistenttrainer|coach\\s+assistant):\\s*#\\d+\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'i')
       const ac1Match = normalizedText.match(ac1Pattern)
       if (ac1Match) {
         result.ac1 = {
@@ -248,7 +264,7 @@ function parseRosterText(text) {
     // German: "2. Assistant Coach: #..."
     // French: "2e coach assistant: #..."
     if (!result.ac2) {
-      const ac2Pattern = /(?:2\.|2e)\s*(?:Assistente\s+allenatore|Assistant\s+Coach|Assistenttrainer|coach\s+assistant):\s*#\d+\s*\|\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)*)\s*\((\d{4})\)/i
+      const ac2Pattern = new RegExp(`(?:2\\.|2e)\\s*(?:Assistente\\s+allenatore|Assistant\\s+Coach|Assistenttrainer|coach\\s+assistant):\\s*#\\d+\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'i')
       const ac2Match = normalizedText.match(ac2Pattern)
       if (ac2Match) {
         result.ac2 = {

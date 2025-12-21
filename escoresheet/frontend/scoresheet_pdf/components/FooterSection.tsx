@@ -448,11 +448,11 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
 
             {/* Column Headers */}
             <div className="flex items-center border-b border-r border-black px-2 gap-2 text-[8px] font-bold bg-white h-5 shrink-0">
-                 <div className="w-20 border-r border-black text-left text-[9px]">Official</div>
-                 <div className="w-28 border-r border-black text-left text-[9px]">Name</div>
-                 <div className="w-16 border-r border-black text-center text-[9px]">Country</div>
-                 <div className="w-16 border-r border-black text-center text-[9px]">DOB</div>
-                 <div className="flex-1 text-center text-[9px]">Signature</div>
+                 <div className="w-20 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Official</div>
+                 <div className="w-28 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Name</div>
+                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">Country</div>
+                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">DOB</div>
+                 <div className="flex-1 text-center text-[9px] h-5 flex items-center justify-center">Signature</div>
             </div>
 
             {/* Officials List */}
@@ -462,18 +462,18 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                     const fullName = official ? `${official.lastName || ''} ${official.firstName || ''}`.trim() : '';
 
                     return (
-                    <div key={idx} className="flex items-center border-b border-r border-black px-2 gap-2 flex-1 min-h-0">
-                        <div className="w-20 border-r border-black font-bold text-[9px] shrink-0 flex items-center">{role}</div>
+                    <div key={idx} className="flex items-center border-b border-r border-black px-2 gap-2 flex-1 h-5">
+                        <div className="w-20 border-r border-black font-bold text-[9px] shrink-0 flex items-center h-5">{role}</div>
 
-                        <div className="w-28 border-r border-black shrink-0 flex items-center">
+                        <div className="w-28 border-r border-black shrink-0 flex items-center h-5">
                             <div className="w-full text-[9px] bg-white pb-0.5">{fullName}</div>
                         </div>
 
-                        <div className="w-16 border-r border-black shrink-0 flex items-center justify-center">
-                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{official?.country || ''}</div>
+                        <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5">
+                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? (official?.country || '') : ''}</div>
                         </div>
 
-                         <div className="w-16 border-r border-black shrink-0 flex items-center justify-center">
+                         <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5">
                             <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? (official?.dob || '') : ''}</div>
                         </div>
 

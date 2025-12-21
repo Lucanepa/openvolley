@@ -1202,16 +1202,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Only sync official matches, not test matches
     if (data.match.test) return
 
-    // Skip if match doesn't have a valid external UUID for Supabase
-    // Local matches use numeric IDs which aren't valid UUIDs
-    const externalId = data.match.externalId
-    if (!externalId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
-      return
-    }
-
     try {
-      // Use the external UUID for Supabase
-      const supabaseMatchId = externalId
+      // Get the Supabase match UUID
+      let supabaseMatchId = null
+
+      // First check if we have a valid externalId (UUID from Supabase import)
+      const externalId = data.match.externalId
+      if (externalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
+        supabaseMatchId = externalId
+      } else {
+        // For locally created matches, look up the Supabase UUID using our seed_key
+        // seed_key is more unique than numeric matchId (e.g., "game_364574_1734811234567")
+        const seedKey = data.match.seed_key || String(matchId)
+        const { data: matchData, error } = await supabase
+          .from('matches')
+          .select('id')
+          .eq('external_id', seedKey)
+          .maybeSingle()
+
+        if (error || !matchData) {
+          // Match not yet synced to Supabase - skip live state sync for now
+          return
+        }
+        supabaseMatchId = matchData.id
+      }
+
+      if (!supabaseMatchId) return
 
       // Compute current state
       const currentSet = data.set
@@ -1282,7 +1298,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         // Get the most recent lineup
         const lastLineup = lineupEvents[lineupEvents.length - 1]
-        return lastLineup.payload?.positions || null
+        return lastLineup.payload?.lineup || null
       }
 
       const leftLineup = getLineupForTeam(leftTeamKey)
@@ -2397,6 +2413,76 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     )
   }, [data?.events, data?.set, leftIsHome])
 
+  // Track which lineups we've already validated (to prevent infinite modal loops)
+  const validatedLineupRef = useRef({ home: null, away: null })
+
+  // Validate lineup - check if any player in lineup has become a libero
+  // If so, invalidate the lineup and reopen lineup modal (only once per issue)
+  useEffect(() => {
+    if (!data?.events || !data?.set || !data?.homePlayers || !data?.awayPlayers) return
+    if (lineupModal) return // Don't interfere if modal already open
+
+    const validateTeamLineup = (teamKey) => {
+      const players = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+      const liberoNumbers = new Set(
+        players.filter(p => p.libero && p.libero !== '').map(p => Number(p.number))
+      )
+
+      // Find the most recent initial lineup event for this team in current set
+      const initialLineups = data.events
+        .filter(e =>
+          e.type === 'lineup' &&
+          e.payload?.team === teamKey &&
+          e.setIndex === data.set.index &&
+          e.payload?.isInitial
+        )
+        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+
+      const initialLineup = initialLineups[0]
+      if (!initialLineup || !initialLineup.payload?.lineup) return null
+
+      // Check if any player in lineup is now a libero
+      const lineup = initialLineup.payload.lineup
+      const invalidPlayers = []
+      for (const [position, playerNumber] of Object.entries(lineup)) {
+        if (liberoNumbers.has(Number(playerNumber))) {
+          invalidPlayers.push({ position, playerNumber })
+        }
+      }
+
+      if (invalidPlayers.length > 0) {
+        // Create a key for this specific issue
+        const issueKey = `${data.set.index}-${invalidPlayers.map(p => p.playerNumber).sort().join(',')}`
+
+        // Only show modal if we haven't already shown it for this exact issue
+        if (validatedLineupRef.current[teamKey] !== issueKey) {
+          validatedLineupRef.current[teamKey] = issueKey
+          console.log(`[Scoreboard] Lineup invalid for ${teamKey}: players ${invalidPlayers.map(p => p.playerNumber).join(', ')} are now liberos`)
+          return teamKey
+        }
+      } else {
+        // Lineup is valid, clear the validation flag
+        validatedLineupRef.current[teamKey] = null
+      }
+      return null
+    }
+
+    const leftTeamKey = leftIsHome ? 'home' : 'away'
+    const rightTeamKey = leftIsHome ? 'away' : 'home'
+
+    // Check if left team lineup has invalid players
+    const invalidLeftTeam = leftTeamLineupSet ? validateTeamLineup(leftTeamKey) : null
+    const invalidRightTeam = rightTeamLineupSet ? validateTeamLineup(rightTeamKey) : null
+
+    if (invalidLeftTeam) {
+      console.log('[Scoreboard] Opening lineup modal for left team due to invalid players')
+      setLineupModal({ team: invalidLeftTeam, mode: 'initial', reason: 'Player in lineup is now a libero - please update lineup' })
+    } else if (invalidRightTeam) {
+      console.log('[Scoreboard] Opening lineup modal for right team due to invalid players')
+      setLineupModal({ team: invalidRightTeam, mode: 'initial', reason: 'Player in lineup is now a libero - please update lineup' })
+    }
+  }, [data?.events, data?.set, data?.homePlayers, data?.awayPlayers, leftIsHome, leftTeamLineupSet, rightTeamLineupSet, lineupModal])
+
   // Get bench players, liberos, and bench officials for each team
   const leftTeamBench = useMemo(() => {
     if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [] }
@@ -2826,7 +2912,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             .sort((a, b) => (a.seq || 0) - (b.seq || 0))
           if (lineupEvents.length === 0) return null
           const lastLineup = lineupEvents[lineupEvents.length - 1]
-          return lastLineup.payload?.positions || null
+          return lastLineup.payload?.lineup || null
         }
 
         // Determine which team is on which side based on set index
@@ -2845,6 +2931,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const leftTeamKey = leftIsHome ? 'home' : 'away'
         const rightTeamKey = leftIsHome ? 'away' : 'home'
 
+        // Calculate serving team (same logic as getCurrentServe)
+        const set1FirstServe = data.match?.firstServe || 'home'
+        let currentSetFirstServe
+        if (setIndex === 5 && data.match?.set5FirstServe) {
+          const coinTossTeamAKey = data.match.coinTossTeamA || 'home'
+          const coinTossTeamBKey = data.match.coinTossTeamB || 'away'
+          currentSetFirstServe = data.match.set5FirstServe === 'A' ? coinTossTeamAKey : coinTossTeamBKey
+        } else if (setIndex === 5) {
+          currentSetFirstServe = set1FirstServe
+        } else {
+          currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+        }
+
+        // Find last point event to determine current serve
+        const pointEvents = (data.events || [])
+          .filter(e => e.type === 'point' && e.setIndex === data.set.index)
+          .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+        const servingTeam = pointEvents.length > 0 ? (pointEvents[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
+
+        // Get server number from position I of serving team's lineup
+        const servingTeamLineup = getLineupForTeam(servingTeam)
+        const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
+
         await db.sync_queue.add({
           resource: 'event',
           action: 'insert',
@@ -2859,8 +2968,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             created_at: new Date().toISOString(),
             lineup_left: getLineupForTeam(leftTeamKey),
             lineup_right: getLineupForTeam(rightTeamKey),
-            serve_team: data.set.servingTeam || null,
-            serve_player: data.set.serverNumber || null
+            serve_team: servingTeam,
+            serve_player: serverNumber
           },
           ts: Date.now(),
           status: 'queued'
@@ -11661,7 +11770,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {/* Exchange Libero button - show when another libero is on court */}
                         {liberoOnCourt &&
                          liberoOnCourt.liberoNumber !== player.number &&
-                         leftTeamBench.liberos.length > 1 &&
                          hasPointSinceLastLiberoExchange(teamKey) &&
                          !isUnable && (
                           <button
@@ -14367,7 +14475,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {/* Exchange Libero button - show when another libero is on court */}
                         {liberoOnCourt &&
                          liberoOnCourt.liberoNumber !== player.number &&
-                         rightTeamBench.liberos.length > 1 &&
                          hasPointSinceLastLiberoExchange(teamKey) &&
                          !isUnable && (
                           <button
@@ -22675,45 +22782,43 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           seq: manualLineupSeq
         })
 
-        setConfirmMessage('Lineup saved')
-
         // Sync to referee immediately after lineup is saved
         if (onLineupSaved) {
           onLineupSaved()
         }
-        
+
         // Check if both lineups are now set - if so, award any pending penalty points
         // Reuse allEvents from above to avoid redeclaration
-        const homeLineupSet = allEvents.some(e => 
-          e.type === 'lineup' && 
-          e.payload?.team === 'home' && 
+        const homeLineupSet = allEvents.some(e =>
+          e.type === 'lineup' &&
+          e.payload?.team === 'home' &&
           e.setIndex === setIndex &&
           e.payload?.isInitial
         )
-        const awayLineupSet = allEvents.some(e => 
-          e.type === 'lineup' && 
-          e.payload?.team === 'away' && 
+        const awayLineupSet = allEvents.some(e =>
+          e.type === 'lineup' &&
+          e.payload?.team === 'away' &&
           e.setIndex === setIndex &&
           e.payload?.isInitial
         )
-        
+
         if (homeLineupSet && awayLineupSet) {
           // Both lineups are set - check for pending penalty sanctions in this set
-          const pendingPenalties = allEvents.filter(e => 
-            e.type === 'sanction' && 
+          const pendingPenalties = allEvents.filter(e =>
+            e.type === 'sanction' &&
             e.setIndex === setIndex &&
             e.payload?.type === 'penalty'
           )
-          
+
           // Check if points have already been awarded for these penalties
           const pointEvents = allEvents.filter(e => e.type === 'point' && e.setIndex === setIndex)
-          
+
           if (pendingPenalties.length > 0 && pointEvents.length === 0) {
             // Award points for each pending penalty
             for (const penalty of pendingPenalties) {
               const sanctionedTeam = penalty.payload?.team
               const otherTeam = sanctionedTeam === 'home' ? 'away' : 'home'
-              
+
               // Award point to the other team
               const currentSet = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
               if (currentSet) {
@@ -22722,7 +22827,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 await db.sets.update(currentSet.id, {
                   [field]: currentPoints + 1
                 })
-                
+
                 // Log point event
                 const penaltyPointSeq = maxSeq + 2 + pendingPenalties.indexOf(penalty)
                 await db.events.add({
@@ -22738,13 +22843,16 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             }
           }
         }
+
+        // Auto-close modal after successful save (skip confirmation step)
+        onSave()
       })().catch(err => {
         // Don't auto-close - let user close manually with close button
         setErrors({0: 'Save failed', 1: 'Save failed', 2: 'Save failed', 3: 'Save failed', 4: 'Save failed', 5: 'Save failed'})
       })
     } else {
-      setConfirmMessage('Lineup saved')
-      setErrors({})
+      // Auto-close modal after successful save
+      onSave()
     }
   }
 

@@ -3118,11 +3118,11 @@ export default function App() {
           width={450}
         >
           <div style={{ padding: '24px' }}>
-            {/* Online mode - restore from cloud */}
+            {/* Online mode - restore from database */}
             {!offlineMode && (
               <div style={{ marginBottom: '24px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
-                  Restore from Cloud
+                  Restore from Database
                 </h3>
                 <div style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
@@ -3235,7 +3235,7 @@ export default function App() {
                     cursor: restoreLoading || !restoreMatchIdInput || restorePin.length !== 6 ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {restoreLoading ? 'Restoring...' : 'Restore from Cloud'}
+                  {restoreLoading ? 'Restoring...' : 'Restored from Database'}
                 </button>
               </div>
             )}
@@ -3257,7 +3257,7 @@ export default function App() {
             {/* Offline/File restore */}
             <div>
               <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
-                Restore from Backup File
+                Restore from Local Backup
               </h3>
               <button
                 onClick={async () => {
