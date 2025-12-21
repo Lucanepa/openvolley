@@ -3971,6 +3971,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
           </Modal>
         )}
+        {/* Notice Modal - must be rendered in this view since early return prevents main render */}
+        {noticeModal && (
+          <Modal
+            title={noticeModal.syncing ? 'Syncing' : noticeModal.type === 'success' ? 'Success' : 'Notice'}
+            open={true}
+            onClose={() => !noticeModal.syncing && setNoticeModal(null)}
+            width={400}
+            hideCloseButton={true}
+          >
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              {noticeModal.syncing && (
+                <div style={{ fontSize: '48px', marginBottom: '16px', animation: 'spin 1s linear infinite' }}>⟳</div>
+              )}
+              {!noticeModal.syncing && noticeModal.type === 'success' && (
+                <div style={{ fontSize: '48px', marginBottom: '16px', color: '#22c55e' }}>✓</div>
+              )}
+              {!noticeModal.syncing && noticeModal.type === 'error' && (
+                <div style={{ fontSize: '48px', marginBottom: '16px', color: '#ef4444' }}>✕</div>
+              )}
+              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)', whiteSpace: 'pre-line' }}>
+                {noticeModal.message}
+              </p>
+              {!noticeModal.syncing && (
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => setNoticeModal(null)}
+                    style={{
+                      padding: '12px 24px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: noticeModal.type === 'success' ? '#22c55e' : noticeModal.type === 'error' ? '#ef4444' : 'var(--accent)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    OK
+                  </button>
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
       </MatchSetupHomeTeamView>
     )
   }
@@ -4867,6 +4911,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               >
                 OK
               </button>
+            </div>
+          </Modal>
+        )}
+        {/* Notice Modal - must be rendered in this view since early return prevents main render */}
+        {noticeModal && (
+          <Modal
+            title={noticeModal.syncing ? 'Syncing' : noticeModal.type === 'success' ? 'Success' : 'Notice'}
+            open={true}
+            onClose={() => !noticeModal.syncing && setNoticeModal(null)}
+            width={400}
+            hideCloseButton={true}
+          >
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              {noticeModal.syncing && (
+                <div style={{ fontSize: '48px', marginBottom: '16px', animation: 'spin 1s linear infinite' }}>⟳</div>
+              )}
+              {!noticeModal.syncing && noticeModal.type === 'success' && (
+                <div style={{ fontSize: '48px', marginBottom: '16px', color: '#22c55e' }}>✓</div>
+              )}
+              {!noticeModal.syncing && noticeModal.type === 'error' && (
+                <div style={{ fontSize: '48px', marginBottom: '16px', color: '#ef4444' }}>✕</div>
+              )}
+              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)', whiteSpace: 'pre-line' }}>
+                {noticeModal.message}
+              </p>
+              {!noticeModal.syncing && (
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => setNoticeModal(null)}
+                    style={{
+                      padding: '12px 24px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: noticeModal.type === 'success' ? '#22c55e' : noticeModal.type === 'error' ? '#ef4444' : 'var(--accent)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    OK
+                  </button>
+                </div>
+              )}
             </div>
           </Modal>
         )}
