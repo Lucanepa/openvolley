@@ -15065,6 +15065,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           autoDownloadAtSetEnd,
           setAutoDownloadAtSetEnd
         }}
+        matchId={matchId}
       />
 
       {/* Scoreboard Guide Modal */}

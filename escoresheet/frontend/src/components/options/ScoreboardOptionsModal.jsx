@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import Modal from '../Modal'
+import { listCloudBackups, loadCloudBackup } from '../../utils/logger'
+import { restoreMatchInPlace } from '../../utils/backupManager'
 
 function InfoDot({ title }) {
   return (
@@ -142,9 +144,58 @@ export default function ScoreboardOptionsModal({
   onOpenConnectionSetup,
   server,
   matchOptions,
-  displayOptions
+  displayOptions,
+  matchId,
+  onRestoreBackup
 }) {
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
+  const [showCloudBackups, setShowCloudBackups] = useState(false)
+  const [cloudBackups, setCloudBackups] = useState([])
+  const [backupsLoading, setBackupsLoading] = useState(false)
+  const [restoreConfirm, setRestoreConfirm] = useState(null) // backup to confirm restore
+
+  // Load cloud backups
+  const loadBackups = async () => {
+    if (!matchId) {
+      alert('No match ID available')
+      return
+    }
+    setBackupsLoading(true)
+    try {
+      const backups = await listCloudBackups(matchId)
+      setCloudBackups(backups)
+      setShowCloudBackups(true)
+    } catch (err) {
+      console.error('Failed to load backups:', err)
+      alert('Failed to load cloud backups')
+    } finally {
+      setBackupsLoading(false)
+    }
+  }
+
+  // Restore from a cloud backup
+  const handleRestore = async (backup) => {
+    try {
+      const backupData = await loadCloudBackup(backup.path)
+      if (!backupData) {
+        alert('Failed to load backup data')
+        return
+      }
+      // Use the callback or in-place restore
+      if (onRestoreBackup) {
+        await onRestoreBackup(backupData)
+      } else {
+        await restoreMatchInPlace(matchId, backupData)
+      }
+      setShowCloudBackups(false)
+      setRestoreConfirm(null)
+      onClose?.()
+      window.location.reload()
+    } catch (err) {
+      console.error('Failed to restore backup:', err)
+      alert('Failed to restore backup: ' + err.message)
+    }
+  }
 
   // Clear cache functions
   const clearServiceWorkerCaches = async () => {
@@ -702,6 +753,39 @@ export default function ScoreboardOptionsModal({
           </button>
         </div>
 
+        <Section title="Cloud Backup">
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>Restore from Cloud</div>
+              <InfoDot title="Browse and restore from automatic cloud backups saved during the match" />
+            </div>
+            <button
+              onClick={loadBackups}
+              disabled={backupsLoading || !matchId}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%)',
+                color: '#22c55e',
+                border: '1px solid rgba(34, 197, 94, 0.4)',
+                borderRadius: '8px',
+                cursor: backupsLoading || !matchId ? 'not-allowed' : 'pointer',
+                opacity: backupsLoading || !matchId ? 0.6 : 1,
+                width: '100%',
+                transition: 'all 0.2s'
+              }}
+            >
+              {backupsLoading ? 'Loading...' : 'Browse Cloud Backups'}
+            </button>
+            {!matchId && (
+              <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                Start a match to access cloud backups
+              </p>
+            )}
+          </Row>
+        </Section>
+
         <Section title="Cache Management" borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -756,6 +840,202 @@ export default function ScoreboardOptionsModal({
             </div>
           </Row>
         </Section>
+
+        {/* Cloud Backups Modal */}
+        {showCloudBackups && (
+          <div
+            onClick={() => setShowCloudBackups(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#1f2937',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                padding: '24px',
+                maxWidth: '500px',
+                width: '90%',
+                maxHeight: '70vh',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+                Cloud Backups
+              </h3>
+
+              {cloudBackups.length === 0 ? (
+                <p style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', padding: '24px 0' }}>
+                  No cloud backups found for this match
+                </p>
+              ) : (
+                <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px' }}>
+                  {cloudBackups.map((backup, index) => (
+                    <div
+                      key={backup.name}
+                      onClick={() => setRestoreConfirm(backup)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px',
+                        background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>
+                          {backup.homePoints !== undefined ? (
+                            <>Set {backup.setIndex}: {backup.homePoints} - {backup.awayPoints}</>
+                          ) : (
+                            backup.name
+                          )}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                          #{backup.sequence || index + 1} • {backup.timestamp || backup.created_at || 'Unknown time'}
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(34, 197, 94, 0.2)',
+                        color: '#22c55e',
+                        borderRadius: '4px'
+                      }}>
+                        Restore
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowCloudBackups(false)}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Restore Confirmation Modal */}
+        {restoreConfirm && (
+          <div
+            onClick={() => setRestoreConfirm(null)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10001
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#1f2937',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                padding: '24px',
+                maxWidth: '400px',
+                width: '90%'
+              }}
+            >
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+                Confirm Restore
+              </h3>
+              <p style={{ margin: '0 0 8px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
+                Restore match to this state?
+              </p>
+              <div style={{
+                background: 'rgba(255,255,255,0.05)',
+                padding: '12px',
+                borderRadius: '8px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '16px' }}>
+                  {restoreConfirm.homePoints !== undefined ? (
+                    <>Set {restoreConfirm.setIndex}: {restoreConfirm.homePoints} - {restoreConfirm.awayPoints}</>
+                  ) : (
+                    restoreConfirm.name
+                  )}
+                </div>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
+                  {restoreConfirm.timestamp || restoreConfirm.created_at}
+                </div>
+              </div>
+              <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
+                Warning: Current match state will be replaced.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setRestoreConfirm(null)}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRestore(restoreConfirm)}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: '#22c55e',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Restore
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Clear Cache Confirmation Modal */}
         {clearCacheModal && (
