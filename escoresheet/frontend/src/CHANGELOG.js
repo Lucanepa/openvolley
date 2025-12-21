@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.14',
+    date: '21.12.25',
+    changes: [
+      'Add continuous cloud backup on every event with load function'
+    ]
+  },
+  {
     version: '0.12.13',
     date: '21.12.25',
     changes: [
