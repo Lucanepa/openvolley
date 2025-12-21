@@ -303,11 +303,45 @@ export default function HomeOptionsModal({
   return (
     <Modal
       open={true}
-      title="Options"
+      title=""
       onClose={onClose}
       width={500}
+      hideCloseButton={true}
     >
-      <div style={{ padding: '24px' }}>
+      {/* Sticky Header */}
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        background: '#1f2937',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        padding: '12px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        zIndex: 10
+      }}>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Options</h2>
+        <button
+          onClick={onClose}
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '6px',
+            border: 'none',
+            background: 'rgba(255,255,255,0.1)',
+            color: 'var(--text)',
+            fontSize: '18px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          title="Close"
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ padding: '24px', maxHeight: 'calc(80vh - 60px)', overflowY: 'auto' }}>
         <Section title={null}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>

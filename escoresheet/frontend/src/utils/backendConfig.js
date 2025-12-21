@@ -3,11 +3,45 @@
  * Detects if backend server is available and provides URLs
  */
 
+// Cloud relay URL for tablets/mobile (non-Electron/non-desktop)
+const CLOUD_RELAY_URL = 'https://escoresheet-backend-production.up.railway.app'
+
+/**
+ * Detect if running on a desktop platform (Mac/PC/Linux) vs tablet/mobile
+ * Returns true if running in Electron or on a desktop browser
+ */
+export function isDesktopPlatform() {
+  // Check if running in Electron
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    return true
+  }
+
+  // Check user agent for desktop OS (without mobile indicators)
+  const ua = navigator.userAgent.toLowerCase()
+  const isDesktopOS = /windows|macintosh|mac os x|linux/i.test(ua) &&
+                      !/android|iphone|ipad|ipod|mobile|tablet/i.test(ua)
+
+  return isDesktopOS
+}
+
+/**
+ * Detect if running on tablet/mobile
+ */
+export function isTabletOrMobile() {
+  return !isDesktopPlatform()
+}
+
 // Get backend URL from environment or use current host
 export function getBackendUrl() {
   // If VITE_BACKEND_URL is set, use it (production with separate backend)
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL
+  }
+
+  // On tablets/mobile in production, use cloud relay automatically
+  if (!import.meta.env.DEV && isTabletOrMobile()) {
+    console.log('[BackendConfig] Tablet/mobile detected, using cloud relay:', CLOUD_RELAY_URL)
+    return CLOUD_RELAY_URL
   }
 
   // In development, use local server
@@ -18,7 +52,7 @@ export function getBackendUrl() {
     return `${protocol}://${hostname}:${port}`
   }
 
-  // In production without VITE_BACKEND_URL, assume standalone mode
+  // In production without VITE_BACKEND_URL on desktop, assume standalone mode
   return null
 }
 

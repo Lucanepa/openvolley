@@ -277,12 +277,46 @@ export default function ScoreboardOptionsModal({
 
   return (
     <Modal
-      title="Options"
+      title=""
       open={true}
       onClose={onClose}
       width={600}
+      hideCloseButton={true}
     >
-      <div style={{ padding: '24px', maxHeight: '80vh', overflowY: 'auto' }}>
+      {/* Sticky Header */}
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        background: '#1f2937',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        padding: '12px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        zIndex: 10
+      }}>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Options</h2>
+        <button
+          onClick={onClose}
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '6px',
+            border: 'none',
+            background: 'rgba(255,255,255,0.1)',
+            color: 'var(--text)',
+            fontSize: '18px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          title="Close"
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ padding: '24px', maxHeight: 'calc(80vh - 60px)', overflowY: 'auto' }}>
         {serverManagementAvailable && (
           <Section title="Live Server" paddingBottom="24px">
             {serverRunning && serverStatus ? (
@@ -1115,23 +1149,6 @@ export default function ScoreboardOptionsModal({
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            Close
-          </button>
-        </div>
       </div>
     </Modal>
   )
