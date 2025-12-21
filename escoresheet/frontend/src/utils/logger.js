@@ -142,7 +142,7 @@ export async function uploadLogsToCloud(matchId = null) {
 
   try {
     const { data, error } = await supabase.storage
-      .from('backups')
+      .from('backup')
       .upload(filename, text, {
         contentType: 'text/plain',
         upsert: true
@@ -175,7 +175,7 @@ export async function uploadBackupToCloud(matchId, backupData) {
 
   try {
     const { data, error } = await supabase.storage
-      .from('backups')
+      .from('backup')
       .upload(filename, JSON.stringify(backupData, null, 2), {
         contentType: 'application/json',
         upsert: true

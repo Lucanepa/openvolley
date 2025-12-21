@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.13',
+    date: '21.12.25',
+    changes: [
+      'Fix storage bucket name: use 'backup' instead of 'backups''
+    ]
+  },
+  {
     version: '0.12.12',
     date: '21.12.25',
     changes: [
