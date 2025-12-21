@@ -819,6 +819,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Use wsRef.current to always get the current WebSocket (not stale closure)
       const currentWs = wsRef.current
       if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
+        console.log('[WebSocket] Sync skipped - WebSocket not connected (readyState:', currentWs?.readyState, ')')
         return
       }
 
@@ -835,6 +836,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
           freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
         ])
+
+        // Log lineup events for debugging
+        const lineupEvents = freshEvents.filter(e => e.type === 'lineup')
+        console.log('[WebSocket] Syncing match data:', {
+          matchId,
+          eventsCount: freshEvents.length,
+          lineupEvents: lineupEvents.length,
+          setsCount: freshSets.length
+        })
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         // The server will replace all data for this matchId with this data
@@ -1146,9 +1156,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [data?.match?.refereeConnectionEnabled, data?.match?.homeTeamConnectionEnabled, data?.match?.awayTeamConnectionEnabled])
 
   // Sync data to referee/bench - call this after any action that changes match data
+  // If WebSocket isn't ready, retry after a short delay
   const syncToReferee = useCallback(() => {
     if (syncFunctionRef.current) {
       syncFunctionRef.current()
+    }
+    // If WebSocket isn't connected, try again after a short delay
+    // This handles cases where lineup is saved while WebSocket is temporarily disconnected
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setTimeout(() => {
+        if (syncFunctionRef.current) {
+          syncFunctionRef.current()
+        }
+      }, 1000)
     }
   }, [])
 
@@ -1179,15 +1200,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Only sync official matches, not test matches
     if (data.match.test) return
 
-    try {
-      // Get Supabase match ID from sync queue or external_id
-      const matchRecord = await db.sync_queue
-        .where('resource').equals('match')
-        .and(job => job.payload?.external_id === String(matchId))
-        .first()
+    // Skip if match doesn't have a valid external UUID for Supabase
+    // Local matches use numeric IDs which aren't valid UUIDs
+    const externalId = data.match.externalId
+    if (!externalId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
+      return
+    }
 
-      // For now, use the local matchId as external reference
-      const supabaseMatchId = matchId
+    try {
+      // Use the external UUID for Supabase
+      const supabaseMatchId = externalId
 
       // Compute current state
       const currentSet = data.set
