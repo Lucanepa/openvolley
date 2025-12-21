@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.10',
+    date: '21.12.25',
+    changes: [
+      'Fix officials sync: resolve seed_keys to UUIDs for foreign key columns'
+    ]
+  },
+  {
     version: '0.12.9',
     date: '21.12.25',
     changes: [

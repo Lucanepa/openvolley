@@ -183,6 +183,41 @@ export function useSyncQueue() {
 
       if (job.resource === 'match' && job.action === 'update') {
         const { id, ...updateData } = job.payload
+
+        // Resolve official seed_keys to UUIDs
+        if (updateData.referee_1 && typeof updateData.referee_1 === 'string' && !updateData.referee_1.includes('-')) {
+          const { data: ref1Data } = await supabase
+            .from('referees')
+            .select('id')
+            .eq('seed_key', updateData.referee_1)
+            .maybeSingle()
+          updateData.referee_1 = ref1Data?.id || null
+        }
+        if (updateData.referee_2 && typeof updateData.referee_2 === 'string' && !updateData.referee_2.includes('-')) {
+          const { data: ref2Data } = await supabase
+            .from('referees')
+            .select('id')
+            .eq('seed_key', updateData.referee_2)
+            .maybeSingle()
+          updateData.referee_2 = ref2Data?.id || null
+        }
+        if (updateData.scorer && typeof updateData.scorer === 'string' && !updateData.scorer.includes('-')) {
+          const { data: scorerData } = await supabase
+            .from('scorers')
+            .select('id')
+            .eq('seed_key', updateData.scorer)
+            .maybeSingle()
+          updateData.scorer = scorerData?.id || null
+        }
+        if (updateData.assistant_scorer && typeof updateData.assistant_scorer === 'string' && !updateData.assistant_scorer.includes('-')) {
+          const { data: asstData } = await supabase
+            .from('scorers')
+            .select('id')
+            .eq('seed_key', updateData.assistant_scorer)
+            .maybeSingle()
+          updateData.assistant_scorer = asstData?.id || null
+        }
+
         const { error } = await supabase
           .from('matches')
           .update(updateData)
