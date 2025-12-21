@@ -3,6 +3,15 @@
 
 export const changelog = [
   {
+    version: '0.12.8',
+    date: '21.12.25',
+    changes: [
+      'Fix sets table sync: change created_at to start_time column',
+      'Add lineup_left, lineup_right, serve_team, serve_player to event sync',
+      'Events now include full game state context for replay/undo'
+    ]
+  },
+  {
     version: '0.12.7',
     date: '20.12.25',
     changes: [

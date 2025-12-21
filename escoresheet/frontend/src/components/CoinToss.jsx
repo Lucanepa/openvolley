@@ -512,7 +512,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           away_points: 0,
           finished: false,
           test: isTest,
-          created_at: new Date().toISOString()
+          start_time: new Date().toISOString()
         },
         ts: new Date().toISOString(),
         status: 'queued'
