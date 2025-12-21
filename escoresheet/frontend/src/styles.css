@@ -425,7 +425,7 @@
   min-width: 0;
 }
   .inline { display: flex; align-items: center; gap: 8px; }
-  .w-num { width: 70px; }
+  .w-num { width: 40px; }
   .w-dob { width: 120px; }
   .w-name { width: 150px; }
   .w-90 { width: 90px; }

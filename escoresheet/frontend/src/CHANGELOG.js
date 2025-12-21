@@ -3,12 +3,20 @@
 
 export const changelog = [
   {
-    version: '0.12.20',
+    version: '0.13.1',
     date: '21.12.25',
     changes: [
+      'Update version to 0.13.0 and remove deprecated HTML files'
+    ]
+  },
+  {
+    version: '0.12.21',
+    date: '21.12.25',
+    changes: [
+      'Improve Match Info flow: Create Match opens form, Save updates existing',
+      'Remove team history autocomplete feature (team_roster_history tables)',
       'Fix Match Setup spacing: 30px gaps on desktop, responsive padding in cards',
-      'Fix auto-confirm issue: Match Info now requires explicit Create Match click',
-      'Add matchInfoConfirmedAt flag to prevent auto-unlock of team sections'
+      'Fix auto-confirm issue: Match Info now requires explicit Create Match click'
     ]
   },
   {

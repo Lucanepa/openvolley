@@ -415,11 +415,11 @@ export async function fetchMatchByPin(gamePin, matchId) {
     throw new Error('Supabase not configured')
   }
 
-  // Find match by external_id (Match ID) and game_pin
+  // Find match by external_id (Match ID) and referee_pin
   let query = supabase
     .from('matches')
     .select('*')
-    .eq('game_pin', gamePin)
+    .eq('referee_pin', gamePin)
 
   // If matchId provided, also filter by external_id
   if (matchId) {
@@ -496,7 +496,7 @@ export async function importMatchFromSupabase(cloudData) {
       hall: match.hall,
       city: match.city,
       league: match.league,
-      gamePin: match.game_pin,
+      refereePin: match.referee_pin,
       test: match.test || false,
       externalId: match.external_id,
       importedFrom: 'supabase',

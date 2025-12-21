@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
@@ -176,6 +176,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
   const [noticeModal, setNoticeModal] = useState(null)
   const [openSignature, setOpenSignature] = useState(null)
   const [birthdateConfirmModal, setBirthdateConfirmModal] = useState(null) // { suspiciousDates: [], onConfirm: fn }
+  const [rosterModalSignature, setRosterModalSignature] = useState(null) // 'coach' | 'captain' | null - for signing within roster modal
+
+  // Track original roster/bench data when modal opens for change detection
+  const originalRosterDataRef = useRef(null) // { roster: [], bench: [] }
 
   // Signatures
   const [homeCoachSignature, setHomeCoachSignature] = useState(null)
@@ -194,6 +198,99 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
            awayCoachSignature === savedSignatures.awayCoach &&
            awayCaptainSignature === savedSignatures.awayCaptain
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
+
+  // Helper function to compare roster/bench for changes
+  const hasRosterChanges = (originalRoster, currentRoster, originalBench, currentBench) => {
+    if (!originalRoster || !originalBench) return false
+    if (originalRoster.length !== currentRoster.length) return true
+    if (originalBench.length !== currentBench.length) return true
+
+    // Compare each player
+    for (let i = 0; i < originalRoster.length; i++) {
+      const orig = originalRoster[i]
+      const curr = currentRoster[i]
+      if (orig.number !== curr.number || orig.firstName !== curr.firstName ||
+          orig.lastName !== curr.lastName || orig.dob !== curr.dob ||
+          orig.libero !== curr.libero || orig.isCaptain !== curr.isCaptain) {
+        return true
+      }
+    }
+
+    // Compare each bench official
+    for (let i = 0; i < originalBench.length; i++) {
+      const orig = originalBench[i]
+      const curr = currentBench[i]
+      if (orig.role !== curr.role || orig.firstName !== curr.firstName ||
+          orig.lastName !== curr.lastName || orig.dob !== curr.dob) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  // Sync roster changes to database
+  const syncRosterToDatabase = async (teamType, roster, bench) => {
+    if (!match) return
+
+    const teamId = teamType === 'home' ? match.homeTeamId : match.awayTeamId
+    if (!teamId) return
+
+    try {
+      await db.transaction('rw', db.players, db.matches, db.sync_queue, async () => {
+        // Get existing players
+        const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
+
+        // Update or add players
+        for (const player of roster) {
+          const existingPlayer = existingPlayers.find(ep =>
+            ep.number === player.number ||
+            (ep.lastName === player.lastName && ep.firstName === player.firstName)
+          )
+
+          if (existingPlayer) {
+            await db.players.update(existingPlayer.id, {
+              number: player.number,
+              firstName: player.firstName,
+              lastName: player.lastName,
+              dob: player.dob,
+              libero: player.libero,
+              isCaptain: player.isCaptain
+            })
+          } else {
+            await db.players.add({
+              teamId,
+              number: player.number,
+              firstName: player.firstName,
+              lastName: player.lastName,
+              dob: player.dob,
+              libero: player.libero || '',
+              isCaptain: player.isCaptain || false
+            })
+          }
+        }
+
+        // Delete players that are no longer in roster
+        for (const ep of existingPlayers) {
+          const stillExists = roster.some(p =>
+            p.number === ep.number ||
+            (p.lastName === ep.lastName && p.firstName === ep.firstName)
+          )
+          if (!stillExists) {
+            await db.players.delete(ep.id)
+          }
+        }
+
+        // Update bench in match
+        const benchField = teamType === 'home' ? 'bench_home' : 'bench_away'
+        await db.matches.update(match.id, { [benchField]: bench })
+      })
+
+      console.log(`[CoinToss] Roster synced for ${teamType} team`)
+    } catch (error) {
+      console.error('[CoinToss] Failed to sync roster:', error)
+    }
+  }
 
   // Load match data
   const match = useLiveQuery(async () => {
@@ -826,7 +923,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isCompact ? 16 : 24 }}>
         <button className="secondary" onClick={onBack}>← Back</button>
-        <h1 style={{ margin: 0 }}>Coin Toss</h1>
+        <h1 style={{ margin: 0, fontSize: '50px', fontWeight: 700, textAlign: 'center' }}>Coin Toss</h1>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           
           {onGoHome && (
@@ -840,19 +937,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>Team A</h1>
           <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
-            <button
-              type="button"
+            <div
               style={{
                 background: teamAInfo.color,
                 color: isBrightColor(teamAInfo.color) ? '#000' : '#fff',
                 flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                 fontWeight: 600, border: 'none', borderRadius: '8px',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                cursor: 'default'
               }}
               title={teamAInfo.name}
             >
               {getDisplayName(teamAInfo.name, teamAInfo.shortName)}
-            </button>
+            </div>
           </div>
 
           <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
@@ -867,7 +964,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
               onClick={() => setRosterModal('teamA')}
               style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
             >
-              Show Roster ({teamAInfo.roster.length})
+              Show Roster ({teamAInfo.roster.length} Players)
             </button>
           </div>
 
@@ -911,12 +1008,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         {/* Middle buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 12 : 35, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
           <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '52px' }}>
-            <button className="secondary" onClick={switchTeams} style={{ padding: sizes.switchButtonPadding, fontSize: sizes.switchButtonFont, whiteSpace: 'nowrap' }}>
+            <button className="secondary" onClick={switchTeams} style={{ padding: sizes.switchButtonPadding, fontSize: '20px', fontWeight: 700, whiteSpace: 'nowrap' }}>
               ⇄ Teams
             </button>
           </div>
           <div style={{ height: sizes.volleyballSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <button className="secondary" onClick={switchServe} style={{ padding: sizes.switchButtonPadding, fontSize: sizes.switchButtonFont, whiteSpace: 'nowrap' }}>
+            <button className="secondary" onClick={switchServe} style={{ padding: sizes.switchButtonPadding, fontSize: '20px', fontWeight: 700, whiteSpace: 'nowrap' }}>
               ⇄ Serve
             </button>
           </div>
@@ -926,20 +1023,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>Team B</h1>
           <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
-            <button
-              type="button"
+            <div
               style={{
                 background: teamBInfo.color,
                 color: isBrightColor(teamBInfo.color) ? '#000' : '#fff',
                 flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                 fontWeight: 600, border: 'none', borderRadius: '8px',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                minWidth: 0
+                minWidth: 0, cursor: 'default'
               }}
               title={teamBInfo.name}
             >
               {getDisplayName(teamBInfo.name, teamBInfo.shortName)}
-            </button>
+            </div>
           </div>
 
           <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
@@ -954,7 +1050,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
               onClick={() => setRosterModal('teamB')}
               style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
             >
-              Roster ({teamBInfo.roster.length})
+              Show Roster ({teamBInfo.roster.length} Players)
             </button>
           </div>
 
@@ -1080,12 +1176,45 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
         const sortedBench = sortBenchByHierarchy(bench)
         const rosterEntries = sortRosterEntries(roster)
 
+        // Store original data on first render of modal
+        if (!originalRosterDataRef.current) {
+          originalRosterDataRef.current = {
+            roster: JSON.parse(JSON.stringify(roster)),
+            bench: JSON.parse(JSON.stringify(bench))
+          }
+        }
+
+        // Check if there are changes
+        const hasChanges = hasRosterChanges(
+          originalRosterDataRef.current?.roster,
+          roster,
+          originalRosterDataRef.current?.bench,
+          bench
+        )
+
+        // Get signature state for this team
+        const coachSig = currentTeam === 'home' ? homeCoachSignature : awayCoachSignature
+        const captainSig = currentTeam === 'home' ? homeCaptainSignature : awayCaptainSignature
+        const setCoachSig = currentTeam === 'home' ? setHomeCoachSignature : setAwayCoachSignature
+        const setCaptainSig = currentTeam === 'home' ? setHomeCaptainSignature : setAwayCaptainSignature
+
+        // Handle close/modify
+        const handleCloseOrModify = async () => {
+          if (hasChanges) {
+            await syncRosterToDatabase(currentTeam, roster, bench)
+          }
+          originalRosterDataRef.current = null
+          setRosterModalSignature(null)
+          setRosterModal(null)
+        }
+
         return (
           <Modal
             title={`${teamInfo.name} - Roster`}
             open={true}
-            onClose={() => setRosterModal(null)}
+            onClose={handleCloseOrModify}
             width={800}
+            hideCloseButton={true}
           >
             <div style={{ maxHeight: '70vh', overflowY: 'auto', padding: '0 16px' }}>
               {/* Players Section */}
@@ -1334,6 +1463,89 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
                   </tbody>
                 </table>
               </div>
+
+              {/* Signatures Section */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16, marginTop: 16 }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>Signatures</h4>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`sign ${coachSig ? 'signed' : ''}`}
+                    onClick={() => setRosterModalSignature('coach')}
+                    style={{ padding: '8px 16px', fontSize: '13px', flex: 1, minWidth: '120px' }}
+                  >
+                    Coach {coachSig ? '✓' : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className={`sign ${captainSig ? 'signed' : ''}`}
+                    onClick={() => setRosterModalSignature('captain')}
+                    style={{ padding: '8px 16px', fontSize: '13px', flex: 1, minWidth: '120px' }}
+                  >
+                    Captain {captainSig ? '✓' : ''}
+                  </button>
+                </div>
+              </div>
+
+              {/* Signature Pad Modal */}
+              {rosterModalSignature && (
+                <div style={{
+                  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
+                }}>
+                  <div style={{
+                    background: '#111827', padding: 16, borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.1)', maxWidth: '90vw'
+                  }}>
+                    <h3 style={{ margin: '0 0 12px 0' }}>
+                      {rosterModalSignature === 'coach' ? 'Coach' : 'Captain'} Signature - {teamInfo.name}
+                    </h3>
+                    <SignaturePad
+                      onSave={(sig) => {
+                        if (rosterModalSignature === 'coach') {
+                          setCoachSig(sig)
+                        } else {
+                          setCaptainSig(sig)
+                        }
+                        setRosterModalSignature(null)
+                      }}
+                      onCancel={() => setRosterModalSignature(null)}
+                      title={`${rosterModalSignature === 'coach' ? 'Coach' : 'Captain'} Signature`}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Custom Close/Modify Button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              {hasChanges && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    // Revert to original data
+                    if (originalRosterDataRef.current) {
+                      setRoster(JSON.parse(JSON.stringify(originalRosterDataRef.current.roster)))
+                      setBench(JSON.parse(JSON.stringify(originalRosterDataRef.current.bench)))
+                    }
+                    originalRosterDataRef.current = null
+                    setRosterModalSignature(null)
+                    setRosterModal(null)
+                  }}
+                  style={{ padding: '8px 20px', fontSize: '14px' }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                className={hasChanges ? 'primary' : 'secondary'}
+                onClick={handleCloseOrModify}
+                style={{ padding: '8px 20px', fontSize: '14px' }}
+              >
+                {hasChanges ? 'Modify' : 'Close'}
+              </button>
             </div>
           </Modal>
         )

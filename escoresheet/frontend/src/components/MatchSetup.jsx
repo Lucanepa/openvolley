@@ -123,6 +123,48 @@ function createScheduledAt(date, time, options = {}) {
   return dateObj.toISOString()
 }
 
+// Helper to check if two values are equal (handles objects and arrays)
+function isEqual(a, b) {
+  if (a === b) return true
+  if (a == null || b == null) return a == b
+  if (typeof a !== typeof b) return false
+  if (typeof a === 'object') {
+    return JSON.stringify(a) === JSON.stringify(b)
+  }
+  return false
+}
+
+// Helper to check if match info has changed
+function hasMatchInfoChanged(original, current) {
+  if (!original) return true // No original, consider it changed
+  const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
+    'type2', 'type3', 'type3Other', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
+  for (const key of keys) {
+    if (!isEqual(original[key], current[key])) return true
+  }
+  return false
+}
+
+// Helper to check if officials have changed
+function hasOfficialsChanged(original, current) {
+  if (!original) return true
+  const keys = ['ref1First', 'ref1Last', 'ref1Country', 'ref1Dob',
+    'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob',
+    'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob',
+    'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
+    'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4']
+  for (const key of keys) {
+    if (!isEqual(original[key], current[key])) return true
+  }
+  return false
+}
+
+// Helper to check if roster has changed
+function hasRosterChanged(originalRoster, currentRoster, originalBench, currentBench) {
+  if (!originalRoster || !originalBench) return true
+  return !isEqual(originalRoster, currentRoster) || !isEqual(originalBench, currentBench)
+}
+
 // OfficialCard component - defined outside to prevent focus loss on re-render
 const OfficialCard = memo(function OfficialCard({
   title,
@@ -341,6 +383,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
   const [awayRoster, setAwayRoster] = useState([])
+  const rosterLoadedFromDraft = useRef({ home: false, away: false })
   const [homeNum, setHomeNum] = useState('')
   const [homeFirst, setHomeFirst] = useState('')
   const [homeLast, setHomeLast] = useState('')
@@ -774,8 +817,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         }
         
         // Load players only on initial load (when matchId changes, not when match updates)
-        // This prevents overwriting user edits when the match object updates from the database
-        if (match.homeTeamId) {
+        // Skip if roster was already loaded from draft (to preserve user edits like number/captain changes)
+        if (match.homeTeamId && !rosterLoadedFromDraft.current.home) {
           const homePlayers = await db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
           setHomeRoster(homePlayers.map(p => ({
             id: p.id, // Store player ID for updates
@@ -787,7 +830,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             isCaptain: p.isCaptain || false
           })))
         }
-        if (match.awayTeamId) {
+        if (match.awayTeamId && !rosterLoadedFromDraft.current.away) {
           const awayPlayers = await db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
           setAwayRoster(awayPlayers.map(p => ({
             id: p.id, // Store player ID for updates
@@ -1070,8 +1113,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           if (draft.league !== undefined) setLeague(draft.league)
           if (draft.homeColor !== undefined) setHomeColor(draft.homeColor)
           if (draft.awayColor !== undefined) setAwayColor(draft.awayColor)
-          if (draft.homeRoster !== undefined) setHomeRoster(draft.homeRoster)
-          if (draft.awayRoster !== undefined) setAwayRoster(draft.awayRoster)
+          if (draft.homeRoster !== undefined && draft.homeRoster.length > 0) {
+            setHomeRoster(draft.homeRoster)
+            rosterLoadedFromDraft.current.home = true
+          }
+          if (draft.awayRoster !== undefined && draft.awayRoster.length > 0) {
+            setAwayRoster(draft.awayRoster)
+            rosterLoadedFromDraft.current.away = true
+          }
           if (draft.benchHome !== undefined) setBenchHome(draft.benchHome)
           if (draft.benchAway !== undefined) setBenchAway(draft.benchAway)
           if (draft.ref1First !== undefined) setRef1First(draft.ref1First)
@@ -1422,6 +1471,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
   // Confirm match info - validates all required fields and creates/updates match
   async function confirmMatchInfo() {
+    // Track if this is a create or update operation
+    const isCreating = !matchInfoConfirmed
+
     // Validate required fields
     if (!home || !home.trim()) {
       setNoticeModal({ message: 'Home team name is required' })
@@ -1437,6 +1489,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     }
     if (timeError) {
       setNoticeModal({ message: `Invalid time: ${timeError}` })
+      return
+    }
+
+    // Check if any changes were made (skip sync if no changes)
+    const currentMatchInfo = {
+      date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
+      type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+    }
+    const hasChanges = isCreating || hasMatchInfoChanged(originalMatchInfoRef.current, currentMatchInfo)
+
+    // If no changes, just go back to main view
+    if (!hasChanges) {
+      setCurrentView('main')
       return
     }
 
@@ -1507,6 +1572,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         scheduledAt = createScheduledAt(date, time, { allowEmpty: true })
       }
 
+      // Generate seed_key if match doesn't have one (for older matches or matches created via other flows)
+      let matchSeedKey = match?.seed_key
+      if (!matchSeedKey) {
+        const timestamp = Date.now()
+        const randomPart = Math.random().toString(36).substring(2, 8)
+        matchSeedKey = gameN
+          ? `game_${gameN}_${timestamp}`
+          : `match_${timestamp}_${randomPart}`
+      }
+
       // Update match with team IDs and match info
       // matchInfoConfirmedAt flag indicates user explicitly clicked "Create Match"
       await db.matches.update(matchId, {
@@ -1530,6 +1605,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         match_type_3: type3 || null,
         match_type_3_other: type3Other || null,
         game_n: gameN ? parseInt(gameN, 10) : null,
+        seed_key: matchSeedKey, // Ensure seed_key is set
         bench_home: benchHome,
         bench_away: benchAway,
         matchInfoConfirmedAt: new Date().toISOString(),
@@ -1541,7 +1617,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         resource: 'match',
         action: 'insert',
         payload: {
-          external_id: String(matchId),
+          external_id: matchSeedKey, // Use unique seed_key instead of numeric ID
           home_team_id: String(homeTeamId),
           away_team_id: String(awayTeamId),
           status: 'setup',
@@ -1565,7 +1641,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
-      setNoticeModal({ message: 'Match info saved! Syncing to database...', type: 'success', syncing: true })
+      setNoticeModal({
+        message: isCreating ? 'Match created! Syncing to database...' : 'Match info updated! Syncing to database...',
+        type: 'success',
+        syncing: true
+      })
 
       // Cloud backup at match setup (non-blocking)
       exportMatchData(matchId).then(backupData => {
@@ -1786,6 +1866,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       return pin
     })()
 
+    // Generate a unique seed_key for Supabase sync
+    // Format: game_{gameN}_{timestamp} if gameN exists, otherwise match_{timestamp}_{random}
+    const timestamp = Date.now()
+    const randomPart = Math.random().toString(36).substring(2, 8)
+    const seedKey = gameN
+      ? `game_${gameN}_${timestamp}`
+      : `match_${timestamp}_${randomPart}`
+
     const createdMatchId = await db.matches.add({
       homeTeamId: homeId,
       awayTeamId: awayId,
@@ -1803,6 +1891,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
       awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
       game_n: gameN ? Number(gameN) : null,
+      seed_key: seedKey, // Unique key for Supabase sync
       league,
       gamePin: generatedGamePin, // Game PIN for official matches (not test matches)
       ...(() => {
@@ -1844,7 +1933,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         resource: 'match',
         action: 'insert',
         payload: {
-          external_id: String(createdMatchId),
+          external_id: seedKey, // Use unique seed_key instead of numeric ID
           home_team_id: String(homeId),
           away_team_id: String(awayId),
           status: 'live',
@@ -2618,28 +2707,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             <h2 style={{ marginTop: 0, marginBottom: 24, textAlign: 'center', fontSize: '24px', fontWeight: 700 }}>TEAMS</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               {/* Home Team */}
-              <div style={{ flex: 1 }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)' }}>Home Team</div>
+              <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>Home Team</div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label>Team name</label>
+                  <div className="field" style={{ flex: 1, marginBottom: 0}}>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Team name</label>
                     <input
                       type="text"
                       value={home}
                       onChange={e => setHome(e.target.value)}
                       placeholder="Home team name"
-                      style={{ width: '100%' }}
+                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                   <div className="field" style={{ marginBottom: 0 }}>
-                    <label>Short</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Short</label>
                     <input
                       type="text"
                       value={homeShortName}
                       onChange={e => setHomeShortName(e.target.value.toUpperCase())}
                       maxLength={8}
-                      placeholder={home ? generateShortName(home) : 'HOME'}
-                      style={{ width: '80px', textAlign: 'center' }}
+                      placeholder="HOME"
+                      style={{ width: '120px', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                 </div>
@@ -2658,33 +2747,33 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   fontSize: '22px',
                   fontWeight: 700,
                   fontStyle: 'italic',
-                  color: 'rgba(255, 255, 255, 0.5)'
+                  color: 'rgb(255, 255, 255)'
                 }}>VS</span>
               </div>
 
               {/* Away Team */}
-              <div style={{ flex: 1 }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)' }}>Away Team</div>
+              <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>Away Team</div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                   <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label>Team name</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Team name</label>
                     <input
                       type="text"
                       value={away}
                       onChange={e => setAway(e.target.value)}
                       placeholder="Away team name"
-                      style={{ width: '100%' }}
+                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                   <div className="field" style={{ marginBottom: 0 }}>
-                    <label>Short</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Short</label>
                     <input
                       type="text"
                       value={awayShortName}
                       onChange={e => setAwayShortName(e.target.value.toUpperCase())}
                       maxLength={8}
-                      placeholder={away ? generateShortName(away) : 'AWAY'}
-                      style={{ width: '80px', textAlign: 'center' }}
+                      placeholder="AWAY"
+                      style={{ width: '120px', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                 </div>
@@ -2739,7 +2828,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             disabled={!canConfirmMatchInfo}
             title={!canConfirmMatchInfo ? 'Fill in Home and Away team names to confirm' : ''}
           >
-            Confirm
+            {matchInfoConfirmed ? 'Save' : 'Create Match'}
           </button>
         </div>
       </MatchSetupInfoView>
@@ -2862,6 +2951,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
 
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
+            // Check if any changes were made (skip sync if no changes)
+            const currentOfficials = {
+              ref1First, ref1Last, ref1Country, ref1Dob,
+              ref2First, ref2Last, ref2Country, ref2Dob,
+              scorerFirst, scorerLast, scorerCountry, scorerDob,
+              asstFirst, asstLast, asstCountry, asstDob,
+              lineJudge1, lineJudge2, lineJudge3, lineJudge4
+            }
+            const hasChanges = hasOfficialsChanged(originalOfficialsRef.current, currentOfficials)
+
+            // If no changes, just go back to main view
+            if (!hasChanges) {
+              setCurrentView('main')
+              return
+            }
+
             // Save officials to database if matchId exists
             if (matchId) {
               await db.matches.update(matchId, {
@@ -2992,7 +3097,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       <MatchSetupHomeTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← Back</button>
-          <h2>Home team</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{home || 'Home team'}</h2>
           <div style={{ width: 80 }}></div>
         </div>
         <h1 style={{ margin: 0, marginBottom: '12px' }}>Roster</h1>
@@ -3275,47 +3380,51 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
           </div>
           {/* Right: Player Stats */}
-          <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '16px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
-              <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>{homeRoster.length}</span>
-              <span style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.5)' }}>
-                ({homeRoster.filter(p => !p.libero).length} + {homeRoster.filter(p => p.libero).length} libero{homeRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
-              {(() => {
-                const captain = homeRoster.find(p => p.isCaptain)
-                return captain ? (
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '50%',
-                    border: '2px solid #22c55e',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: '#22c55e'
-                  }}>{captain.number || '?'}</span>
-                ) : (
-                  <span style={{ fontSize: '14px', fontStyle: 'italic', color: 'rgba(255, 255, 255, 0.5)' }}>—</span>
-                )
-              })()}
-            </div>
-          </div>
+          {(() => {
+            const homeCaptain = homeRoster.find(p => p.isCaptain)
+            const homeNonLiberoCount = homeRoster.filter(p => !p.libero).length
+            const homeHasError = !homeCaptain || homeNonLiberoCount < 6
+            return (
+              <div style={{
+                border: homeHasError ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '8px',
+                padding: '12px',
+                background: homeHasError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.2)',
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
+                  <span style={{ fontSize: '18px', fontWeight: 700, color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{homeRoster.length}</span>
+                  <span style={{ fontSize: '16px', color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.5)' }}>
+                    ({homeNonLiberoCount} + {homeRoster.filter(p => p.libero).length} libero{homeRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: !homeCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
+                  {homeCaptain ? (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      border: '2px solid #22c55e',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      color: '#22c55e'
+                    }}>{homeCaptain.number || '?'}</span>
+                  ) : (
+                    <span style={{ fontSize: '14px', fontStyle: 'italic', color: '#ef4444' }}>—</span>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
         {/* Add new player section */}
         {homeRoster.length < 14 && (
@@ -3623,6 +3732,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             console.log('[MatchSetup] Home roster Confirm clicked, validating...')
+
+            // Check if any changes were made (skip sync if no changes)
+            const hasChanges = hasRosterChanged(
+              originalHomeTeamRef.current?.homeRoster,
+              homeRoster,
+              originalHomeTeamRef.current?.benchHome,
+              benchHome
+            )
+
+            // If no changes, just go back to main view
+            if (!hasChanges) {
+              console.log('[MatchSetup] No home roster changes, skipping sync')
+              setCurrentView('main')
+              return
+            }
 
             // Validate roster before saving
             const validationErrors = []
@@ -3936,7 +4060,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       <MatchSetupAwayTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← Back</button>
-          <h2>Away team</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{away || 'Away team'}</h2>
           <div style={{ width: 80 }}></div>
         </div>
         <h1 style={{ margin: 0, marginBottom: '12px' }}>Roster</h1>
@@ -4219,47 +4343,51 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
           </div>
           {/* Right: Player Stats */}
-          <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '16px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
-              <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>{awayRoster.length}</span>
-              <span style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.5)' }}>
-                ({awayRoster.filter(p => !p.libero).length} + {awayRoster.filter(p => p.libero).length} libero{awayRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
-              {(() => {
-                const captain = awayRoster.find(p => p.isCaptain)
-                return captain ? (
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '50%',
-                    border: '2px solid #22c55e',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: '#22c55e'
-                  }}>{captain.number || '?'}</span>
-                ) : (
-                  <span style={{ fontSize: '14px', fontStyle: 'italic', color: 'rgba(255, 255, 255, 0.5)' }}>—</span>
-                )
-              })()}
-            </div>
-          </div>
+          {(() => {
+            const awayCaptain = awayRoster.find(p => p.isCaptain)
+            const awayNonLiberoCount = awayRoster.filter(p => !p.libero).length
+            const awayHasError = !awayCaptain || awayNonLiberoCount < 6
+            return (
+              <div style={{
+                border: awayHasError ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '8px',
+                padding: '12px',
+                background: awayHasError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.2)',
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
+                  <span style={{ fontSize: '18px', fontWeight: 700, color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{awayRoster.length}</span>
+                  <span style={{ fontSize: '16px', color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.5)' }}>
+                    ({awayNonLiberoCount} + {awayRoster.filter(p => p.libero).length} libero{awayRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: !awayCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
+                  {awayCaptain ? (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      border: '2px solid #22c55e',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      color: '#22c55e'
+                    }}>{awayCaptain.number || '?'}</span>
+                  ) : (
+                    <span style={{ fontSize: '14px', fontStyle: 'italic', color: '#ef4444' }}>—</span>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
         {/* Add new player section */}
         {awayRoster.length < 14 && (
@@ -4272,7 +4400,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           }}>
             <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
             <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={awayNum} onChange={e=>setAwayNum(e.target.value)} />
+              <input
+                className="w-num"
+                placeholder="#"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="99"
+                value={awayNum}
+                onChange={e => setAwayNum(e.target.value)}
+                style={{ textAlign: 'center' }}
+              />
               <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
               <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
               <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
@@ -4566,6 +4704,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             console.log('[MatchSetup] Away roster Confirm clicked, validating...')
+
+            // Check if any changes were made (skip sync if no changes)
+            const hasChanges = hasRosterChanged(
+              originalAwayTeamRef.current?.awayRoster,
+              awayRoster,
+              originalAwayTeamRef.current?.benchAway,
+              benchAway
+            )
+
+            // If no changes, just go back to main view
+            if (!hasChanges) {
+              console.log('[MatchSetup] No away roster changes, skipping sync')
+              setCurrentView('main')
+              return
+            }
 
             // Validate roster before saving
             const validationErrors = []
@@ -5281,13 +5434,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
           </div>
           <div className="actions">
-            <button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button>
-            {!matchInfoConfirmed && (
+            {matchInfoConfirmed ? (
+              <button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button>
+            ) : (
               <button
                 className="primary"
-                onClick={confirmMatchInfo}
-                disabled={!canConfirmMatchInfo}
-                title={!canConfirmMatchInfo ? 'Fill in Home and Away team names to confirm' : ''}
+                onClick={()=>setCurrentView('info')}
               >
                 Create Match
               </button>

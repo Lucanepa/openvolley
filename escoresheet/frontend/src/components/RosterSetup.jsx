@@ -422,7 +422,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
           marginBottom: '30px'
         }}>
           <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>
-            Set up roster
+            Roster — {team === 'home' ? (match?.homeTeamName || 'Home') : (match?.awayTeamName || 'Away')}
           </h1>
           <button
             onClick={onBack}
