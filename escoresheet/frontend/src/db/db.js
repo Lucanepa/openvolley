@@ -162,4 +162,23 @@ db.version(11).stores({
   })
 })
 
+// Version 12: Add post-game captain signatures (separate from pre-game coin toss signatures)
+db.version(12).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add post-game captain signature fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homePostGameCaptainSignature) match.homePostGameCaptainSignature = null
+    if (!match.awayPostGameCaptainSignature) match.awayPostGameCaptainSignature = null
+  })
+})
+
 

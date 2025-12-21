@@ -1949,14 +1949,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               external_id: String(homePlayerIds[i]),
               team_id: String(homeId),
               number: p.number,
-              name: `${p.lastName} ${p.firstName}`,
               first_name: p.firstName,
               last_name: p.lastName,
-              dob: p.dob || null,
+              dob: formatDobForSync(p.dob),
               libero: p.libero || null,
-              is_captain: !!p.isCaptain,
-              role: null,
-              created_at: new Date().toISOString()
+              is_captain: !!p.isCaptain
             },
             ts: new Date().toISOString(),
             status: 'queued'
@@ -1989,15 +1986,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               external_id: String(awayPlayerIds[i]),
               team_id: String(awayId),
               number: p.number,
-              name: `${p.lastName} ${p.firstName}`,
               first_name: p.firstName,
               last_name: p.lastName,
-              dob: p.dob || null,
+              dob: formatDobForSync(p.dob),
               libero: p.libero || null,
-              is_captain: !!p.isCaptain,
-              role: null,
-              test: false,
-              created_at: new Date().toISOString()
+              is_captain: !!p.isCaptain
             },
             ts: new Date().toISOString(),
             status: 'queued'
@@ -3043,6 +3036,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   status: 'queued'
                 })
               }
+
+              // Update match with officials references (using seed_keys for lookup)
+              await db.sync_queue.add({
+                resource: 'match',
+                action: 'update',
+                payload: {
+                  id: String(matchId),
+                  referee_1: (ref1First && ref1Last) ? `${ref1First.toLowerCase()}_${ref1Last.toLowerCase()}` : null,
+                  referee_2: (ref2First && ref2Last) ? `${ref2First.toLowerCase()}_${ref2Last.toLowerCase()}` : null,
+                  scorer: (scorerFirst && scorerLast) ? `${scorerFirst.toLowerCase()}_${scorerLast.toLowerCase()}` : null,
+                  assistant_scorer: (asstFirst && asstLast) ? `${asstFirst.toLowerCase()}_${asstLast.toLowerCase()}` : null
+                },
+                ts: new Date().toISOString(),
+                status: 'queued'
+              })
 
               setNoticeModal({ message: 'Officials saved! Syncing to database...', type: 'success', syncing: true })
 

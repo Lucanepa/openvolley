@@ -523,6 +523,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
     await db.matches.update(matchId, { status: 'live' })
     console.log('[CoinToss] Match status updated to live')
 
+    // Sync match status to Supabase
+    await db.sync_queue.add({
+      resource: 'match',
+      action: 'update',
+      payload: {
+        id: String(matchId),
+        status: 'live'
+      },
+      ts: new Date().toISOString(),
+      status: 'queued'
+    })
+
     // Update saved signatures
     setSavedSignatures({
       homeCoach: homeCoachSignature,
