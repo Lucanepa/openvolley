@@ -1481,12 +1481,25 @@ export default function App() {
       
       // Only sync official matches
       if (!isTestMatch) {
+        // Build set results array
+        const setResults = finishedSets
+          .sort((a, b) => a.index - b.index)
+          .map(s => ({ home: s.homePoints, away: s.awayPoints }))
+
+        // Determine winner
+        const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
+        const finalScore = `${homeSetsWon}-${awaySetsWon}`
+
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
           payload: {
             id: String(cur.matchId),
-            status: 'final'
+            status: 'final',
+            set_results: setResults,
+            winner,
+            final_score: finalScore,
+            sanctions: matchRecord?.sanctions || null
           },
           ts: new Date().toISOString(),
           status: 'queued'

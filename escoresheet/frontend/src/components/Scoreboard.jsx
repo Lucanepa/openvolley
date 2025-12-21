@@ -3877,15 +3877,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // - Only update match status to 'final' - DO NOT DELETE ANYTHING
       await db.matches.update(matchId, { status: 'final' })
       
-      // Add match update to sync queue
+      // Add match update to sync queue with results
       const matchRecord = await db.matches.get(matchId)
       if (matchRecord?.test !== true) {
+        // Build set results array
+        const setResults = finishedSets
+          .sort((a, b) => a.index - b.index)
+          .map(s => ({ home: s.homePoints, away: s.awayPoints }))
+
+        // Determine winner
+        const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
+        const finalScore = `${homeSetsWon}-${awaySetsWon}`
+
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
           payload: {
             id: String(matchId),
-            status: 'final'
+            status: 'final',
+            set_results: setResults,
+            winner,
+            final_score: finalScore,
+            sanctions: matchRecord?.sanctions || null
           },
           ts: new Date().toISOString(),
           status: 'queued'

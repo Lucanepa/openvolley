@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.12.11',
+    date: '21.12.25',
+    changes: [
+      'Add match result sync: set_results, winner, final_score, sanctions'
+    ]
+  },
+  {
     version: '0.12.10',
     date: '21.12.25',
     changes: [
