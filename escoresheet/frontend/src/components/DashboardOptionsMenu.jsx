@@ -5,8 +5,17 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import { CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
+
+// Available languages
+const LANGUAGES = [
+  { code: 'en', label: 'English', flag: '🇬🇧' },
+  { code: 'fr', label: 'Français', flag: '🇫🇷' },
+  { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
+  { code: 'it', label: 'Italiano', flag: '🇮🇹' }
+]
 
 /**
  * Clear all cached data
@@ -93,10 +102,17 @@ export function DashboardOptionsMenu({
   onReconnect,
   showConnectionOptions = true
 }) {
+  const { t, i18n } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [clearResult, setClearResult] = useState(null)
   const menuRef = useRef(null)
+
+  // Handle language change
+  const handleLanguageChange = useCallback((langCode) => {
+    i18n.changeLanguage(langCode)
+    localStorage.setItem('i18nextLng', langCode)
+  }, [i18n])
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -199,12 +215,6 @@ export function DashboardOptionsMenu({
         title="Options"
       >
         <span style={{ fontSize: '14px' }}>&#9881;</span>
-        <span style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: getStatusColor()
-        }} />
       </button>
 
       {/* Dropdown menu */}
@@ -328,6 +338,52 @@ export function DashboardOptionsMenu({
               </div>
             </div>
           )}
+
+          {/* Language selector */}
+          <div style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            <div style={{
+              fontSize: '12px',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '8px'
+            }}>
+              {t('settings.language', 'Language')}
+            </div>
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '6px'
+            }}>
+              {LANGUAGES.map(({ code, label, flag }) => (
+                <button
+                  key={code}
+                  onClick={() => handleLanguageChange(code)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 10px',
+                    background: i18n.language === code || (i18n.language?.startsWith(code))
+                      ? 'rgba(59, 130, 246, 0.2)'
+                      : 'rgba(255, 255, 255, 0.05)',
+                    border: i18n.language === code || (i18n.language?.startsWith(code))
+                      ? '1px solid rgba(59, 130, 246, 0.5)'
+                      : '1px solid transparent',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: i18n.language === code || (i18n.language?.startsWith(code)) ? '#3b82f6' : '#fff'
+                  }}
+                >
+                  <span>{flag}</span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Reconnect button */}
           {onReconnect && (
