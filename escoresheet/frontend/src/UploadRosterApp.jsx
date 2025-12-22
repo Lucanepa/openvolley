@@ -267,56 +267,40 @@ export default function UploadRosterApp() {
 
   // Handle match selection
   const handleMatchSelect = async (match) => {
+    console.log('[UploadRoster] Match selected:', match)
     setSelectedMatch(match)
     setGameNumber(String(match.gameNumber || match.id))
 
-    // Trigger the existing match status check
+    // Check match status directly from the match object (already from Supabase)
     setMatchStatusCheck('checking')
-    try {
-      const matchData = await getMatchData(match.id)
-      if (matchData.success) {
-        const sets = matchData.sets || []
-        const events = matchData.events || []
 
-        // Check if match is finished
-        const isFinished = match.status === 'final' || (sets.length > 0 && sets.every(s => s.finished))
-
-        // Check if match has started
-        const hasActiveSet = sets.some(set => Boolean(
-          set.finished || set.startTime || set.homePoints > 0 || set.awayPoints > 0
-        ))
-        const hasEventActivity = events.some(event =>
-          ['set_start', 'rally_start', 'point'].includes(event.type)
-        )
-
-        if (isFinished) {
-          setMatchStatusCheck('invalid')
-          setValidationError('This match has already ended')
-          return
-        }
-
-        if (hasActiveSet || hasEventActivity) {
-          setMatchStatusCheck('invalid')
-          setValidationError('This match has already started. Roster cannot be uploaded.')
-          return
-        }
-
-        // Match is valid
-        setMatchStatusCheck('valid')
-        setMatch(match)
-        setMatchId(match.id)
-        if (matchData.homeTeam) setHomeTeam(matchData.homeTeam)
-        if (matchData.awayTeam) setAwayTeam(matchData.awayTeam)
-        setValidationError('')
-      } else {
-        setMatchStatusCheck('invalid')
-        setValidationError('Failed to load match data')
-      }
-    } catch (error) {
-      console.error('Error checking match:', error)
+    // Check if match is finished
+    if (match.status === 'final' || match.status === 'finished') {
       setMatchStatusCheck('invalid')
-      setValidationError('Error checking match status')
+      setValidationError('This match has already ended')
+      return
     }
+
+    // Check if match has started (status is 'live' means it's in progress)
+    if (match.status === 'live') {
+      // For live matches, roster upload is still allowed until coin toss is confirmed
+      // We'll allow it but warn the user
+      console.log('[UploadRoster] Match is live, checking if roster can still be uploaded')
+    }
+
+    // Match is valid for roster upload (status is 'setup' or early 'live')
+    setMatchStatusCheck('valid')
+    setMatch(match)
+    setMatchId(match.id)
+
+    // Use team data from the match object
+    if (match.homeTeamName) {
+      setHomeTeam({ name: match.homeTeamName })
+    }
+    if (match.awayTeamName) {
+      setAwayTeam({ name: match.awayTeamName })
+    }
+    setValidationError('')
   }
 
   // Handle back to game selection

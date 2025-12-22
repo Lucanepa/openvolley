@@ -1,17 +1,25 @@
 import { useState, useEffect, useRef } from 'react'
-import { getMatchData, subscribeToMatchData } from '../utils/serverDataSync'
+import { useTranslation } from 'react-i18next'
+import { getMatchData, subscribeToMatchData, listAvailableMatchesSupabase } from '../utils/serverDataSync'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { db } from '../db/db'
+import { supabase } from '../lib/supabaseClient'
 
-export default function RosterSetup({ matchId, team, onBack, embedded = false }) {
+export default function RosterSetup({ matchId, team, onBack, embedded = false, useSupabaseConnection = false, matchData = null }) {
+  const { t } = useTranslation()
   const [players, setPlayers] = useState([])
   const [benchOfficials, setBenchOfficials] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pdfFile, setPdfFile] = useState(null)
+  const [pendingRoster, setPendingRoster] = useState(null) // The actual pending roster data
   const fileInputRef = useRef(null)
 
-  const [match, setMatch] = useState(null)
+  const [match, setMatch] = useState(matchData)
+
+  // Get pending roster from match data
+  const pendingRosterField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+  const pendingRosterFieldSnake = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
   const [teamId, setTeamId] = useState(null)
 
   // Load match data from server
@@ -122,6 +130,167 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
       unsubscribe()
     }
   }, [matchId, team])
+
+  // Check for pending roster from match data or Supabase
+  useEffect(() => {
+    // Check local match data first
+    if (match) {
+      const pendingData = match[pendingRosterField] || match[pendingRosterFieldSnake]
+      if (pendingData) {
+        console.log('[RosterSetup] Found pending roster in match data:', pendingData)
+        setPendingRoster(pendingData)
+      } else {
+        setPendingRoster(null)
+      }
+    }
+
+    // If using Supabase connection, also check Supabase directly
+    if (useSupabaseConnection && supabase && matchData?.external_id) {
+      const checkSupabasePendingRoster = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('matches')
+            .select(pendingRosterFieldSnake)
+            .eq('external_id', matchData.external_id)
+            .single()
+
+          if (!error && data && data[pendingRosterFieldSnake]) {
+            console.log('[RosterSetup] Found pending roster in Supabase:', data[pendingRosterFieldSnake])
+            setPendingRoster(data[pendingRosterFieldSnake])
+          }
+        } catch (err) {
+          console.error('[RosterSetup] Error checking Supabase for pending roster:', err)
+        }
+      }
+      checkSupabasePendingRoster()
+
+      // Subscribe to changes
+      const channel = supabase
+        .channel(`roster-${matchData.external_id}-${team}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'matches',
+          filter: `external_id=eq.${matchData.external_id}`
+        }, (payload) => {
+          const pendingData = payload.new?.[pendingRosterFieldSnake]
+          console.log('[RosterSetup] Supabase update received, pending roster:', pendingData)
+          setPendingRoster(pendingData || null)
+        })
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [match, matchData, useSupabaseConnection, pendingRosterField, pendingRosterFieldSnake, team])
+
+  // Accept pending roster - import players and bench officials
+  const handleAcceptPendingRoster = async () => {
+    if (!pendingRoster) return
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const importedPlayers = pendingRoster.players || []
+      const importedBench = pendingRoster.bench || []
+
+      // Update local state
+      setPlayers(importedPlayers.map(p => ({
+        id: null,
+        number: p.number,
+        firstName: p.firstName || '',
+        lastName: p.lastName || '',
+        dob: p.dob || '',
+        libero: p.libero || '',
+        isCaptain: p.isCaptain || false
+      })))
+      setBenchOfficials(importedBench.map(b => ({
+        role: b.role || '',
+        firstName: b.firstName || b.first_name || '',
+        lastName: b.lastName || b.last_name || '',
+        dob: b.dob || b.date_of_birth || ''
+      })))
+
+      // Save to database
+      if (teamId && matchId && matchId !== -1 && teamId !== -1) {
+        // Delete existing players
+        const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
+        for (const ep of existingPlayers) {
+          await db.players.delete(ep.id)
+        }
+
+        // Add imported players
+        if (importedPlayers.length) {
+          await db.players.bulkAdd(
+            importedPlayers.map(p => ({
+              teamId,
+              number: p.number,
+              name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+              lastName: p.lastName || '',
+              firstName: p.firstName || '',
+              dob: p.dob || null,
+              libero: p.libero || '',
+              isCaptain: !!p.isCaptain,
+              role: null,
+              createdAt: new Date().toISOString()
+            }))
+          )
+        }
+
+        // Update match with bench officials and clear pending roster
+        const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
+        await db.matches.update(matchId, {
+          [benchKey]: importedBench,
+          [pendingRosterField]: null
+        })
+      }
+
+      // Clear pending roster in Supabase if connected
+      if (useSupabaseConnection && supabase && matchData?.external_id) {
+        await supabase
+          .from('matches')
+          .update({ [pendingRosterFieldSnake]: null })
+          .eq('external_id', matchData.external_id)
+      }
+
+      setPendingRoster(null)
+      console.log('[RosterSetup] Pending roster accepted and imported')
+    } catch (err) {
+      console.error('[RosterSetup] Error accepting pending roster:', err)
+      setError(t('rosterSetup.errorAcceptingRoster'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Reject pending roster - just clear it
+  const handleRejectPendingRoster = async () => {
+    setLoading(true)
+
+    try {
+      // Clear pending roster locally
+      if (matchId && matchId !== -1) {
+        await db.matches.update(matchId, { [pendingRosterField]: null })
+      }
+
+      // Clear pending roster in Supabase if connected
+      if (useSupabaseConnection && supabase && matchData?.external_id) {
+        await supabase
+          .from('matches')
+          .update({ [pendingRosterFieldSnake]: null })
+          .eq('external_id', matchData.external_id)
+      }
+
+      setPendingRoster(null)
+      console.log('[RosterSetup] Pending roster rejected')
+    } catch (err) {
+      console.error('[RosterSetup] Error rejecting pending roster:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleAddPlayer = () => {
     const newNumber = players.length > 0 
@@ -391,7 +560,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
         }))
       })
 
-      alert('Roster saved successfully!')
+      alert(t('rosterSetup.rosterSaved'))
     } catch (err) {
       console.error('Error saving roster:', err)
       setError('Failed to save roster')
@@ -422,7 +591,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
           marginBottom: '30px'
         }}>
           <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>
-            Roster — {team === 'home' ? (match?.homeTeamName || 'Home') : (match?.awayTeamName || 'Away')}
+            {t('rosterSetup.title')} — {team === 'home' ? (match?.homeTeamName || t('common.home')) : (match?.awayTeamName || t('common.away'))}
           </h1>
           <button
             onClick={onBack}
@@ -437,7 +606,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
               cursor: 'pointer'
             }}
           >
-            Back
+            {t('common.back')}
           </button>
         </div>
 
@@ -464,10 +633,10 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
           border: '1px solid rgba(255,255,255,0.1)'
         }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>
-            Load roster from PDF
+            {t('rosterSetup.loadRosterFromPdf')}
           </h2>
           <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>
-            Select a roster PDF file to automatically import players and officials
+            {t('rosterSetup.loadRosterFromPdfDescription')}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -497,11 +666,11 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                 onMouseOver={(e) => !loading && (e.target.style.opacity = '0.9')}
                 onMouseOut={(e) => !loading && (e.target.style.opacity = '1')}
               >
-                Choose PDF File
+                {t('rosterSetup.choosePdfFile')}
               </button>
               {pdfFile && !loading && (
                 <span style={{ fontSize: '14px', color: 'var(--text)', flex: 1 }}>
-                  Selected: {pdfFile.name}
+                  {t('rosterSetup.selectedFile')}: {pdfFile.name}
                 </span>
               )}
             </div>
@@ -529,13 +698,13 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                 onMouseOver={(e) => !loading && (e.target.style.opacity = '0.9')}
                 onMouseOut={(e) => !loading && (e.target.style.opacity = '1')}
               >
-                Import
+                {t('rosterSetup.import')}
               </button>
             )}
           </div>
           {loading && (
             <p style={{ fontSize: '14px', color: 'var(--accent)', marginTop: '10px' }}>
-              Parsing PDF and importing data...
+              {t('rosterSetup.parsingPdf')}
             </p>
           )}
           {error && (
@@ -544,6 +713,75 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
             </p>
           )}
         </div>
+
+        {/* Pending Roster Section */}
+        {pendingRoster && (
+          <div style={{
+            marginBottom: '30px',
+            padding: '20px',
+            background: 'rgba(34, 197, 94, 0.1)',
+            borderRadius: '8px',
+            border: '1px solid rgba(34, 197, 94, 0.3)'
+          }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px', color: '#22c55e' }}>
+              {t('rosterSetup.rosterUploaded')}
+            </h2>
+            <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>
+              {t('rosterSetup.rosterUploadedDescription')}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px' }}>
+                {t('rosterSetup.playersCount')}: {pendingRoster.players?.length || 0}
+              </div>
+              <div style={{ fontSize: '14px' }}>
+                {t('rosterSetup.benchOfficialsCount')}: {pendingRoster.bench?.length || 0}
+              </div>
+              {pendingRoster.timestamp && (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                  {t('rosterSetup.uploadedAt')}: {new Date(pendingRoster.timestamp).toLocaleString()}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={handleAcceptPendingRoster}
+                disabled={loading}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: loading ? 'rgba(34, 197, 94, 0.5)' : '#22c55e',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  flex: 1
+                }}
+              >
+                {loading ? t('common.loading') : t('rosterSetup.acceptRoster')}
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectPendingRoster}
+                disabled={loading}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: loading ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.2)',
+                  color: '#ef4444',
+                  border: '1px solid #ef4444',
+                  borderRadius: '6px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  flex: 1
+                }}
+              >
+                {t('rosterSetup.rejectRoster')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Players Section */}
         <div style={{
@@ -560,7 +798,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
             marginBottom: '20px'
           }}>
             <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>
-              Players
+              {t('rosterSetup.players')}
             </h2>
             <button
               onClick={handleAddPlayer}
@@ -575,7 +813,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                 cursor: 'pointer'
               }}
             >
-              + Add Player
+              {t('rosterSetup.addPlayer')}
             </button>
           </div>
 
@@ -583,13 +821,13 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>Number</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>First Name</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>Last Name</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>DOB</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>Libero</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>Captain</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '14px', fontWeight: 600 }}>Actions</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.number')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.firstName')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.lastName')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.dob')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.libero')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.captain')}</th>
+                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -729,7 +967,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                           cursor: 'pointer'
                         }}
                       >
-                        Delete
+                        {t('common.delete')}
                       </button>
                     </td>
                   </tr>
@@ -754,7 +992,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
             marginBottom: '20px'
           }}>
             <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>
-              Bench Officials
+              {t('rosterSetup.benchOfficials')}
             </h2>
             <button
               onClick={handleAddOfficial}
@@ -769,7 +1007,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                 cursor: 'pointer'
               }}
             >
-              + Add Official
+              {t('rosterSetup.addOfficial')}
             </button>
           </div>
 
@@ -777,11 +1015,11 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>Role</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>First Name</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>Last Name</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>DOB</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '14px', fontWeight: 600 }}>Actions</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.role')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.firstName')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.lastName')}</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.dob')}</th>
+                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -801,11 +1039,11 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                           color: 'var(--text)'
                         }}
                       >
-                        <option value="Coach">Coach</option>
-                        <option value="Assistant Coach 1">Assistant Coach 1</option>
-                        <option value="Assistant Coach 2">Assistant Coach 2</option>
-                        <option value="Physiotherapist">Physiotherapist</option>
-                        <option value="Medic">Medic</option>
+                        <option value="Coach">{t('benchRoles.coach')}</option>
+                        <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1')}</option>
+                        <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2')}</option>
+                        <option value="Physiotherapist">{t('benchRoles.physiotherapist')}</option>
+                        <option value="Medic">{t('benchRoles.medic')}</option>
                       </select>
                     </td>
                     <td style={{ padding: '12px' }}>
@@ -870,7 +1108,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
                           cursor: 'pointer'
                         }}
                       >
-                        Delete
+                        {t('common.delete')}
                       </button>
                     </td>
                   </tr>
@@ -900,7 +1138,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
               cursor: 'pointer'
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
@@ -916,7 +1154,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false })
               cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
-            {loading ? 'Saving...' : 'Save Roster'}
+            {loading ? t('rosterSetup.saving') : t('rosterSetup.saveRoster')}
           </button>
         </div>
       </div>

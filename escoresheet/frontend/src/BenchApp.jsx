@@ -494,6 +494,8 @@ export default function BenchApp() {
               team={selectedTeam}
               onBack={handleBack}
               embedded={true}
+              useSupabaseConnection={activeConnection === 'supabase'}
+              matchData={selectedMatch}
             />
           ) : (
             <MatchEntry

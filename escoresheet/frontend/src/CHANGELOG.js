@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.18',
+    date: '23.12.25',
+    changes: [
+      'Enhance RosterSetup and related components with Supabase integration and i18n support'
+    ]
+  },
+  {
     version: '0.14.17',
     date: '22.12.25',
     changes: [
