@@ -185,14 +185,44 @@ export default function LivescoreApp() {
   // Load available matches on mount and periodically
   useEffect(() => {
     const loadMatches = async () => {
+      console.log('[Livescore] loadMatches called, connectionMode:', connectionMode)
       setLoadingMatches(true)
       try {
+        // Try Supabase first if in AUTO or SUPABASE mode
+        const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+
+        console.log('[Livescore] useSupabase:', useSupabase, 'supabase client exists:', !!supabase)
+
+        if (useSupabase && supabase) {
+          console.log('[Livescore] Loading matches from Supabase...')
+          const result = await listAvailableMatchesSupabase()
+          console.log('[Livescore] Supabase result:', JSON.stringify(result, null, 2))
+          if (result.success && result.matches && result.matches.length > 0) {
+            console.log('[Livescore] Found', result.matches.length, 'matches from Supabase')
+            setAvailableMatches(result.matches)
+            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+            setActiveConnection('supabase')
+            setLoadingMatches(false)
+            return
+          } else {
+            console.log('[Livescore] Supabase returned no matches or failed, falling back to WebSocket')
+          }
+        }
+
+        // Fall back to WebSocket/server
+        console.log('[Livescore] Loading matches from WebSocket server...')
         const result = await listAvailableMatches()
+        console.log('[Livescore] WebSocket server result:', JSON.stringify(result, null, 2))
         if (result.success && result.matches) {
+          console.log('[Livescore] Found', result.matches.length, 'matches from WebSocket')
           setAvailableMatches(result.matches)
+          setActiveConnection('websocket')
+        } else {
+          console.log('[Livescore] WebSocket returned no matches or failed')
         }
       } catch (err) {
-        console.error('Error loading matches:', err)
+        console.error('[Livescore] Error loading matches:', err)
       } finally {
         setLoadingMatches(false)
       }
@@ -202,7 +232,7 @@ export default function LivescoreApp() {
     const interval = setInterval(loadMatches, 30000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [connectionMode])
 
   // Check connection status periodically
   useEffect(() => {
