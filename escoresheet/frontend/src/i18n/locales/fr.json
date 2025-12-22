@@ -397,6 +397,12 @@
       "dbDesc": "Supabase temps réel",
       "directOnly": "Direct uniquement",
       "directDesc": "WebSocket direct"
-    }
+    },
+    "awaitingCoinToss": "Awaiting Coin Toss",
+    "awaitingCoinTossDesc": "Le match commencera une fois le Coin Toss confirmé sur la feuille de match.",
+    "matchHasEnded": "Le match est terminé",
+    "lineupSet": "Composition définie",
+    "showLineup": "Afficher la composition",
+    "loadGames": "Charger les matchs"
   }
 }
