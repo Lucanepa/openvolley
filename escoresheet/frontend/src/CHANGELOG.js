@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.9',
+    date: '22.12.25',
+    changes: [
+      'Refactor MatchSetup component styles for improved layout consistency'
+    ]
+  },
+  {
     version: '0.14.8',
     date: '22.12.25',
     changes: [

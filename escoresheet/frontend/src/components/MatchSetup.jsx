@@ -5307,15 +5307,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
+        gap: '5px',
         padding: '8px 12px',
         background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
         borderRadius: '8px',
         border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255,255,255,0.1)',
-        minWidth: '140px',
+        minWidth: '100px',
         flex: 1
       }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', minWidth: '70px' }}>{label}</span>
+        <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', minWidth: '60px' }}>{label}</span>
         <div style={{
           position: 'relative',
           width: '40px',
@@ -5347,7 +5347,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             color: 'var(--accent)',
             letterSpacing: '2px',
             fontFamily: 'monospace',
-            marginLeft: '4px'
+            marginLeft: '2px'
           }}>
             {pin}
           </span>
