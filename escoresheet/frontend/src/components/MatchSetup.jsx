@@ -116,12 +116,15 @@ function createScheduledAt(date, time, options = {}) {
     throw new Error(`Invalid minutes: ${minutes}. Must be between 0 and 59.`)
   }
 
-  const dateObj = new Date(`${date}T${timeToUse}:00`)
+  // Validate by parsing, but return the literal time without timezone conversion
+  // This ensures 16:00 entered = 16:00 stored (not converted from local to UTC)
+  const dateObj = new Date(`${date}T${timeToUse}:00Z`)
   if (isNaN(dateObj.getTime())) {
     throw new Error(`Invalid date/time combination: ${date} ${timeToUse}`)
   }
 
-  return dateObj.toISOString()
+  // Return the time as-entered (treating it as UTC, no conversion)
+  return `${date}T${timeToUse}:00Z`
 }
 
 // Helper to check if two values are equal (handles objects and arrays)
