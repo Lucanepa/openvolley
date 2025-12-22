@@ -13,8 +13,21 @@
 
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
+import nodemailer from 'nodemailer'
 
 const PORT = process.env.PORT || 8080
+
+// Email configuration - set these environment variables in Railway
+// SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
+const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_PORT === '465',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+}) : null
 const IS_CLOUD = process.env.RAILWAY_ENVIRONMENT || process.env.RENDER
 
 // In-memory storage for active matches
@@ -318,6 +331,143 @@ const server = createServer((req, res) => {
         Array.from(rooms.entries()).map(([matchId, room]) => [matchId, room.clients.size])
       )
     }))
+    return
+  }
+
+  // Contact/Support form endpoint
+  if (url.pathname === '/api/contact' && req.method === 'POST') {
+    // Parse multipart form data (simplified - just log for now, email via mailto fallback)
+    let body = ''
+    const chunks = []
+    req.on('data', chunk => chunks.push(chunk))
+    req.on('end', async () => {
+      try {
+        const buffer = Buffer.concat(chunks)
+        const contentType = req.headers['content-type'] || ''
+
+        // Extract form data
+        let formData = {}
+        if (contentType.includes('multipart/form-data')) {
+          // Simple multipart parser for text fields only
+          const boundary = contentType.split('boundary=')[1]
+          if (boundary) {
+            const parts = buffer.toString().split('--' + boundary)
+            parts.forEach(part => {
+              const nameMatch = part.match(/name="([^"]+)"/)
+              if (nameMatch && !part.includes('filename=')) {
+                const name = nameMatch[1]
+                const valueMatch = part.split('\r\n\r\n')
+                if (valueMatch[1]) {
+                  formData[name] = valueMatch[1].replace(/\r\n--$/, '').trim()
+                }
+              }
+            })
+          }
+        } else {
+          try {
+            formData = JSON.parse(buffer.toString())
+          } catch {
+            formData = {}
+          }
+        }
+
+        console.log('[Contact] Received feedback:', {
+          contactType: formData.contactType,
+          area: formData.area,
+          supportType: formData.supportType,
+          severity: formData.severity,
+          email: formData.email,
+          comments: formData.comments?.substring(0, 100) + '...',
+          timestamp: formData.timestamp
+        })
+
+        // Build email content
+        const contactEmail = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+        const typeLabels = { support: 'Support', feedback: 'Feedback', request: 'Feature Request' }
+        const supportTypeLabels = { bug: 'Bug Report', help: 'Help / Question' }
+        const severityLabels = {
+          '1': '1 - Tool breaks completely',
+          '2': '2 - Very limited functionality',
+          '3': '3 - Inconvenience',
+          '4': '4 - Nice-to-have'
+        }
+
+        const subject = `[eScoresheet ${(typeLabels[formData.contactType] || formData.contactType).toUpperCase()}] ${formData.area}${formData.supportType ? ` - ${supportTypeLabels[formData.supportType] || formData.supportType}` : ''}`
+
+        const emailBody = `
+New ${typeLabels[formData.contactType] || formData.contactType} from eScoresheet
+
+Contact Type: ${typeLabels[formData.contactType] || formData.contactType}
+Area: ${formData.area}
+${formData.supportType ? `Support Type: ${supportTypeLabels[formData.supportType] || formData.supportType}\n` : ''}${formData.severity ? `Severity: ${severityLabels[formData.severity] || formData.severity}\n` : ''}
+From: ${formData.email}
+URL: ${formData.url || 'N/A'}
+User Agent: ${formData.userAgent || 'N/A'}
+Timestamp: ${formData.timestamp || new Date().toISOString()}
+
+Comments:
+${formData.comments || 'No comments provided'}
+`.trim()
+
+        // Send email if configured
+        if (emailTransporter) {
+          try {
+            // Send to contact email
+            await emailTransporter.sendMail({
+              from: process.env.SMTP_USER,
+              to: contactEmail,
+              replyTo: formData.email,
+              subject: subject,
+              text: emailBody
+            })
+
+            // Send confirmation copy to user
+            if (formData.email) {
+              const confirmationBody = `
+Thank you for contacting eScoresheet support!
+
+This is a confirmation that your message has been received. I'll review it as soon as possible and will contact you if I have any questions.
+
+--- Your message ---
+${emailBody}
+---
+
+Best regards,
+Luca
+eScoresheet Developer
+`.trim()
+
+              await emailTransporter.sendMail({
+                from: process.env.SMTP_USER,
+                to: formData.email,
+                subject: `Re: ${subject} - Message Received`,
+                text: confirmationBody
+              })
+            }
+
+            console.log('[Contact] Emails sent successfully')
+          } catch (emailErr) {
+            console.error('[Contact] Failed to send email:', emailErr)
+            // Continue anyway - the form data is logged
+          }
+        } else {
+          console.log('[Contact] Email not configured (SMTP_HOST not set). Form data logged only.')
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: true,
+          message: 'Feedback received. Thank you!'
+        }))
+      } catch (err) {
+        console.error('[Contact] Error processing form:', err)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Failed to process feedback'
+        }))
+      }
+    })
     return
   }
 

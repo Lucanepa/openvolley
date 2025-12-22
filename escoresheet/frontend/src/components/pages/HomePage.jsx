@@ -1,3 +1,7 @@
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import SupportFeedbackModal from '../SupportFeedbackModal'
+
 export default function HomePage({
   favicon,
   newMatchMenuOpen,
@@ -14,10 +18,13 @@ export default function HomePage({
   onOpenSettings,
   onRestoreMatch
 }) {
+  const { t } = useTranslation()
+  const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
+
   return (
     <div className="home-view">
       <div className="home-content">
-        <h1 className="home-title" style={{ width: 'auto' }}>Openvolley eScoresheet</h1>
+        <h1 className="home-title" style={{ width: 'auto' }}>{t('home.title')}</h1>
         <div className="home-logo">
           <img src={favicon} alt="Openvolley" />
         </div>
@@ -51,7 +58,7 @@ export default function HomePage({
                 e.currentTarget.style.boxShadow = 'none'
               }}
             >
-              <span>New Match</span>
+              <span>{t('home.newMatch')}</span>
               <span style={{ transform: newMatchMenuOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
             </button>
 
@@ -93,7 +100,7 @@ export default function HomePage({
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)' }}
                 >
-                  Official Match
+                  {t('home.officialMatch')}
                 </button>
                 <button
                   onClick={() => {
@@ -116,7 +123,7 @@ export default function HomePage({
                   onMouseEnter={(e) => { if (!testMatchLoading) e.currentTarget.style.background = 'rgba(168, 85, 247, 0.2)' }}
                   onMouseLeave={(e) => { if (!testMatchLoading) e.currentTarget.style.background = 'rgba(168, 85, 247, 0.1)' }}
                 >
-                  {testMatchLoading ? 'Preparing…' : 'Test Match'}
+                  {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
                 </button>
               </div>
             )}
@@ -155,7 +162,7 @@ export default function HomePage({
                   e.currentTarget.style.boxShadow = 'none'
                 }}
               >
-                Continue Match
+                {t('home.continueMatch')}
               </button>
             )}
 
@@ -190,7 +197,7 @@ export default function HomePage({
                   e.currentTarget.style.boxShadow = 'none'
                 }}
               >
-                Delete Match
+                {t('home.deleteMatch')}
               </button>
             )}
 
@@ -218,7 +225,7 @@ export default function HomePage({
               e.currentTarget.style.boxShadow = 'none'
             }}
           >
-            Restore Match
+            {t('home.restoreMatch')}
           </button>
 
           {/* Game PIN Display (if exists) */}
@@ -231,7 +238,7 @@ export default function HomePage({
               borderRadius: '12px',
               textAlign: 'center'
             }}>
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Game PIN</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('home.gamePin')}</div>
               <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>
                 {currentOfficialMatch.gamePin}
               </div>
@@ -240,7 +247,7 @@ export default function HomePage({
           </div>
         </div>
 
-        <div style={{ marginTop: '24px' }}>
+        <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
           <button
             onClick={onOpenSettings}
             style={{
@@ -255,9 +262,41 @@ export default function HomePage({
               width: '180px'
             }}
           >
-            Options
+            {t('home.options')}
+          </button>
+          <button
+            onClick={() => setSupportFeedbackOpen(true)}
+            style={{
+              padding: '10px 20px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              width: '180px',
+              transition: 'transform 0.2s, box-shadow 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)'
+              e.currentTarget.style.boxShadow = '0 8px 16px rgba(34, 197, 94, 0.3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            {t('supportFeedback.button')}
           </button>
         </div>
+
+        {/* Support & Feedback Modal */}
+        <SupportFeedbackModal
+          open={supportFeedbackOpen}
+          onClose={() => setSupportFeedbackOpen(false)}
+          currentPage="mainPage"
+        />
       </div>
     </div>
   )

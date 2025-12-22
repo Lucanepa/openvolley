@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>i18n Translation Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+    }
+    h1 { text-align: center; margin-bottom: 20px; color: #00d4ff; }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+    .lang-btn {
+      padding: 10px 20px;
+      border: 2px solid #00d4ff;
+      background: transparent;
+      color: #00d4ff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+    .lang-btn:hover, .lang-btn.active {
+      background: #00d4ff;
+      color: #1a1a2e;
+    }
+    .preview-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .section {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #0f3460;
+    }
+    .section h2 {
+      color: #e94560;
+      margin-bottom: 15px;
+      font-size: 18px;
+      border-bottom: 1px solid #0f3460;
+      padding-bottom: 10px;
+    }
+    .translation-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #0f346033;
+    }
+    .translation-row:last-child { border-bottom: none; }
+    .key { color: #888; font-size: 12px; }
+    .value { color: #fff; font-weight: 500; text-align: right; }
+
+    /* Coin Toss Preview */
+    .coin-toss-preview {
+      background: #0f0f23;
+      border-radius: 12px;
+      padding: 30px;
+      margin-top: 30px;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .coin-toss-preview h2 {
+      text-align: center;
+      font-size: 32px;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+    .teams-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .team-card {
+      text-align: center;
+    }
+    .team-label {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .team-name {
+      background: #ef4444;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      margin-bottom: 15px;
+    }
+    .team-card:last-child .team-name {
+      background: #3b82f6;
+    }
+    .roster-btn {
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .switch-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      align-items: center;
+      padding-top: 30px;
+    }
+    .switch-btn {
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: 700;
+    }
+    .confirm-btn {
+      display: block;
+      margin: 30px auto 0;
+      background: #22c55e;
+      color: #000;
+      border: none;
+      padding: 16px 32px;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .back-btn {
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      position: absolute;
+      left: 30px;
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>OpenVolley i18n Translation Preview</h1>
+
+  <div class="controls">
+    <button class="lang-btn active" onclick="setLanguage('en')">English</button>
+    <button class="lang-btn" onclick="setLanguage('fr')">Francais</button>
+    <button class="lang-btn" onclick="setLanguage('it')">Italiano</button>
+    <button class="lang-btn" onclick="setLanguage('de')">Deutsch</button>
+  </div>
+
+  <div class="preview-container">
+    <div class="section">
+      <h2>Common</h2>
+      <div id="common-translations"></div>
+    </div>
+    <div class="section">
+      <h2>Coin Toss</h2>
+      <div id="coinToss-translations"></div>
+    </div>
+    <div class="section">
+      <h2>Roster</h2>
+      <div id="roster-translations"></div>
+    </div>
+    <div class="section">
+      <h2>Bench Roles</h2>
+      <div id="benchRoles-translations"></div>
+    </div>
+    <div class="section">
+      <h2>Match Setup</h2>
+      <div id="matchSetup-translations"></div>
+    </div>
+    <div class="section">
+      <h2>Scoreboard</h2>
+      <div id="scoreboard-translations"></div>
+    </div>
+  </div>
+
+  <div class="coin-toss-preview">
+    <div class="header-row">
+      <button class="back-btn" id="back-btn"></button>
+      <h2 id="title"></h2>
+    </div>
+    <div class="teams-row">
+      <div class="team-card">
+        <div class="team-label" id="teamA-label"></div>
+        <div class="team-name">FC Lausanne</div>
+        <button class="roster-btn" id="roster-btn-a"></button>
+      </div>
+      <div class="switch-btns">
+        <button class="switch-btn" id="switch-teams"></button>
+        <button class="switch-btn" id="switch-serve"></button>
+      </div>
+      <div class="team-card">
+        <div class="team-label" id="teamB-label"></div>
+        <div class="team-name">VBC Geneve</div>
+        <button class="roster-btn" id="roster-btn-b"></button>
+      </div>
+    </div>
+    <button class="confirm-btn" id="confirm-btn"></button>
+  </div>
+
+  <script>
+    const translations = {
+      en: {"common":{"back":"Back","home":"Home","away":"Away","close":"Close","save":"Save","cancel":"Cancel","confirm":"Confirm","loading":"Loading...","error":"Error","success":"Success","yes":"Yes","no":"No","ok":"OK","add":"Add","delete":"Delete","edit":"Edit","clear":"Clear"},"coinToss":{"title":"Coin Toss","teamA":"Team A","teamB":"Team B","showRoster":"Show Roster","playersCount":"{{count}} Players","switchTeams":"Teams","switchServe":"Serve","signA":"Sign A","signB":"Sign B","coach":"Coach","captain":"Captain","confirmResult":"Confirm Coin Toss Result","returnToMatch":"Return to match","scoresheet":"Scoresheet","preview":"Preview"},"roster":{"title":"Roster","players":"Players","addPlayer":"+ Add Player","benchOfficials":"Bench Officials","number":"#","name":"Name","dob":"DOB","role":"Role","libero1":"L1","libero2":"L2","duplicateNumber":"Duplicate jersey number!"},"benchRoles":{"coach":"Coach","assistantCoach1":"Assistant Coach 1","assistantCoach2":"Assistant Coach 2","physiotherapist":"Physiotherapist","medic":"Medic"},"matchSetup":{"title":"Match Setup","matchInfo":"Match Info","hall":"Hall","city":"City","league":"League","matchNumber":"Match Number","date":"Date","time":"Time","teams":"Teams","homeTeam":"Home Team","awayTeam":"Away Team","officials":"Officials","referee1":"1st Referee","referee2":"2nd Referee","scorer":"Scorer","assistantScorer":"Assistant Scorer","startMatch":"Start Match","testMatch":"Test Match"},"scoreboard":{"set":"Set","timeout":"Timeout","substitution":"Substitution","challenge":"Challenge","sanction":"Sanction","point":"Point","undo":"Undo","serve":"Serve","lineup":"Lineup","endSet":"End Set","endMatch":"End Match","matchPoint":"Match Point","setPoint":"Set Point"}},
+      fr: {"common":{"back":"Retour","home":"Domicile","away":"Visiteur","close":"Fermer","save":"Enregistrer","cancel":"Annuler","confirm":"Confirmer","loading":"Chargement...","error":"Erreur","success":"Succes","yes":"Oui","no":"Non","ok":"OK","add":"Ajouter","delete":"Supprimer","edit":"Modifier","clear":"Effacer"},"coinToss":{"title":"Tirage au Sort","teamA":"Equipe A","teamB":"Equipe B","showRoster":"Voir Effectif","playersCount":"{{count}} Joueurs","switchTeams":"Equipes","switchServe":"Service","signA":"Signer A","signB":"Signer B","coach":"Entraineur","captain":"Capitaine","confirmResult":"Confirmer le Resultat du Tirage","returnToMatch":"Retour au match","scoresheet":"Feuille de Match","preview":"Apercu"},"roster":{"title":"Effectif","players":"Joueurs","addPlayer":"+ Ajouter Joueur","benchOfficials":"Officiels de Banc","number":"#","name":"Nom","dob":"DDN","role":"Role","libero1":"L1","libero2":"L2","duplicateNumber":"Numero de maillot en double!"},"benchRoles":{"coach":"Entraineur","assistantCoach1":"Entraineur Adjoint 1","assistantCoach2":"Entraineur Adjoint 2","physiotherapist":"Kinesitherapeute","medic":"Medecin"},"matchSetup":{"title":"Configuration du Match","matchInfo":"Infos Match","hall":"Salle","city":"Ville","league":"Ligue","matchNumber":"Numero de Match","date":"Date","time":"Heure","teams":"Equipes","homeTeam":"Equipe Domicile","awayTeam":"Equipe Visiteur","officials":"Officiels","referee1":"1er Arbitre","referee2":"2eme Arbitre","scorer":"Marqueur","assistantScorer":"Marqueur Adjoint","startMatch":"Demarrer le Match","testMatch":"Match Test"},"scoreboard":{"set":"Set","timeout":"Temps Mort","substitution":"Remplacement","challenge":"Challenge","sanction":"Sanction","point":"Point","undo":"Annuler","serve":"Service","lineup":"Composition","endSet":"Fin de Set","endMatch":"Fin de Match","matchPoint":"Balle de Match","setPoint":"Balle de Set"}},
+      it: {"common":{"back":"Indietro","home":"Casa","away":"Ospite","close":"Chiudi","save":"Salva","cancel":"Annulla","confirm":"Conferma","loading":"Caricamento...","error":"Errore","success":"Successo","yes":"Si","no":"No","ok":"OK","add":"Aggiungi","delete":"Elimina","edit":"Modifica","clear":"Cancella"},"coinToss":{"title":"Sorteggio","teamA":"Squadra A","teamB":"Squadra B","showRoster":"Mostra Rosa","playersCount":"{{count}} Giocatori","switchTeams":"Squadre","switchServe":"Servizio","signA":"Firma A","signB":"Firma B","coach":"Allenatore","captain":"Capitano","confirmResult":"Conferma Risultato Sorteggio","returnToMatch":"Torna alla partita","scoresheet":"Referto","preview":"Anteprima"},"roster":{"title":"Rosa","players":"Giocatori","addPlayer":"+ Aggiungi Giocatore","benchOfficials":"Ufficiali di Panchina","number":"#","name":"Nome","dob":"DDN","role":"Ruolo","libero1":"L1","libero2":"L2","duplicateNumber":"Numero di maglia duplicato!"},"benchRoles":{"coach":"Allenatore","assistantCoach1":"Allenatore Assistente 1","assistantCoach2":"Allenatore Assistente 2","physiotherapist":"Fisioterapista","medic":"Medico"},"matchSetup":{"title":"Configurazione Partita","matchInfo":"Info Partita","hall":"Palestra","city":"Citta","league":"Lega","matchNumber":"Numero Partita","date":"Data","time":"Ora","teams":"Squadre","homeTeam":"Squadra Casa","awayTeam":"Squadra Ospite","officials":"Ufficiali","referee1":"1 Arbitro","referee2":"2 Arbitro","scorer":"Segnapunti","assistantScorer":"Segnapunti Assistente","startMatch":"Inizia Partita","testMatch":"Partita Test"},"scoreboard":{"set":"Set","timeout":"Timeout","substitution":"Sostituzione","challenge":"Challenge","sanction":"Sanzione","point":"Punto","undo":"Annulla","serve":"Servizio","lineup":"Formazione","endSet":"Fine Set","endMatch":"Fine Partita","matchPoint":"Match Point","setPoint":"Set Point"}},
+      de: {"common":{"back":"Zuruck","home":"Heim","away":"Gast","close":"Schliessen","save":"Speichern","cancel":"Abbrechen","confirm":"Bestatigen","loading":"Laden...","error":"Fehler","success":"Erfolg","yes":"Ja","no":"Nein","ok":"OK","add":"Hinzufugen","delete":"Loschen","edit":"Bearbeiten","clear":"Loschen"},"coinToss":{"title":"Seitenwahl","teamA":"Team A","teamB":"Team B","showRoster":"Kader anzeigen","playersCount":"{{count}} Spieler","switchTeams":"Teams","switchServe":"Aufschlag","signA":"Unterschrift A","signB":"Unterschrift B","coach":"Trainer","captain":"Kapitan","confirmResult":"Seitenwahl bestatigen","returnToMatch":"Zuruck zum Spiel","scoresheet":"Spielbericht","preview":"Vorschau"},"roster":{"title":"Kader","players":"Spieler","addPlayer":"+ Spieler hinzufugen","benchOfficials":"Bankoffizielle","number":"#","name":"Name","dob":"Geb.","role":"Rolle","libero1":"L1","libero2":"L2","duplicateNumber":"Doppelte Trikotnummer!"},"benchRoles":{"coach":"Trainer","assistantCoach1":"Co-Trainer 1","assistantCoach2":"Co-Trainer 2","physiotherapist":"Physiotherapeut","medic":"Arzt"},"matchSetup":{"title":"Spieleinrichtung","matchInfo":"Spielinfo","hall":"Halle","city":"Stadt","league":"Liga","matchNumber":"Spielnummer","date":"Datum","time":"Uhrzeit","teams":"Teams","homeTeam":"Heimteam","awayTeam":"Gastteam","officials":"Offizielle","referee1":"1. Schiedsrichter","referee2":"2. Schiedsrichter","scorer":"Schreiber","assistantScorer":"Hilfschreiber","startMatch":"Spiel starten","testMatch":"Testspiel"},"scoreboard":{"set":"Satz","timeout":"Auszeit","substitution":"Auswechslung","challenge":"Challenge","sanction":"Sanktion","point":"Punkt","undo":"Ruckgangig","serve":"Aufschlag","lineup":"Aufstellung","endSet":"Satz beenden","endMatch":"Spiel beenden","matchPoint":"Matchball","setPoint":"Satzball"}}
+    };
+
+    let currentLang = 'en';
+
+    function setLanguage(lang) {
+      currentLang = lang;
+      document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelector(`[onclick="setLanguage('${lang}')"]`).classList.add('active');
+      renderTranslations();
+      renderPreview();
+    }
+
+    function renderSection(sectionId, data) {
+      const container = document.getElementById(sectionId + '-translations');
+      container.innerHTML = Object.entries(data).map(([key, value]) => `
+        <div class="translation-row">
+          <span class="key">${key}</span>
+          <span class="value">${value}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderTranslations() {
+      const t = translations[currentLang];
+      renderSection('common', t.common);
+      renderSection('coinToss', t.coinToss);
+      renderSection('roster', t.roster);
+      renderSection('benchRoles', t.benchRoles);
+      renderSection('matchSetup', t.matchSetup);
+      renderSection('scoreboard', t.scoreboard);
+    }
+
+    function renderPreview() {
+      const t = translations[currentLang];
+      document.getElementById('back-btn').textContent = '← ' + t.common.back;
+      document.getElementById('title').textContent = t.coinToss.title;
+      document.getElementById('teamA-label').textContent = t.coinToss.teamA;
+      document.getElementById('teamB-label').textContent = t.coinToss.teamB;
+      document.getElementById('roster-btn-a').textContent = t.coinToss.showRoster + ' (12)';
+      document.getElementById('roster-btn-b').textContent = t.coinToss.showRoster + ' (14)';
+      document.getElementById('switch-teams').textContent = '⇄ ' + t.coinToss.switchTeams;
+      document.getElementById('switch-serve').textContent = '⇄ ' + t.coinToss.switchServe;
+      document.getElementById('confirm-btn').textContent = t.coinToss.confirmResult;
+    }
+
+    // Initial render
+    renderTranslations();
+    renderPreview();
+  </script>
+</body>
+</html>
