@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.14',
+    date: '22.12.25',
+    changes: [
+      'Update version to 0.14.13 in package.json and version.json for release'
+    ]
+  },
+  {
     version: '0.14.12',
     date: '22.12.25',
     changes: [
