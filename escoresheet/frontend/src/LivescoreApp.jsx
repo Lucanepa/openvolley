@@ -1,11 +1,19 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
 import TestModeControls from './components/TestModeControls'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { Results } from '../scoresheet_pdf/components/FooterSection'
+import { supabase } from './lib/supabaseClient'
+
+// Connection modes
+const CONNECTION_MODES = {
+  AUTO: 'auto',
+  SUPABASE: 'supabase',
+  WEBSOCKET: 'websocket'
+}
 
 // Helper function to determine if a color is bright
 const isBrightColor = (color) => {
@@ -27,9 +35,18 @@ export default function LivescoreApp() {
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [connectionStatuses, setConnectionStatuses] = useState({
     server: 'disconnected',
-    websocket: 'disconnected'
+    websocket: 'disconnected',
+    supabase: 'disconnected'
   })
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [connectionMode, setConnectionMode] = useState(() => {
+    try {
+      return localStorage.getItem('livescore_connection_mode') || CONNECTION_MODES.AUTO
+    } catch { return CONNECTION_MODES.AUTO }
+  })
+  const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket'
+  const supabaseChannelRef = useRef(null)
+  const [supabaseLiveState, setSupabaseLiveState] = useState(null) // Data from match_live_state
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
@@ -215,10 +232,12 @@ export default function LivescoreApp() {
         const wsStatus = gameId ? getWebSocketStatus(gameId) : 'not_applicable'
         const serverConnected = serverStatus?.running
 
-        setConnectionStatuses({
+        setConnectionStatuses(prev => ({
+          ...prev,
           server: serverConnected ? 'connected' : 'disconnected',
           websocket: gameId ? wsStatus : 'not_applicable'
-        })
+          // supabase status is managed by the subscription effect
+        }))
 
         // Update debug info
         const newDebugInfo = {}
@@ -238,16 +257,18 @@ export default function LivescoreApp() {
             details: `Game ID: ${gameId}`
           }
         }
-        setConnectionDebugInfo(newDebugInfo)
+        setConnectionDebugInfo(prev => ({ ...prev, ...newDebugInfo }))
       } catch (err) {
-        setConnectionStatuses({
+        setConnectionStatuses(prev => ({
+          ...prev,
           server: 'disconnected',
           websocket: 'disconnected'
-        })
-        setConnectionDebugInfo({
+        }))
+        setConnectionDebugInfo(prev => ({
+          ...prev,
           server: { status: 'error', message: err.message || 'Failed to check server status' },
           websocket: { status: 'disconnected', message: 'Cannot check WebSocket without server' }
-        })
+        }))
       }
     }
 
@@ -348,23 +369,91 @@ export default function LivescoreApp() {
 
     fetchData()
 
-    // Subscribe to match data updates
-    const unsubscribe = subscribeToMatchData(gameId, (updatedData) => {
-      console.log('[Livescore] WebSocket update received')
-      const currentSet = (updatedData.sets || []).find(s => !s.finished) || 
-                        (updatedData.sets || []).sort((a, b) => b.index - a.index)[0]
-      
-      setData({
-        match: updatedData.match,
-        homeTeam: updatedData.homeTeam,
-        awayTeam: updatedData.awayTeam,
-        homePlayers: updatedData.homePlayers || [],
-        awayPlayers: updatedData.awayPlayers || [],
-        sets: updatedData.sets || [],
-        events: updatedData.events || [],
-        set: currentSet
+    // Determine which connection to use
+    const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+      (connectionMode === CONNECTION_MODES.AUTO && supabase)
+    const useWebSocket = connectionMode === CONNECTION_MODES.WEBSOCKET ||
+      (connectionMode === CONNECTION_MODES.AUTO && !supabase)
+
+    let wsUnsubscribe = null
+
+    // Subscribe to Supabase match_live_state if using Supabase
+    if (useSupabase && supabase) {
+      console.log('[Livescore] Connecting to Supabase for match:', gameId)
+      setActiveConnection('supabase')
+
+      // Fetch initial live state
+      const fetchLiveState = async () => {
+        try {
+          const { data: liveState, error } = await supabase
+            .from('match_live_state')
+            .select('*')
+            .eq('match_id', gameId)
+            .maybeSingle()
+
+          if (!error && liveState) {
+            console.log('[Livescore] Initial live state:', liveState)
+            setSupabaseLiveState(liveState)
+            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+          }
+        } catch (err) {
+          console.error('[Livescore] Error fetching live state:', err)
+        }
+      }
+      fetchLiveState()
+
+      // Subscribe to realtime updates
+      const channel = supabase
+        .channel(`livescore-${gameId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'match_live_state',
+            filter: `match_id=eq.${gameId}`
+          },
+          (payload) => {
+            console.log('[Livescore] Supabase live state update:', payload.new)
+            setSupabaseLiveState(payload.new)
+          }
+        )
+        .subscribe((status) => {
+          console.log('[Livescore] Supabase channel status:', status)
+          if (status === 'SUBSCRIBED') {
+            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            setConnectionStatuses(prev => ({ ...prev, supabase: 'error' }))
+            // Fall back to WebSocket if AUTO mode
+            if (connectionMode === CONNECTION_MODES.AUTO) {
+              setActiveConnection('websocket')
+            }
+          }
+        })
+
+      supabaseChannelRef.current = channel
+    }
+
+    // Subscribe to WebSocket if using WebSocket
+    if (useWebSocket || (connectionMode === CONNECTION_MODES.AUTO && !supabase)) {
+      wsUnsubscribe = subscribeToMatchData(gameId, (updatedData) => {
+        console.log('[Livescore] WebSocket update received')
+        setActiveConnection('websocket')
+        const currentSet = (updatedData.sets || []).find(s => !s.finished) ||
+                          (updatedData.sets || []).sort((a, b) => b.index - a.index)[0]
+
+        setData({
+          match: updatedData.match,
+          homeTeam: updatedData.homeTeam,
+          awayTeam: updatedData.awayTeam,
+          homePlayers: updatedData.homePlayers || [],
+          awayPlayers: updatedData.awayPlayers || [],
+          sets: updatedData.sets || [],
+          events: updatedData.events || [],
+          set: currentSet
+        })
       })
-    })
+    }
 
     // Refetch data when page becomes visible (handles screen wake from sleep)
     const handleVisibilityChange = () => {
@@ -376,10 +465,14 @@ export default function LivescoreApp() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      unsubscribe()
+      if (wsUnsubscribe) wsUnsubscribe()
+      if (supabaseChannelRef.current) {
+        supabase?.removeChannel(supabaseChannelRef.current)
+        supabaseChannelRef.current = null
+      }
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [gameId])
+  }, [gameId, connectionMode])
 
 
   // Determine which team is A and which is B based on coin toss
@@ -393,15 +486,21 @@ export default function LivescoreApp() {
     return data.match.coinTossTeamB || 'away'
   }, [data?.match])
 
-  // Determine left/right teams
+  // Determine left/right teams - prioritize Supabase live state when available
   const leftIsHome = useMemo(() => {
+    // Use Supabase live state if available (and not manually switched)
+    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.team_left_is_home !== undefined && supabaseLiveState.team_left_is_home !== null) {
+      const baseLeftIsHome = supabaseLiveState.team_left_is_home
+      return sidesSwitched ? !baseLeftIsHome : baseLeftIsHome
+    }
+
     // If sides are manually switched, override the computed value
     if (sidesSwitched) {
       // Get the base leftIsHome value
       if (!data?.set) return false
-      
+
       const setIndex = data.set.index
-      
+
       // Check for manual override first (for sets 1-4)
       if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
         const override = data.match.setLeftTeamOverrides[setIndex]
@@ -410,12 +509,12 @@ export default function LivescoreApp() {
           return leftTeamKey !== 'home' // Invert for switch
         }
       }
-      
+
       // Set 1: Team A on left
       if (setIndex === 1) {
         return teamAKey !== 'home' // Invert for switch
-      } 
-      
+      }
+
       // Set 5: Special case with court switch at 8 points
       if (setIndex === 5) {
         if (data.match?.set5LeftTeam) {
@@ -432,16 +531,16 @@ export default function LivescoreApp() {
         }
         return !isHome // Invert for switch
       }
-      
+
       // Sets 2, 3, 4: Teams alternate sides
       return setIndex % 2 === 1 ? (teamAKey !== 'home') : (teamAKey === 'home') // Invert for switch
     }
-    
+
     // Normal computation (not switched)
     if (!data?.set) return true
-    
+
     const setIndex = data.set.index
-    
+
     // Check for manual override first (for sets 1-4)
     if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
       const override = data.match.setLeftTeamOverrides[setIndex]
@@ -450,12 +549,12 @@ export default function LivescoreApp() {
         return leftTeamKey === 'home'
       }
     }
-    
+
     // Set 1: Team A on left
     if (setIndex === 1) {
       return teamAKey === 'home'
-    } 
-    
+    }
+
     // Set 5: Special case with court switch at 8 points
     if (setIndex === 5) {
       if (data.match?.set5LeftTeam) {
@@ -472,38 +571,62 @@ export default function LivescoreApp() {
       }
       return isHome
     }
-    
+
     // Sets 2, 3, 4: Teams alternate sides
     return setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey, sidesSwitched])
+  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey, sidesSwitched, activeConnection, supabaseLiveState])
 
-  // Calculate set score (number of sets won by each team)
+  // Calculate set score (number of sets won by each team) - prioritize Supabase data
   const setScore = useMemo(() => {
+    // Use Supabase live state if available
+    if (activeConnection === 'supabase' && supabaseLiveState) {
+      const homeSetsWon = supabaseLiveState.home_sets_won || 0
+      const awaySetsWon = supabaseLiveState.away_sets_won || 0
+      const leftSetsWon = leftIsHome ? homeSetsWon : awaySetsWon
+      const rightSetsWon = leftIsHome ? awaySetsWon : homeSetsWon
+      return { home: homeSetsWon, away: awaySetsWon, left: leftSetsWon, right: rightSetsWon }
+    }
+
     if (!data) return { home: 0, away: 0, left: 0, right: 0 }
-    
+
     const allSets = data.sets || []
     const finishedSets = allSets.filter(s => s.finished)
-    
+
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-    
+
     const leftSetsWon = leftIsHome ? homeSetsWon : awaySetsWon
     const rightSetsWon = leftIsHome ? awaySetsWon : homeSetsWon
-    
-    return { home: homeSetsWon, away: awaySetsWon, left: leftSetsWon, right: rightSetsWon }
-  }, [data, leftIsHome])
 
-  // Get current score
+    return { home: homeSetsWon, away: awaySetsWon, left: leftSetsWon, right: rightSetsWon }
+  }, [data, leftIsHome, activeConnection, supabaseLiveState])
+
+  // Get current score - prioritize Supabase data
   const currentScore = useMemo(() => {
+    // Use Supabase live state if available
+    if (activeConnection === 'supabase' && supabaseLiveState) {
+      const homePoints = supabaseLiveState.home_points || 0
+      const awayPoints = supabaseLiveState.away_points || 0
+      return {
+        left: leftIsHome ? homePoints : awayPoints,
+        right: leftIsHome ? awayPoints : homePoints
+      }
+    }
+
     if (!data?.set) return { left: 0, right: 0 }
     return {
       left: leftIsHome ? data.set.homePoints : data.set.awayPoints,
       right: leftIsHome ? data.set.awayPoints : data.set.homePoints
     }
-  }, [data?.set, leftIsHome])
+  }, [data?.set, leftIsHome, activeConnection, supabaseLiveState])
 
-  // Determine who has serve
+  // Determine who has serve - prioritize Supabase data
   const currentServe = useMemo(() => {
+    // Use Supabase live state if available
+    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.serving_team) {
+      return supabaseLiveState.serving_team
+    }
+
     if (!data?.set || !data?.match) {
       return data?.match?.firstServe || 'home'
     }
@@ -539,7 +662,32 @@ export default function LivescoreApp() {
     }
 
     return pointEvents[0].payload?.team || currentSetFirstServe
-  }, [data?.set, data?.match, data?.events, teamAKey, teamBKey])
+  }, [data?.set, data?.match, data?.events, teamAKey, teamBKey, activeConnection, supabaseLiveState])
+
+  // Get current set index - prioritize Supabase data
+  const currentSetIndex = useMemo(() => {
+    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.current_set) {
+      return supabaseLiveState.current_set
+    }
+    return data?.set?.index || 1
+  }, [data?.set?.index, activeConnection, supabaseLiveState])
+
+  // Handle connection mode change
+  const handleConnectionModeChange = useCallback((mode) => {
+    setConnectionMode(mode)
+    try {
+      localStorage.setItem('livescore_connection_mode', mode)
+    } catch (e) {
+      console.warn('[Livescore] Failed to save connection mode:', e)
+    }
+    // Force reconnection by clearing states
+    if (supabaseChannelRef.current) {
+      supabase?.removeChannel(supabaseChannelRef.current)
+      supabaseChannelRef.current = null
+    }
+    setSupabaseLiveState(null)
+    setActiveConnection(null)
+  }, [])
 
   // Get team labels
   const teamALabel = data?.match?.coinTossTeamA === 'home' ? 'A' : 'B'
@@ -1104,7 +1252,11 @@ export default function LivescoreApp() {
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
+        connectionDebugInfo={connectionDebugInfo}
+        connectionMode={connectionMode}
+        activeConnection={activeConnection}
+        onConnectionModeChange={handleConnectionModeChange}
+        showConnectionOptions={true}
         onBack={() => {
           setGameId(null)
           setGameIdInput('')
@@ -1306,7 +1458,7 @@ export default function LivescoreApp() {
               color: 'var(--text)',
               lineHeight: '1'
             }}>
-              {data?.set?.index || 1}
+              {currentSetIndex}
             </span>
         </div>
 

@@ -16,7 +16,12 @@ export default function SimpleHeader({
   backLabel = 'Back',
   rightContent,
   connectionStatuses,
-  connectionDebugInfo
+  connectionDebugInfo,
+  // Connection mode props for DashboardOptionsMenu
+  connectionMode,
+  activeConnection,
+  onConnectionModeChange,
+  showConnectionOptions = false
 }) {
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -357,7 +362,12 @@ export default function SimpleHeader({
           )}
 
           {/* Options Menu */}
-          <DashboardOptionsMenu showConnectionOptions={false} />
+          <DashboardOptionsMenu
+            showConnectionOptions={showConnectionOptions}
+            connectionType={connectionMode}
+            activeConnection={activeConnection}
+            onConnectionChange={onConnectionModeChange}
+          />
         </div>
       </div>
     </>

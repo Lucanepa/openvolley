@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
@@ -7,6 +7,14 @@ import { parseRosterPdf } from './utils/parseRosterPdf'
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
+import { supabase } from './lib/supabaseClient'
+
+// Connection modes
+const CONNECTION_MODES = {
+  AUTO: 'auto',
+  SUPABASE: 'supabase',
+  WEBSOCKET: 'websocket'
+}
 
 // Date conversion helpers
 function formatDateToISO(dateStr) {
@@ -69,8 +77,17 @@ export default function UploadRosterApp() {
   const [selectedMatch, setSelectedMatch] = useState(null)
   const [connectionStatuses, setConnectionStatuses] = useState({
     server: 'disconnected',
-    websocket: 'not_applicable'
+    websocket: 'not_applicable',
+    supabase: 'disconnected'
   })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [connectionMode, setConnectionMode] = useState(() => {
+    try {
+      return localStorage.getItem('roster_connection_mode') || CONNECTION_MODES.AUTO
+    } catch { return CONNECTION_MODES.AUTO }
+  })
+  const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket'
+  const supabaseChannelRef = useRef(null)
   const fileInputRef = useRef(null)
 
   // Wake lock refs and state
@@ -167,9 +184,28 @@ export default function UploadRosterApp() {
     const loadMatches = async () => {
       setLoadingMatches(true)
       try {
+        // Try Supabase first if in AUTO or SUPABASE mode
+        const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+
+        if (useSupabase && supabase) {
+          console.log('[Roster] Loading matches from Supabase')
+          const result = await listAvailableMatchesSupabase()
+          if (result.success && result.matches && result.matches.length > 0) {
+            setAvailableMatches(result.matches)
+            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+            setActiveConnection('supabase')
+            setLoadingMatches(false)
+            return
+          }
+        }
+
+        // Fall back to WebSocket/server
+        console.log('[Roster] Loading matches from server')
         const result = await listAvailableMatches()
         if (result.success && result.matches) {
           setAvailableMatches(result.matches)
+          setActiveConnection('websocket')
         }
       } catch (err) {
         console.error('Error loading matches:', err)
@@ -182,7 +218,7 @@ export default function UploadRosterApp() {
     const interval = setInterval(loadMatches, 30000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [connectionMode])
 
   // Check connection status periodically
   useEffect(() => {
@@ -207,15 +243,17 @@ export default function UploadRosterApp() {
         const serverStatus = await getServerStatus()
         const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
 
-        setConnectionStatuses({
+        setConnectionStatuses(prev => ({
+          ...prev, // Preserve supabase status
           server: serverStatus?.running ? 'connected' : 'disconnected',
           websocket: wsStatus
-        })
+        }))
       } catch (err) {
-        setConnectionStatuses({
+        setConnectionStatuses(prev => ({
+          ...prev, // Preserve supabase status
           server: 'disconnected',
           websocket: 'not_applicable'
-        })
+        }))
       }
     }
 
@@ -639,6 +677,22 @@ export default function UploadRosterApp() {
 
   const isValid = match && matchId && uploadPin && (team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin) === uploadPin
 
+  // Handle connection mode change
+  const handleConnectionModeChange = useCallback((mode) => {
+    setConnectionMode(mode)
+    try {
+      localStorage.setItem('roster_connection_mode', mode)
+    } catch (e) {
+      console.warn('[Roster] Failed to save connection mode:', e)
+    }
+    // Force reconnection by clearing states
+    if (supabaseChannelRef.current) {
+      supabase?.removeChannel(supabaseChannelRef.current)
+      supabaseChannelRef.current = null
+    }
+    setActiveConnection(null)
+  }, [])
+
   // Handle test mode activation (6 clicks on "No active games found")
   const handleTestModeClick = useCallback(() => {
     if (testModeTimeoutRef.current) {
@@ -694,6 +748,11 @@ export default function UploadRosterApp() {
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
+        connectionDebugInfo={connectionDebugInfo}
+        connectionMode={connectionMode}
+        activeConnection={activeConnection}
+        onConnectionModeChange={handleConnectionModeChange}
+        showConnectionOptions={true}
       />
 
       <div style={{

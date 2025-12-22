@@ -1,11 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { validatePin, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
 import mikasaVolleyball from './mikasa_v200w.png'
+import { supabase } from './lib/supabaseClient'
+
+// Connection modes
+const CONNECTION_MODES = {
+  AUTO: 'auto',
+  SUPABASE: 'supabase',
+  WEBSOCKET: 'websocket'
+}
 
 export default function BenchApp() {
   const [availableMatches, setAvailableMatches] = useState([])
@@ -24,9 +32,17 @@ export default function BenchApp() {
   const testModeTimeoutRef = useRef(null)
   const [connectionStatuses, setConnectionStatuses] = useState({
     server: 'disconnected',
-    websocket: 'disconnected'
+    websocket: 'disconnected',
+    supabase: 'disconnected'
   })
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [connectionMode, setConnectionMode] = useState(() => {
+    try {
+      return localStorage.getItem('bench_connection_mode') || CONNECTION_MODES.AUTO
+    } catch { return CONNECTION_MODES.AUTO }
+  })
+  const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket'
+  const supabaseChannelRef = useRef(null)
 
   // Preload assets that are used later (e.g., volleyball image)
   useEffect(() => {
@@ -162,9 +178,28 @@ export default function BenchApp() {
     const loadMatches = async () => {
       setLoadingMatches(true)
       try {
+        // Try Supabase first if in AUTO or SUPABASE mode
+        const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+
+        if (useSupabase && supabase) {
+          console.log('[Bench] Loading matches from Supabase')
+          const result = await listAvailableMatchesSupabase()
+          if (result.success && result.matches && result.matches.length > 0) {
+            setAvailableMatches(result.matches)
+            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+            setActiveConnection('supabase')
+            setLoadingMatches(false)
+            return
+          }
+        }
+
+        // Fall back to WebSocket/server
+        console.log('[Bench] Loading matches from server')
         const result = await listAvailableMatches()
         if (result.success && result.matches) {
           setAvailableMatches(result.matches)
+          setActiveConnection('websocket')
         }
       } catch (err) {
         console.error('Error loading matches:', err)
@@ -177,7 +212,7 @@ export default function BenchApp() {
     const interval = setInterval(loadMatches, 30000) // Refresh every 30 seconds
 
     return () => clearInterval(interval)
-  }, [])
+  }, [connectionMode])
 
   // Check connection status periodically
   useEffect(() => {
@@ -210,10 +245,11 @@ export default function BenchApp() {
         const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
 
         const serverConnected = serverStatus?.running
-        setConnectionStatuses({
+        setConnectionStatuses(prev => ({
+          ...prev, // Preserve supabase status
           server: serverConnected ? 'connected' : 'disconnected',
           websocket: matchId ? wsStatus : 'not_applicable'
-        })
+        }))
 
         // Build debug info for disconnected services
         const debugInfo = {}
@@ -235,19 +271,21 @@ export default function BenchApp() {
               : 'Unknown WebSocket state. Try refreshing the page.'
           }
         }
-        setConnectionDebugInfo(debugInfo)
+        setConnectionDebugInfo(prev => ({ ...prev, ...debugInfo }))
       } catch (err) {
-        setConnectionStatuses({
+        setConnectionStatuses(prev => ({
+          ...prev, // Preserve supabase status
           server: 'disconnected',
           websocket: 'disconnected'
-        })
-        setConnectionDebugInfo({
+        }))
+        setConnectionDebugInfo(prev => ({
+          ...prev,
           server: {
             status: 'error',
             message: 'Failed to check server status',
             details: err.message || 'Network error occurred while checking connection.'
           }
-        })
+        }))
       }
     }
 
@@ -350,6 +388,22 @@ export default function BenchApp() {
     }, 2000)
   }, [])
 
+  // Handle connection mode change
+  const handleConnectionModeChange = useCallback((mode) => {
+    setConnectionMode(mode)
+    try {
+      localStorage.setItem('bench_connection_mode', mode)
+    } catch (e) {
+      console.warn('[Bench] Failed to save connection mode:', e)
+    }
+    // Force reconnection by clearing states
+    if (supabaseChannelRef.current) {
+      supabase?.removeChannel(supabaseChannelRef.current)
+      supabaseChannelRef.current = null
+    }
+    setActiveConnection(null)
+  }, [])
+
   const handleBack = () => {
     if (view) {
       setView(null)
@@ -395,6 +449,10 @@ export default function BenchApp() {
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          showConnectionOptions={true}
           onBack={handleBack}
           backLabel="Back"
         />
@@ -443,6 +501,10 @@ export default function BenchApp() {
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          showConnectionOptions={true}
         />
 
         <div style={{
@@ -569,6 +631,10 @@ export default function BenchApp() {
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          showConnectionOptions={true}
         />
 
         <div style={{
@@ -712,6 +778,10 @@ export default function BenchApp() {
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          showConnectionOptions={true}
         />
 
         <div style={{
@@ -835,6 +905,11 @@ export default function BenchApp() {
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
+        connectionDebugInfo={connectionDebugInfo}
+        connectionMode={connectionMode}
+        activeConnection={activeConnection}
+        onConnectionModeChange={handleConnectionModeChange}
+        showConnectionOptions={true}
       />
 
       <div style={{

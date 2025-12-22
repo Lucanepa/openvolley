@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.11',
+    date: '22.12.25',
+    changes: [
+      'Implement Supabase connection support in BenchApp, LivescoreApp, and UploadRosterApp'
+    ]
+  },
+  {
     version: '0.14.10',
     date: '22.12.25',
     changes: [
