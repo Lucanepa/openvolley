@@ -595,6 +595,8 @@ export async function listAvailableMatchesSupabase() {
         referee_connection_enabled,
         home_team_name,
         away_team_name,
+        home_team_upload_pin,
+        away_team_upload_pin,
         home_team:teams!matches_home_team_id_fkey(id, name, short_name),
         away_team:teams!matches_away_team_id_fkey(id, name, short_name)
       `)
@@ -632,13 +634,19 @@ export async function listAvailableMatchesSupabase() {
 
       return {
         id: m.external_id || m.id,
+        external_id: m.external_id, // Keep original for Supabase writes
         gameNumber: m.game_n || m.external_id,
         homeTeam: m.home_team_name || m.home_team?.name || 'Home',
         awayTeam: m.away_team_name || m.away_team?.name || 'Away',
+        homeTeamName: m.home_team_name || m.home_team?.name || 'Home',
+        awayTeamName: m.away_team_name || m.away_team?.name || 'Away',
         scheduledAt: m.scheduled_at,
         dateTime,
         refereeConnectionEnabled: m.referee_connection_enabled,
-        status: m.status
+        status: m.status,
+        // Include upload PINs for roster upload app
+        homeTeamUploadPin: m.home_team_upload_pin,
+        awayTeamUploadPin: m.away_team_upload_pin
       }
     })
 
