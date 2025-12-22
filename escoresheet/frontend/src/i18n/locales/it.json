@@ -131,7 +131,12 @@
     "benchOfficialsCount": "Ufficiali in Panchina",
     "acceptRoster": "Accetta",
     "rejectRoster": "Rifiuta",
-    "uploadPin": "PIN per upload"
+    "uploadPin": "PIN per upload",
+    "uploadPdf": "Carica PDF",
+    "searchForRoster": "Cerca rosa",
+    "noSupabaseConnection": "Nessuna connessione al database disponibile. Controlla le impostazioni di connessione.",
+    "noRosterFound": "Nessuna rosa in attesa trovata per questa partita.",
+    "errorSearchingRoster": "Errore nella ricerca della rosa. Riprova."
   },
   "scoreboard": {
     "set": "Set",
@@ -422,7 +427,8 @@
     "uploadSuccess": "Rosa caricata con successo!",
     "uploadError": "Salvataggio fallito. Riprova.",
     "confirmTitle": "Conferma caricamento",
-    "confirmMessage": "Questo invierà la rosa al referto per l'approvazione."
+    "confirmMessage": "Questo invierà la rosa al referto per l'approvazione.",
+    "rosterSentToScoresheet": "La rosa è stata inviata al referto. Il segnapunti esaminerà e accetterà o rifiuterà la rosa."
   },
   "benchDashboard": {
     "title": "Dashboard Squadra",

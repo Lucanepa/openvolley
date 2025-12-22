@@ -131,7 +131,12 @@
     "benchOfficialsCount": "Bank-Offizielle",
     "acceptRoster": "Akzeptieren",
     "rejectRoster": "Ablehnen",
-    "uploadPin": "Upload-PIN"
+    "uploadPin": "Upload-PIN",
+    "uploadPdf": "PDF hochladen",
+    "searchForRoster": "Kader suchen",
+    "noSupabaseConnection": "Keine Datenbankverbindung verfügbar. Bitte überprüfen Sie Ihre Verbindungseinstellungen.",
+    "noRosterFound": "Kein ausstehender Kader für dieses Spiel gefunden.",
+    "errorSearchingRoster": "Fehler bei der Kadersuche. Bitte erneut versuchen."
   },
   "scoreboard": {
     "set": "Satz",
@@ -422,7 +427,8 @@
     "uploadSuccess": "Kader erfolgreich hochgeladen!",
     "uploadError": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
     "confirmTitle": "Upload bestätigen",
-    "confirmMessage": "Dies sendet den Kader zur Genehmigung an den Spielberichtsbogen."
+    "confirmMessage": "Dies sendet den Kader zur Genehmigung an den Spielberichtsbogen.",
+    "rosterSentToScoresheet": "Der Kader wurde an den Spielberichtsbogen gesendet. Der Anschreiber wird den Kader überprüfen und akzeptieren oder ablehnen."
   },
   "benchDashboard": {
     "title": "Team-Dashboard",
