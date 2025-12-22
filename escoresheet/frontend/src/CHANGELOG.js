@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.12',
+    date: '22.12.25',
+    changes: [
+      'Move electron and electron-builder to optionalDependencies in package.json for improved package management'
+    ]
+  },
+  {
     version: '0.14.11',
     date: '22.12.25',
     changes: [

@@ -638,16 +638,36 @@ export default function UploadRosterApp() {
   // Handle final confirmation - store in match and clear form
   const handleFinalConfirm = async () => {
     if (!parsedData || !matchId) return
-    
+
     try {
-      // Store pending roster in match via server
-      const pendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
-      await updateMatchData(matchId, {
-        [pendingField]: {
-          players: parsedData.players,
-          bench: parsedData.bench,
-          timestamp: new Date().toISOString()
+      // Store pending roster in match
+      const pendingField = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
+      const rosterData = {
+        players: parsedData.players,
+        bench: parsedData.bench,
+        timestamp: new Date().toISOString()
+      }
+
+      // Try Supabase first if connected
+      if (activeConnection === 'supabase' && supabase && selectedMatch?.external_id) {
+        console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
+        const { error } = await supabase
+          .from('matches')
+          .update({ [pendingField]: rosterData })
+          .eq('external_id', selectedMatch.external_id)
+
+        if (error) {
+          console.error('[Roster] Supabase write error:', error)
+          // Fall back to server
+        } else {
+          console.log('[Roster] Successfully wrote roster to Supabase')
         }
+      }
+
+      // Also update via server (for local sync and WebSocket updates)
+      const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+      await updateMatchData(matchId, {
+        [serverPendingField]: rosterData
       })
       
       // Clear all form data
