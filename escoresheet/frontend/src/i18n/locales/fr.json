@@ -136,7 +136,9 @@
     "searchForRoster": "Rechercher effectif",
     "noSupabaseConnection": "Pas de connexion à la base de données. Vérifiez vos paramètres de connexion.",
     "noRosterFound": "Aucun effectif en attente trouvé pour ce match.",
-    "errorSearchingRoster": "Erreur lors de la recherche de l'effectif. Veuillez réessayer."
+    "errorSearchingRoster": "Erreur lors de la recherche de l'effectif. Veuillez réessayer.",
+    "previewRoster": "Aperçu",
+    "rosterPreviewTitle": "Aperçu de l'effectif"
   },
   "scoreboard": {
     "set": "Set",
@@ -399,7 +401,9 @@
     "role": "Rôle",
     "saveRoster": "Sauvegarder l'effectif",
     "saving": "Sauvegarde...",
-    "rosterSaved": "Effectif sauvegardé avec succès !"
+    "rosterSaved": "Effectif sauvegardé avec succès !",
+    "previewRoster": "Aperçu",
+    "rosterPreviewTitle": "Aperçu de l'effectif"
   },
   "uploadRoster": {
     "title": "Télécharger l'effectif",
@@ -428,6 +432,8 @@
     "uploadError": "Échec de l'enregistrement. Veuillez réessayer.",
     "confirmTitle": "Confirmer le téléchargement",
     "confirmMessage": "Cela enverra l'effectif à la feuille de match pour approbation.",
+    "uploading": "Téléchargement",
+    "uploadingMessage": "Envoi de l'effectif en cours...",
     "rosterSentToScoresheet": "L'effectif a été envoyé à la feuille de match. Le marqueur examinera et acceptera ou rejettera l'effectif."
   },
   "benchDashboard": {

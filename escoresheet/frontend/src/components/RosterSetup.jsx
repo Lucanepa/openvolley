@@ -13,6 +13,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
   const [error, setError] = useState('')
   const [pdfFile, setPdfFile] = useState(null)
   const [pendingRoster, setPendingRoster] = useState(null) // The actual pending roster data
+  const [showPreview, setShowPreview] = useState(false)
   const fileInputRef = useRef(null)
 
   const [match, setMatch] = useState(matchData)
@@ -742,6 +743,25 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
                 </div>
               )}
             </div>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setShowPreview(true)}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  color: '#3b82f6',
+                  border: '1px solid #3b82f6',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  flex: 1
+                }}
+              >
+                {t('rosterSetup.previewRoster')}
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
                 type="button"
@@ -1157,6 +1177,110 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             {loading ? t('rosterSetup.saving') : t('rosterSetup.saveRoster')}
           </button>
         </div>
+
+        {/* Roster Preview Modal */}
+        {showPreview && pendingRoster && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}>
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '700px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflow: 'auto'
+            }}>
+              <h2 style={{ marginTop: 0, marginBottom: '20px', fontSize: '20px', fontWeight: 600 }}>
+                {t('rosterSetup.rosterPreviewTitle')}
+              </h2>
+
+              <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '16px' }}>
+                {t('rosterSetup.playersCount')}: {pendingRoster.players?.length || 0}
+              </h3>
+              <div style={{ marginBottom: '20px', overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>#</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>{t('rosterSetup.libero')}</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>{t('rosterSetup.captain')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(pendingRoster.players || []).map((p, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                        <td style={{ padding: '6px 8px' }}>{p.number}</td>
+                        <td style={{ padding: '6px 8px' }}>{p.lastName || ''}</td>
+                        <td style={{ padding: '6px 8px' }}>{p.firstName || ''}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>{p.libero ? 'L' : ''}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>{p.isCaptain ? 'C' : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {pendingRoster.bench && pendingRoster.bench.length > 0 && (
+                <>
+                  <h3 style={{ marginTop: '20px', marginBottom: '12px', fontSize: '16px' }}>
+                    {t('rosterSetup.benchOfficialsCount')}: {pendingRoster.bench.length}
+                  </h3>
+                  <div style={{ marginBottom: '20px', overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.role')}</th>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingRoster.bench.map((b, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                            <td style={{ padding: '6px 8px' }}>{b.role || ''}</td>
+                            <td style={{ padding: '6px 8px' }}>{b.lastName || ''}</td>
+                            <td style={{ padding: '6px 8px' }}>{b.firstName || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+                <button
+                  onClick={() => setShowPreview(false)}
+                  style={{
+                    padding: '12px 32px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.close')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

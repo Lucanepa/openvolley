@@ -74,6 +74,7 @@ export default function UploadRosterApp() {
   const [parsedData, setParsedData] = useState(null) // { players: [], bench: [] }
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
@@ -624,8 +625,9 @@ export default function UploadRosterApp() {
 
   // Handle final confirmation - store in match and clear form
   const handleFinalConfirm = async () => {
-    if (!parsedData || !matchId) return
+    if (!parsedData || !matchId || uploading) return
 
+    setUploading(true)
     try {
       // Store pending roster in match
       const pendingField = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
@@ -651,11 +653,18 @@ export default function UploadRosterApp() {
         }
       }
 
-      // Also update via server (for local sync and WebSocket updates)
-      const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
-      await updateMatchData(matchId, {
-        [serverPendingField]: rosterData
-      })
+      // Also try to update via server (for local sync and WebSocket updates)
+      // This is optional - if Supabase worked, we still show success
+      try {
+        const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+        await updateMatchData(matchId, {
+          [serverPendingField]: rosterData
+        })
+        console.log('[Roster] Server update also succeeded')
+      } catch (serverError) {
+        console.warn('[Roster] Server update failed (non-blocking):', serverError)
+        // Don't fail - Supabase already has the data
+      }
 
       // Close confirm modal and show success modal
       setShowConfirmModal(false)
@@ -664,6 +673,8 @@ export default function UploadRosterApp() {
       console.error('Error saving pending roster:', error)
       setShowConfirmModal(false)
       setValidationError('Failed to save roster. Please try again.')
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -1381,47 +1392,66 @@ export default function UploadRosterApp() {
         {/* Confirmation Modal */}
         {showConfirmModal && (
           <Modal
-            title={t('uploadRoster.confirmTitle')}
+            title={uploading ? t('uploadRoster.uploading') : t('uploadRoster.confirmTitle')}
             open={true}
-            onClose={() => setShowConfirmModal(false)}
+            onClose={() => !uploading && setShowConfirmModal(false)}
             width={400}
           >
             <div style={{ padding: '24px' }}>
-              <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
-                {t('uploadRoster.confirmMessage')}
-              </p>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
-                  onClick={() => setShowConfirmModal(false)}
-                  style={{
-                    padding: '12px 32px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {t('common.no')}
-                </button>
-                <button
-                  onClick={handleFinalConfirm}
-                  style={{
-                    padding: '12px 32px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: 'var(--accent)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {t('common.yes')}
-                </button>
-              </div>
+              {uploading ? (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    border: '4px solid rgba(255,255,255,0.2)',
+                    borderTop: '4px solid var(--accent)',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    margin: '0 auto 16px'
+                  }} />
+                  <p style={{ fontSize: '16px', color: 'var(--text)' }}>
+                    {t('uploadRoster.uploadingMessage')}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
+                    {t('uploadRoster.confirmMessage')}
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                      onClick={() => setShowConfirmModal(false)}
+                      style={{
+                        padding: '12px 32px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.no')}
+                    </button>
+                    <button
+                      onClick={handleFinalConfirm}
+                      style={{
+                        padding: '12px 32px',
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        background: 'var(--accent)',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.yes')}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </Modal>
         )}

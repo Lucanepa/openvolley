@@ -516,6 +516,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Remote roster search state
   const [homeRosterSearching, setHomeRosterSearching] = useState(false)
   const [awayRosterSearching, setAwayRosterSearching] = useState(false)
+  const [rosterPreview, setRosterPreview] = useState(null) // 'home' | 'away' | null
 
   // Referee selector state
   const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
@@ -3403,6 +3404,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                       {t('matchSetup.benchOfficialsCount')}: {match.pendingHomeRoster.bench?.length || 0}
                     </div>
                   </div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setRosterPreview('home')}
+                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
+                    >
+                      {t('matchSetup.previewRoster')}
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
                       type="button"
@@ -4147,6 +4158,98 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             </div>
           </Modal>
         )}
+
+        {/* Roster Preview Modal */}
+        {rosterPreview && (
+          <Modal
+            title={t('matchSetup.rosterPreviewTitle')}
+            open={true}
+            onClose={() => setRosterPreview(null)}
+            width={600}
+          >
+            <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+              {(() => {
+                const roster = rosterPreview === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
+                if (!roster) return <p>{t('matchSetup.noRosterFound')}</p>
+                return (
+                  <>
+                    <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '16px' }}>
+                      {t('matchSetup.playersCount')}: {roster.players?.length || 0}
+                    </h3>
+                    <div style={{ marginBottom: '16px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                            <th style={{ padding: '8px', textAlign: 'left' }}>#</th>
+                            <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
+                            <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
+                            <th style={{ padding: '8px', textAlign: 'center' }}>L</th>
+                            <th style={{ padding: '8px', textAlign: 'center' }}>C</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(roster.players || []).map((p, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <td style={{ padding: '6px 8px' }}>{p.number}</td>
+                              <td style={{ padding: '6px 8px' }}>{p.lastName || ''}</td>
+                              <td style={{ padding: '6px 8px' }}>{p.firstName || ''}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{p.libero ? 'L' : ''}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{p.isCaptain ? 'C' : ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {roster.bench && roster.bench.length > 0 && (
+                      <>
+                        <h3 style={{ marginTop: '16px', marginBottom: '12px', fontSize: '16px' }}>
+                          {t('matchSetup.benchOfficialsCount')}: {roster.bench.length}
+                        </h3>
+                        <div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.role')}</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {roster.bench.map((b, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                  <td style={{ padding: '6px 8px' }}>{b.role || ''}</td>
+                                  <td style={{ padding: '6px 8px' }}>{b.lastName || ''}</td>
+                                  <td style={{ padding: '6px 8px' }}>{b.firstName || ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )
+              })()}
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+                <button
+                  onClick={() => setRosterPreview(null)}
+                  style={{
+                    padding: '10px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.close')}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
       </MatchSetupHomeTeamView>
     )
   }
@@ -4370,6 +4473,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                     <div style={{ fontSize: '12px' }}>
                       {t('matchSetup.benchOfficialsCount')}: {match.pendingAwayRoster.bench?.length || 0}
                     </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setRosterPreview('away')}
+                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
+                    >
+                      {t('matchSetup.previewRoster')}
+                    </button>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
@@ -5121,6 +5234,98 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   </button>
                 </div>
               )}
+            </div>
+          </Modal>
+        )}
+
+        {/* Roster Preview Modal */}
+        {rosterPreview && (
+          <Modal
+            title={t('matchSetup.rosterPreviewTitle')}
+            open={true}
+            onClose={() => setRosterPreview(null)}
+            width={600}
+          >
+            <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+              {(() => {
+                const roster = rosterPreview === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
+                if (!roster) return <p>{t('matchSetup.noRosterFound')}</p>
+                return (
+                  <>
+                    <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '16px' }}>
+                      {t('matchSetup.playersCount')}: {roster.players?.length || 0}
+                    </h3>
+                    <div style={{ marginBottom: '16px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                            <th style={{ padding: '8px', textAlign: 'left' }}>#</th>
+                            <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
+                            <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
+                            <th style={{ padding: '8px', textAlign: 'center' }}>L</th>
+                            <th style={{ padding: '8px', textAlign: 'center' }}>C</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(roster.players || []).map((p, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <td style={{ padding: '6px 8px' }}>{p.number}</td>
+                              <td style={{ padding: '6px 8px' }}>{p.lastName || ''}</td>
+                              <td style={{ padding: '6px 8px' }}>{p.firstName || ''}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{p.libero ? 'L' : ''}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{p.isCaptain ? 'C' : ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {roster.bench && roster.bench.length > 0 && (
+                      <>
+                        <h3 style={{ marginTop: '16px', marginBottom: '12px', fontSize: '16px' }}>
+                          {t('matchSetup.benchOfficialsCount')}: {roster.bench.length}
+                        </h3>
+                        <div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.role')}</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {roster.bench.map((b, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                  <td style={{ padding: '6px 8px' }}>{b.role || ''}</td>
+                                  <td style={{ padding: '6px 8px' }}>{b.lastName || ''}</td>
+                                  <td style={{ padding: '6px 8px' }}>{b.firstName || ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )
+              })()}
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+                <button
+                  onClick={() => setRosterPreview(null)}
+                  style={{
+                    padding: '10px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.close')}
+                </button>
+              </div>
             </div>
           </Modal>
         )}

@@ -136,7 +136,9 @@
     "searchForRoster": "Search for Roster",
     "noSupabaseConnection": "No database connection available. Please check your connection settings.",
     "noRosterFound": "No pending roster found for this match.",
-    "errorSearchingRoster": "Error searching for roster. Please try again."
+    "errorSearchingRoster": "Error searching for roster. Please try again.",
+    "previewRoster": "Preview",
+    "rosterPreviewTitle": "Roster Preview"
   },
   "scoreboard": {
     "set": "Set",
@@ -399,7 +401,9 @@
     "role": "Role",
     "saveRoster": "Save Roster",
     "saving": "Saving...",
-    "rosterSaved": "Roster saved successfully!"
+    "rosterSaved": "Roster saved successfully!",
+    "previewRoster": "Preview",
+    "rosterPreviewTitle": "Roster Preview"
   },
   "uploadRoster": {
     "title": "Upload Roster",
@@ -428,6 +432,8 @@
     "uploadError": "Failed to save roster. Please try again.",
     "confirmTitle": "Confirm Roster Upload",
     "confirmMessage": "This will send the roster to the scoresheet for approval.",
+    "uploading": "Uploading",
+    "uploadingMessage": "Sending roster to scoresheet...",
     "rosterSentToScoresheet": "The roster has been sent to the scoresheet. The scorer will review and accept or reject the roster."
   },
   "benchDashboard": {
