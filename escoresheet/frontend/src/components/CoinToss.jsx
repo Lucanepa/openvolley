@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
@@ -95,6 +96,8 @@ const sortBenchByHierarchy = (bench) => {
 const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
 export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
+  const { t } = useTranslation()
+
   // Check if compact mode
   const isCompact = useCompactMode()
 
@@ -922,12 +925,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       boxSizing: 'border-box'
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isCompact ? 16 : 24 }}>
-        <button className="secondary" onClick={onBack}>← Back</button>
-        <h1 style={{ margin: 0, fontSize: '50px', fontWeight: 700, textAlign: 'center' }}>Coin Toss</h1>
+        <button className="secondary" onClick={onBack}>← {t('common.back')}</button>
+        <h1 style={{ margin: 0, fontSize: '50px', fontWeight: 700, textAlign: 'center' }}>{t('coinToss.title')}</h1>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           
           {onGoHome && (
-            <button className="secondary" onClick={onGoHome}>Home</button>
+            <button className="secondary" onClick={onGoHome}>{t('common.home')}</button>
           )}
         </div>
       </div>
@@ -935,7 +938,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, marginBottom: sizes.marginBottom, alignItems: 'start' }}>
         {/* Team A */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>Team A</h1>
+          <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamA')}</h1>
           <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
             <div
               style={{
@@ -964,7 +967,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
               onClick={() => setRosterModal('teamA')}
               style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
             >
-              Show Roster ({teamAInfo.roster.length} Players)
+              {t('coinToss.showRoster')} ({teamAInfo.roster.length})
             </button>
           </div>
 
@@ -1021,7 +1024,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
 
         {/* Team B */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>Team B</h1>
+          <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamB')}</h1>
           <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
             <div
               style={{
@@ -1050,7 +1053,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
               onClick={() => setRosterModal('teamB')}
               style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
             >
-              Show Roster ({teamBInfo.roster.length} Players)
+              {t('coinToss.showRoster')} ({teamBInfo.roster.length})
             </button>
           </div>
 
@@ -1155,11 +1158,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: sizes.marginBottom }}>
         {isCoinTossConfirmed ? (
           <button onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont }}>
-            Return to match
+            {t('coinToss.returnToMatch')}
           </button>
         ) : (
           <button onClick={confirmCoinToss} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont }}>
-            Confirm Coin Toss Result
+            {t('coinToss.confirmResult')}
           </button>
         )}
       </div>

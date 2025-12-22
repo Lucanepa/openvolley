@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.13.2',
+    date: '22.12.25',
+    changes: [
+      'Update version to 0.13.1 and integrate localization support'
+    ]
+  },
+  {
     version: '0.13.1',
     date: '21.12.25',
     changes: [

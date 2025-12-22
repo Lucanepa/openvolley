@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
@@ -343,6 +344,7 @@ function formatDobForSync(dob) {
 }
 
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
+  const { t } = useTranslation()
   const [home, setHome] = useState('Home')
   // Match created popup state
   const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin }
@@ -5377,7 +5379,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     <MatchSetupMainView>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>Match Setup</h2>
+          <h2 style={{ margin: 0 }}>{t('matchSetup.title')}</h2>
           <button
             className="secondary"
             onClick={openScoresheet}
@@ -5395,7 +5397,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )}
           {onGoHome && (
             <button className="secondary" onClick={onGoHome}>
-              Home
+              {t('common.home')}
             </button>
           )}
         </div>
@@ -5407,10 +5409,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
-                <h3 style={{ margin: 0 }}>Match info</h3>
+                <h3 style={{ margin: 0 }}>{t('matchSetup.matchInfo')}</h3>
                 {!matchInfoConfirmed && (
                   <span style={{ color: canConfirmMatchInfo ? '#3b82f6' : '#f59e0b', fontSize: '11px', fontWeight: 500 }}>
-                    {canConfirmMatchInfo ? '(Ready to confirm)' : '(Fill required fields)'}
+                    {canConfirmMatchInfo ? t('matchSetup.readyToConfirm') : t('matchSetup.fillRequiredFields')}
                   </span>
                 )}
               </div>
@@ -5419,29 +5421,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               className="text-sm"
               style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}
             >
-              <span>Home:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={home}>{home || 'Not set'}</span>
-              <span>Away:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={away}>{away || 'Not set'}</span>
-              <span>Date:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || 'Not set'}</span>
-              <span>Time:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayTime(time) || 'Not set'}</span>
-              <span>City:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={city}>{city || 'Not set'}</span>
-              <span>Hall:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hall}>{hall || 'Not set'}</span>
+              <span>{t('matchSetup.homeTeam')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={home}>{home || t('common.notSet')}</span>
+              <span>{t('matchSetup.awayTeam')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={away}>{away || t('common.notSet')}</span>
+              <span>{t('matchSetup.date')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || t('common.notSet')}</span>
+              <span>{t('matchSetup.time')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayTime(time) || t('common.notSet')}</span>
+              <span>{t('matchSetup.city')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={city}>{city || t('common.notSet')}</span>
+              <span>{t('matchSetup.hall')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hall}>{hall || t('common.notSet')}</span>
             </div>
           </div>
           <div className="actions">
             {matchInfoConfirmed ? (
-              <button className="secondary" onClick={()=>setCurrentView('info')}>Edit</button>
+              <button className="secondary" onClick={()=>setCurrentView('info')}>{t('common.edit')}</button>
             ) : (
               <button
                 className="primary"
                 onClick={()=>setCurrentView('info')}
               >
-                Create Match
+                {t('matchSetup.createMatch')}
               </button>
             )}
           </div>
@@ -5453,30 +5455,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={officialsConfigured} />
-                <h3 style={{ margin: 0 }}>Match officials</h3>
+                <h3 style={{ margin: 0 }}>{t('matchSetup.matchOfficials')}</h3>
               </div>
             </div>
             <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '85px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
-              <span>1st Referee:</span>
+              <span>{t('matchSetup.referee1')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
-              <span>2nd Referee:</span>
+              <span>{t('matchSetup.referee2')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref2Last, ref2First)}>{formatOfficial(ref2Last, ref2First)}</span>
-              <span>Scorer:</span>
+              <span>{t('matchSetup.scorer')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(scorerLast, scorerFirst)}>{formatOfficial(scorerLast, scorerFirst)}</span>
-              <span>Ass. Scorer:</span>
+              <span>{t('matchSetup.assistantScorer')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(asstLast, asstFirst)}>{formatOfficial(asstLast, asstFirst)}</span>
               {(lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4) && (
                 <>
-                  <span>LJs:</span>
+                  <span>{t('matchSetup.lineJudges')}:</span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).map(formatLineJudge).join(', ')}>
-                    {[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).map(formatLineJudge).join(', ') || 'Not set'}
+                    {[lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).map(formatLineJudge).join(', ') || t('common.notSet')}
                   </span>
                 </>
               )}
             </div>
           </div>
           <div className="actions">
-            <button className="secondary" onClick={()=>setCurrentView('officials')} disabled={!matchInfoConfirmed}>Edit</button>
+            <button className="secondary" onClick={()=>setCurrentView('officials')} disabled={!matchInfoConfirmed}>{t('common.edit')}</button>
           </div>
         </div>
       </div>
@@ -5489,7 +5491,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' })
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-          <span style={{ fontWeight: 600, fontSize: '14px', textAlign: 'center', alignItems: 'center' }}>Dashboards</span>
+          <span style={{ fontWeight: 600, fontSize: '14px', textAlign: 'center', alignItems: 'center' }}>{t('matchSetup.dashboards')}</span>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <ConnectionBanner
@@ -5518,7 +5520,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           {/* Row 1: Status + Team Name */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <StatusBadge ready={homeConfigured} />
-            <h1 style={{ margin: 0 }}>{home && home !== 'Home' ? home.toUpperCase() : 'HOME TEAM'}</h1>
+            <h1 style={{ margin: 0 }}>{home && home !== 'Home' ? home.toUpperCase() : t('matchSetup.homeTeam').toUpperCase()}</h1>
           </div>
 
           {/* Row 2: Stats */}
@@ -5535,7 +5537,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              Players: {homeCounts.players}
+              {t('matchSetup.players')}: {homeCounts.players}
             </div>
             <div style={{
               background: 'rgb(255, 255, 255)',
@@ -5549,7 +5551,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              o/w Libero(s): {homeCounts.liberos}
+              {t('matchSetup.liberos')}: {homeCounts.liberos}
             </div>
             <div style={{
               background: 'rgba(34, 197, 94, 0.10)',
@@ -5563,13 +5565,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              Bench: {homeCounts.bench}
+              {t('matchSetup.bench')}: {homeCounts.bench}
             </div>
           </div>
 
           {/* Row 3: Color selector + Shirt + Roster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30 }}>
-            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Select colour</span>
+            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
             <div
               className="shirt"
               style={{ background: homeColor, cursor: 'pointer', transform: 'scale(0.85)' }}
@@ -5586,7 +5588,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
             </div>
             <div style={{ flex: 1 }} />
-            <button className="secondary" onClick={() => setCurrentView('home')}>Edit Roster</button>
+            <button className="secondary" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</button>
           </div>
         </div>
 
@@ -5594,7 +5596,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           {/* Row 1: Status + Team Name */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <StatusBadge ready={awayConfigured} />
-            <h1 style={{ margin: 0 }}>{away && away !== 'Away' ? away.toUpperCase() : 'AWAY TEAM'}</h1>
+            <h1 style={{ margin: 0 }}>{away && away !== 'Away' ? away.toUpperCase() : t('matchSetup.awayTeam').toUpperCase()}</h1>
           </div>
 
           {/* Row 2: Stats */}
@@ -5611,7 +5613,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              Players: {awayCounts.players}
+              {t('matchSetup.players')}: {awayCounts.players}
             </div>
             <div style={{
               background: 'rgb(255, 255, 255)',
@@ -5625,7 +5627,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              o/w Libero(s): {awayCounts.liberos}
+              {t('matchSetup.liberos')}: {awayCounts.liberos}
             </div>
             <div style={{
               background: 'rgba(34, 197, 94, 0.10)',
@@ -5639,13 +5641,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              Bench: {awayCounts.bench}
+              {t('matchSetup.bench')}: {awayCounts.bench}
             </div>
           </div>
 
           {/* Row 3: Color selector + Shirt + Roster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30 }}>
-            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Select colour</span>
+            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
             <div
               className="shirt"
               style={{ background: awayColor, cursor: 'pointer', transform: 'scale(0.85)' }}
@@ -5662,7 +5664,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
             </div>
             <div style={{ flex: 1 }} />
-            <button className="secondary" onClick={() => setCurrentView('away')}>Edit Roster</button>
+            <button className="secondary" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</button>
           </div>
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (

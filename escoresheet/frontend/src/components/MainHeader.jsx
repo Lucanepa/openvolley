@@ -1,6 +1,51 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
 import changelog from '../CHANGELOG'
+
+// Small flag SVG components
+const FlagGB = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="42" fill="#012169"/>
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7"/>
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)"/>
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12"/>
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7"/>
+  </svg>
+)
+
+const FlagIT = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#009246"/>
+    <rect x="20" width="20" height="42" fill="#fff"/>
+    <rect x="40" width="20" height="42" fill="#CE2B37"/>
+  </svg>
+)
+
+const FlagDE = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="14" fill="#000"/>
+    <rect y="14" width="60" height="14" fill="#DD0000"/>
+    <rect y="28" width="60" height="14" fill="#FFCE00"/>
+  </svg>
+)
+
+const FlagFR = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#002395"/>
+    <rect x="20" width="20" height="42" fill="#fff"/>
+    <rect x="40" width="20" height="42" fill="#ED2939"/>
+  </svg>
+)
+
+// Language options with flag components
+const languages = [
+  { code: 'en', Flag: FlagGB, label: 'EN' },
+  { code: 'it', Flag: FlagIT, label: 'IT' },
+  { code: 'de', Flag: FlagDE, label: 'DE' },
+  { code: 'fr', Flag: FlagFR, label: 'FR' }
+]
 
 export default function MainHeader({
   connectionStatuses,
@@ -22,7 +67,9 @@ export default function MainHeader({
   dashboardServer = null, // { enabled, dashboardCount, refereePin, onOpenOptions }
   collapsible = false, // Only allow collapsing on Scoreboard page
 }) {
+  const { t } = useTranslation()
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [editingSize, setEditingSize] = useState({ width: '', height: '' })
   const [isEditing, setIsEditing] = useState(false)
@@ -230,7 +277,7 @@ export default function MainHeader({
       >
         {/* Match Number */}
         <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
-          Match {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : 'Not set'}
+          {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
 
         {/* Match ID - for debugging/support */}
@@ -247,9 +294,9 @@ export default function MainHeader({
         
         {/* Teams */}
         <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.9)', textAlign: 'center', fontWeight: 500 }}>
-          {(matchData.homeTeam?.name && matchData.awayTeam?.name) 
+          {(matchData.homeTeam?.name && matchData.awayTeam?.name)
             ? `${matchData.homeTeam.name} - ${matchData.awayTeam.name}`
-            : 'Not set'}
+            : t('header.notSet')}
         </div>
         
         {/* Date and Time */}
@@ -270,7 +317,7 @@ export default function MainHeader({
                 return matchData.match.scheduledAt
               }
             })()
-          ) : 'Not set'}
+          ) : t('header.notSet')}
         </div>
         
         {/* PIN or TEST */}
@@ -285,7 +332,7 @@ export default function MainHeader({
           fontFamily: matchData.match.test ? 'inherit' : 'monospace',
           letterSpacing: matchData.match.test ? '0.5px' : '2px'
         }}>
-          {matchData.match.test ? 'TEST' : (matchData.match.gamePin || 'N/A')}
+          {matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
         </div>
       </div>
     )
@@ -294,7 +341,7 @@ export default function MainHeader({
   const renderMatchInfoButton = (match) => {
     const isTest = match?.test
     const matchNumber = match?.gameNumber || match?.game_n || 'N/A'
-    const buttonText = isTest ? 'TEST MATCH' : `MATCH #${matchNumber}`
+    const buttonText = isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
 
     return (
       <div style={{
@@ -401,7 +448,7 @@ export default function MainHeader({
         {/* Online/Offline Toggle */}
         <button
           onClick={() => setOfflineMode(!offlineMode)}
-          title={offlineMode ? 'Switch to Online Mode' : 'Switch to Offline Mode'}
+          title={offlineMode ? t('header.switchToOnline') : t('header.switchToOffline')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -424,7 +471,7 @@ export default function MainHeader({
             e.currentTarget.style.background = 'transparent'
           }}
         >
-          <span>{offlineMode ? 'Offline' : 'Online'}</span>
+          <span>{offlineMode ? t('header.offline') : t('header.online')}</span>
           {/* Toggle Switch */}
           <div
             style={{
@@ -543,7 +590,7 @@ export default function MainHeader({
                   paddingBottom: '6px',
                   borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                 }}>
-                  Dashboard Connection Info
+                  {t('header.dashboardConnectionInfo')}
                 </div>
 
                 {/* Server Status */}
@@ -557,7 +604,7 @@ export default function MainHeader({
                       background: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
                     }}></span>
                     <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                      {dashboardServer.serverRunning ? 'Server Running' : 'Server Not Running'}
+                      {dashboardServer.serverRunning ? t('header.serverRunning') : t('header.serverNotRunning')}
                     </span>
                   </div>
                 </div>
@@ -572,10 +619,10 @@ export default function MainHeader({
                   textAlign: 'center'
                 }}>
                   <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
-                    Connect devices to this IP
+                    {t('header.connectDevicesToIp')}
                   </div>
                   <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'monospace', color: '#22c55e' }}>
-                    {dashboardServer.serverIP || 'Not available'}
+                    {dashboardServer.serverIP || t('header.notAvailable')}
                     {dashboardServer.serverPort && dashboardServer.serverPort !== 80 && dashboardServer.serverPort !== 443 && (
                       <span style={{ color: 'rgba(255,255,255,0.7)' }}>:{dashboardServer.serverPort}</span>
                     )}
@@ -591,18 +638,18 @@ export default function MainHeader({
                     marginBottom: '12px'
                   }}>
                     <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.8)' }}>
-                      Dashboard URLs
+                      {t('header.dashboardUrls')}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', fontFamily: 'monospace' }}>
                       {dashboardServer.connectionUrl && (
                         <div style={{ wordBreak: 'break-all' }}>
-                          <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>Referee:</span>
+                          <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>{t('header.referee')}:</span>
                           <span>{dashboardServer.connectionUrl}/referee</span>
                         </div>
                       )}
                       {dashboardServer.connectionUrl && (
                         <div style={{ wordBreak: 'break-all' }}>
-                          <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>Bench:</span>
+                          <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>{t('header.bench')}:</span>
                           <span>{dashboardServer.connectionUrl}/bench</span>
                         </div>
                       )}
@@ -618,19 +665,19 @@ export default function MainHeader({
                   marginBottom: '12px'
                 }}>
                   <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.8)' }}>
-                    Connected Devices
+                    {t('header.connectedDevices')}
                   </div>
                   <div style={{ display: 'flex', gap: '16px', fontSize: '12px' }}>
                     <div>
-                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>Total: </span>
+                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>{t('header.total')}: </span>
                       <span style={{ fontWeight: 600 }}>{dashboardServer.dashboardCount || 0}</span>
                     </div>
                     <div>
-                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>Referees: </span>
+                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>{t('header.referees')}: </span>
                       <span style={{ fontWeight: 600 }}>{dashboardServer.refereeCount || 0}</span>
                     </div>
                     <div>
-                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>Bench: </span>
+                      <span style={{ color: 'rgba(255,255,255,0.5)' }}>{t('header.bench')}: </span>
                       <span style={{ fontWeight: 600 }}>{dashboardServer.benchCount || 0}</span>
                     </div>
                   </div>
@@ -645,7 +692,7 @@ export default function MainHeader({
                     padding: '10px',
                     marginBottom: '12px'
                   }}>
-                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>Match PIN</div>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>{t('header.matchPin')}</div>
                     <div style={{ fontSize: '18px', fontWeight: 600, fontFamily: 'monospace', color: '#3b82f6', letterSpacing: '2px' }}>
                       {dashboardServer.refereePin}
                     </div>
@@ -670,7 +717,7 @@ export default function MainHeader({
                     cursor: 'pointer'
                   }}
                 >
-                  More Options...
+                  {t('header.moreOptions')}
                 </button>
               </div>
             )}
@@ -737,7 +784,7 @@ export default function MainHeader({
                 }
               }}
             >
-              <span>{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
+              <span>{isFullscreen ? t('header.exit') : t('header.fullscreen')}</span>
               <span style={{
                 fontSize: '8px',
                 transition: 'transform 0.2s',
@@ -799,7 +846,7 @@ export default function MainHeader({
                   }}
                 >
                   <span>⛶</span>
-                  <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+                  <span>{isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}</span>
                 </button>
 
                 {/* Version Action */}
@@ -837,6 +884,92 @@ export default function MainHeader({
                   <span>v{currentVersion}</span>
                 </button>
 
+                {/* Language Selector Action */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setLanguageMenuOpen(!languageMenuOpen)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    background: languageMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    width: '100%',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!languageMenuOpen) {
+                      e.currentTarget.style.background = 'transparent'
+                    }
+                  }}
+                >
+                  {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
+                  <span>{languages.find(l => l.code === i18n.language)?.label || 'EN'}</span>
+                </button>
+
+                {/* Language Options - nested dropdown */}
+                {languageMenuOpen && (
+                  <div
+                    style={{
+                      padding: '8px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '6px'
+                    }}
+                  >
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          i18n.changeLanguage(lang.code)
+                          setLanguageMenuOpen(false)
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 10px',
+                          fontSize: '12px',
+                          fontWeight: i18n.language === lang.code ? 600 : 400,
+                          background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.2)' : 'transparent',
+                          color: i18n.language === lang.code ? '#4ade80' : '#fff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          textAlign: 'left'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (i18n.language !== lang.code) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (i18n.language !== lang.code) {
+                            e.currentTarget.style.background = 'transparent'
+                          }
+                        }}
+                      >
+                        <lang.Flag />
+                        <span>{lang.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Home Action - only show when not on home screen */}
                 {matchId && onOpenSetup && (
                   <button
@@ -869,7 +1002,7 @@ export default function MainHeader({
                     }}
                   >
                     <span>🏠</span>
-                    <span>Home</span>
+                    <span>{t('common.home')}</span>
                   </button>
                 )}
 
@@ -892,7 +1025,7 @@ export default function MainHeader({
                       paddingBottom: '6px',
                       borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                     }}>
-                      Version History
+                      {t('header.versionHistory')}
                     </div>
                     {changelog.slice(0, 5).map((release, index) => (
                       <div
@@ -970,7 +1103,7 @@ export default function MainHeader({
                 }}
               >
                 <span>🏠</span>
-                <span>Home</span>
+                <span>{t('common.home')}</span>
               </button>
             )}
 
@@ -1056,12 +1189,116 @@ export default function MainHeader({
               </div>
             )}
 
+            {/* Language Selector */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLanguageMenuOpen(!languageMenuOpen)
+                  setVersionMenuOpen(false)
+                }}
+                style={{
+                  fontSize: 'clamp(10px, 1.2vw, 12px)',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  whiteSpace: 'nowrap',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+                }}
+              >
+                {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
+                <span>{languages.find(l => l.code === i18n.language)?.label || 'EN'}</span>
+                <span style={{
+                  fontSize: '8px',
+                  transition: 'transform 0.2s',
+                  transform: languageMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                }}>
+                  ▼
+                </span>
+              </button>
+
+              {/* Language Dropdown */}
+              {languageMenuOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '4px',
+                    padding: '8px',
+                    background: 'rgba(0, 0, 0, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    minWidth: '100px',
+                    zIndex: 1000,
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                  }}
+                >
+                  {languages.map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        i18n.changeLanguage(lang.code)
+                        setLanguageMenuOpen(false)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        width: '100%',
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        fontWeight: i18n.language === lang.code ? 600 : 400,
+                        background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.2)' : 'transparent',
+                        color: i18n.language === lang.code ? '#4ade80' : '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (i18n.language !== lang.code) {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (i18n.language !== lang.code) {
+                          e.currentTarget.style.background = 'transparent'
+                        }
+                      }}
+                    >
+                      <lang.Flag />
+                      <span>{lang.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Version with Changelog Menu */}
             <div style={{ position: 'relative' }}>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
                   setVersionMenuOpen(!versionMenuOpen)
+                  setLanguageMenuOpen(false)
                 }}
                 style={{
                   fontSize: 'clamp(10px, 1.2vw, 12px)',
@@ -1125,7 +1362,7 @@ export default function MainHeader({
                     borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
                     paddingBottom: '8px'
                   }}>
-                    Version History
+                    {t('header.versionHistory')}
                   </div>
 
                   {changelog.map((release, index) => (
@@ -1157,7 +1394,7 @@ export default function MainHeader({
                               padding: '2px 6px',
                               borderRadius: '4px'
                             }}>
-                              Current
+                              {t('header.current')}
                             </span>
                           )}
                         </span>
@@ -1210,10 +1447,10 @@ export default function MainHeader({
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
               }}
-              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              title={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
             >
               <span className="fullscreen-btn-text" style={{ fontSize: 'clamp(10px, 1.2vw, 12px)' }}>
-                {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+                {isFullscreen ? `⛶ ${t('header.exit')}` : `⛶ ${t('header.fullscreen')}`}
               </span>
             </button>
           </>

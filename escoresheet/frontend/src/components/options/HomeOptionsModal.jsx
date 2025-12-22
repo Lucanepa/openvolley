@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from '../Modal'
+import SupportFeedbackModal from '../SupportFeedbackModal'
 import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
 import { changelog } from '../../CHANGELOG'
 
@@ -175,6 +177,34 @@ function Stepper({ value, onDecrement, onIncrement, label }) {
   )
 }
 
+// Default key bindings
+const defaultKeyBindings = {
+  pointLeft: 'a',
+  pointRight: 'l',
+  timeoutLeft: 'q',
+  timeoutRight: 'p',
+  exchangeLiberoLeft: 'w',
+  exchangeLiberoRight: 'o',
+  undo: 'z',
+  confirm: 'Enter',
+  cancel: 'Escape',
+  startRally: 'Enter'
+}
+
+// Key binding labels
+const keyBindingLabels = {
+  pointLeft: 'Point Left',
+  pointRight: 'Point Right',
+  timeoutLeft: 'Timeout Left',
+  timeoutRight: 'Timeout Right',
+  exchangeLiberoLeft: 'Libero Left',
+  exchangeLiberoRight: 'Libero Right',
+  undo: 'Undo',
+  confirm: 'Confirm',
+  cancel: 'Cancel',
+  startRally: 'Start Rally'
+}
+
 export default function HomeOptionsModal({
   open,
   onClose,
@@ -186,10 +216,25 @@ export default function HomeOptionsModal({
   backup = null, // Optional backup props from useAutoBackup
   dashboardServer = null // Optional dashboard server props from useDashboardServer
 }) {
+  const { t } = useTranslation()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
+  const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const [updateCheck, setUpdateCheck] = useState({ checking: false, result: null }) // result: 'available' | 'latest' | 'error'
   const [newVersion, setNewVersion] = useState(null)
+  const [keybindingsModalOpen, setKeybindingsModalOpen] = useState(false)
+  const [editingKey, setEditingKey] = useState(null)
+  const [keyBindings, setKeyBindings] = useState(() => {
+    const saved = localStorage.getItem('keyBindings')
+    if (saved) {
+      try {
+        return { ...defaultKeyBindings, ...JSON.parse(saved) }
+      } catch {
+        return defaultKeyBindings
+      }
+    }
+    return defaultKeyBindings
+  })
 
   // Handle copy with feedback
   const handleCopy = useCallback(async (text, label) => {
@@ -320,38 +365,63 @@ export default function HomeOptionsModal({
         justifyContent: 'space-between',
         zIndex: 10
       }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Options</h2>
-        <button
-          onClick={onClose}
-          style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '6px',
-            border: 'none',
-            background: 'rgba(255,255,255,0.1)',
-            color: 'var(--text)',
-            fontSize: '18px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          title="Close"
-        >
-          ×
-        </button>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('options.title')}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            onClick={() => setSupportFeedbackOpen(true)}
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {t('supportFeedback.button')}
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '6px',
+              border: 'none',
+              background: 'rgba(255,255,255,0.1)',
+              color: 'var(--text)',
+              fontSize: '18px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title={t('options.close')}
+          >
+            ×
+          </button>
+        </div>
       </div>
+
+      {/* Support & Feedback Modal */}
+      <SupportFeedbackModal
+        open={supportFeedbackOpen}
+        onClose={() => setSupportFeedbackOpen(false)}
+        currentPage="options"
+      />
       <div style={{ padding: '24px', maxHeight: 'calc(80vh - 60px)', overflowY: 'auto' }}>
         <Section title={null}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Rally Start</div>
-                <InfoDot title={`Ask for confirmation if "Start Rally" is pressed within ${accidentalRallyStartDuration}s of awarding a point`} />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.checkAccidentalRallyStart')}</div>
+                <InfoDot title={t('options.checkAccidentalRallyStartInfo', { duration: accidentalRallyStartDuration })} />
               </div>
               {checkAccidentalRallyStart && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -373,7 +443,7 @@ export default function HomeOptionsModal({
                       textAlign: 'center'
                     }}
                   />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -390,12 +460,12 @@ export default function HomeOptionsModal({
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Check Accidental Point Award</div>
-                <InfoDot title={`Ask for confirmation if a point is awarded within ${accidentalPointAwardDuration}s of starting the rally`} />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.checkAccidentalPointAward')}</div>
+                <InfoDot title={t('options.checkAccidentalPointAwardInfo', { duration: accidentalPointAwardDuration })} />
               </div>
               {checkAccidentalPointAward && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Duration:</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -417,7 +487,7 @@ export default function HomeOptionsModal({
                       textAlign: 'center'
                     }}
                   />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>seconds</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -433,8 +503,8 @@ export default function HomeOptionsModal({
 
           <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Manage Captain on Court</div>
-              <InfoDot title="Automatically track which player acts as captain when team captain is not on court" />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.manageCaptainOnCourt')}</div>
+              <InfoDot title={t('options.manageCaptainOnCourtInfo')} />
             </div>
             <ToggleSwitch
               value={manageCaptainOnCourt}
@@ -448,8 +518,8 @@ export default function HomeOptionsModal({
 
           <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Exit Confirmation</div>
-              <InfoDot title="Show confirmation modal when libero must exit after player rotation" />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.liberoExitConfirmation')}</div>
+              <InfoDot title={t('options.liberoExitConfirmationInfo')} />
             </div>
             <ToggleSwitch
               value={liberoExitConfirmation}
@@ -463,8 +533,8 @@ export default function HomeOptionsModal({
 
           <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Libero Entry Suggestion</div>
-              <InfoDot title="Show suggestion modal to substitute libero for player rotating to back row" />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.liberoEntrySuggestion')}</div>
+              <InfoDot title={t('options.liberoEntrySuggestionInfo')} />
             </div>
             <ToggleSwitch
               value={liberoEntrySuggestion}
@@ -478,8 +548,8 @@ export default function HomeOptionsModal({
 
           <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Set 2-3 Interval Duration</div>
-              <InfoDot title="Duration of break between sets 2 and 3" />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.setIntervalDuration')}</div>
+              <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
             <Stepper
               value={setIntervalDuration}
@@ -499,26 +569,46 @@ export default function HomeOptionsModal({
 
           <Row>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Keyboard Shortcuts</div>
-              <InfoDot title="Use keyboard keys to control scoring and actions (configure in Scoreboard)" />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.keyboardShortcuts')}</div>
+              <InfoDot title={t('options.keyboardShortcutsInfo')} />
             </div>
-            <ToggleSwitch
-              value={keybindingsEnabled}
-              onToggle={() => {
-                const newValue = !keybindingsEnabled
-                setKeybindingsEnabled(newValue)
-                localStorage.setItem('keybindingsEnabled', String(newValue))
-              }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {keybindingsEnabled && (
+                <button
+                  onClick={() => setKeybindingsModalOpen(true)}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: 'rgba(59, 130, 246, 0.2)',
+                    color: '#3b82f6',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {t('options.keybindings')}
+                </button>
+              )}
+              <ToggleSwitch
+                value={keybindingsEnabled}
+                onToggle={() => {
+                  const newValue = !keybindingsEnabled
+                  setKeybindingsEnabled(newValue)
+                  localStorage.setItem('keybindingsEnabled', String(newValue))
+                }}
+              />
+            </div>
           </Row>
         </Section>
 
-        <Section title="Display Mode">
+        <Section title={t('options.displayMode')}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Mode</div>
-                <InfoDot title="Choose a display mode optimized for your screen size. Tablet and smartphone modes will enter fullscreen and rotate to landscape." />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.screenMode')}</div>
+                <InfoDot title={t('options.screenModeInfo')} />
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
@@ -602,15 +692,15 @@ export default function HomeOptionsModal({
 
           <Row>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Screen Always On</div>
-              <InfoDot title="Prevent screen from sleeping during scoring" />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.screenAlwaysOn')}</div>
+              <InfoDot title={t('options.screenAlwaysOnInfo')} />
             </div>
             <ToggleSwitch value={wakeLockActive} onToggle={toggleWakeLock} />
           </Row>
         </Section>
 
         {dashboardServer && (
-          <Section title="Dashboard Server">
+          <Section title={t('options.dashboardServer')}>
             <Row style={{ marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable Dashboards</div>
@@ -898,7 +988,7 @@ export default function HomeOptionsModal({
         </div>
 
         {activeDisplayMode === 'desktop' && (
-          <Section title="Download Desktop App" borderBottom={false}>
+          <Section title={t('options.downloadDesktopApp')} borderBottom={false}>
             <a
               href="https://github.com/Lucanepa/openvolley/releases"
               target="_blank"
@@ -931,7 +1021,7 @@ export default function HomeOptionsModal({
           </Section>
         )}
 
-        <Section title="Environment">
+        <Section title={t('options.environment')}>
           <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
             Quick links to all app pages. Open in new tabs for multi-device setup.
           </div>
@@ -1006,7 +1096,7 @@ export default function HomeOptionsModal({
         </Section>
 
         {backup && (
-          <Section title="Backup">
+          <Section title={t('options.backup')}>
             <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1150,7 +1240,7 @@ export default function HomeOptionsModal({
           </Section>
         )}
 
-        <Section title="App Version">
+        <Section title={t('options.appVersion')}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
@@ -1242,7 +1332,7 @@ export default function HomeOptionsModal({
           </Row>
         </Section>
 
-        <Section title="Cache Management" borderBottom={false}>
+        <Section title={t('options.cacheManagement')} borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '15px' }}>Clear Application Cache</div>
@@ -1386,6 +1476,172 @@ export default function HomeOptionsModal({
           Support: luca.canepa@gmail.com
         </div>
       </div>
+
+      {/* Keybindings Modal */}
+      {keybindingsModalOpen && (
+        <div
+          onClick={() => {
+            setKeybindingsModalOpen(false)
+            setEditingKey(null)
+          }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1f2937',
+              borderRadius: '12px',
+              padding: '24px',
+              minWidth: '360px',
+              maxWidth: '90vw',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('options.keybindings')}</h3>
+              <button
+                onClick={() => {
+                  setKeybindingsModalOpen(false)
+                  setEditingKey(null)
+                }}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {Object.entries(keyBindingLabels).map(([key, label]) => (
+                <div
+                  key={key}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 12px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '8px'
+                  }}
+                >
+                  <span style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>{label}</span>
+                  <button
+                    onClick={() => {
+                      if (editingKey === key) {
+                        setEditingKey(null)
+                      } else {
+                        setEditingKey(key)
+                        const handleKeyCapture = (e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (e.key === 'Escape') {
+                            setEditingKey(null)
+                          } else {
+                            const newBindings = { ...keyBindings, [key]: e.key }
+                            setKeyBindings(newBindings)
+                            localStorage.setItem('keyBindings', JSON.stringify(newBindings))
+                            setEditingKey(null)
+                          }
+                          window.removeEventListener('keydown', handleKeyCapture, true)
+                        }
+                        window.addEventListener('keydown', handleKeyCapture, true)
+                      }
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      fontFamily: 'monospace',
+                      background: editingKey === key ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                      color: editingKey === key ? '#60a5fa' : '#fff',
+                      border: editingKey === key ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      minWidth: '80px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {editingKey === key ? t('options.pressKey') : (
+                      keyBindings[key] === ' ' ? 'Space' :
+                      keyBindings[key] === 'Enter' ? 'Enter' :
+                      keyBindings[key] === 'Escape' ? 'Esc' :
+                      keyBindings[key] === 'Backspace' ? 'Backspace' :
+                      keyBindings[key] === 'ArrowUp' ? '↑' :
+                      keyBindings[key] === 'ArrowDown' ? '↓' :
+                      keyBindings[key] === 'ArrowLeft' ? '←' :
+                      keyBindings[key] === 'ArrowRight' ? '→' :
+                      keyBindings[key].toUpperCase()
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setKeyBindings(defaultKeyBindings)
+                  localStorage.setItem('keyBindings', JSON.stringify(defaultKeyBindings))
+                }}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('options.resetDefaults')}
+              </button>
+              <button
+                onClick={() => {
+                  setKeybindingsModalOpen(false)
+                  setEditingKey(null)
+                }}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: '#3b82f6',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }
