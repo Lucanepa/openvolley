@@ -9,12 +9,12 @@ import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import { CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 
-// Available languages
+// Available languages with flag image URLs (using flagcdn.com)
 const LANGUAGES = [
-  { code: 'en', label: 'English', flag: '🇬🇧' },
-  { code: 'fr', label: 'Français', flag: '🇫🇷' },
-  { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
-  { code: 'it', label: 'Italiano', flag: '🇮🇹' }
+  { code: 'en', label: 'English', flagUrl: 'https://flagcdn.com/w20/gb.png' },
+  { code: 'fr', label: 'Français', flagUrl: 'https://flagcdn.com/w20/fr.png' },
+  { code: 'de', label: 'Deutsch', flagUrl: 'https://flagcdn.com/w20/de.png' },
+  { code: 'it', label: 'Italiano', flagUrl: 'https://flagcdn.com/w20/it.png' }
 ]
 
 /**
@@ -356,7 +356,7 @@ export function DashboardOptionsMenu({
               flexWrap: 'wrap',
               gap: '6px'
             }}>
-              {LANGUAGES.map(({ code, label, flag }) => (
+              {LANGUAGES.map(({ code, label, flagUrl }) => (
                 <button
                   key={code}
                   onClick={() => handleLanguageChange(code)}
@@ -378,7 +378,7 @@ export function DashboardOptionsMenu({
                     color: i18n.language === code || (i18n.language?.startsWith(code)) ? '#3b82f6' : '#fff'
                   }}
                 >
-                  <span>{flag}</span>
+                  <img src={flagUrl} alt={label} style={{ width: '20px', height: '14px', objectFit: 'cover', borderRadius: '2px' }} />
                   <span>{label}</span>
                 </button>
               ))}

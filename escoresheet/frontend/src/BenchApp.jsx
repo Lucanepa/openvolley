@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import RosterSetup from './components/RosterSetup'
@@ -16,6 +17,7 @@ const CONNECTION_MODES = {
 }
 
 export default function BenchApp() {
+  const { t } = useTranslation()
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
@@ -176,33 +178,44 @@ export default function BenchApp() {
   // Load available matches on mount and periodically
   useEffect(() => {
     const loadMatches = async () => {
+      console.log('[Bench] loadMatches called, connectionMode:', connectionMode)
       setLoadingMatches(true)
       try {
         // Try Supabase first if in AUTO or SUPABASE mode
         const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
           (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
+        console.log('[Bench] useSupabase:', useSupabase, 'supabase client exists:', !!supabase)
+
         if (useSupabase && supabase) {
-          console.log('[Bench] Loading matches from Supabase')
+          console.log('[Bench] Loading matches from Supabase...')
           const result = await listAvailableMatchesSupabase()
+          console.log('[Bench] Supabase result:', JSON.stringify(result, null, 2))
           if (result.success && result.matches && result.matches.length > 0) {
+            console.log('[Bench] Found', result.matches.length, 'matches from Supabase')
             setAvailableMatches(result.matches)
             setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
+          } else {
+            console.log('[Bench] Supabase returned no matches or failed, falling back to WebSocket')
           }
         }
 
         // Fall back to WebSocket/server
-        console.log('[Bench] Loading matches from server')
+        console.log('[Bench] Loading matches from WebSocket server...')
         const result = await listAvailableMatches()
+        console.log('[Bench] WebSocket server result:', JSON.stringify(result, null, 2))
         if (result.success && result.matches) {
+          console.log('[Bench] Found', result.matches.length, 'matches from WebSocket')
           setAvailableMatches(result.matches)
           setActiveConnection('websocket')
+        } else {
+          console.log('[Bench] WebSocket returned no matches or failed')
         }
       } catch (err) {
-        console.error('Error loading matches:', err)
+        console.error('[Bench] Error loading matches:', err)
       } finally {
         setLoadingMatches(false)
       }
@@ -314,6 +327,7 @@ export default function BenchApp() {
   }, [match, selectedTeam])
 
   const handleTeamSelect = (team) => {
+    console.log('[Bench] Team selected:', team, 'for match:', selectedMatch?.id)
     setSelectedTeam(team)
     setPinInput('')
     setError('')
@@ -322,6 +336,8 @@ export default function BenchApp() {
   const handlePinSubmit = async (e) => {
     e.preventDefault()
     setError('')
+
+    console.log('[Bench] PIN submit - input:', pinInput, 'selectedTeam:', selectedTeam, 'selectedMatch:', selectedMatch?.id)
 
     if (!pinInput || pinInput.length !== 6) {
       setError('Please enter a 6-digit PIN code')
@@ -336,17 +352,21 @@ export default function BenchApp() {
     try {
       // Validate PIN with server (no local IndexedDB)
       const pinType = selectedTeam === 'home' ? 'homeTeam' : 'awayTeam'
+      console.log('[Bench] Validating PIN, type:', pinType)
       const result = await validatePin(pinInput.trim(), pinType)
-      
+      console.log('[Bench] PIN validation result:', JSON.stringify(result, null, 2))
+
       if (result.success && result.match) {
+        console.log('[Bench] PIN valid, match ID:', result.match.id)
         setMatchId(result.match.id)
         setMatch(result.match)
       } else {
+        console.log('[Bench] PIN invalid or no match returned')
         setError('Invalid PIN code. Please check and try again.')
         setPinInput('')
       }
     } catch (err) {
-      console.error('Error validating PIN:', err)
+      console.error('[Bench] Error validating PIN:', err)
       setError(err.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
       setPinInput('')
     }
@@ -390,19 +410,23 @@ export default function BenchApp() {
 
   // Handle connection mode change
   const handleConnectionModeChange = useCallback((mode) => {
+    console.log('[Bench] Connection mode changing from', connectionMode, 'to', mode)
     setConnectionMode(mode)
     try {
       localStorage.setItem('bench_connection_mode', mode)
+      console.log('[Bench] Saved connection mode to localStorage')
     } catch (e) {
       console.warn('[Bench] Failed to save connection mode:', e)
     }
     // Force reconnection by clearing states
     if (supabaseChannelRef.current) {
+      console.log('[Bench] Removing existing Supabase channel')
       supabase?.removeChannel(supabaseChannelRef.current)
       supabaseChannelRef.current = null
     }
     setActiveConnection(null)
-  }, [])
+    console.log('[Bench] Connection mode change complete, will reload matches')
+  }, [connectionMode])
 
   const handleBack = () => {
     if (view) {
@@ -420,6 +444,7 @@ export default function BenchApp() {
   }
 
   const handleMatchSelect = (matchObj) => {
+    console.log('[Bench] Match selected:', matchObj?.id, matchObj?.homeTeamName, 'vs', matchObj?.awayTeamName)
     setSelectedMatch(matchObj)
     setError('')
   }
@@ -443,8 +468,8 @@ export default function BenchApp() {
         overflow: 'hidden'
       }}>
         <SimpleHeader
-          title={view === 'roster' ? 'Roster Setup' : teamName}
-          subtitle={view === 'match' ? `Game ${selectedMatch?.gameNumber || matchId}` : teamName}
+          title={view === 'roster' ? t('benchDashboard.roster') : teamName}
+          subtitle={view === 'match' ? `${t('benchDashboard.game')} ${selectedMatch?.gameNumber || matchId}` : teamName}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -454,7 +479,7 @@ export default function BenchApp() {
           onConnectionModeChange={handleConnectionModeChange}
           showConnectionOptions={true}
           onBack={handleBack}
-          backLabel="Back"
+          backLabel={t('benchDashboard.back')}
         />
 
         <div style={{
@@ -496,7 +521,7 @@ export default function BenchApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Team Dashboard"
+          title={t('benchDashboard.title')}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -532,14 +557,14 @@ export default function BenchApp() {
             fontWeight: 700,
             marginBottom: '12px'
           }}>
-            Select Option
+            {t('benchDashboard.selectGame')}
           </h1>
           <p style={{
             fontSize: '14px',
             color: 'var(--muted)',
             marginBottom: '32px'
           }}>
-            Select an option
+            {t('benchDashboard.selectGame')}
           </p>
 
           <div style={{
@@ -565,7 +590,7 @@ export default function BenchApp() {
               onMouseOver={(e) => e.target.style.opacity = '0.9'}
               onMouseOut={(e) => e.target.style.opacity = '1'}
             >
-              Set up roster
+              {t('benchDashboard.roster')}
             </button>
 
             <button
@@ -585,7 +610,7 @@ export default function BenchApp() {
               onMouseOver={(e) => e.target.style.opacity = '0.9'}
               onMouseOut={(e) => e.target.style.opacity = '1'}
             >
-              Enter match
+              {t('benchDashboard.match')}
             </button>
           </div>
 
@@ -603,7 +628,7 @@ export default function BenchApp() {
               cursor: 'pointer'
             }}
           >
-            Back
+            {t('benchDashboard.back')}
           </button>
         </div>
         </div>
@@ -625,7 +650,7 @@ export default function BenchApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Team Dashboard"
+          title={t('benchDashboard.title')}
           subtitle={teamName}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
@@ -664,12 +689,12 @@ export default function BenchApp() {
           }}>
             {teamName}
           </h1>
-          <p style={{ 
-            fontSize: '14px', 
-            color: 'var(--muted)', 
-            marginBottom: '32px' 
+          <p style={{
+            fontSize: '14px',
+            color: 'var(--muted)',
+            marginBottom: '32px'
           }}>
-            Enter the 6-digit team PIN to continue
+            {t('benchDashboard.enterPin')}
           </p>
 
           <form onSubmit={handlePinSubmit} style={{
@@ -700,7 +725,7 @@ export default function BenchApp() {
                 marginBottom: '16px'
               }}
             />
-            
+
             {error && (
               <div style={{
                 width: '100%',
@@ -733,7 +758,7 @@ export default function BenchApp() {
                 marginBottom: '16px'
               }}
             >
-              Enter
+              {t('benchDashboard.connect')}
             </button>
           </form>
 
@@ -752,7 +777,7 @@ export default function BenchApp() {
               cursor: 'pointer'
             }}
           >
-            Back
+            {t('benchDashboard.back')}
           </button>
         </div>
         </div>
@@ -772,8 +797,8 @@ export default function BenchApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Team Dashboard"
-          subtitle={`Game ${selectedMatch.gameNumber}`}
+          title={t('benchDashboard.title')}
+          subtitle={`${t('benchDashboard.game')} ${selectedMatch.gameNumber}`}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -809,14 +834,14 @@ export default function BenchApp() {
             fontWeight: 700,
             marginBottom: '12px'
           }}>
-            Select Your Team
+            {t('benchDashboard.selectTeam')}
           </h1>
           <p style={{
             fontSize: '14px',
             color: 'var(--muted)',
             marginBottom: '32px'
           }}>
-            Game {selectedMatch.gameNumber}
+            {t('benchDashboard.game')} {selectedMatch.gameNumber}
           </p>
 
           <div style={{
@@ -880,7 +905,7 @@ export default function BenchApp() {
               cursor: 'pointer'
             }}
           >
-            Back
+            {t('benchDashboard.back')}
           </button>
         </div>
         </div>
@@ -901,7 +926,7 @@ export default function BenchApp() {
       <UpdateBanner />
 
       <SimpleHeader
-        title="Team Dashboard"
+        title={t('benchDashboard.title')}
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
@@ -937,11 +962,11 @@ export default function BenchApp() {
             fontWeight: 700,
             marginBottom: '8px'
           }}>
-            Team Dashboard
+            {t('benchDashboard.title')}
           </h1>
 
         {loadingMatches ? (
-          <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Loading games...</p>
+          <p style={{ color: 'var(--muted)', fontSize: '14px' }}>{t('benchDashboard.loadingGames')}</p>
         ) : availableMatches.length === 0 ? (
           <div
             onClick={handleTestModeClick}
@@ -959,13 +984,13 @@ export default function BenchApp() {
               color: 'var(--muted)',
               marginBottom: '8px'
             }}>
-              No active game found
+              {t('benchDashboard.noActiveGames')}
             </div>
             <div style={{
               fontSize: '13px',
               color: 'rgba(255, 255, 255, 0.4)'
             }}>
-              Start a match on the main scoresheet to connect
+              {t('refereeDashboard.startMatchToConnect')}
             </div>
           </div>
         ) : (
@@ -975,7 +1000,7 @@ export default function BenchApp() {
             color: 'var(--muted)',
             marginBottom: '32px'
           }}>
-            Select a game to join
+            {t('benchDashboard.selectGame')}
           </p>
           <div style={{
             display: 'flex',
@@ -1005,10 +1030,10 @@ export default function BenchApp() {
                 onMouseOut={(e) => e.target.style.opacity = '1'}
               >
                 <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-                  Game {m.gameNumber}
+                  {t('benchDashboard.game')} {m.gameNumber}
                 </div>
                 <div style={{ fontSize: '14px', opacity: 0.8 }}>
-                  {m.homeTeamName || 'Home'} vs {m.awayTeamName || 'Away'}
+                  {m.homeTeamName || t('common.home')} {t('benchDashboard.vs')} {m.awayTeamName || t('common.away')}
                 </div>
               </button>
             ))}
