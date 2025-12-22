@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.16',
+    date: '22.12.25',
+    changes: [
+      'Enhance BenchApp and UploadRosterApp with i18n support and debug logging'
+    ]
+  },
+  {
     version: '0.14.14',
     date: '22.12.25',
     changes: [

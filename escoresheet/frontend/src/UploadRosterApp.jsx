@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -58,6 +59,7 @@ function formatDateToDDMMYYYY(dateStr) {
 }
 
 export default function UploadRosterApp() {
+  const { t } = useTranslation()
   const [gameNumber, setGameNumber] = useState('')
   const [team, setTeam] = useState('home') // 'home' or 'away'
   const [uploadPin, setUploadPin] = useState('')
@@ -764,7 +766,7 @@ export default function UploadRosterApp() {
       <UpdateBanner />
 
       <SimpleHeader
-        title="Upload Roster"
+        title={t('uploadRoster.title')}
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
@@ -787,7 +789,7 @@ export default function UploadRosterApp() {
       width: 'auto'
       }}>
         <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '32px', textAlign: 'center' }}>
-          Upload Roster
+          {t('uploadRoster.title')}
         </h1>
 
         {/* Game Selection - Step 1 */}
@@ -807,7 +809,7 @@ export default function UploadRosterApp() {
               marginBottom: '16px',
               textAlign: 'center'
             }}>
-              Select a game to upload roster
+              {t('uploadRoster.selectGame')}
             </p>
 
             {loadingMatches ? (
@@ -816,7 +818,7 @@ export default function UploadRosterApp() {
                 color: 'rgba(255, 255, 255, 0.7)',
                 fontSize: '16px'
               }}>
-                Loading available games...
+                {t('uploadRoster.loadingGames')}
               </div>
             ) : availableMatches.length > 0 ? (
               <div style={{
@@ -855,13 +857,13 @@ export default function UploadRosterApp() {
                       color: 'var(--accent)',
                       marginBottom: '4px'
                     }}>
-                      Game {match.gameNumber || match.id}
+                      {t('uploadRoster.game')} {match.gameNumber || match.id}
                     </div>
                     <div style={{
                       fontSize: '16px',
                       fontWeight: 500
                     }}>
-                      {match.homeTeamName || 'Home'} vs {match.awayTeamName || 'Away'}
+                      {match.homeTeamName || t('common.home')} {t('uploadRoster.vs')} {match.awayTeamName || t('common.away')}
                     </div>
                   </button>
                 ))}
@@ -878,7 +880,7 @@ export default function UploadRosterApp() {
                   userSelect: 'none'
                 }}
               >
-                No active games found
+                {t('uploadRoster.noActiveGames')}
               </div>
             )}
           </div>
@@ -910,7 +912,7 @@ export default function UploadRosterApp() {
                 alignSelf: 'flex-start'
               }}
             >
-              ← Back to Games
+              ← {t('uploadRoster.changeGame')}
             </button>
 
             <div style={{
@@ -921,16 +923,16 @@ export default function UploadRosterApp() {
               marginBottom: '8px'
             }}>
               <div style={{ fontSize: '14px', color: 'var(--accent)', marginBottom: '4px' }}>
-                Game {selectedMatch.gameNumber || selectedMatch.id}
+                {t('uploadRoster.game')} {selectedMatch.gameNumber || selectedMatch.id}
               </div>
               <div style={{ fontSize: '18px', fontWeight: 600 }}>
-                {homeTeam?.name || 'Home'} vs {awayTeam?.name || 'Away'}
+                {homeTeam?.name || t('common.home')} {t('uploadRoster.vs')} {awayTeam?.name || t('common.away')}
               </div>
             </div>
 
             {matchStatusCheck === 'checking' && (
               <p style={{ color: 'var(--accent)', fontSize: '14px', margin: 0, textAlign: 'center' }}>
-                Checking match...
+                {t('uploadRoster.validating')}
               </p>
             )}
 
@@ -944,7 +946,7 @@ export default function UploadRosterApp() {
               <>
                 <div style={{ width: 320, maxWidth: '100%' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                    Team
+                    {t('uploadRoster.selectTeam')}
                   </label>
                   <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                     <button
@@ -967,7 +969,7 @@ export default function UploadRosterApp() {
                         width: 'auto',
                       }}
                     >
-                      Home {homeTeam?.name && `(${homeTeam.name})`}
+                      {t('uploadRoster.home')} {homeTeam?.name && `(${homeTeam.name})`}
                     </button>
                     <button
                       type="button"
@@ -989,14 +991,14 @@ export default function UploadRosterApp() {
                         width: 'auto',
                       }}
                     >
-                      Away {awayTeam?.name && `(${awayTeam.name})`}
+                      {t('uploadRoster.away')} {awayTeam?.name && `(${awayTeam.name})`}
                     </button>
                   </div>
                 </div>
 
                 <div style={{ width: 320, maxWidth: '100%' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                    Upload PIN
+                    {t('uploadRoster.uploadPin')}
                   </label>
                   <input
                     type="text"
@@ -1005,7 +1007,7 @@ export default function UploadRosterApp() {
                       const val = e.target.value.replace(/\D/g, '').slice(0, 6)
                       setUploadPin(val)
                     }}
-                    placeholder="Enter 6-digit upload PIN"
+                    placeholder={t('uploadRoster.enterPin')}
                     style={{
                       width: '100%',
                       padding: '12px',
@@ -1025,7 +1027,7 @@ export default function UploadRosterApp() {
                   />
                   {isValid && (
                     <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
-                      ✓ PIN verified
+                      ✓ {t('uploadRoster.validate')}
                     </p>
                   )}
                 </div>
@@ -1065,7 +1067,7 @@ export default function UploadRosterApp() {
                 cursor: pdfLoading ? 'not-allowed' : 'pointer'
               }}
             >
-              Choose PDF File
+              {t('uploadRoster.selectPdfFile')}
             </button>
 
             {pdfFile && (
@@ -1094,14 +1096,14 @@ export default function UploadRosterApp() {
                     cursor: pdfLoading ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {pdfLoading ? 'Uploading...' : 'Upload & Parse PDF'}
+                  {pdfLoading ? t('uploadRoster.parsing') : t('uploadRoster.confirm')}
                 </button>
               </>
             )}
 
             {pdfLoading && (
               <p style={{ fontSize: '14px', color: 'var(--accent)', margin: 0, textAlign: 'center' }}>
-                Parsing PDF and uploading data...
+                {t('uploadRoster.parsing')}
               </p>
             )}
 
@@ -1116,7 +1118,7 @@ export default function UploadRosterApp() {
         {/* Editable Roster */}
         {parsedData && (
           <div style={{ marginBottom: '32px', maxWidth: '60%', margin: '0 auto' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>Players</h2>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>{t('uploadRoster.parsedPlayers')}</h2>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
               {parsedData.players.map((player, index) => (
@@ -1226,7 +1228,7 @@ export default function UploadRosterApp() {
                       cursor: 'pointer'
                     }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               ))}
@@ -1246,10 +1248,10 @@ export default function UploadRosterApp() {
                 marginBottom: '24px'
               }}
             >
-              + Add Player
+              {t('roster.addPlayer')}
             </button>
 
-            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>Bench Officials</h2>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>{t('uploadRoster.parsedBench')}</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
 
               {parsedData.bench.map((official, index) => (
@@ -1338,7 +1340,7 @@ export default function UploadRosterApp() {
                       cursor: 'pointer'
                     }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               ))}
@@ -1358,7 +1360,7 @@ export default function UploadRosterApp() {
                 marginBottom: '24px'
               }}
             >
-              + Add Bench Official
+              + {t('roster.benchOfficials')}
             </button>
 
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
@@ -1376,7 +1378,7 @@ export default function UploadRosterApp() {
                   cursor: 'pointer'
                 }}
               >
-                Confirm
+                {t('common.confirm')}
               </button>
             </div>
           </div>
@@ -1385,14 +1387,14 @@ export default function UploadRosterApp() {
         {/* Confirmation Modal */}
         {showConfirmModal && (
           <Modal
-            title="Confirm Roster Upload"
+            title={t('uploadRoster.confirmTitle')}
             open={true}
             onClose={() => setShowConfirmModal(false)}
             width={400}
           >
             <div style={{ padding: '24px' }}>
               <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
-                Upload this roster?
+                {t('uploadRoster.confirmMessage')}
               </p>
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                 <button
@@ -1408,7 +1410,7 @@ export default function UploadRosterApp() {
                     cursor: 'pointer'
                   }}
                 >
-                  No
+                  {t('common.no')}
                 </button>
                 <button
                   onClick={handleFinalConfirm}
@@ -1423,7 +1425,7 @@ export default function UploadRosterApp() {
                     cursor: 'pointer'
                   }}
                 >
-                  Yes
+                  {t('common.yes')}
                 </button>
               </div>
             </div>

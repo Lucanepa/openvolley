@@ -3307,13 +3307,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   background: 'rgba(15, 23, 42, 0.2)',
                   marginTop: '12px'
                 }}>
-                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Roster uploaded</h4>
+                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
                     <div style={{ fontSize: '12px' }}>
-                      Players: {match.pendingHomeRoster.players?.length || 0}
+                      {t('matchSetup.playersCount')}: {match.pendingHomeRoster.players?.length || 0}
                     </div>
                     <div style={{ fontSize: '12px' }}>
-                      Bench Officials: {match.pendingHomeRoster.bench?.length || 0}
+                      {t('matchSetup.benchOfficialsCount')}: {match.pendingHomeRoster.bench?.length || 0}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -3325,11 +3325,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                         const pending = match.pendingHomeRoster
                         const importedPlayers = pending.players || []
                         const importedBench = pending.bench || []
-                        
+
                         // Update state
                         setHomeRoster(importedPlayers)
                         setBenchHome(importedBench)
-                        
+
                         // Save to database immediately
                         if (match.homeTeamId) {
                           // Delete existing players
@@ -3337,7 +3337,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                           for (const ep of existingPlayers) {
                             await db.players.delete(ep.id)
                           }
-                          
+
                           // Add imported players
                           if (importedPlayers.length) {
                             await db.players.bulkAdd(
@@ -3355,7 +3355,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                               }))
                             )
                           }
-                          
+
                           // Update match with bench officials
                           await db.matches.update(matchId, {
                             bench_home: importedBench,
@@ -3368,7 +3368,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                       }}
                       style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
                     >
-                      Accept
+                      {t('matchSetup.acceptRoster')}
                     </button>
                     <button
                       type="button"
@@ -3379,7 +3379,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                       }}
                       style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
                     >
-                      Reject
+                      {t('matchSetup.rejectRoster')}
                     </button>
                   </div>
                 </div>
@@ -4270,13 +4270,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                   background: 'rgba(15, 23, 42, 0.2)',
                   marginTop: '12px'
                 }}>
-                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Roster uploaded</h4>
+                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
                     <div style={{ fontSize: '12px' }}>
-                      Players: {match.pendingAwayRoster.players?.length || 0}
+                      {t('matchSetup.playersCount')}: {match.pendingAwayRoster.players?.length || 0}
                     </div>
                     <div style={{ fontSize: '12px' }}>
-                      Bench Officials: {match.pendingAwayRoster.bench?.length || 0}
+                      {t('matchSetup.benchOfficialsCount')}: {match.pendingAwayRoster.bench?.length || 0}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -4288,11 +4288,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                         const pending = match.pendingAwayRoster
                         const importedPlayers = pending.players || []
                         const importedBench = pending.bench || []
-                        
+
                         // Update state
                         setAwayRoster(importedPlayers)
                         setBenchAway(importedBench)
-                        
+
                         // Save to database immediately
                         if (match.awayTeamId) {
                           // Delete existing players
@@ -4300,7 +4300,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                           for (const ep of existingPlayers) {
                             await db.players.delete(ep.id)
                           }
-                          
+
                           // Add imported players
                           if (importedPlayers.length) {
                             await db.players.bulkAdd(
@@ -4318,7 +4318,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                               }))
                             )
                           }
-                          
+
                           // Update match with bench officials
                           await db.matches.update(matchId, {
                             bench_away: importedBench,
@@ -4331,7 +4331,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                       }}
                       style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
                     >
-                      Accept
+                      {t('matchSetup.acceptRoster')}
                     </button>
                     <button
                       type="button"
@@ -4342,7 +4342,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                       }}
                       style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
                     >
-                      Reject
+                      {t('matchSetup.rejectRoster')}
                     </button>
                   </div>
                 </div>
