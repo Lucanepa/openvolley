@@ -29,6 +29,7 @@ export default function LivescoreApp() {
     server: 'disconnected',
     websocket: 'disconnected'
   })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
   const wakeLockRef = useRef(null)
   const noSleepVideoRef = useRef(null)
   const [wakeLockActive, setWakeLockActive] = useState(false)
@@ -201,6 +202,10 @@ export default function LivescoreApp() {
         server: 'not_available',
         websocket: 'not_available'
       })
+      setConnectionDebugInfo({
+        server: { status: 'not_available', message: 'No backend URL configured for static deployment' },
+        websocket: { status: 'not_available', message: 'WebSocket requires backend server' }
+      })
       return // Don't start polling
     }
 
@@ -208,15 +213,40 @@ export default function LivescoreApp() {
       try {
         const serverStatus = await getServerStatus()
         const wsStatus = gameId ? getWebSocketStatus(gameId) : 'not_applicable'
+        const serverConnected = serverStatus?.running
 
         setConnectionStatuses({
-          server: serverStatus?.running ? 'connected' : 'disconnected',
+          server: serverConnected ? 'connected' : 'disconnected',
           websocket: gameId ? wsStatus : 'not_applicable'
         })
+
+        // Update debug info
+        const newDebugInfo = {}
+        if (!serverConnected) {
+          newDebugInfo.server = {
+            status: 'disconnected',
+            message: serverStatus?.error || 'Cannot reach backend server',
+            details: `URL: ${import.meta.env.VITE_BACKEND_URL || 'Not configured'}`
+          }
+        }
+        if (gameId && wsStatus !== 'connected') {
+          newDebugInfo.websocket = {
+            status: wsStatus,
+            message: wsStatus === 'connecting' ? 'Attempting to connect...' :
+                     wsStatus === 'disconnected' ? 'WebSocket connection lost' :
+                     wsStatus === 'error' ? 'WebSocket error occurred' : 'Not connected',
+            details: `Game ID: ${gameId}`
+          }
+        }
+        setConnectionDebugInfo(newDebugInfo)
       } catch (err) {
         setConnectionStatuses({
           server: 'disconnected',
           websocket: 'disconnected'
+        })
+        setConnectionDebugInfo({
+          server: { status: 'error', message: err.message || 'Failed to check server status' },
+          websocket: { status: 'disconnected', message: 'Cannot check WebSocket without server' }
         })
       }
     }
@@ -702,6 +732,7 @@ export default function LivescoreApp() {
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         />
         <div style={{
           flex: 1,
@@ -854,6 +885,7 @@ export default function LivescoreApp() {
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         />
         <div style={{
           flex: 1,
@@ -929,6 +961,7 @@ export default function LivescoreApp() {
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
           onBack={() => {
             setGameId(null)
             setGameIdInput('')
@@ -1038,6 +1071,7 @@ export default function LivescoreApp() {
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         />
         <div style={{
           flex: 1,
@@ -1070,6 +1104,7 @@ export default function LivescoreApp() {
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
         onBack={() => {
           setGameId(null)
           setGameIdInput('')
@@ -1136,7 +1171,8 @@ export default function LivescoreApp() {
                 left: 'clamp(-30px, -7vw, -50px)',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
+                marginRight: '20px'
               }}
             />
           )}
@@ -1197,7 +1233,8 @@ export default function LivescoreApp() {
                 right: 'clamp(-30px, -7vw, -50px)',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
+                marginLeft: '20px'
               }}
             />
           )}

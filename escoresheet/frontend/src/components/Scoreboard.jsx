@@ -8670,19 +8670,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!matchId) return
     try {
       await db.matches.update(matchId, { refereeConnectionEnabled: enabled })
-      // Sync to Supabase
+      // Sync to Supabase (use seed_key as external_id)
       const match = await db.matches.get(matchId)
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'update',
-        payload: {
-          id: String(matchId),
-          referee_connection_enabled: enabled,
-          referee_pin: match?.refereePin || null
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+      if (match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            referee_connection_enabled: enabled,
+            referee_pin: match?.refereePin || null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
     } catch (error) {
       console.error('[Scoreboard] Failed to sync referee connection:', error)
     }
@@ -8692,19 +8694,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!matchId) return
     try {
       await db.matches.update(matchId, { homeTeamConnectionEnabled: enabled })
-      // Sync to Supabase
+      // Sync to Supabase (use seed_key as external_id)
       const match = await db.matches.get(matchId)
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'update',
-        payload: {
-          id: String(matchId),
-          bench_home_connection_enabled: enabled,
-          bench_home_pin: match?.homeTeamPin || null
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+      if (match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            bench_home_connection_enabled: enabled,
+            bench_home_pin: match?.homeTeamPin || null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
     } catch (error) {
       console.error('[Scoreboard] Failed to sync home team connection:', error)
     }
@@ -8714,19 +8718,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!matchId) return
     try {
       await db.matches.update(matchId, { awayTeamConnectionEnabled: enabled })
-      // Sync to Supabase
+      // Sync to Supabase (use seed_key as external_id)
       const match = await db.matches.get(matchId)
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'update',
-        payload: {
-          id: String(matchId),
-          bench_away_connection_enabled: enabled,
-          bench_away_pin: match?.awayTeamPin || null
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+      if (match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            bench_away_connection_enabled: enabled,
+            bench_away_pin: match?.awayTeamPin || null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
     } catch (error) {
       console.error('[Scoreboard] Failed to sync away team connection:', error)
     }

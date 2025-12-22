@@ -2075,22 +2075,26 @@ export default function App() {
 
     const matchIdToDelete = deleteMatchModal.matchId
 
+    // Get match before deleting to check status and seed_key
+    const matchToDelete = await db.matches.get(matchIdToDelete)
+    const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key
+
     await db.transaction('rw', db.matches, db.sets, db.events, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
       // Delete sets
       const sets = await db.sets.where('matchId').equals(matchIdToDelete).toArray()
       if (sets.length > 0) {
         await db.sets.bulkDelete(sets.map(s => s.id))
       }
-      
+
       // Delete events
       const events = await db.events.where('matchId').equals(matchIdToDelete).toArray()
       if (events.length > 0) {
         await db.events.bulkDelete(events.map(e => e.id))
       }
-      
+
       // Get match to find team IDs
       const match = await db.matches.get(matchIdToDelete)
-      
+
       // Delete players
       if (match?.homeTeamId) {
         await db.players.where('teamId').equals(match.homeTeamId).delete()
@@ -2098,7 +2102,7 @@ export default function App() {
       if (match?.awayTeamId) {
         await db.players.where('teamId').equals(match.awayTeamId).delete()
       }
-      
+
       // Delete teams
       if (match?.homeTeamId) {
         await db.teams.delete(match.homeTeamId)
@@ -2106,13 +2110,13 @@ export default function App() {
       if (match?.awayTeamId) {
         await db.teams.delete(match.awayTeamId)
       }
-      
+
       // Delete all sync queue items (since we can't filter by matchId easily)
       await db.sync_queue.clear()
-      
+
       // Delete match setup draft
       await db.match_setup.clear()
-      
+
       // Delete match
       await db.matches.delete(matchIdToDelete)
     })
@@ -2128,6 +2132,25 @@ export default function App() {
         console.log('[App WebSocket] Notified server to delete match:', matchIdToDelete)
       } catch (err) {
         console.error('[App WebSocket] Error notifying server of match deletion:', err)
+      }
+    }
+
+    // Delete from Supabase if match hasn't ended (not 'final')
+    // This prevents clutter from test matches while preserving completed match history
+    if (shouldDeleteFromSupabase) {
+      try {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'delete',
+          payload: {
+            id: matchToDelete.seed_key
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+        console.log('[App] Queued Supabase deletion for non-final match:', matchToDelete.seed_key)
+      } catch (err) {
+        console.error('[App] Error queuing Supabase match deletion:', err)
       }
     }
 

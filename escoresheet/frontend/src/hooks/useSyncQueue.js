@@ -229,6 +229,20 @@ export function useSyncQueue() {
         return true
       }
 
+      if (job.resource === 'match' && job.action === 'delete') {
+        const { id } = job.payload
+        const { error } = await supabase
+          .from('matches')
+          .delete()
+          .eq('external_id', id)
+        if (error) {
+          console.error('[SyncQueue] Match delete error:', error, job.payload)
+          return false
+        }
+        console.log('[SyncQueue] Deleted match from Supabase:', id)
+        return true
+      }
+
       if (job.resource === 'player' && job.action === 'insert') {
         // Resolve team_id from external_id
         let playerPayload = { ...job.payload }

@@ -621,8 +621,9 @@ export async function listAvailableMatchesSupabase() {
             scheduledStr = scheduledStr + 'Z'
           }
           const scheduledDate = new Date(scheduledStr)
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+          // Display as UTC (no timezone conversion) since we store time as-entered
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
           dateTime = `${dateStr} ${timeStr}`
         } catch (e) {
           dateTime = 'TBD'

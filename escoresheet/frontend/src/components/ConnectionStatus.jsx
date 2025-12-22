@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../db/db'
 
-export default function ConnectionStatus({ 
-  connectionStatuses = {}, 
+export default function ConnectionStatus({
+  connectionStatuses = {},
   connectionDebugInfo = {},
   onCheckStatus,
   position = 'right', // 'left' | 'right' | 'center'
@@ -335,7 +335,7 @@ export default function ConnectionStatus({
                 </div>
                 
                 {/* Debug Menu - inline instead of absolute to avoid overflow */}
-                {!isConnected && !isReady && showDebugMenu === key && debugInfo && (
+                {!isConnected && !isReady && showDebugMenu === key && (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
@@ -360,7 +360,7 @@ export default function ConnectionStatus({
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.9)' }}>
                       <strong>Status:</strong> {(() => {
-                        const statusText = (debugInfo.status || status || '').toString()
+                        const statusText = (debugInfo?.status || status || '').toString()
                         return statusText
                           .replace(/_/g, ' ')
                           .split(' ')
@@ -369,9 +369,9 @@ export default function ConnectionStatus({
                       })()}
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.8)' }}>
-                      <strong>Message:</strong> {debugInfo.message || 'No additional information'}
+                      <strong>Message:</strong> {debugInfo?.message || 'Connection issue detected'}
                     </div>
-                    {debugInfo.details && (
+                    {debugInfo?.details && (
                       <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.2)', color: 'rgba(255, 255, 255, 0.7)', fontSize: '10px' }}>
                         {debugInfo.details}
                       </div>

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.10',
+    date: '22.12.25',
+    changes: [
+      'Update MatchSetup and Scoreboard components to sync match settings using seed_key as external_id'
+    ]
+  },
+  {
     version: '0.14.9',
     date: '22.12.25',
     changes: [
