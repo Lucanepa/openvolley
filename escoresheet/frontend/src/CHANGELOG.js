@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.4',
+    date: '22.12.25',
+    changes: [
+      'Enhance DashboardOptionsMenu with language selection feature'
+    ]
+  },
+  {
     version: '0.14.2',
     date: '22.12.25',
     changes: [
