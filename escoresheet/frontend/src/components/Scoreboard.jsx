@@ -8670,8 +8670,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (!matchId) return
     try {
       await db.matches.update(matchId, { refereeConnectionEnabled: enabled })
+      // Sync to Supabase
+      const match = await db.matches.get(matchId)
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'update',
+        payload: {
+          id: String(matchId),
+          referee_connection_enabled: enabled,
+          referee_pin: match?.refereePin || null
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
     } catch (error) {
-      // Silently handle error
+      console.error('[Scoreboard] Failed to sync referee connection:', error)
     }
   }, [matchId])
 

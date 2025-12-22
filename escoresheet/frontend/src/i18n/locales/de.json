@@ -357,5 +357,46 @@
     "thankYouRequest": "Vielen Dank fur Ihre Funktionsanfrage! Ich werde sie fur zukunftige Updates berucksichtigen.",
     "fillRequired": "Bitte fullen Sie alle erforderlichen Felder aus.",
     "sendError": "Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es erneut oder senden Sie eine E-Mail direkt."
+  },
+  "refereeDashboard": {
+    "title": "Schiedsrichter",
+    "dashboardTitle": "Schiedsrichter-Dashboard",
+    "wakeLockOn": "An",
+    "wakeLockOff": "Aus",
+    "screenWillStayOn": "Bildschirm bleibt an",
+    "screenMayTurnOff": "Bildschirm kann sich ausschalten",
+    "game": "Spiel",
+    "games": "Spiele",
+    "exitFullscreen": "Beenden",
+    "fullscreen": "Vollbild",
+    "noActiveGame": "Kein aktives Spiel gefunden",
+    "startMatchToConnect": "Starten Sie ein Spiel auf dem Hauptspielberichtsbogen um sich zu verbinden",
+    "selectGame": "Spiel auswählen",
+    "gamesAvailable": "{{count}} verfügbar",
+    "gameNumber": "Spiel #{{number}}",
+    "vs": "vs",
+    "tbd": "Noch offen",
+    "connectionPin": "Verbindungs-PIN",
+    "connecting": "Verbinde...",
+    "enter": "Eingeben",
+    "selectGameTitle": "Spiel auswählen",
+    "loadingGames": "Spiele werden geladen...",
+    "noAvailableGames": "Keine verfügbaren Spiele.",
+    "testMode": "TESTMODUS",
+    "errors": {
+      "enterPin": "Bitte geben Sie einen 6-stelligen PIN-Code ein",
+      "invalidPin": "Ungültiger PIN-Code. Bitte überprüfen und erneut versuchen.",
+      "connectionLost": "Verbindung verloren. Bitte erneut verbinden.",
+      "matchEnded": "Das Spiel ist beendet.",
+      "connectionDisabled": "Die Verbindung wurde deaktiviert."
+    },
+    "connection": {
+      "auto": "Auto",
+      "autoDesc": "DB → Direkter Fallback",
+      "dbOnly": "Nur DB",
+      "dbDesc": "Supabase Echtzeit",
+      "directOnly": "Nur direkt",
+      "directDesc": "WebSocket direkt"
+    }
   }
 }

@@ -625,13 +625,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
     await db.matches.update(matchId, { status: 'live' })
     console.log('[CoinToss] Match status updated to live')
 
-    // Sync match status to Supabase
+    // Sync match status to Supabase (including referee connection info)
     await db.sync_queue.add({
       resource: 'match',
       action: 'update',
       payload: {
         id: String(matchId),
-        status: 'live'
+        status: 'live',
+        referee_pin: match?.refereePin || null,
+        referee_connection_enabled: match?.refereeConnectionEnabled === true
       },
       ts: new Date().toISOString(),
       status: 'queued'
