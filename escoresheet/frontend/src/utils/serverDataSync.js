@@ -593,6 +593,8 @@ export async function listAvailableMatchesSupabase() {
         scheduled_at,
         referee_pin,
         referee_connection_enabled,
+        home_team_name,
+        away_team_name,
         home_team:teams!matches_home_team_id_fkey(id, name, short_name),
         away_team:teams!matches_away_team_id_fkey(id, name, short_name)
       `)
@@ -610,7 +612,12 @@ export async function listAvailableMatchesSupabase() {
       let dateTime = 'TBD'
       if (m.scheduled_at) {
         try {
-          const scheduledDate = new Date(m.scheduled_at)
+          // Ensure timestamp is parsed as UTC (Supabase may return without 'Z')
+          let scheduledStr = m.scheduled_at
+          if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
+            scheduledStr = scheduledStr + 'Z'
+          }
+          const scheduledDate = new Date(scheduledStr)
           const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
           dateTime = `${dateStr} ${timeStr}`
@@ -622,8 +629,8 @@ export async function listAvailableMatchesSupabase() {
       return {
         id: m.external_id || m.id,
         gameNumber: m.game_n || m.external_id,
-        homeTeam: m.home_team?.name || 'Home',
-        awayTeam: m.away_team?.name || 'Away',
+        homeTeam: m.home_team_name || m.home_team?.name || 'Home',
+        awayTeam: m.away_team_name || m.away_team?.name || 'Away',
         scheduledAt: m.scheduled_at,
         dateTime,
         refereeConnectionEnabled: m.referee_connection_enabled,
@@ -661,6 +668,8 @@ export async function validatePinSupabase(pin, type = 'referee') {
         scheduled_at,
         referee_pin,
         referee_connection_enabled,
+        home_team_name,
+        away_team_name,
         home_team:teams!matches_home_team_id_fkey(id, name, short_name, color),
         away_team:teams!matches_away_team_id_fkey(id, name, short_name, color)
       `)
@@ -685,8 +694,8 @@ export async function validatePinSupabase(pin, type = 'referee') {
       status: data.status,
       scheduledAt: data.scheduled_at,
       refereeConnectionEnabled: data.referee_connection_enabled,
-      homeTeam: data.home_team?.name || 'Home',
-      awayTeam: data.away_team?.name || 'Away',
+      homeTeam: data.home_team_name || data.home_team?.name || 'Home',
+      awayTeam: data.away_team_name || data.away_team?.name || 'Away',
       homeTeamColor: data.home_team?.color,
       awayTeamColor: data.away_team?.color
     }

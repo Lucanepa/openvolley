@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.5',
+    date: '22.12.25',
+    changes: [
+      'Refactor MatchSetup and serverDataSync for improved team name handling'
+    ]
+  },
+  {
     version: '0.14.4',
     date: '22.12.25',
     changes: [
