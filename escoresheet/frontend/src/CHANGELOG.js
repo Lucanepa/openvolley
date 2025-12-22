@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.20',
+    date: '23.12.25',
+    changes: [
+      'Enhance roster management with preview functionality and improved upload handling'
+    ]
+  },
+  {
     version: '0.14.19',
     date: '23.12.25',
     changes: [

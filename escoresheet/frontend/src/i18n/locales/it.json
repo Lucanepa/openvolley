@@ -136,7 +136,9 @@
     "searchForRoster": "Cerca rosa",
     "noSupabaseConnection": "Nessuna connessione al database disponibile. Controlla le impostazioni di connessione.",
     "noRosterFound": "Nessuna rosa in attesa trovata per questa partita.",
-    "errorSearchingRoster": "Errore nella ricerca della rosa. Riprova."
+    "errorSearchingRoster": "Errore nella ricerca della rosa. Riprova.",
+    "previewRoster": "Anteprima",
+    "rosterPreviewTitle": "Anteprima rosa"
   },
   "scoreboard": {
     "set": "Set",
@@ -399,7 +401,9 @@
     "role": "Ruolo",
     "saveRoster": "Salva rosa",
     "saving": "Salvataggio...",
-    "rosterSaved": "Rosa salvata con successo!"
+    "rosterSaved": "Rosa salvata con successo!",
+    "previewRoster": "Anteprima",
+    "rosterPreviewTitle": "Anteprima rosa"
   },
   "uploadRoster": {
     "title": "Carica Rosa",
@@ -428,6 +432,8 @@
     "uploadError": "Salvataggio fallito. Riprova.",
     "confirmTitle": "Conferma caricamento",
     "confirmMessage": "Questo invierà la rosa al referto per l'approvazione.",
+    "uploading": "Caricamento",
+    "uploadingMessage": "Invio della rosa in corso...",
     "rosterSentToScoresheet": "La rosa è stata inviata al referto. Il segnapunti esaminerà e accetterà o rifiuterà la rosa."
   },
   "benchDashboard": {
