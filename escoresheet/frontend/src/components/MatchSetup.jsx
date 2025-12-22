@@ -345,10 +345,10 @@ function formatDobForSync(dob) {
 
 export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const { t } = useTranslation()
-  const [home, setHome] = useState('Home')
+  const [home, setHome] = useState('')
   // Match created popup state
   const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin }
-  const [away, setAway] = useState('Away')
+  const [away, setAway] = useState('')
 
   // Match info fields
   const [date, setDate] = useState('')
@@ -1622,6 +1622,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           external_id: matchSeedKey, // Use unique seed_key instead of numeric ID
           home_team_id: String(homeTeamId),
           away_team_id: String(awayTeamId),
+          home_team_name: home.trim(),
+          away_team_name: away.trim(),
           status: 'setup',
           hall: hall || null,
           city: city || null,
@@ -1938,6 +1940,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           external_id: seedKey, // Use unique seed_key instead of numeric ID
           home_team_id: String(homeId),
           away_team_id: String(awayId),
+          home_team_name: home.trim(),
+          away_team_name: away.trim(),
           status: 'live',
           hall: hall || null,
           city: city || null,
