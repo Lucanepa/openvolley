@@ -5198,6 +5198,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
+        // Also sync to Supabase
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: String(matchId),
+            referee_connection_enabled: enabled,
+            referee_pin: updatedMatch.refereePin || null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
       }
     } catch (error) {
       console.error('Failed to update referee connection setting:', error)

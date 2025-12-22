@@ -3,6 +3,8 @@
  * Fetches match data from the main scoreboard server instead of using local IndexedDB
  */
 
+import { supabase } from '../lib/supabaseClient'
+
 // Get server URL - checks for configured backend first, then falls back to current location
 function getServerUrl() {
   // Check if we have a configured backend URL (Railway/cloud backend)
@@ -572,5 +574,126 @@ export async function listAvailableMatches() {
     return result
   } catch (error) {
     return { success: false, matches: [], error: error.message }
+  }
+}
+
+/**
+ * List available matches from Supabase (for Supabase-only mode)
+ * Returns matches that are in 'setup' or 'live' status with referee_connection_enabled = true
+ */
+export async function listAvailableMatchesSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        id,
+        external_id,
+        game_n,
+        status,
+        scheduled_at,
+        referee_pin,
+        referee_connection_enabled,
+        home_team:teams!matches_home_team_id_fkey(id, name, short_name),
+        away_team:teams!matches_away_team_id_fkey(id, name, short_name)
+      `)
+      .in('status', ['setup', 'live'])
+      .eq('referee_connection_enabled', true)
+      .order('scheduled_at', { ascending: true })
+
+    if (error) {
+      console.error('[listAvailableMatchesSupabase] Error:', error)
+      return { success: false, matches: [], error: error.message }
+    }
+
+    // Format to match the WebSocket server format
+    const formattedMatches = (data || []).map(m => {
+      let dateTime = 'TBD'
+      if (m.scheduled_at) {
+        try {
+          const scheduledDate = new Date(m.scheduled_at)
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+          dateTime = `${dateStr} ${timeStr}`
+        } catch (e) {
+          dateTime = 'TBD'
+        }
+      }
+
+      return {
+        id: m.external_id || m.id,
+        gameNumber: m.game_n || m.external_id,
+        homeTeam: m.home_team?.name || 'Home',
+        awayTeam: m.away_team?.name || 'Away',
+        scheduledAt: m.scheduled_at,
+        dateTime,
+        refereeConnectionEnabled: m.referee_connection_enabled,
+        status: m.status
+      }
+    })
+
+    return { success: true, matches: formattedMatches }
+  } catch (error) {
+    console.error('[listAvailableMatchesSupabase] Exception:', error)
+    return { success: false, matches: [], error: error.message }
+  }
+}
+
+/**
+ * Validate PIN against Supabase database
+ * Returns match data if PIN is valid
+ */
+export async function validatePinSupabase(pin, type = 'referee') {
+  try {
+    const pinStr = String(pin).trim()
+
+    if (!pinStr || pinStr.length !== 6) {
+      return { success: false, error: 'Invalid PIN format' }
+    }
+
+    // Query matches by referee_pin
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        id,
+        external_id,
+        game_n,
+        status,
+        scheduled_at,
+        referee_pin,
+        referee_connection_enabled,
+        home_team:teams!matches_home_team_id_fkey(id, name, short_name, color),
+        away_team:teams!matches_away_team_id_fkey(id, name, short_name, color)
+      `)
+      .eq('referee_pin', pinStr)
+      .in('status', ['setup', 'live'])
+      .eq('referee_connection_enabled', true)
+      .maybeSingle()
+
+    if (error) {
+      console.error('[validatePinSupabase] Error:', error)
+      return { success: false, error: error.message }
+    }
+
+    if (!data) {
+      return { success: false, error: 'Invalid PIN code' }
+    }
+
+    // Format match data to match WebSocket server format
+    const match = {
+      id: data.external_id || data.id,
+      gameNumber: data.game_n || data.external_id,
+      status: data.status,
+      scheduledAt: data.scheduled_at,
+      refereeConnectionEnabled: data.referee_connection_enabled,
+      homeTeam: data.home_team?.name || 'Home',
+      awayTeam: data.away_team?.name || 'Away',
+      homeTeamColor: data.home_team?.color,
+      awayTeamColor: data.away_team?.color
+    }
+
+    return { success: true, match }
+  } catch (error) {
+    console.error('[validatePinSupabase] Exception:', error)
+    return { success: false, error: error.message }
   }
 }

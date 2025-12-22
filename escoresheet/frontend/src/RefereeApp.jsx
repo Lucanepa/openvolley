@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { validatePin, listAvailableMatches } from './utils/serverDataSync'
+import { useTranslation } from 'react-i18next'
+import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import ConnectionStatus from './components/ConnectionStatus'
@@ -13,6 +14,7 @@ import changelog from './CHANGELOG'
 const MASTER_PIN = '123456'
 
 export default function RefereeApp() {
+  const { t } = useTranslation()
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
@@ -197,15 +199,28 @@ export default function RefereeApp() {
   }
 
   // Load available matches on mount and periodically
+  // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Railway)
   useEffect(() => {
     const loadMatches = async () => {
       setLoadingMatches(true)
       try {
-        const result = await listAvailableMatches()
+        // Try Supabase first (cloud database)
+        let result = await listAvailableMatchesSupabase()
+        let source = 'supabase'
+
+        // If Supabase fails or returns no matches, try WebSocket server
+        if (!result.success || (result.matches && result.matches.length === 0)) {
+          const wsResult = await listAvailableMatches()
+          if (wsResult.success && wsResult.matches && wsResult.matches.length > 0) {
+            result = wsResult
+            source = 'websocket'
+          }
+        }
+
         if (result.success && result.matches) {
-          console.log('[RefereeApp] Available games:', result.matches.length, '| Games:', result.matches.map(m => ({
+          console.log(`[RefereeApp] Available games (${source}):`, result.matches.length, '| Games:', result.matches.map(m => ({
             gameNumber: m.gameNumber,
-            refereeEnabled: m.refereeConnectionEnabled  // Top-level property, not nested
+            refereeEnabled: m.refereeConnectionEnabled
           })))
           setAvailableMatches(result.matches)
           setServerConnected(true)
@@ -213,19 +228,20 @@ export default function RefereeApp() {
           setServerConnected(false)
         }
       } catch (err) {
+        console.error('[RefereeApp] Failed to load matches:', err)
         setServerConnected(false)
       } finally {
         setLoadingMatches(false)
       }
     }
-    
+
     loadMatches()
     checkConnectionStatuses()
     const interval = setInterval(() => {
       loadMatches()
       checkConnectionStatuses()
     }, 30000) // Check every 30 seconds
-    
+
     return () => clearInterval(interval)
   }, [matchId, match, isMasterMode])
   
@@ -363,9 +379,9 @@ export default function RefereeApp() {
       localStorage.removeItem('refereeMatchId')
       localStorage.removeItem('refereePin')
       localStorage.removeItem('refereeMasterMode')
-      setError('Connection has been disabled.')
+      setError(t('refereeDashboard.errors.connectionDisabled'))
     }
-  }, [match])
+  }, [match, t])
 
   const handlePinSubmit = async (e) => {
     e.preventDefault()
@@ -373,7 +389,7 @@ export default function RefereeApp() {
     setIsLoading(true)
 
     if (!pinInput || pinInput.length !== 6) {
-      setError('Please enter a 6-digit PIN code')
+      setError(t('refereeDashboard.errors.enterPin'))
       setIsLoading(false)
       return
     }
@@ -388,29 +404,41 @@ export default function RefereeApp() {
     }
 
     try {
-      const result = await validatePin(pinInput.trim(), 'referee')
-      
+      // Try Supabase first (cloud database)
+      let result = await validatePinSupabase(pinInput.trim(), 'referee')
+      let source = 'supabase'
+
+      // If Supabase fails, try WebSocket server
+      if (!result.success) {
+        const wsResult = await validatePin(pinInput.trim(), 'referee')
+        if (wsResult.success) {
+          result = wsResult
+          source = 'websocket'
+        }
+      }
+
       if (result.success && result.match) {
+        console.log(`[RefereeApp] PIN validated via ${source}`)
         setMatchId(result.match.id)
         setMatch(result.match)
         localStorage.setItem('refereeMatchId', String(result.match.id))
         localStorage.setItem('refereePin', pinInput)
       } else {
-        setError('Invalid PIN code. Please check and try again.')
+        setError(t('refereeDashboard.errors.invalidPin'))
         setPinInput('')
         localStorage.removeItem('refereeMatchId')
         localStorage.removeItem('refereePin')
       }
     } catch (err) {
       console.error('Error validating PIN:', err)
-      setError(err.message || 'Failed to validate PIN.')
+      setError(err.message || t('refereeDashboard.errors.invalidPin'))
       setPinInput('')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleExit = (reason) => {
+  const handleExit = useCallback((reason) => {
     setMatchId(null)
     setMatch(null)
     setPinInput('')
@@ -418,13 +446,13 @@ export default function RefereeApp() {
     localStorage.removeItem('refereeMatchId')
     localStorage.removeItem('refereePin')
     localStorage.removeItem('refereeMasterMode')
-    
+
     if (reason === 'heartbeat_failure') {
-      setError('Connection lost. Please reconnect.')
+      setError(t('refereeDashboard.errors.connectionLost'))
     } else {
       setError('')
     }
-  }
+  }, [t])
 
   // Monitor match status - clear credentials if match becomes final
   useEffect(() => {
@@ -434,9 +462,9 @@ export default function RefereeApp() {
       setMatchId(null)
       setMatch(null)
       setPinInput('')
-      setError('Match has ended.')
+      setError(t('refereeDashboard.errors.matchEnded'))
     }
-  }, [match])
+  }, [match, t])
 
   // Hidden test mode - 6 clicks on "No active game found"
   const handleTestModeClick = useCallback(() => {
@@ -495,7 +523,7 @@ export default function RefereeApp() {
         height: '40px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>Referee</span>
+          <span style={{ fontSize: '16px', fontWeight: 600 }}>{t('refereeDashboard.title')}</span>
           <button
             onClick={toggleWakeLock}
             style={{
@@ -508,9 +536,9 @@ export default function RefereeApp() {
               borderRadius: '4px',
               cursor: 'pointer'
             }}
-            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+            title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
           >
-            {wakeLockActive ? '☀️ On' : '🌙 Off'}
+            {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
           </button>
         </div>
 
@@ -536,7 +564,7 @@ export default function RefereeApp() {
               borderRadius: '4px',
               fontWeight: 600
             }}>
-              {availableMatches.length} {availableMatches.length === 1 ? 'game' : 'games'}
+              {availableMatches.length} {availableMatches.length === 1 ? t('refereeDashboard.game') : t('refereeDashboard.games')}
             </div>
           )}
 
@@ -557,7 +585,7 @@ export default function RefereeApp() {
               cursor: 'pointer'
             }}
           >
-            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+            {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : `⛶ ${t('refereeDashboard.fullscreen')}`}
           </button>
 
           <DashboardOptionsMenu showConnectionOptions={true} />
@@ -588,7 +616,7 @@ export default function RefereeApp() {
             style={{ width: 'auto', height: 'auto', marginBottom: '20px' }} 
           />
           <h1 style={{ fontSize: '32px', fontWeight: 700, marginBottom: '12px' }}>
-            Referee Dashboard
+            {t('refereeDashboard.dashboardTitle')}
           </h1>
 
           {/* Show "no active game" when server is connected but no games available */}
@@ -611,13 +639,13 @@ export default function RefereeApp() {
                 color: 'var(--muted)',
                 marginBottom: '8px'
               }}>
-                No active game found
+                {t('refereeDashboard.noActiveGame')}
               </div>
               <div style={{
                 fontSize: '13px',
                 color: 'rgba(255, 255, 255, 0.4)'
               }}>
-                Start a match on the main scoresheet to connect
+                {t('refereeDashboard.startMatchToConnect')}
               </div>
             </div>
           ) : (
@@ -637,7 +665,7 @@ export default function RefereeApp() {
                   marginBottom: '8px',
                   fontWeight: 600
                 }}>
-                  Select game ({availableMatches.length} available)
+                  {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
                 </label>
                 <button
                   type="button"
@@ -655,7 +683,7 @@ export default function RefereeApp() {
                     fontWeight: 600
                   }}
                 >
-                  Select game
+                  {t('refereeDashboard.selectGame')}
                 </button>
 
                 {selectedGameNumber && (() => {
@@ -678,13 +706,13 @@ export default function RefereeApp() {
                         textAlign: 'center'
                       }}>
                         <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>
-                          Game #{selected.gameNumber}
+                          {t('refereeDashboard.gameNumber', { number: selected.gameNumber })}
                         </div>
                         <div style={{ fontSize: '14px', marginBottom: '4px' }}>
-                          {selected.homeTeam} <span style={{ color: 'var(--muted)' }}>vs</span> {selected.awayTeam}
+                          {selected.homeTeam} <span style={{ color: 'var(--muted)' }}>{t('refereeDashboard.vs')}</span> {selected.awayTeam}
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                          {selected.dateTime || 'TBD'}
+                          {selected.dateTime || t('refereeDashboard.tbd')}
                         </div>
                       </div>
                     </div>
@@ -703,7 +731,7 @@ export default function RefereeApp() {
                 marginBottom: '8px',
                 fontWeight: 600
               }}>
-                Connection PIN
+                {t('refereeDashboard.connectionPin')}
               </label>
               <input
                 type="text"
@@ -762,7 +790,7 @@ export default function RefereeApp() {
                 cursor: isLoading ? 'not-allowed' : 'pointer'
               }}
             >
-              {isLoading ? 'Connecting...' : 'Enter'}
+              {isLoading ? t('refereeDashboard.connecting') : t('refereeDashboard.enter')}
             </button>
             )}
           </form>
@@ -771,7 +799,7 @@ export default function RefereeApp() {
       </div>
       
       <Modal
-        title="Select Game"
+        title={t('refereeDashboard.selectGameTitle')}
         open={showGameModal}
         onClose={() => setShowGameModal(false)}
         width={600}
@@ -785,11 +813,11 @@ export default function RefereeApp() {
         }}>
           {loadingMatches ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-              Loading games...
+              {t('refereeDashboard.loadingGames')}
             </div>
           ) : availableMatches.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-              No available games.
+              {t('refereeDashboard.noAvailableGames')}
             </div>
           ) : (
             availableMatches.map((m) => (
@@ -813,13 +841,13 @@ export default function RefereeApp() {
                 }}
               >
                 <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px' }}>
-                  Game #{m.gameNumber}
+                  {t('refereeDashboard.gameNumber', { number: m.gameNumber })}
                 </div>
                 <div style={{ fontSize: '16px', marginBottom: '4px' }}>
-                  {m.homeTeam} <span style={{ color: 'var(--muted)' }}>vs</span> {m.awayTeam}
+                  {m.homeTeam} <span style={{ color: 'var(--muted)' }}>{t('refereeDashboard.vs')}</span> {m.awayTeam}
                 </div>
                 <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
-                  {m.dateTime || 'TBD'}
+                  {m.dateTime || t('refereeDashboard.tbd')}
                 </div>
               </button>
             ))

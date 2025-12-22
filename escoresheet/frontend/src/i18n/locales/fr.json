@@ -357,5 +357,46 @@
     "thankYouRequest": "Merci pour votre demande de fonctionnalite ! Je la considererai pour les futures mises a jour.",
     "fillRequired": "Veuillez remplir tous les champs obligatoires.",
     "sendError": "Echec de l'envoi du message. Veuillez reessayer ou envoyer un email directement."
+  },
+  "refereeDashboard": {
+    "title": "Arbitre",
+    "dashboardTitle": "Tableau de bord arbitre",
+    "wakeLockOn": "On",
+    "wakeLockOff": "Off",
+    "screenWillStayOn": "L'écran restera allumé",
+    "screenMayTurnOff": "L'écran peut s'éteindre",
+    "game": "match",
+    "games": "matchs",
+    "exitFullscreen": "Quitter",
+    "fullscreen": "Plein écran",
+    "noActiveGame": "Aucun match actif trouvé",
+    "startMatchToConnect": "Démarrez un match sur la feuille de match principale pour vous connecter",
+    "selectGame": "Sélectionner un match",
+    "gamesAvailable": "{{count}} disponible(s)",
+    "gameNumber": "Match #{{number}}",
+    "vs": "vs",
+    "tbd": "À déterminer",
+    "connectionPin": "Code PIN de connexion",
+    "connecting": "Connexion...",
+    "enter": "Entrer",
+    "selectGameTitle": "Sélectionner un match",
+    "loadingGames": "Chargement des matchs...",
+    "noAvailableGames": "Aucun match disponible.",
+    "testMode": "MODE TEST",
+    "errors": {
+      "enterPin": "Veuillez entrer un code PIN à 6 chiffres",
+      "invalidPin": "Code PIN invalide. Veuillez vérifier et réessayer.",
+      "connectionLost": "Connexion perdue. Veuillez vous reconnecter.",
+      "matchEnded": "Le match est terminé.",
+      "connectionDisabled": "La connexion a été désactivée."
+    },
+    "connection": {
+      "auto": "Auto",
+      "autoDesc": "BD → Connexion directe",
+      "dbOnly": "BD uniquement",
+      "dbDesc": "Supabase temps réel",
+      "directOnly": "Direct uniquement",
+      "directDesc": "WebSocket direct"
+    }
   }
 }

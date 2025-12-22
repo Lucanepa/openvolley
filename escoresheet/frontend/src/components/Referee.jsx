@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -16,6 +17,7 @@ import { supabase } from '../lib/supabaseClient'
 const currentVersion = changelog[0]?.version || '1.0.0'
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
+  const { t } = useTranslation()
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -1804,9 +1806,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               cursor: 'pointer'
             }}
           >
-            {isFullscreen ? '⛶ Exit' : '⛶'}
+            {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : '⛶'}
           </button>
-          
+
           <button
             onClick={toggleWakeLock}
               style={{
@@ -1819,9 +1821,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               borderRadius: '4px',
               cursor: 'pointer'
             }}
-            title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
+            title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
           >
-            {wakeLockActive ? '☀️ On' : '🌙 Off'}
+            {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
           </button>
 
           {!isMasterMode && (
@@ -1853,7 +1855,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               borderRadius: '4px',
               color: '#fbbf24'
               }}>
-              TEST MODE
+              {t('refereeDashboard.testMode')}
               </span>
           )}
             </div>
@@ -1919,8 +1921,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     textAlign: 'left'
                   }}
                 >
-                  🔄 Auto
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>DB → Direct fallback</div>
+                  🔄 {t('refereeDashboard.connection.auto')}
+                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{t('refereeDashboard.connection.autoDesc')}</div>
                 </button>
                 <button
                   onClick={() => { setConnectionType(CONNECTION_TYPES.SUPABASE); setConnectionDropdownOpen(false); }}
@@ -1937,8 +1939,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     textAlign: 'left'
                   }}
                 >
-                  🗄️ DB Only
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>Supabase realtime</div>
+                  🗄️ {t('refereeDashboard.connection.dbOnly')}
+                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{t('refereeDashboard.connection.dbDesc')}</div>
                 </button>
                 <button
                   onClick={() => { setConnectionType(CONNECTION_TYPES.WEBSOCKET); setConnectionDropdownOpen(false); }}
@@ -1955,8 +1957,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     textAlign: 'left'
                   }}
                 >
-                  📡 Direct Only
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>WebSocket direct</div>
+                  📡 {t('refereeDashboard.connection.directOnly')}
+                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{t('refereeDashboard.connection.directDesc')}</div>
                 </button>
               </div>
             )}

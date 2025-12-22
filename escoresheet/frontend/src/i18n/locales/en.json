@@ -357,5 +357,46 @@
     "thankYouRequest": "Thank you for your feature request! I'll consider it for future updates.",
     "fillRequired": "Please fill in all required fields.",
     "sendError": "Failed to send message. Please try again or email directly."
+  },
+  "refereeDashboard": {
+    "title": "Referee",
+    "dashboardTitle": "Referee Dashboard",
+    "wakeLockOn": "On",
+    "wakeLockOff": "Off",
+    "screenWillStayOn": "Screen will stay on",
+    "screenMayTurnOff": "Screen may turn off",
+    "game": "game",
+    "games": "games",
+    "exitFullscreen": "Exit",
+    "fullscreen": "Fullscreen",
+    "noActiveGame": "No active game found",
+    "startMatchToConnect": "Start a match on the main scoresheet to connect",
+    "selectGame": "Select game",
+    "gamesAvailable": "{{count}} available",
+    "gameNumber": "Game #{{number}}",
+    "vs": "vs",
+    "tbd": "TBD",
+    "connectionPin": "Connection PIN",
+    "connecting": "Connecting...",
+    "enter": "Enter",
+    "selectGameTitle": "Select Game",
+    "loadingGames": "Loading games...",
+    "noAvailableGames": "No available games.",
+    "testMode": "TEST MODE",
+    "errors": {
+      "enterPin": "Please enter a 6-digit PIN code",
+      "invalidPin": "Invalid PIN code. Please check and try again.",
+      "connectionLost": "Connection lost. Please reconnect.",
+      "matchEnded": "Match has ended.",
+      "connectionDisabled": "Connection has been disabled."
+    },
+    "connection": {
+      "auto": "Auto",
+      "autoDesc": "DB → Direct fallback",
+      "dbOnly": "DB Only",
+      "dbDesc": "Supabase realtime",
+      "directOnly": "Direct Only",
+      "directDesc": "WebSocket direct"
+    }
   }
 }

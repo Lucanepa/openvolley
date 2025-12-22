@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.1',
+    date: '22.12.25',
+    changes: [
+      'Update version to 0.14.0 and enhance referee dashboard with Supabase integration'
+    ]
+  },
+  {
     version: '0.13.2',
     date: '22.12.25',
     changes: [

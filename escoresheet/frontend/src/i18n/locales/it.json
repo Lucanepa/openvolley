@@ -357,5 +357,46 @@
     "thankYouRequest": "Grazie per la tua richiesta di funzionalita! La considerer per i futuri aggiornamenti.",
     "fillRequired": "Compila tutti i campi obbligatori.",
     "sendError": "Invio del messaggio fallito. Riprova o invia un'email direttamente."
+  },
+  "refereeDashboard": {
+    "title": "Arbitro",
+    "dashboardTitle": "Dashboard Arbitro",
+    "wakeLockOn": "On",
+    "wakeLockOff": "Off",
+    "screenWillStayOn": "Lo schermo resterà acceso",
+    "screenMayTurnOff": "Lo schermo potrebbe spegnersi",
+    "game": "partita",
+    "games": "partite",
+    "exitFullscreen": "Esci",
+    "fullscreen": "Schermo intero",
+    "noActiveGame": "Nessuna partita attiva trovata",
+    "startMatchToConnect": "Avvia una partita sul referto principale per connetterti",
+    "selectGame": "Seleziona partita",
+    "gamesAvailable": "{{count}} disponibile/i",
+    "gameNumber": "Partita #{{number}}",
+    "vs": "vs",
+    "tbd": "Da definire",
+    "connectionPin": "PIN di connessione",
+    "connecting": "Connessione...",
+    "enter": "Entra",
+    "selectGameTitle": "Seleziona partita",
+    "loadingGames": "Caricamento partite...",
+    "noAvailableGames": "Nessuna partita disponibile.",
+    "testMode": "MODALITÀ TEST",
+    "errors": {
+      "enterPin": "Inserisci un codice PIN a 6 cifre",
+      "invalidPin": "Codice PIN non valido. Verifica e riprova.",
+      "connectionLost": "Connessione persa. Riconnettiti.",
+      "matchEnded": "La partita è terminata.",
+      "connectionDisabled": "La connessione è stata disabilitata."
+    },
+    "connection": {
+      "auto": "Auto",
+      "autoDesc": "DB → Fallback diretto",
+      "dbOnly": "Solo DB",
+      "dbDesc": "Supabase tempo reale",
+      "directOnly": "Solo diretto",
+      "directDesc": "WebSocket diretto"
+    }
   }
 }
