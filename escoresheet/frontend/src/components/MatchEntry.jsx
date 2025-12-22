@@ -51,12 +51,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     return () => {
       if (interval) clearInterval(interval)
       // Clear heartbeat on unmount (skip in test mode)
+      // Use local DB instead of server API since this runs in bench context
       if (matchId !== -1) {
         const heartbeatField = team === 'home'
           ? 'lastHomeTeamHeartbeat'
           : 'lastAwayTeamHeartbeat'
-        updateMatchData(matchId, { [heartbeatField]: null })
-          .catch(err => console.error('Failed to clear heartbeat:', err))
+        db.matches.update(matchId, { [heartbeatField]: null })
+          .catch(() => {}) // Silently fail - not critical
       }
     }
   }, [matchId, team])
@@ -216,6 +217,18 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       color: isHome ? data.homeTeam?.color : data.awayTeam?.color,
       players: isHome ? data.homePlayers : data.awayPlayers,
       bench: isHome ? (data.match?.bench_home || []) : (data.match?.bench_away || [])
+    }
+  }, [data, team])
+
+  // Get opponent team info
+  const opponentInfo = useMemo(() => {
+    if (!data) return null
+    const isHome = team === 'home'
+    return {
+      name: isHome ? data.awayTeam?.name : data.homeTeam?.name,
+      color: isHome ? data.awayTeam?.color : data.homeTeam?.color,
+      players: isHome ? data.awayPlayers : data.homePlayers,
+      bench: isHome ? (data.match?.bench_away || []) : (data.match?.bench_home || [])
     }
   }, [data, team])
 
