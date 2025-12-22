@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.6',
+    date: '22.12.25',
+    changes: [
+      'Refactor date handling in createScheduledAt function for MatchSetup component'
+    ]
+  },
+  {
     version: '0.14.5',
     date: '22.12.25',
     changes: [
