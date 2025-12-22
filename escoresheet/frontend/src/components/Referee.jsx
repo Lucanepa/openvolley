@@ -2692,6 +2692,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   }}
                 >
                   {t('refereeDashboard.showLineup', 'Show Line-up')}
+                </button>
               </div>
             )}
           </div>
@@ -2854,6 +2855,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   }}
                 >
                   {t('refereeDashboard.showLineup', 'Show Line-up')}
+                </button>
               </div>
             )}
           </div>
