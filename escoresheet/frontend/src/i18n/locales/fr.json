@@ -131,7 +131,12 @@
     "benchOfficialsCount": "Officiels de banc",
     "acceptRoster": "Accepter",
     "rejectRoster": "Refuser",
-    "uploadPin": "PIN d'upload"
+    "uploadPin": "PIN d'upload",
+    "uploadPdf": "Upload PDF",
+    "searchForRoster": "Rechercher effectif",
+    "noSupabaseConnection": "Pas de connexion à la base de données. Vérifiez vos paramètres de connexion.",
+    "noRosterFound": "Aucun effectif en attente trouvé pour ce match.",
+    "errorSearchingRoster": "Erreur lors de la recherche de l'effectif. Veuillez réessayer."
   },
   "scoreboard": {
     "set": "Set",
@@ -422,7 +427,8 @@
     "uploadSuccess": "Effectif téléchargé avec succès !",
     "uploadError": "Échec de l'enregistrement. Veuillez réessayer.",
     "confirmTitle": "Confirmer le téléchargement",
-    "confirmMessage": "Cela enverra l'effectif à la feuille de match pour approbation."
+    "confirmMessage": "Cela enverra l'effectif à la feuille de match pour approbation.",
+    "rosterSentToScoresheet": "L'effectif a été envoyé à la feuille de match. Le marqueur examinera et acceptera ou rejettera l'effectif."
   },
   "benchDashboard": {
     "title": "Tableau de bord équipe",

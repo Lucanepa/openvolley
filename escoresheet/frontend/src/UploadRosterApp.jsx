@@ -73,6 +73,7 @@ export default function UploadRosterApp() {
   const [pdfError, setPdfError] = useState('')
   const [parsedData, setParsedData] = useState(null) // { players: [], bench: [] }
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
@@ -655,29 +656,38 @@ export default function UploadRosterApp() {
       await updateMatchData(matchId, {
         [serverPendingField]: rosterData
       })
-      
-      // Clear all form data
-      setGameNumber('')
-      setTeam('home')
-      setUploadPin('')
-      setMatch(null)
-      setMatchId(null)
-      setHomeTeam(null)
-      setAwayTeam(null)
-      setValidationError('')
-      setPdfFile(null)
-      setPdfError('')
-      setParsedData(null)
-      setMatchStatusCheck(null)
-      setSelectedMatch(null)
+
+      // Close confirm modal and show success modal
       setShowConfirmModal(false)
-      
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
+      setShowSuccessModal(true)
     } catch (error) {
       console.error('Error saving pending roster:', error)
+      setShowConfirmModal(false)
       setValidationError('Failed to save roster. Please try again.')
+    }
+  }
+
+  // Handle closing success modal and resetting form
+  const handleSuccessClose = () => {
+    setShowSuccessModal(false)
+
+    // Clear all form data
+    setGameNumber('')
+    setTeam('home')
+    setUploadPin('')
+    setMatch(null)
+    setMatchId(null)
+    setHomeTeam(null)
+    setAwayTeam(null)
+    setValidationError('')
+    setPdfFile(null)
+    setPdfError('')
+    setParsedData(null)
+    setMatchStatusCheck(null)
+    setSelectedMatch(null)
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
   }
 
@@ -1412,6 +1422,50 @@ export default function UploadRosterApp() {
                   {t('common.yes')}
                 </button>
               </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <Modal
+            title={t('uploadRoster.uploadSuccess')}
+            open={true}
+            onClose={handleSuccessClose}
+            width={400}
+          >
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(34, 197, 94, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: '32px'
+              }}>
+                ✓
+              </div>
+              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+                {t('uploadRoster.rosterSentToScoresheet')}
+              </p>
+              <button
+                onClick={handleSuccessClose}
+                style={{
+                  padding: '12px 32px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('common.ok')}
+              </button>
             </div>
           </Modal>
         )}

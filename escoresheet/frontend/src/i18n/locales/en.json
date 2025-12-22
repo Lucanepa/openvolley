@@ -131,7 +131,12 @@
     "benchOfficialsCount": "Bench Officials",
     "acceptRoster": "Accept",
     "rejectRoster": "Reject",
-    "uploadPin": "Upload PIN"
+    "uploadPin": "Upload PIN",
+    "uploadPdf": "Upload PDF",
+    "searchForRoster": "Search for Roster",
+    "noSupabaseConnection": "No database connection available. Please check your connection settings.",
+    "noRosterFound": "No pending roster found for this match.",
+    "errorSearchingRoster": "Error searching for roster. Please try again."
   },
   "scoreboard": {
     "set": "Set",
@@ -419,10 +424,11 @@
     "confirm": "Confirm Upload",
     "cancel": "Cancel",
     "changeGame": "Change Game",
-    "uploadSuccess": "Roster uploaded successfully!",
+    "uploadSuccess": "Roster Uploaded",
     "uploadError": "Failed to save roster. Please try again.",
     "confirmTitle": "Confirm Roster Upload",
-    "confirmMessage": "This will send the roster to the scoresheet for approval."
+    "confirmMessage": "This will send the roster to the scoresheet for approval.",
+    "rosterSentToScoresheet": "The roster has been sent to the scoresheet. The scorer will review and accept or reject the roster."
   },
   "benchDashboard": {
     "title": "Team Dashboard",

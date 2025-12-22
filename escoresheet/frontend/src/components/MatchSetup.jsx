@@ -10,6 +10,7 @@ import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { supabase } from '../lib/supabaseClient'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -511,6 +512,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
   // Upload mode toggle state (local or remote)
   const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
   const [awayUploadMode, setAwayUploadMode] = useState('local') // 'local' | 'remote'
+
+  // Remote roster search state
+  const [homeRosterSearching, setHomeRosterSearching] = useState(false)
+  const [awayRosterSearching, setAwayRosterSearching] = useState(false)
 
   // Referee selector state
   const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
@@ -2376,6 +2381,83 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
     }
   }
 
+  // Search for pending roster in Supabase
+  const handleSearchHomeRoster = async () => {
+    if (!match || !supabase) {
+      setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
+      return
+    }
+
+    setHomeRosterSearching(true)
+    try {
+      const gameNumber = match.game_n || match.gameNumber || gameN
+      console.log('[MatchSetup] Searching for home roster, game number:', gameNumber)
+
+      // Search for pending roster in Supabase
+      const { data, error } = await supabase
+        .from('matches')
+        .select('pending_home_roster, external_id')
+        .eq('game_n', gameNumber)
+        .not('pending_home_roster', 'is', null)
+        .limit(1)
+        .single()
+
+      if (error || !data?.pending_home_roster) {
+        console.log('[MatchSetup] No pending home roster found')
+        setNoticeModal({ message: t('matchSetup.noRosterFound') })
+        return
+      }
+
+      console.log('[MatchSetup] Found pending home roster:', data.pending_home_roster)
+
+      // Store in local match data to trigger the pending roster UI
+      await db.matches.update(matchId, { pendingHomeRoster: data.pending_home_roster })
+    } catch (err) {
+      console.error('[MatchSetup] Error searching for home roster:', err)
+      setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
+    } finally {
+      setHomeRosterSearching(false)
+    }
+  }
+
+  const handleSearchAwayRoster = async () => {
+    if (!match || !supabase) {
+      setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
+      return
+    }
+
+    setAwayRosterSearching(true)
+    try {
+      const gameNumber = match.game_n || match.gameNumber || gameN
+      console.log('[MatchSetup] Searching for away roster, game number:', gameNumber)
+
+      // Search for pending roster in Supabase
+      const { data, error } = await supabase
+        .from('matches')
+        .select('pending_away_roster, external_id')
+        .eq('game_n', gameNumber)
+        .not('pending_away_roster', 'is', null)
+        .limit(1)
+        .single()
+
+      if (error || !data?.pending_away_roster) {
+        console.log('[MatchSetup] No pending away roster found')
+        setNoticeModal({ message: t('matchSetup.noRosterFound') })
+        return
+      }
+
+      console.log('[MatchSetup] Found pending away roster:', data.pending_away_roster)
+
+      // Store in local match data to trigger the pending roster UI
+      await db.matches.update(matchId, { pendingAwayRoster: data.pending_away_roster })
+    } catch (err) {
+      console.error('[MatchSetup] Error searching for away roster:', err)
+      setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
+    } finally {
+      setAwayRosterSearching(false)
+    }
+  }
+
   // PDF upload handlers - must be defined before conditional returns
   const handleHomePdfUpload = async (file) => {
     if (!file) return
@@ -3133,16 +3215,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => homeFileInputRef.current?.click()}
-                  disabled={homePdfLoading || homeUploadMode !== 'local'}
+                  onClick={() => {
+                    if (homeUploadMode === 'local') {
+                      homeFileInputRef.current?.click()
+                    } else {
+                      handleSearchHomeRoster()
+                    }
+                  }}
+                  disabled={homePdfLoading || homeRosterSearching}
                   style={{
                     padding: '8px 16px',
                     fontSize: '14px',
-                    flex: 1,
-                    opacity: homeUploadMode !== 'local' ? 0.5 : 1
+                    flex: 1
                   }}
                 >
-                  Upload PDF
+                  {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
                 </button>
                 {/* Local/Remote Toggle */}
                 <div style={{
@@ -4096,16 +4183,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => awayFileInputRef.current?.click()}
-                  disabled={awayPdfLoading || awayUploadMode !== 'local'}
+                  onClick={() => {
+                    if (awayUploadMode === 'local') {
+                      awayFileInputRef.current?.click()
+                    } else {
+                      handleSearchAwayRoster()
+                    }
+                  }}
+                  disabled={awayPdfLoading || awayRosterSearching}
                   style={{
                     padding: '8px 16px',
                     fontSize: '14px',
-                    flex: 1,
-                    opacity: awayUploadMode !== 'local' ? 0.5 : 1
+                    flex: 1
                   }}
                 >
-                  Upload PDF
+                  {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
                 </button>
                 {/* Local/Remote Toggle */}
                 <div style={{

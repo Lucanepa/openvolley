@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.19',
+    date: '23.12.25',
+    changes: [
+      'Implement success modal and roster search functionality in UploadRosterApp and MatchSetup'
+    ]
+  },
+  {
     version: '0.14.18',
     date: '23.12.25',
     changes: [
