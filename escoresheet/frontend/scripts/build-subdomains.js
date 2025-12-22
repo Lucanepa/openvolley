@@ -136,6 +136,9 @@ async function buildSubdomain(subdomain) {
           workbox: {
             skipWaiting: false,
             clientsClaim: true,
+            // Disable navigateFallback - each subdomain is a single entry point
+            // and the temp filename issue causes precache mismatch
+            navigateFallback: null,
             runtimeCaching: [
               {
                 urlPattern: /^https?:\/\/.*\/api\/.*/i,
@@ -152,6 +155,15 @@ async function buildSubdomain(subdomain) {
                 options: {
                   cacheName: 'static-assets',
                   expiration: { maxEntries: 100, maxAgeSeconds: 2592000 }
+                }
+              },
+              {
+                // HTML pages - network first for navigation
+                urlPattern: /\.html$/,
+                handler: 'NetworkFirst',
+                options: {
+                  cacheName: 'html-cache',
+                  expiration: { maxEntries: 10, maxAgeSeconds: 86400 }
                 }
               }
             ],

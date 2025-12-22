@@ -5205,18 +5205,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
-        // Also sync to Supabase
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: String(matchId),
-            referee_connection_enabled: enabled,
-            referee_pin: updatedMatch.refereePin || null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        // Also sync to Supabase (use seed_key as external_id)
+        if (updatedMatch.seed_key) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: updatedMatch.seed_key,
+              referee_connection_enabled: enabled,
+              referee_pin: updatedMatch.refereePin || null
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
+                clearInterval(interval)
+                setNoticeModal({ message: 'Synced to database!', type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: 'Saved locally (sync pending)', type: 'success' })
+              }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
+        }
       }
     } catch (error) {
       console.error('Failed to update referee connection setting:', error)
@@ -5244,18 +5266,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
-        // Also sync to Supabase
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: String(matchId),
-            bench_home_connection_enabled: enabled,
-            bench_home_pin: updatedMatch.homeTeamPin || null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        // Also sync to Supabase (use seed_key as external_id)
+        if (updatedMatch.seed_key) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: updatedMatch.seed_key,
+              bench_home_connection_enabled: enabled,
+              bench_home_pin: updatedMatch.homeTeamPin || null
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
+                clearInterval(interval)
+                setNoticeModal({ message: 'Synced to database!', type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: 'Saved locally (sync pending)', type: 'success' })
+              }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
+        }
       }
     } catch (error) {
       console.error('Failed to update home team connection setting:', error)
@@ -5283,31 +5327,53 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
-        // Also sync to Supabase
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: String(matchId),
-            bench_away_connection_enabled: enabled,
-            bench_away_pin: updatedMatch.awayTeamPin || null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        // Also sync to Supabase (use seed_key as external_id)
+        if (updatedMatch.seed_key) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: updatedMatch.seed_key,
+              bench_away_connection_enabled: enabled,
+              bench_away_pin: updatedMatch.awayTeamPin || null
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
+                clearInterval(interval)
+                setNoticeModal({ message: 'Synced to database!', type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: 'Saved locally (sync pending)', type: 'success' })
+              }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
+        }
       }
     } catch (error) {
       console.error('Failed to update away team connection setting:', error)
     }
   }
 
-  // Dashboard Toggle Component - horizontal layout with PIN on right
+  // Dashboard Toggle Component - two rows: label+toggle on top, PIN below
   const DashboardToggle = ({ label, enabled, onToggle, pin }) => {
     return (
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: '5px',
+        flexDirection: 'column',
+        gap: '4px',
         padding: '8px 12px',
         background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
         borderRadius: '8px',
@@ -5315,42 +5381,47 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         minWidth: '100px',
         flex: 1
       }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', minWidth: '60px' }}>{label}</span>
-        <div style={{
-          position: 'relative',
-          width: '40px',
-          height: '22px',
-          background: enabled ? '#22c55e' : '#6b7280',
-          borderRadius: '11px',
-          transition: 'background 0.2s',
-          cursor: 'pointer',
-          flexShrink: 0
-        }}
-        onClick={() => onToggle(!enabled)}
-        >
+        {/* Row 1: Label and Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', flex: 1 }}>{label}</span>
           <div style={{
-            position: 'absolute',
-            top: '2px',
-            left: enabled ? '20px' : '2px',
-            width: '18px',
-            height: '18px',
-            background: '#fff',
-            borderRadius: '50%',
-            transition: 'left 0.2s',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }} />
+            position: 'relative',
+            width: '40px',
+            height: '22px',
+            background: enabled ? '#22c55e' : '#6b7280',
+            borderRadius: '11px',
+            transition: 'background 0.2s',
+            cursor: 'pointer',
+            flexShrink: 0
+          }}
+          onClick={() => onToggle(!enabled)}
+          >
+            <div style={{
+              position: 'absolute',
+              top: '2px',
+              left: enabled ? '20px' : '2px',
+              width: '18px',
+              height: '18px',
+              background: '#fff',
+              borderRadius: '50%',
+              transition: 'left 0.2s',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }} />
+          </div>
         </div>
+        {/* Row 2: PIN (only when enabled) */}
         {enabled && pin && (
-          <span style={{
-            fontWeight: 700,
-            fontSize: '14px',
-            color: 'var(--accent)',
-            letterSpacing: '2px',
-            fontFamily: 'monospace',
-            marginLeft: '2px'
-          }}>
-            {pin}
-          </span>
+          <div style={{ textAlign: 'center' }}>
+            <span style={{
+              fontWeight: 700,
+              fontSize: '16px',
+              color: 'var(--accent)',
+              letterSpacing: '3px',
+              fontFamily: 'monospace'
+            }}>
+              {pin}
+            </span>
+          </div>
         )}
       </div>
     )

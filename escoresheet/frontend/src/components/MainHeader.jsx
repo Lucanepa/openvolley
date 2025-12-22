@@ -305,13 +305,15 @@ export default function MainHeader({
             (() => {
               try {
                 const date = new Date(matchData.match.scheduledAt)
-                return date.toLocaleDateString('en-CH', { 
+                // Display as UTC (no timezone conversion) since we store time as-entered
+                return date.toLocaleDateString('en-CH', {
                   day: '2-digit',
                   month: '2-digit',
                   year: 'numeric',
                   hour: '2-digit',
                   minute: '2-digit',
-                  hour12: false
+                  hour12: false,
+                  timeZone: 'UTC'
                 })
               } catch {
                 return matchData.match.scheduledAt

@@ -661,7 +661,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
       const dataBlob = new Blob([dataStr], { type: 'application/json' })
       const dataLink = document.createElement('a')
       const matchDate = match.scheduledAt
-        ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
+        ? new Date(match.scheduledAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }).replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
       const dataFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.json`
       dataLink.download = dataFilename
