@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.2',
+    date: '22.12.25',
+    changes: [
+      'Enhance localization support and add awaiting coin toss feature'
+    ]
+  },
+  {
     version: '0.14.1',
     date: '22.12.25',
     changes: [

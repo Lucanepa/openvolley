@@ -198,52 +198,47 @@ export default function RefereeApp() {
     setConnectionDebugInfo(debugInfo)
   }
 
-  // Load available matches on mount and periodically
+  // Load available matches function - called on mount and manually via button
   // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Railway)
-  useEffect(() => {
-    const loadMatches = async () => {
-      setLoadingMatches(true)
-      try {
-        // Try Supabase first (cloud database)
-        let result = await listAvailableMatchesSupabase()
-        let source = 'supabase'
+  const loadMatches = useCallback(async () => {
+    setLoadingMatches(true)
+    try {
+      // Try Supabase first (cloud database)
+      let result = await listAvailableMatchesSupabase()
+      let source = 'supabase'
 
-        // If Supabase fails or returns no matches, try WebSocket server
-        if (!result.success || (result.matches && result.matches.length === 0)) {
-          const wsResult = await listAvailableMatches()
-          if (wsResult.success && wsResult.matches && wsResult.matches.length > 0) {
-            result = wsResult
-            source = 'websocket'
-          }
+      // If Supabase fails or returns no matches, try WebSocket server
+      if (!result.success || (result.matches && result.matches.length === 0)) {
+        const wsResult = await listAvailableMatches()
+        if (wsResult.success && wsResult.matches && wsResult.matches.length > 0) {
+          result = wsResult
+          source = 'websocket'
         }
-
-        if (result.success && result.matches) {
-          console.log(`[RefereeApp] Available games (${source}):`, result.matches.length, '| Games:', result.matches.map(m => ({
-            gameNumber: m.gameNumber,
-            refereeEnabled: m.refereeConnectionEnabled
-          })))
-          setAvailableMatches(result.matches)
-          setServerConnected(true)
-        } else {
-          setServerConnected(false)
-        }
-      } catch (err) {
-        console.error('[RefereeApp] Failed to load matches:', err)
-        setServerConnected(false)
-      } finally {
-        setLoadingMatches(false)
       }
-    }
 
+      if (result.success && result.matches) {
+        console.log(`[RefereeApp] Available games (${source}):`, result.matches.length, '| Games:', result.matches.map(m => ({
+          gameNumber: m.gameNumber,
+          refereeEnabled: m.refereeConnectionEnabled
+        })))
+        setAvailableMatches(result.matches)
+        setServerConnected(true)
+      } else {
+        setServerConnected(false)
+      }
+    } catch (err) {
+      console.error('[RefereeApp] Failed to load matches:', err)
+      setServerConnected(false)
+    } finally {
+      setLoadingMatches(false)
+    }
+  }, [])
+
+  // Load matches on mount only (no auto-polling - use manual refresh button)
+  useEffect(() => {
     loadMatches()
     checkConnectionStatuses()
-    const interval = setInterval(() => {
-      loadMatches()
-      checkConnectionStatuses()
-    }, 30000) // Check every 30 seconds
-
-    return () => clearInterval(interval)
-  }, [matchId, match, isMasterMode])
+  }, [loadMatches])
   
   // Fullscreen functionality
   const toggleFullscreen = async () => {
@@ -554,6 +549,26 @@ export default function RefereeApp() {
             position="right"
             size="normal"
           />
+
+          <button
+            onClick={() => { loadMatches(); checkConnectionStatuses() }}
+            disabled={loadingMatches}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: loadingMatches ? 'rgba(255, 255, 255, 0.05)' : 'rgba(59, 130, 246, 0.2)',
+              color: loadingMatches ? 'rgba(255, 255, 255, 0.4)' : '#fff',
+              border: '1px solid rgba(59, 130, 246, 0.5)',
+              borderRadius: '4px',
+              cursor: loadingMatches ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            {loadingMatches ? '...' : '🔄'} {t('refereeDashboard.loadGames', 'Load Games')}
+          </button>
 
           {availableMatches.length > 0 && (
             <div style={{

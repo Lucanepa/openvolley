@@ -397,6 +397,12 @@
       "dbDesc": "Supabase Echtzeit",
       "directOnly": "Nur direkt",
       "directDesc": "WebSocket direkt"
-    }
+    },
+    "awaitingCoinToss": "Awaiting Coin Toss",
+    "awaitingCoinTossDesc": "Das Spiel beginnt, sobald der Coin Toss auf dem Spielberichtsbogen bestätigt wurde.",
+    "matchHasEnded": "Das Spiel ist beendet",
+    "lineupSet": "Aufstellung gesetzt",
+    "showLineup": "Aufstellung anzeigen",
+    "loadGames": "Spiele laden"
   }
 }

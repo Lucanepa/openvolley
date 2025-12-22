@@ -397,6 +397,12 @@
       "dbDesc": "Supabase tempo reale",
       "directOnly": "Solo diretto",
       "directDesc": "WebSocket diretto"
-    }
+    },
+    "awaitingCoinToss": "Awaiting Coin Toss",
+    "awaitingCoinTossDesc": "La partita inizierà una volta confermato il Coin Toss sul referto.",
+    "matchHasEnded": "La partita è terminata",
+    "lineupSet": "Formazione inserita",
+    "showLineup": "Mostra formazione",
+    "loadGames": "Carica partite"
   }
 }
