@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.7',
+    date: '22.12.25',
+    changes: [
+      'Add debug logging for raw data in listAvailableMatchesSupabase function'
+    ]
+  },
+  {
     version: '0.14.6',
     date: '22.12.25',
     changes: [

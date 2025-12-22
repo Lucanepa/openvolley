@@ -607,6 +607,9 @@ export async function listAvailableMatchesSupabase() {
       return { success: false, matches: [], error: error.message }
     }
 
+    // Debug: log raw data from Supabase to verify team names and scheduled_at
+    console.log('[listAvailableMatchesSupabase] Raw data from Supabase:', JSON.stringify(data, null, 2))
+
     // Format to match the WebSocket server format
     const formattedMatches = (data || []).map(m => {
       let dateTime = 'TBD'
