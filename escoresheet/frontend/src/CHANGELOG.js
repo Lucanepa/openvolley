@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.8',
+    date: '22.12.25',
+    changes: [
+      'Sync match connection settings to Supabase in MatchSetup and Scoreboard components'
+    ]
+  },
+  {
     version: '0.14.7',
     date: '22.12.25',
     changes: [
