@@ -5244,6 +5244,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
+        // Also sync to Supabase
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: String(matchId),
+            bench_home_connection_enabled: enabled,
+            bench_home_pin: updatedMatch.homeTeamPin || null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
       }
     } catch (error) {
       console.error('Failed to update home team connection setting:', error)
@@ -5271,6 +5283,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
       const updatedMatch = await db.matches.get(matchId)
       if (updatedMatch) {
         await syncMatchToServer(updatedMatch)
+        // Also sync to Supabase
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: String(matchId),
+            bench_away_connection_enabled: enabled,
+            bench_away_pin: updatedMatch.awayTeamPin || null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
       }
     } catch (error) {
       console.error('Failed to update away team connection setting:', error)
