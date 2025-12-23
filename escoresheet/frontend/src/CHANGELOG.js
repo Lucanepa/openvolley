@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.15.3',
+    date: '23.12.25',
+    changes: [
+      'Enhance UploadRosterApp and MatchSetup with improved PIN handling and synchronization'
+    ]
+  },
+  {
     version: '0.15.2',
     date: '23.12.25',
     changes: [
