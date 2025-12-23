@@ -561,6 +561,38 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         }))
       })
 
+      // If connected to Supabase, also send roster as pending for scorer approval
+      if (useSupabaseConnection && supabase && matchData?.external_id) {
+        const pendingRosterData = {
+          players: players.map(p => ({
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            dob: p.dob || '',
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain
+          })),
+          bench: benchOfficials.map(o => ({
+            role: o.role,
+            firstName: o.firstName,
+            lastName: o.lastName,
+            dob: o.dob || ''
+          })),
+          timestamp: new Date().toISOString()
+        }
+
+        const { error: supabaseError } = await supabase
+          .from('matches')
+          .update({ [pendingRosterFieldSnake]: pendingRosterData })
+          .eq('external_id', matchData.external_id)
+
+        if (supabaseError) {
+          console.error('[RosterSetup] Failed to sync roster to Supabase:', supabaseError)
+        } else {
+          console.log('[RosterSetup] Roster synced to Supabase as pending for scorer approval')
+        }
+      }
+
       alert(t('rosterSetup.rosterSaved'))
     } catch (err) {
       console.error('Error saving roster:', err)
