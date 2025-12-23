@@ -95,18 +95,18 @@
   .grid-4 {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 10px;
   }
   @media (min-width: 900px) {
     .grid-4 {
       grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
+      gap: 12px;
     }
   }
   /* Larger gap on desktop/non-compact screens */
   @media (min-width: 1200px) {
     .grid-4 {
-      gap: 30px;
+      gap: 16px;
     }
   }
   /* In landscape mode, make grid-4 cards wider */
@@ -115,7 +115,7 @@
       grid-template-columns: 1fr;
       max-width: 800px;
       margin: 0 auto;
-      gap: 20px;
+      gap: 12px;
     }
     .grid-4 .card {
       width: 100%;
@@ -126,7 +126,7 @@
     .grid-4 {
       grid-template-columns: repeat(2, 1fr);
       max-width: 1400px;
-      gap: 30px;
+      gap: 16px;
     }
   }
   .card {
@@ -160,17 +160,17 @@
   .setup-cards-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-    max-width: 900px;
+    gap: 10px;
+    max-width: 100%;
   }
   @media (min-width: 900px) {
     .setup-cards-grid {
-      gap: 24px;
+      gap: 12px;
     }
   }
   @media (min-width: 1200px) {
     .setup-cards-grid {
-      gap: 30px;
+      gap: 16px;
     }
   }
   @media (max-width: 600px) {
@@ -181,16 +181,16 @@
 
   /* Vertical spacing in setup page */
   .setup-section {
-    margin-bottom: 16px;
+    margin-bottom: 10px;
   }
   @media (min-width: 900px) {
     .setup-section {
-      margin-bottom: 24px;
+      margin-bottom: 12px;
     }
   }
   @media (min-width: 1200px) {
     .setup-section {
-      margin-bottom: 30px;
+      margin-bottom: 16px;
     }
   }
   

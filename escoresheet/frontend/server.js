@@ -681,13 +681,10 @@ const httpServer = httpsOptions
   : createHttpServer(requestHandler)
 
 // Create WebSocket server (WSS if HTTPS is enabled)
-const wss = new WebSocketServer({ 
+const wss = new WebSocketServer({
   port: WS_PORT,
-  perMessageDeflate: false, // Disable compression for better performance
-  ...(httpsOptions && { 
-    // If HTTPS is enabled, we can upgrade HTTPS connections to WSS
-    // Otherwise, use regular WS
-  })
+  host: '0.0.0.0', // Bind to all interfaces for LAN access
+  perMessageDeflate: false // Disable compression for better performance
 })
 
 wss.on('connection', (ws, req) => {

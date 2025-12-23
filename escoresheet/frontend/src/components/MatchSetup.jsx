@@ -5682,7 +5682,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const awayConfigured = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
 
   const formatOfficial = (lastName, firstName) => {
-    if (!lastName && !firstName) return 'Not set'
+    if (!lastName && !firstName) return t('common.notSet')
     if (!lastName) return firstName
     if (!firstName) return lastName
     return `${lastName}, ${firstName.charAt(0)}.`
@@ -6133,7 +6133,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
-                <h3 style={{ margin: 0 }}>{t('matchSetup.matchInfo')}</h3>
+                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>{t('matchSetup.matchInfo')}</h3>
                 {!matchInfoConfirmed && (
                   <span style={{ color: canConfirmMatchInfo ? '#3b82f6' : '#f59e0b', fontSize: '11px', fontWeight: 500 }}>
                     {canConfirmMatchInfo ? t('matchSetup.readyToConfirm') : t('matchSetup.fillRequiredFields')}
@@ -6143,7 +6143,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}
+              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}
             >
               <span>{t('matchSetup.homeTeam')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={home}>{home || t('common.notSet')}</span>
@@ -6179,10 +6179,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={officialsConfigured} />
-                <h3 style={{ margin: 0 }}>{t('matchSetup.matchOfficials')}</h3>
+                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>{t('matchSetup.matchOfficials')}</h3>
               </div>
             </div>
-            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '85px minmax(0, 1fr)', rowGap: 4, columnGap: 8, marginTop: 8 }}>
+            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}>
               <span>{t('matchSetup.referee1')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
               <span>{t('matchSetup.referee2')}:</span>
@@ -6214,7 +6214,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         border: '1px solid rgba(255, 255, 255, 0.08)',
         ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' })
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <span style={{ fontWeight: 600, fontSize: '14px', textAlign: 'center', alignItems: 'center' }}>{t('matchSetup.dashboards')}</span>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -6402,7 +6402,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             {serverRunning && serverStatus ? (
               <div style={{ marginTop: 12 }}>
-                <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', rowGap: 8, marginBottom: 12 }}>
+                <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', rowGap: 8, marginBottom: 2 }}>
                   <span>Status:</span>
                   <span style={{ color: '#10b981', fontWeight: 600 }}>● Running</span>
                   <span>Hostname:</span>
@@ -6493,7 +6493,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         
       </div>
 
-      <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, alignItems:'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginTop:1, alignItems:'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
         <button
           className="secondary"
           style={{
