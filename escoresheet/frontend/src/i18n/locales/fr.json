@@ -502,7 +502,7 @@
     "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort sur la feuille principale.",
     "matchHasEnded": "Le match est terminé",
     "lineupSet": "Composition reçue",
-    "showLineup": "Voir la position de base",
+    "showLineup": "Afficher la composition",
     "loadGames": "Charger les matchs"
   }
 }
