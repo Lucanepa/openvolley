@@ -185,6 +185,9 @@ export default defineConfig({
         // Don't skip waiting automatically - let user choose when to update
         skipWaiting: false,
         clientsClaim: true,
+        // IMPORTANT: Disable navigateFallback for multi-page app
+        // Without this, navigating to /scoresheet, /referee, etc. falls back to index.html
+        navigateFallback: null,
         // Network-first strategy for API calls, cache-first for assets
         runtimeCaching: [
           {

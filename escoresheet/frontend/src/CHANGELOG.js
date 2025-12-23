@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.15.7',
+    date: '23.12.25',
+    changes: [
+      'Update Vite configuration to disable navigateFallback for multi-page app'
+    ]
+  },
+  {
     version: '0.15.6',
     date: '23.12.25',
     changes: [
