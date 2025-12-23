@@ -94,7 +94,7 @@
     "deletePlayer": "Supprimer le joueur",
     "deletePlayerConfirm": "Voulez-vous vraiment supprimer ce joueur ?",
     "birthdateWarning": "Avertissement: Veuillez vérifier les dates de naissance",
-    "continueAnyway": "Tenu en compte les avertissements: Continuer"
+    "continueAnyway": "Continuer malgré les avertissements"
   },
   "matchSetup": {
     "title": "Configuration du match",
