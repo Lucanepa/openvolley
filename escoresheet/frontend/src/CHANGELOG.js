@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.21',
+    date: '23.12.25',
+    changes: [
+      'Implement awaiting coin toss screen in Referee component'
+    ]
+  },
+  {
     version: '0.14.20',
     date: '23.12.25',
     changes: [
