@@ -8,6 +8,11 @@ export default function ConnectionStatus({
   position = 'right', // 'left' | 'right' | 'center'
   size = 'normal' // 'normal' | 'small' | 'large'
 }) {
+  // Debug logging for connection statuses
+  console.log('[ConnectionStatus DEBUG] ========== RENDER ==========')
+  console.log('[ConnectionStatus DEBUG] connectionStatuses:', JSON.stringify(connectionStatuses, null, 2))
+  console.log('[ConnectionStatus DEBUG] connectionDebugInfo:', JSON.stringify(connectionDebugInfo, null, 2))
+
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, maxHeight: 0 })
@@ -105,6 +110,8 @@ export default function ConnectionStatus({
       return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? 'Error' : status === 'offline' ? 'Offline' : 'Disconnected' }
     } else if (status === 'not_configured' || status === 'not_applicable') {
       return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: 'Not Configured' }
+    } else if (status === 'not_available') {
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'N/A (Static)' }
     } else if (status === 'connecting') {
       return { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308', text: 'Connecting' }
     } else if (status === 'test_mode') {
@@ -127,6 +134,7 @@ export default function ConnectionStatus({
   const getOverallStatus = () => {
     // Check all connection statuses
     const statuses = Object.entries(connectionStatuses)
+    console.log('[ConnectionStatus DEBUG] getOverallStatus - statuses:', statuses)
     
     // Check if only match is disconnected
     const matchStatus = connectionStatuses.match
@@ -135,13 +143,14 @@ export default function ConnectionStatus({
     const onlyMatchDisconnected = (
       (matchStatus === 'no_match' || matchStatus === 'disconnected' || matchStatus === 'unknown') &&
       otherStatuses.every(([, status]) => {
-        return status === 'connected' || 
-               status === 'live' || 
-               status === 'scheduled' || 
-               status === 'synced' || 
+        return status === 'connected' ||
+               status === 'live' ||
+               status === 'scheduled' ||
+               status === 'synced' ||
                status === 'syncing' ||
                status === 'test_mode' ||
-               status === 'not_applicable' // Not applicable is considered OK
+               status === 'not_applicable' || // Not applicable is considered OK
+               status === 'not_available' // Static deployment - no backend
       })
     )
     
@@ -151,24 +160,29 @@ export default function ConnectionStatus({
     
     // If any status is not connected/ok, show attention
     const allConnected = statuses.every(([, status]) => {
-      return status === 'connected' || 
-             status === 'live' || 
-             status === 'scheduled' || 
-             status === 'synced' || 
+      return status === 'connected' ||
+             status === 'live' ||
+             status === 'scheduled' ||
+             status === 'synced' ||
              status === 'syncing' ||
              status === 'test_mode' ||
-             status === 'not_applicable' // Not applicable is considered OK
+             status === 'not_applicable' || // Not applicable is considered OK
+             status === 'not_available' // Static deployment - no backend
     })
     
+    let result
     if (allConnected && statuses.length > 0) {
-      return 'connected'
+      result = 'connected'
     } else {
-      return 'attention' // Use 'attention' instead of 'disconnected' for the overall status
+      result = 'attention' // Use 'attention' instead of 'disconnected' for the overall status
     }
+    console.log('[ConnectionStatus DEBUG] getOverallStatus result:', result)
+    return result
   }
 
   const overallStatus = getOverallStatus()
   const statusInfo = getStatusColor(overallStatus)
+  console.log('[ConnectionStatus DEBUG] overallStatus:', overallStatus, 'statusInfo:', statusInfo)
 
   const sizeStyles = {
     normal: {

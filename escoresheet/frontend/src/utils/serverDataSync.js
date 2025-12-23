@@ -557,22 +557,35 @@ export async function updateMatchData(matchId, updates) {
  */
 export async function listAvailableMatches() {
   const serverUrl = getServerUrl()
+  const url = `${serverUrl}/api/match/list`
+
+  console.log('[listAvailableMatches DEBUG] ========== START ==========')
+  console.log('[listAvailableMatches DEBUG] Server URL:', serverUrl)
+  console.log('[listAvailableMatches DEBUG] Full URL:', url)
 
   try {
-    const response = await fetch(`${serverUrl}/api/match/list`, {
+    console.log('[listAvailableMatches DEBUG] Fetching...')
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
       }
     })
 
+    console.log('[listAvailableMatches DEBUG] Response status:', response.status, response.statusText)
+
     if (!response.ok) {
+      console.log('[listAvailableMatches DEBUG] Response not ok')
       return { success: false, matches: [], error: `HTTP ${response.status}: ${response.statusText}` }
     }
 
     const result = await response.json()
+    console.log('[listAvailableMatches DEBUG] Result:', JSON.stringify(result, null, 2))
+    console.log('[listAvailableMatches DEBUG] ========== END ==========')
     return result
   } catch (error) {
+    console.error('[listAvailableMatches DEBUG] Error:', error.message)
+    console.log('[listAvailableMatches DEBUG] ========== END (ERROR) ==========')
     return { success: false, matches: [], error: error.message }
   }
 }
@@ -582,7 +595,18 @@ export async function listAvailableMatches() {
  * Returns matches that are in 'setup' or 'live' status with referee_connection_enabled = true
  */
 export async function listAvailableMatchesSupabase() {
+  console.log('[listAvailableMatchesSupabase DEBUG] ========== START ==========')
+  console.log('[listAvailableMatchesSupabase DEBUG] Supabase client exists:', !!supabase)
+
+  if (!supabase) {
+    console.error('[listAvailableMatchesSupabase DEBUG] No Supabase client!')
+    return { success: false, matches: [], error: 'Supabase client not initialized' }
+  }
+
   try {
+    console.log('[listAvailableMatchesSupabase DEBUG] Executing query...')
+    console.log('[listAvailableMatchesSupabase DEBUG] Query: matches where status IN (setup, live) AND referee_connection_enabled = true')
+
     const { data, error } = await supabase
       .from('matches')
       .select(`
@@ -604,8 +628,16 @@ export async function listAvailableMatchesSupabase() {
       .eq('referee_connection_enabled', true)
       .order('scheduled_at', { ascending: true })
 
+    console.log('[listAvailableMatchesSupabase DEBUG] Query completed')
+    console.log('[listAvailableMatchesSupabase DEBUG] Error:', error)
+    console.log('[listAvailableMatchesSupabase DEBUG] Data count:', data?.length || 0)
+
     if (error) {
       console.error('[listAvailableMatchesSupabase] Error:', error)
+      console.error('[listAvailableMatchesSupabase DEBUG] Error code:', error.code)
+      console.error('[listAvailableMatchesSupabase DEBUG] Error message:', error.message)
+      console.error('[listAvailableMatchesSupabase DEBUG] Error details:', error.details)
+      console.error('[listAvailableMatchesSupabase DEBUG] Error hint:', error.hint)
       return { success: false, matches: [], error: error.message }
     }
 
