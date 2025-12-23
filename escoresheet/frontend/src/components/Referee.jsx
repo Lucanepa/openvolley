@@ -1143,6 +1143,92 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return results
   }, [data])
 
+  // Check if match is waiting for coin toss (status is 'setup' or no data yet)
+  // This must be checked BEFORE the !data return to show awaiting screen
+  const isAwaitingCoinToss = !data || data?.match?.status === 'setup' || (!data?.match?.firstServe && !isMasterMode && !data?.currentSet)
+
+  // Show awaiting coin toss screen when connected but no match data yet
+  if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
+    return (
+      <div style={{
+        height: '100vh',
+        width: '100vw',
+        maxWidth: '800px',
+        margin: '0 auto',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#fff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '24px',
+        padding: '20px'
+      }}>
+        {/* Team names if available */}
+        {data?.homeTeam?.name && data?.awayTeam?.name && (
+          <div style={{
+            fontSize: 'clamp(18px, 4vw, 28px)',
+            fontWeight: 700,
+            textAlign: 'center',
+            marginBottom: '16px'
+          }}>
+            {data.homeTeam.name} vs {data.awayTeam.name}
+          </div>
+        )}
+
+        {/* Awaiting Coin Toss Message */}
+        <div style={{
+          fontSize: 'clamp(20px, 5vw, 32px)',
+          fontWeight: 600,
+          color: '#fbbf24',
+          textAlign: 'center',
+          textTransform: 'uppercase',
+          letterSpacing: '2px'
+        }}>
+          {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
+        </div>
+
+        <div style={{
+          fontSize: 'clamp(14px, 3vw, 18px)',
+          color: 'rgba(255, 255, 255, 0.7)',
+          textAlign: 'center',
+          maxWidth: '400px'
+        }}>
+          {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
+        </div>
+
+        {/* Loading indicator */}
+        <div style={{
+          width: '40px',
+          height: '40px',
+          border: '3px solid rgba(255, 255, 255, 0.2)',
+          borderTopColor: '#fbbf24',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }} />
+
+        {/* Exit button */}
+        <button
+          onClick={onExit}
+          style={{
+            marginTop: '24px',
+            padding: '12px 24px',
+            fontSize: '14px',
+            fontWeight: 600,
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            borderRadius: '8px',
+            color: '#fff',
+            cursor: 'pointer'
+          }}
+        >
+          {t('common.back', 'Back')}
+        </button>
+      </div>
+    )
+  }
+
   if (!data) return null
 
   // Player circle component - BIG responsive sizing with all indicators
@@ -1316,97 +1402,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         
         {/* Player number */}
         {number}
-      </div>
-    )
-  }
-
-  // Check if match is waiting for coin toss (status is 'setup')
-  const isAwaitingCoinToss = data?.match?.status === 'setup' || (!data?.match?.firstServe && !isMasterMode && !data?.currentSet)
-
-  // Show awaiting coin toss screen
-  if (isAwaitingCoinToss && !isMasterMode) {
-    return (
-      <div style={{
-        height: '100vh',
-        width: '100vw',
-        maxWidth: '800px',
-        margin: '0 auto',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '24px',
-        padding: '20px'
-      }}>
-        {/* Team names if available */}
-        {data?.homeTeam?.name && data?.awayTeam?.name && (
-          <div style={{
-            fontSize: 'clamp(18px, 4vw, 28px)',
-            fontWeight: 700,
-            textAlign: 'center',
-            marginBottom: '16px'
-          }}>
-            {data.homeTeam.name} vs {data.awayTeam.name}
-          </div>
-        )}
-
-        {/* Awaiting Coin Toss Message */}
-        <div style={{
-          fontSize: 'clamp(20px, 5vw, 32px)',
-          fontWeight: 600,
-          color: '#fbbf24',
-          textAlign: 'center',
-          textTransform: 'uppercase',
-          letterSpacing: '2px'
-        }}>
-          {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
-        </div>
-
-        <div style={{
-          fontSize: 'clamp(14px, 3vw, 18px)',
-          color: 'rgba(255, 255, 255, 0.7)',
-          textAlign: 'center',
-          maxWidth: '400px'
-        }}>
-          {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
-        </div>
-
-        {/* Loading indicator */}
-        <div style={{
-          width: '40px',
-          height: '40px',
-          border: '3px solid rgba(255, 255, 255, 0.2)',
-          borderTopColor: '#fbbf24',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
-
-        {/* Exit button */}
-        <button
-          onClick={onExit}
-          style={{
-            marginTop: '24px',
-            padding: '12px 24px',
-            fontSize: '16px',
-            fontWeight: 600,
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            cursor: 'pointer'
-          }}
-        >
-          {t('refereeDashboard.exitFullscreen', 'Exit')}
-        </button>
-
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
       </div>
     )
   }
