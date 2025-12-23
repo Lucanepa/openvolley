@@ -237,23 +237,28 @@ export default function LivescoreApp() {
   // Check connection status periodically
   useEffect(() => {
     // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    // Static deployments don't have a backend server - they rely on Supabase only
     const isStaticDeployment = !import.meta.env.DEV && (
       window.location.hostname.includes('github.io') ||
-      window.location.hostname === 'app.openvolley.app'
+      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
     )
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
-    // For static deployments without backend, show helpful message
+    // For static deployments without backend, set server as not_available but keep Supabase
     if (isStaticDeployment && !hasBackendUrl) {
-      setConnectionStatuses({
+      setConnectionStatuses(prev => ({
+        ...prev, // Preserve supabase status
         server: 'not_available',
         websocket: 'not_available'
-      })
+      }))
       setConnectionDebugInfo({
-        server: { status: 'not_available', message: 'No backend URL configured for static deployment' },
-        websocket: { status: 'not_available', message: 'WebSocket requires backend server' }
+        server: {
+          status: 'not_available',
+          message: 'Static deployment - using Supabase only',
+          details: 'Real-time WebSocket updates are not available. Match data is loaded from Supabase database.'
+        }
       })
-      return // Don't start polling
+      return // Don't start polling for server status
     }
 
     const checkConnections = async () => {

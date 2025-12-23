@@ -238,15 +238,15 @@ export default function App() {
 
   // Fetch server status periodically
   useEffect(() => {
-    // Skip server status checks in production GitHub Pages deployment
+    // Skip server status checks in production static deployments
     // Server is only available in development or Electron app
-    const isGitHubPages = !import.meta.env.DEV && (
+    const isStaticDeployment = !import.meta.env.DEV && (
       window.location.hostname.includes('github.io') ||
-      window.location.hostname === 'app.openvolley.app'
+      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
     )
 
-    if (isGitHubPages) {
-      // No server available in static GitHub Pages deployment
+    if (isStaticDeployment) {
+      // No server available in static deployment
       return
     }
 
@@ -442,17 +442,17 @@ export default function App() {
     }
     const debugInfo = {}
 
-    // Check if we're on GitHub Pages (static deployment)
-    const isGitHubPages = !import.meta.env.DEV && (
+    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    const isStaticDeployment = !import.meta.env.DEV && (
       window.location.hostname.includes('github.io') ||
-      window.location.hostname === 'app.openvolley.app'
+      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
     )
 
     // Check if we have a configured backend URL (Railway/cloud backend)
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
     // Check API/Server connection
-    if (isGitHubPages && !hasBackendUrl) {
+    if (isStaticDeployment && !hasBackendUrl) {
       // No backend configured - pure standalone mode
       statuses.api = 'not_available'
       statuses.server = 'not_available'

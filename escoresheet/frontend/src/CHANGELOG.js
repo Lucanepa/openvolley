@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.2',
+    date: '23.12.25',
+    changes: [
+      'Refactor deployment checks and enhance localization across components'
+    ]
+  },
+  {
     version: '0.16.1',
     date: '23.12.25',
     changes: [

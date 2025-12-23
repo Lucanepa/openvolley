@@ -186,11 +186,12 @@ const OfficialCard = memo(function OfficialCard({
   selectorKey = null,
   isExpanded,
   onToggleExpanded,
-  onOpenDatabase
+  onOpenDatabase,
+  t
 }) {
   const displayName = lastName || firstName
     ? `${lastName || ''}${firstName ? ', ' + firstName.charAt(0) + '.' : ''}`
-    : 'Not set'
+    : t('matchSetup.notSet')
 
   return (
     <div style={{
@@ -236,7 +237,7 @@ const OfficialCard = memo(function OfficialCard({
                 cursor: 'pointer'
               }}
             >
-              Database
+              {t('matchSetup.database')}
             </button>
           )}
           <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
@@ -245,10 +246,10 @@ const OfficialCard = memo(function OfficialCard({
       {isExpanded && (
         <div style={{ padding: '16px' }}>
           <div className="row">
-            <div className="field"><label>Last Name</label><input className="w-name capitalize" value={lastName} onChange={e=>setLastName(e.target.value)} /></div>
-            <div className="field"><label>First Name</label><input className="w-name capitalize" value={firstName} onChange={e=>setFirstName(e.target.value)} /></div>
-            <div className="field"><label>Country</label><input className="w-90" value={country} onChange={e=>setCountry(e.target.value)} /></div>
-            <div className="field"><label>Date of birth</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e=>setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="w-name capitalize" value={lastName} onChange={e=>setLastName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="w-name capitalize" value={firstName} onChange={e=>setFirstName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.country')}</label><input className="w-90" value={country} onChange={e=>setCountry(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e=>setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
           </div>
         </div>
       )}
@@ -267,10 +268,11 @@ const LineJudgesCard = memo(function LineJudgesCard({
   setLineJudge3,
   setLineJudge4,
   isExpanded,
-  onToggleExpanded
+  onToggleExpanded,
+  t
 }) {
   const filledCount = [lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).length
-  const displayText = filledCount > 0 ? `${filledCount} set` : 'Not set'
+  const displayText = filledCount > 0 ? t('matchSetup.set', { count: filledCount }) : t('matchSetup.notSet')
 
   return (
     <div style={{
@@ -292,7 +294,7 @@ const LineJudgesCard = memo(function LineJudgesCard({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>Line Judges</span>
+          <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.lineJudges')}</span>
           {!isExpanded && (
             <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayText}</span>
           )}
@@ -302,12 +304,12 @@ const LineJudgesCard = memo(function LineJudgesCard({
       {isExpanded && (
         <div style={{ padding: '16px' }}>
           <div className="row">
-            <div className="field"><label>Line Judge 1</label><input className="w-name capitalize" value={lineJudge1} onChange={e=>setLineJudge1(e.target.value)} placeholder="Name" /></div>
-            <div className="field"><label>Line Judge 2</label><input className="w-name capitalize" value={lineJudge2} onChange={e=>setLineJudge2(e.target.value)} placeholder="Name" /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="w-name capitalize" value={lineJudge1} onChange={e=>setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="w-name capitalize" value={lineJudge2} onChange={e=>setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
           </div>
           <div className="row">
-            <div className="field"><label>Line Judge 3</label><input className="w-name capitalize" value={lineJudge3} onChange={e=>setLineJudge3(e.target.value)} placeholder="Name" /></div>
-            <div className="field"><label>Line Judge 4</label><input className="w-name capitalize" value={lineJudge4} onChange={e=>setLineJudge4(e.target.value)} placeholder="Name" /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="w-name capitalize" value={lineJudge3} onChange={e=>setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="w-name capitalize" value={lineJudge4} onChange={e=>setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
           </div>
         </div>
       )}
@@ -2701,15 +2703,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return (
       <MatchSetupInfoView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← Back</button>
-          <h2>Match info</h2>
+          <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← {t('common.back')}</button>
+          <h2>{t('matchSetup.matchInfo')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Date & Time</h3>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.dateTime')}</h3>
             <div className="field">
-              <label>Date</label>
+              <label>{t('matchSetup.date')}</label>
               <input
                 className="w-dob"
                 type="date"
@@ -2720,7 +2722,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {dateError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{dateError}</span>}
             </div>
             <div className="field">
-              <label>Time</label>
+              <label>{t('matchSetup.time')}</label>
               <input
                 className="w-90"
                 type="time"
@@ -2731,120 +2733,120 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
             </div>
           </div>
-          
+
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Location</h3>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.location')}</h3>
             <div className="field">
-              <label>City</label>
-              <input 
-                className="w-120 capitalize" 
-                value={city} 
+              <label>{t('matchSetup.city')}</label>
+              <input
+                className="w-120 capitalize"
+                value={city}
                 onChange={e=>setCity(e.target.value)}
                 list="cities-zurich"
-                placeholder="Enter city"
+                placeholder={t('matchSetup.enterCity')}
               />
               <datalist id="cities-zurich">
                 {citiesZurich.map(c => <option key={c} value={c} />)}
               </datalist>
             </div>
-            <div className="field"><label>Hall</label><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.hall')}</label><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
           </div>
-          
+
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Match Type</h3>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.matchType')}</h3>
             <div className="field">
-              <label>Match Type</label>
+              <label>{t('matchSetup.matchType')}</label>
               <select className="w-120" value={type1} onChange={e=>setType1(e.target.value)}>
-                <option value="championship">Championship</option>
-                <option value="cup">Cup</option>
-                <option value="friendly">Friendly</option>
-                <option value="tournament">Tournament</option>
-                <option value="other">Other</option>
+                <option value="championship">{t('matchSetup.championship')}</option>
+                <option value="cup">{t('matchSetup.cup')}</option>
+                <option value="friendly">{t('matchSetup.friendly')}</option>
+                <option value="tournament">{t('matchSetup.tournament')}</option>
+                <option value="other">{t('matchSetup.other')}</option>
               </select>
             </div>
             {type1 === 'other' && (
               <div className="field">
-                <label>Specify</label>
-                <input className="w-120" value={type1Other} onChange={e=>setType1Other(e.target.value)} placeholder="Other type" />
+                <label>{t('matchSetup.specify')}</label>
+                <input className="w-120" value={type1Other} onChange={e=>setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
               </div>
             )}
             <div className="field">
-              <label>Championship Type</label>
+              <label>{t('matchSetup.championshipType')}</label>
               <select className="w-140" value={championshipType} onChange={e=>setChampionshipType(e.target.value)}>
-                <option value="regional">Regional</option>
-                <option value="national">National</option>
-                <option value="international">International</option>
-                <option value="other">Other</option>
+                <option value="regional">{t('matchSetup.regional')}</option>
+                <option value="national">{t('matchSetup.national')}</option>
+                <option value="international">{t('matchSetup.international')}</option>
+                <option value="other">{t('matchSetup.other')}</option>
               </select>
             </div>
             {championshipType === 'other' && (
               <div className="field">
-                <label>Specify</label>
-                <input className="w-120" value={championshipTypeOther} onChange={e=>setChampionshipTypeOther(e.target.value)} placeholder="Other type" />
+                <label>{t('matchSetup.specify')}</label>
+                <input className="w-120" value={championshipTypeOther} onChange={e=>setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
               </div>
             )}
           </div>
-          
+
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Category & Level</h3>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.categoryLevel')}</h3>
             <div className="field">
-              <label>Match Category</label>
+              <label>{t('matchSetup.matchCategory')}</label>
               <select className="w-120" value={type2} onChange={e=>setType2(e.target.value)}>
-                <option value="men">Men</option>
-                <option value="women">Women</option>
+                <option value="men">{t('matchSetup.men')}</option>
+                <option value="women">{t('matchSetup.women')}</option>
               </select>
             </div>
             <div className="field">
-              <label>Match Level</label>
+              <label>{t('matchSetup.matchLevel')}</label>
               <select className="w-90" value={type3} onChange={e=>setType3(e.target.value)}>
-                <option value="senior">Senior</option>
+                <option value="senior">{t('matchSetup.senior')}</option>
                 <option value="U23">U23</option>
                 <option value="U21">U21</option>
                 <option value="U19">U19</option>
                 <option value="U17">U17</option>
-                <option value="other">Other</option>
+                <option value="other">{t('matchSetup.other')}</option>
               </select>
             </div>
             {type3 === 'other' && (
               <div className="field">
-                <label>Specify</label>
-                <input className="w-120" value={type3Other} onChange={e=>setType3Other(e.target.value)} placeholder="Other level" />
+                <label>{t('matchSetup.specify')}</label>
+                <input className="w-120" value={type3Other} onChange={e=>setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
               </div>
             )}
           </div>
-          
+
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Game Details</h3>
-            <div className="field"><label>Game #</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
-            <div className="field"><label>League</label><input className="w-80 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.gameDetails')}</h3>
+            <div className="field"><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
           </div>
 
           {/* Teams Card - Full width row at bottom */}
           <div className="card" style={{ gridColumn: 'span 5' }}>
-            <h2 style={{ marginTop: 0, marginBottom: 24, textAlign: 'center', fontSize: '24px', fontWeight: 700 }}>TEAMS</h2>
+            <h2 style={{ marginTop: 0, marginBottom: 24, textAlign: 'center', fontSize: '24px', fontWeight: 700 }}>{t('matchSetup.teams').toUpperCase()}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               {/* Home Team */}
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>Home Team</div>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{t('matchSetup.homeTeam')}</div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                   <div className="field" style={{ flex: 1, marginBottom: 0}}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Team name</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
                       type="text"
                       value={home}
                       onChange={e => setHome(e.target.value)}
-                      placeholder="Home team name"
+                      placeholder={t('matchSetup.homeTeamName')}
                       style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                   <div className="field" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Short</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
                       type="text"
                       value={homeShortName}
                       onChange={e => setHomeShortName(e.target.value.toUpperCase())}
                       maxLength={8}
-                      placeholder="HOME"
+                      placeholder={t('common.home').toUpperCase()}
                       style={{ width: '120px', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
@@ -2870,26 +2872,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
               {/* Away Team */}
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>Away Team</div>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{t('matchSetup.awayTeam')}</div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                   <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Team name</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
                       type="text"
                       value={away}
                       onChange={e => setAway(e.target.value)}
-                      placeholder="Away team name"
+                      placeholder={t('matchSetup.awayTeamName')}
                       style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                   <div className="field" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>Short</label>
+                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
                       type="text"
                       value={awayShortName}
                       onChange={e => setAwayShortName(e.target.value.toUpperCase())}
                       maxLength={8}
-                      placeholder="AWAY"
+                      placeholder={t('common.away').toUpperCase()}
                       style={{ width: '120px', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
@@ -2900,7 +2902,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {match && !match.test && match.gamePin && (
           <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-            <div 
+            <div
               onClick={() => {
                 const blob = new Blob([match.gamePin], { type: 'text/plain' })
                 const url = URL.createObjectURL(blob)
@@ -2912,9 +2914,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 document.body.removeChild(a)
                 URL.revokeObjectURL(url)
               }}
-              style={{ 
-                padding: '12px 24px', 
-                background: 'rgba(255, 255, 255, 0.05)', 
+              style={{
+                padding: '12px 24px',
+                background: 'rgba(255, 255, 255, 0.05)',
                 borderRadius: '8px',
                 fontFamily: 'monospace',
                 fontSize: '18px',
@@ -2928,13 +2930,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
               onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
             >
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game PIN</div>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>{t('matchSetup.gamePin')}</div>
               <div>{match.gamePin}</div>
               <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
-                Auto-generated PIN to open this match in a new session
+                {t('matchSetup.gamePinDescription')}
               </div>
               <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '6px', fontStyle: 'italic' }}>
-                Click to save as .txt
+                {t('matchSetup.clickToSave')}
               </div>
             </div>
           </div>
@@ -2943,9 +2945,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <button
             onClick={confirmMatchInfo}
             disabled={!canConfirmMatchInfo}
-            title={!canConfirmMatchInfo ? 'Fill in Home and Away team names to confirm' : ''}
+            title={!canConfirmMatchInfo ? t('matchSetup.fillTeamNames') : ''}
           >
-            {matchInfoConfirmed ? 'Save' : 'Create Match'}
+            {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
           </button>
         </div>
       </MatchSetupInfoView>
@@ -2956,14 +2958,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return (
       <MatchSetupOfficialsView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
-          <button className="secondary" onClick={() => { restoreOfficials(); setCurrentView('main') }}>← Back</button>
-          <h2 style={{ marginLeft: 20, marginRight: 20 }}>Match officials</h2>
+          <button className="secondary" onClick={() => { restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</button>
+          <h2 style={{ marginLeft: 20, marginRight: 20 }}>{t('matchSetup.matchOfficials')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
 
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <OfficialCard
-            title="1st Referee"
+            title={t('matchSetup.referee1')}
             officialKey="ref1"
             lastName={ref1Last}
             firstName={ref1First}
@@ -2978,9 +2980,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isExpanded={expandedOfficials['ref1']}
             onToggleExpanded={() => toggleOfficialExpanded('ref1')}
             onOpenDatabase={handleOpenDatabase}
+            t={t}
           />
           <OfficialCard
-            title="2nd Referee"
+            title={t('matchSetup.referee2')}
             officialKey="ref2"
             lastName={ref2Last}
             firstName={ref2First}
@@ -2995,9 +2998,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isExpanded={expandedOfficials['ref2']}
             onToggleExpanded={() => toggleOfficialExpanded('ref2')}
             onOpenDatabase={handleOpenDatabase}
+            t={t}
           />
           <OfficialCard
-            title="Scorer"
+            title={t('matchSetup.scorer')}
             officialKey="scorer"
             lastName={scorerLast}
             firstName={scorerFirst}
@@ -3012,9 +3016,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isExpanded={expandedOfficials['scorer']}
             onToggleExpanded={() => toggleOfficialExpanded('scorer')}
             onOpenDatabase={handleOpenDatabase}
+            t={t}
           />
           <OfficialCard
-            title="Assistant Scorer"
+            title={t('matchSetup.assistantScorer')}
             officialKey="asst"
             lastName={asstLast}
             firstName={asstFirst}
@@ -3027,6 +3032,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isExpanded={expandedOfficials['asst']}
             onToggleExpanded={() => toggleOfficialExpanded('asst')}
             onOpenDatabase={handleOpenDatabase}
+            t={t}
           />
           <LineJudgesCard
             lineJudge1={lineJudge1}
@@ -3039,6 +3045,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setLineJudge4={setLineJudge4}
             isExpanded={expandedOfficials['lineJudges']}
             onToggleExpanded={() => toggleOfficialExpanded('lineJudges')}
+            t={t}
           />
         </div>
         {/* Referee Selector */}
@@ -3178,7 +3185,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 status: 'queued'
               })
 
-              setNoticeModal({ message: 'Officials saved! Syncing to database...', type: 'success', syncing: true })
+              setNoticeModal({ message: t('matchSetup.officialsSaved'), type: 'success', syncing: true })
 
               // Poll to check when sync completes
               const checkSyncStatus = async () => {
@@ -3190,10 +3197,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const queued = await db.sync_queue.where('status').equals('queued').count()
                     if (queued === 0) {
                       clearInterval(interval)
-                      setNoticeModal({ message: 'Officials synced to database!', type: 'success' })
+                      setNoticeModal({ message: t('matchSetup.officialsSynced'), type: 'success' })
                     } else if (attempts >= maxAttempts) {
                       clearInterval(interval)
-                      setNoticeModal({ message: 'Officials saved locally (sync pending)', type: 'success' })
+                      setNoticeModal({ message: t('matchSetup.officialsSavedLocal'), type: 'success' })
                     }
                   } catch (err) {
                     clearInterval(interval)
@@ -3203,7 +3210,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               checkSyncStatus()
             }
             setCurrentView('main')
-          }}>Confirm</button>
+          }}>{t('common.confirm')}</button>
         </div>
       </MatchSetupOfficialsView>
     )
@@ -3213,11 +3220,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return (
       <MatchSetupHomeTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← Back</button>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{home || 'Home team'}</h2>
+          <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{home || t('matchSetup.homeTeam')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <h1 style={{ margin: 0, marginBottom: '12px' }}>Roster</h1>
+        <h1 style={{ margin: 0, marginBottom: '12px' }}>{t('roster.title')}</h1>
         {/* Upload Methods for Home Team + Player Stats */}
         <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
           {/* Left: Upload section */}
@@ -3281,7 +3288,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       transition: 'all 0.2s'
                     }}
                   >
-                    Local
+                    {t('matchSetup.local')}
                   </button>
                   <button
                     type="button"
@@ -3298,7 +3305,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       transition: 'all 0.2s'
                     }}
                   >
-                    Remote
+                    {t('matchSetup.remote')}
                   </button>
                 </div>
               </div>
@@ -3315,7 +3322,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     disabled={homePdfLoading}
                     style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
                   >
-                    {homePdfLoading ? 'Importing...' : 'Import PDF'}
+                    {homePdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
                   </button>
                 </>
               )}
@@ -3328,13 +3335,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {homeUploadMode === 'remote' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>Game #:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
                   <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
                     {match?.game_n || match?.gameNumber || gameN || 'N/A'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>Upload PIN:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
                   {match?.homeTeamUploadPin ? (
                     <>
                       <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
@@ -3372,7 +3379,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         }}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
                       >
-                        Regenerate
+                        {t('matchSetup.regenerate')}
                       </button>
                     </>
                   ) : (
@@ -3408,7 +3415,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       }}
                       style={{ padding: '4px 8px', fontSize: '11px' }}
                     >
-                      Generate PIN
+                      {t('matchSetup.generatePin')}
                     </button>
                   )}
                 </div>
@@ -3542,14 +3549,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 gap: '16px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.players')}:</span>
                   <span style={{ fontSize: '18px', fontWeight: 700, color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{homeRoster.length}</span>
                   <span style={{ fontSize: '16px', color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.5)' }}>
-                    ({homeNonLiberoCount} + {homeRoster.filter(p => p.libero).length} libero{homeRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
+                    ({homeNonLiberoCount} + {homeRoster.filter(p => p.libero).length} {homeRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: !homeCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: !homeCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.captain')}:</span>
                   {homeCaptain ? (
                     <span style={{
                       display: 'inline-flex',
@@ -3580,13 +3587,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             background: 'rgba(15, 23, 42, 0.2)',
             marginBottom: '8px',
           }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
+            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{t('matchSetup.addNewPlayer')}</div>
             <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
 
-              <input className="w-num" placeholder="#" type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
-              <input className="w-name capitalize" placeholder="Last Name" value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
-              <input className="w-name capitalize" placeholder="First Name" value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <input className="w-num" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
               <select className="w-90" value={homeLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
@@ -3597,13 +3604,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }}>
                 <option value=""></option>
                 {!homeRoster.some(p => p.libero === 'libero1') && (
-                <option value="libero1">Libero 1</option>
+                <option value="libero1">{t('matchSetup.libero1')}</option>
                 )}
                 {!homeRoster.some(p => p.libero === 'libero2') && (
-                <option value="libero2">Libero 2</option>
+                <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> Captain</label>
+              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> {t('matchSetup.captain')}</label>
               <button type="button" className="secondary" onClick={() => {
                 if (!homeLast || !homeFirst) return
                 const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
@@ -3617,7 +3624,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   return next
                 })
                 setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
-              }}>Add</button>
+              }}>{t('common.add')}</button>
             </div>
           </div>
         )}
@@ -3625,11 +3632,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* Roster Header Row */}
           <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
             <div className="w-num" style={{ textAlign: 'center' }}>#</div>
-            <div className="w-name">Last Name</div>
-            <div className="w-name">First Name</div>
-            <div className="w-dob">Date of Birth</div>
-            <div className="w-90" style={{ textAlign: 'center' }}>Role</div>
-            <div style={{ width: '70px', textAlign: 'center' }}>Captain</div>
+            <div className="w-name">{t('matchSetup.lastName')}</div>
+            <div className="w-name">{t('matchSetup.firstName')}</div>
+            <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
+            <div className="w-90" style={{ textAlign: 'center' }}>{t('matchSetup.role')}</div>
+            <div style={{ width: '70px', textAlign: 'center' }}>{t('matchSetup.captain')}</div>
             <div style={{ width: '80px' }}></div>
           </div>
           {homeRoster.map((p, i) => {
@@ -3737,8 +3744,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   setHomeRoster(updated)
                 }} 
               />
-              <select 
-                className="w-90" 
+              <select
+                className="w-90"
                 value={p.libero || ''}
                 onChange={async e => {
                   const updated = [...homeRoster]
@@ -3775,44 +3782,44 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               >
                 <option value=""></option>
                 {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                  <option value="libero1">Libero 1</option>
+                  <option value="libero1">{t('matchSetup.libero1')}</option>
                 )}
                 {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                  <option value="libero2">Libero 2</option>
+                  <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
               <label className="inline">
-                <input 
-                  type="radio" 
-                  name="homeCaptain" 
-                  checked={p.isCaptain || false} 
+                <input
+                  type="radio"
+                  name="homeCaptain"
+                  checked={p.isCaptain || false}
                   onChange={() => {
                     const updated = homeRoster.map((player, idx) => ({
                       ...player,
                       isCaptain: idx === i
                     }))
                     setHomeRoster(updated)
-                  }} 
-                /> 
-                Captain
+                  }}
+                />
+                {t('matchSetup.captain')}
               </label>
               <button
                 type="button"
                 className="secondary"
                 onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
               >
-                Remove
+                {t('common.delete')}
               </button>
             </div>
           )})}
           </div>
-        <h4>Bench — Home</h4>
+        <h4>{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
         {/* Bench Header Row */}
         <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
-          <div className="w-220">Role</div>
-          <div className="w-name">Last Name</div>
-          <div className="w-name">First Name</div>
-          <div className="w-dob">Date of Birth</div>
+          <div className="w-220">{t('matchSetup.role')}</div>
+          <div className="w-name">{t('matchSetup.lastName')}</div>
+          <div className="w-name">{t('matchSetup.firstName')}</div>
+          <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
           <div style={{ width: '70px' }}></div>
         </div>
         {sortBenchByHierarchy(benchHome).map((m, i) => {
@@ -3842,16 +3849,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                                   )
                                 })}
               </select>
-              <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
-              <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
-              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
               <button type="button" className="secondary" onClick={() => {
                 const updated = benchHome.filter((_, idx) => idx !== originalIdx)
                 setBenchHome(updated)
                 // Trigger save immediately
                 setTimeout(() => saveDraft(true), 100)
               }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                Remove
+                {t('common.delete')}
               </button>
             </div>
           )
@@ -3871,7 +3878,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }}
               style={{ padding: '4px 8px', fontSize: '12px' }}
             >
-              Add Bench Official
+              {t('matchSetup.addBenchOfficial')}
             </button>
         </div>
 
@@ -4191,7 +4198,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              setNoticeModal({ message: 'Home team saved! Syncing to database...', type: 'success', syncing: true })
+              setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
 
               // Poll to check when sync completes
               const checkSyncStatus = async () => {
@@ -4203,10 +4210,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const queued = await db.sync_queue.where('status').equals('queued').count()
                     if (queued === 0) {
                       clearInterval(interval)
-                      setNoticeModal({ message: 'Home team synced to database!', type: 'success' })
+                      setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
                     } else if (attempts >= maxAttempts) {
                       clearInterval(interval)
-                      setNoticeModal({ message: 'Home team saved locally (sync pending)', type: 'success' })
+                      setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
                     }
                   } catch (err) {
                     clearInterval(interval)
@@ -4216,7 +4223,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               checkSyncStatus()
             }
             setCurrentView('main')
-          }}>Confirm</button>
+          }}>{t('common.confirm')}</button>
         </div>
         {/* PDF Import Summary Modal - shown immediately after import */}
         {importSummaryModal && importSummaryModal.team === 'home' && (
@@ -4426,11 +4433,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return (
       <MatchSetupAwayTeamView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← Back</button>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{away || 'Away team'}</h2>
+          <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{away || t('matchSetup.awayTeam')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <h1 style={{ margin: 0, marginBottom: '12px' }}>Roster</h1>
+        <h1 style={{ margin: 0, marginBottom: '12px' }}>{t('roster.title')}</h1>
         {/* Upload Methods for Away Team + Player Stats */}
         <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
           {/* Left: Upload section */}
@@ -4494,7 +4501,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       transition: 'all 0.2s'
                     }}
                   >
-                    Local
+                    {t('matchSetup.local')}
                   </button>
                   <button
                     type="button"
@@ -4511,7 +4518,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       transition: 'all 0.2s'
                     }}
                   >
-                    Remote
+                    {t('matchSetup.remote')}
                   </button>
                 </div>
               </div>
@@ -4528,7 +4535,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     disabled={awayPdfLoading}
                     style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
                   >
-                    {awayPdfLoading ? 'Importing...' : 'Import PDF'}
+                    {awayPdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
                   </button>
                 </>
               )}
@@ -4541,13 +4548,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {awayUploadMode === 'remote' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>Game #:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
                   <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
                     {match?.game_n || match?.gameNumber || gameN || 'N/A'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>Upload PIN:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
                   {match?.awayTeamUploadPin ? (
                     <>
                       <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
@@ -4585,7 +4592,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         }}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
                       >
-                        Regenerate
+                        {t('matchSetup.regenerate')}
                       </button>
                     </>
                   ) : (
@@ -4621,7 +4628,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       }}
                       style={{ padding: '4px 8px', fontSize: '11px' }}
                     >
-                      Generate PIN
+                      {t('matchSetup.generatePin')}
                     </button>
                   )}
                 </div>
@@ -4755,14 +4762,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 gap: '16px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Players:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.players')}:</span>
                   <span style={{ fontSize: '18px', fontWeight: 700, color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{awayRoster.length}</span>
                   <span style={{ fontSize: '16px', color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.5)' }}>
-                    ({awayNonLiberoCount} + {awayRoster.filter(p => p.libero).length} libero{awayRoster.filter(p => p.libero).length !== 1 ? 's' : ''})
+                    ({awayNonLiberoCount} + {awayRoster.filter(p => p.libero).length} {awayRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: !awayCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>Captain:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: !awayCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.captain')}:</span>
                   {awayCaptain ? (
                     <span style={{
                       display: 'inline-flex',
@@ -4793,11 +4800,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             background: 'rgba(15, 23, 42, 0.2)',
             marginBottom: '8px',
           }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>Add new player:</div>
+            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{t('matchSetup.addNewPlayer')}</div>
             <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
               <input
                 className="w-num"
-                placeholder="#"
+                placeholder={t('matchSetup.numberPlaceholder')}
                 type="number"
                 inputMode="numeric"
                 min="1"
@@ -4806,9 +4813,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 onChange={e => setAwayNum(e.target.value)}
                 style={{ textAlign: 'center' }}
               />
-              <input className="w-name capitalize" placeholder="Last Name" value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
-              <input className="w-name capitalize" placeholder="First Name" value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
               <select className="w-90" value={awayLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
@@ -4819,13 +4826,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }}>
                 <option value=""></option>
                 {!awayRoster.some(p => p.libero === 'libero1') && (
-                <option value="libero1">Libero 1</option>
+                <option value="libero1">{t('matchSetup.libero1')}</option>
                 )}
                 {!awayRoster.some(p => p.libero === 'libero2') && (
-                <option value="libero2">Libero 2</option>
+                <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> Captain</label>
+              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> {t('matchSetup.captain')}</label>
               <button type="button" className="secondary" onClick={() => {
                 if (!awayLast || !awayFirst) return
                 const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
@@ -4839,7 +4846,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   return next
                 })
                 setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
-              }}>Add</button>
+              }}>{t('common.add')}</button>
             </div>
           </div>
         )}
@@ -4847,11 +4854,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* Roster Header Row */}
           <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
             <div className="w-num" style={{ textAlign: 'center' }}>#</div>
-            <div className="w-name">Last Name</div>
-            <div className="w-name">First Name</div>
-            <div className="w-dob">Date of Birth</div>
-            <div className="w-90" style={{ textAlign: 'center' }}>Role</div>
-            <div style={{ width: '70px', textAlign: 'center' }}>Captain</div>
+            <div className="w-name">{t('matchSetup.lastName')}</div>
+            <div className="w-name">{t('matchSetup.firstName')}</div>
+            <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
+            <div className="w-90" style={{ textAlign: 'center' }}>{t('matchSetup.role')}</div>
+            <div style={{ width: '70px', textAlign: 'center' }}>{t('matchSetup.captain')}</div>
             <div style={{ width: '80px' }}></div>
           </div>
           {awayRoster.map((p, i) => {
@@ -4997,44 +5004,44 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               >
                 <option value=""></option>
                 {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                  <option value="libero1">Libero 1</option>
+                  <option value="libero1">{t('matchSetup.libero1')}</option>
                 )}
                 {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                  <option value="libero2">Libero 2</option>
+                  <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
               <label className="inline">
-                <input 
-                  type="radio" 
-                  name="awayCaptain" 
-                  checked={p.isCaptain || false} 
+                <input
+                  type="radio"
+                  name="awayCaptain"
+                  checked={p.isCaptain || false}
                   onChange={() => {
                     const updated = awayRoster.map((player, idx) => ({
                       ...player,
                       isCaptain: idx === i
                     }))
                     setAwayRoster(updated)
-                  }} 
-                /> 
-                Captain
+                  }}
+                />
+                {t('matchSetup.captain')}
               </label>
               <button
                 type="button"
                 className="secondary"
                 onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
               >
-                Remove
+                {t('common.delete')}
               </button>
             </div>
           )})}
           </div>
-        <h4>Bench — Away</h4>
+        <h4>{t('matchSetup.benchOfficials')} — {t('common.away')}</h4>
         {/* Bench Header Row */}
         <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
-          <div className="w-220">Role</div>
-          <div className="w-name">Last Name</div>
-          <div className="w-name">First Name</div>
-          <div className="w-dob">Date of Birth</div>
+          <div className="w-220">{t('matchSetup.role')}</div>
+          <div className="w-name">{t('matchSetup.lastName')}</div>
+          <div className="w-name">{t('matchSetup.firstName')}</div>
+          <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
           <div style={{ width: '70px' }}></div>
         </div>
         {sortBenchByHierarchy(benchAway).map((m, i) => {
@@ -5064,16 +5071,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                                   )
                                 })}
               </select>
-              <input className="w-name capitalize" placeholder="Last Name" value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
-              <input className="w-name capitalize" placeholder="First Name" value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
-              <input className="w-dob" placeholder="Date of birth (dd/mm/yyyy)" type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
               <button type="button" className="secondary" onClick={() => {
                 const updated = benchAway.filter((_, idx) => idx !== originalIdx)
                 setBenchAway(updated)
                 // Trigger save immediately
                 setTimeout(() => saveDraft(true), 100)
               }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                Remove
+                {t('common.delete')}
               </button>
             </div>
           )
@@ -5093,7 +5100,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }}
               style={{ padding: '4px 8px', fontSize: '12px' }}
             >
-              Add Bench Official
+              {t('matchSetup.addBenchOfficial')}
             </button>
         </div>
 
@@ -5413,7 +5420,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              setNoticeModal({ message: 'Away team saved! Syncing to database...', type: 'success', syncing: true })
+              setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
 
               // Poll to check when sync completes
               const checkSyncStatus = async () => {
@@ -5425,10 +5432,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const queued = await db.sync_queue.where('status').equals('queued').count()
                     if (queued === 0) {
                       clearInterval(interval)
-                      setNoticeModal({ message: 'Away team synced to database!', type: 'success' })
+                      setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
                     } else if (attempts >= maxAttempts) {
                       clearInterval(interval)
-                      setNoticeModal({ message: 'Away team saved locally (sync pending)', type: 'success' })
+                      setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
                     }
                   } catch (err) {
                     clearInterval(interval)
@@ -5438,7 +5445,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               checkSyncStatus()
             }
             setCurrentView('main')
-          }}>Confirm</button>
+          }}>{t('common.confirm')}</button>
         </div>
         {/* PDF Import Summary Modal - shown immediately after import */}
         {importSummaryModal && importSummaryModal.team === 'away' && (
