@@ -53,26 +53,35 @@ export async function getLocalIP() {
  * Get server status from the API
  */
 export async function getServerStatus() {
-  try {
-    const protocol = window.location.protocol
-    const hostname = window.location.hostname
-    const port = window.location.port || (protocol === 'https:' ? '443' : '80')
+  const protocol = window.location.protocol
+  const hostname = window.location.hostname
+  const port = window.location.port || (protocol === 'https:' ? '443' : '80')
+  const url = `${protocol}//${hostname}:${port}/api/server/status`
 
-    const response = await fetch(`${protocol}//${hostname}:${port}/api/server/status`, {
+  console.log('[NetworkInfo DEBUG] getServerStatus() called')
+  console.log('[NetworkInfo DEBUG] URL:', url)
+
+  try {
+    const response = await fetch(url, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })
 
+    console.log('[NetworkInfo DEBUG] Response status:', response.status, response.statusText)
+
     if (!response.ok) {
+      console.log('[NetworkInfo DEBUG] Server not responding (status not ok)')
       return { running: false, error: 'Server not responding' }
     }
 
     const data = await response.json()
+    console.log('[NetworkInfo DEBUG] Server status data:', data)
     return {
       running: true,
       ...data
     }
   } catch (error) {
+    console.log('[NetworkInfo DEBUG] Error fetching server status:', error.message)
     return { running: false, error: error.message }
   }
 }

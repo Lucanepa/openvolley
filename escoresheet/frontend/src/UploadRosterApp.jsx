@@ -194,34 +194,66 @@ export default function UploadRosterApp() {
   useEffect(() => {
     const loadMatches = async () => {
       setLoadingMatches(true)
+      console.log('[Roster DEBUG] ========== LOADING MATCHES ==========')
+      console.log('[Roster DEBUG] Connection mode:', connectionMode)
+      console.log('[Roster DEBUG] Supabase client exists:', !!supabase)
+
       try {
         // Try Supabase first if in AUTO or SUPABASE mode
         const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
           (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
+        console.log('[Roster DEBUG] Will try Supabase:', useSupabase)
+
         if (useSupabase && supabase) {
-          console.log('[Roster] Loading matches from Supabase')
-          const result = await listAvailableMatchesSupabase()
-          if (result.success && result.matches && result.matches.length > 0) {
-            setAvailableMatches(result.matches)
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-            setActiveConnection('supabase')
-            setLoadingMatches(false)
-            return
+          console.log('[Roster DEBUG] Attempting Supabase connection...')
+          try {
+            const result = await listAvailableMatchesSupabase()
+            console.log('[Roster DEBUG] Supabase result:', JSON.stringify(result, null, 2))
+
+            if (result.success && result.matches && result.matches.length > 0) {
+              console.log('[Roster DEBUG] Supabase SUCCESS - found', result.matches.length, 'matches')
+              setAvailableMatches(result.matches)
+              setConnectionStatuses(prev => {
+                const newStatus = { ...prev, supabase: 'connected' }
+                console.log('[Roster DEBUG] New connection statuses:', newStatus)
+                return newStatus
+              })
+              setActiveConnection('supabase')
+              setLoadingMatches(false)
+              return
+            } else {
+              console.log('[Roster DEBUG] Supabase returned no matches or failed:', result)
+            }
+          } catch (supabaseErr) {
+            console.error('[Roster DEBUG] Supabase error:', supabaseErr)
+            console.error('[Roster DEBUG] Supabase error details:', supabaseErr.message, supabaseErr.stack)
           }
         }
 
         // Fall back to WebSocket/server
-        console.log('[Roster] Loading matches from server')
-        const result = await listAvailableMatches()
-        if (result.success && result.matches) {
-          setAvailableMatches(result.matches)
-          setActiveConnection('websocket')
+        console.log('[Roster DEBUG] Falling back to WebSocket/server...')
+        try {
+          const result = await listAvailableMatches()
+          console.log('[Roster DEBUG] WebSocket/server result:', JSON.stringify(result, null, 2))
+
+          if (result.success && result.matches) {
+            console.log('[Roster DEBUG] WebSocket SUCCESS - found', result.matches.length, 'matches')
+            setAvailableMatches(result.matches)
+            setActiveConnection('websocket')
+          } else {
+            console.log('[Roster DEBUG] WebSocket returned no matches or failed')
+          }
+        } catch (wsErr) {
+          console.error('[Roster DEBUG] WebSocket/server error:', wsErr)
+          console.error('[Roster DEBUG] WebSocket error details:', wsErr.message, wsErr.stack)
         }
       } catch (err) {
-        console.error('Error loading matches:', err)
+        console.error('[Roster DEBUG] General error loading matches:', err)
+        console.error('[Roster DEBUG] Error stack:', err.stack)
       } finally {
         setLoadingMatches(false)
+        console.log('[Roster DEBUG] ========== DONE LOADING MATCHES ==========')
       }
     }
 
@@ -236,12 +268,20 @@ export default function UploadRosterApp() {
     // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
     const isStaticDeployment = !import.meta.env.DEV && (
       window.location.hostname.includes('github.io') ||
-      window.location.hostname === 'app.openvolley.app'
+      window.location.hostname.includes('openvolley.app')
     )
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
+    console.log('[Roster DEBUG] Connection status check setup:')
+    console.log('[Roster DEBUG]   - hostname:', window.location.hostname)
+    console.log('[Roster DEBUG]   - isStaticDeployment:', isStaticDeployment)
+    console.log('[Roster DEBUG]   - hasBackendUrl:', hasBackendUrl)
+    console.log('[Roster DEBUG]   - VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL)
+    console.log('[Roster DEBUG]   - DEV mode:', import.meta.env.DEV)
+
     // For static deployments without backend, show helpful message
     if (isStaticDeployment && !hasBackendUrl) {
+      console.log('[Roster DEBUG] Static deployment without backend - skipping server/WS polling')
       setConnectionStatuses({
         server: 'not_available',
         websocket: 'not_available'
@@ -251,15 +291,24 @@ export default function UploadRosterApp() {
 
     const checkConnections = async () => {
       try {
+        console.log('[Roster DEBUG] Checking server status...')
         const serverStatus = await getServerStatus()
-        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
+        console.log('[Roster DEBUG] Server status result:', serverStatus)
 
-        setConnectionStatuses(prev => ({
-          ...prev, // Preserve supabase status
-          server: serverStatus?.running ? 'connected' : 'disconnected',
-          websocket: wsStatus
-        }))
+        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
+        console.log('[Roster DEBUG] WebSocket status for matchId', matchId, ':', wsStatus)
+
+        setConnectionStatuses(prev => {
+          const newStatus = {
+            ...prev, // Preserve supabase status
+            server: serverStatus?.running ? 'connected' : 'disconnected',
+            websocket: wsStatus
+          }
+          console.log('[Roster DEBUG] Updated connection statuses:', newStatus)
+          return newStatus
+        })
       } catch (err) {
+        console.error('[Roster DEBUG] Error checking connections:', err)
         setConnectionStatuses(prev => ({
           ...prev, // Preserve supabase status
           server: 'disconnected',
@@ -1197,8 +1246,29 @@ export default function UploadRosterApp() {
         {parsedData && (
           <div style={{ marginBottom: '32px', maxWidth: '60%', margin: '0 auto' }}>
             <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>{t('uploadRoster.parsedPlayers')}</h2>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+
+            {/* Column headers for players */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto auto auto auto auto auto auto',
+              gap: '20px',
+              alignItems: 'center',
+              padding: '8px 16px',
+              marginBottom: '8px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}>
+              <span>{t('rosterSetup.number', '#')}</span>
+              <span>{t('rosterSetup.lastName', 'Last Name')}</span>
+              <span>{t('rosterSetup.firstName', 'First Name')}</span>
+              <span>{t('rosterSetup.dob', 'DOB')}</span>
+              <span>{t('rosterSetup.libero', 'Libero')}</span>
+              <span>{t('rosterSetup.captain', 'Captain')}</span>
+              <span></span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
               {parsedData.players.map((player, index) => (
                 <div key={index} style={{
                   padding: '16px',
@@ -1213,7 +1283,7 @@ export default function UploadRosterApp() {
                     type="number"
                     value={player.number || ''}
                     onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
-                    placeholder="#"
+                    placeholder={t('rosterSetup.number', '#')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1221,7 +1291,7 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '20px',
+                      width: '40px',
                       textAlign: 'center'
                     }}
                   />
@@ -1229,7 +1299,7 @@ export default function UploadRosterApp() {
                     type="text"
                     value={player.lastName}
                     onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
-                    placeholder="Last Name"
+                    placeholder={t('rosterSetup.lastName', 'Last Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1244,7 +1314,7 @@ export default function UploadRosterApp() {
                     type="text"
                     value={player.firstName}
                     onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
-                    placeholder="First Name"
+                    placeholder={t('rosterSetup.firstName', 'First Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1282,8 +1352,8 @@ export default function UploadRosterApp() {
                     }}
                   >
                     <option value=""></option>
-                    <option value="libero1">Libero 1</option>
-                    <option value="libero2">Libero 2</option>
+                    <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
+                    <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
                   </select>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                     <input
@@ -1291,7 +1361,7 @@ export default function UploadRosterApp() {
                       checked={player.isCaptain}
                       onChange={(e) => handlePlayerChange(index, 'isCaptain', e.target.checked)}
                     />
-                    <span style={{ fontSize: '14px' }}>Captain</span>
+                    <span style={{ fontSize: '14px' }}>{t('rosterSetup.captain', 'Captain')}</span>
                   </label>
                   <button
                     type="button"
@@ -1330,8 +1400,27 @@ export default function UploadRosterApp() {
             </button>
 
             <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>{t('uploadRoster.parsedBench')}</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
 
+            {/* Column headers for bench officials */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto auto auto auto auto',
+              gap: '20px',
+              alignItems: 'center',
+              padding: '8px 16px',
+              marginBottom: '8px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}>
+              <span>{t('rosterSetup.role', 'Role')}</span>
+              <span>{t('rosterSetup.lastName', 'Last Name')}</span>
+              <span>{t('rosterSetup.firstName', 'First Name')}</span>
+              <span>{t('rosterSetup.dob', 'DOB')}</span>
+              <span></span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
               {parsedData.bench.map((official, index) => (
                 <div key={index} style={{
                   padding: '16px',
@@ -1355,17 +1444,17 @@ export default function UploadRosterApp() {
                       width: 'auto'
                     }}
                   >
-                    <option value="Coach">Coach</option>
-                    <option value="Assistant Coach 1">Assistant Coach 1</option>
-                    <option value="Assistant Coach 2">Assistant Coach 2</option>
-                    <option value="Physiotherapist">Physiotherapist</option>
-                    <option value="Medic">Medic</option>
+                    <option value="Coach">{t('benchRoles.coach', 'Coach')}</option>
+                    <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1', 'Assistant Coach 1')}</option>
+                    <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2', 'Assistant Coach 2')}</option>
+                    <option value="Physiotherapist">{t('benchRoles.physiotherapist', 'Physiotherapist')}</option>
+                    <option value="Medic">{t('benchRoles.medic', 'Medic')}</option>
                   </select>
                   <input
                     type="text"
                     value={official.lastName}
                     onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
-                    placeholder="Last Name"
+                    placeholder={t('rosterSetup.lastName', 'Last Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1380,7 +1469,7 @@ export default function UploadRosterApp() {
                     type="text"
                     value={official.firstName}
                     onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
-                    placeholder="First Name"
+                    placeholder={t('rosterSetup.firstName', 'First Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',

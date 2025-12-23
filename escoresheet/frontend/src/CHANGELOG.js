@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.15.5',
+    date: '23.12.25',
+    changes: [
+      'Enhance UploadRosterApp and ConnectionStatus with improved debugging and UI updates'
+    ]
+  },
+  {
     version: '0.15.4',
     date: '23.12.25',
     changes: [
