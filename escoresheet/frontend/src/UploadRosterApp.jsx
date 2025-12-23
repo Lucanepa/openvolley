@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
-import { getServerStatus } from './utils/networkInfo'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -278,35 +277,72 @@ export default function UploadRosterApp() {
     console.log('[Roster DEBUG]   - hasBackendUrl:', hasBackendUrl)
     console.log('[Roster DEBUG]   - VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL)
     console.log('[Roster DEBUG]   - DEV mode:', import.meta.env.DEV)
+    console.log('[Roster DEBUG]   - connectionMode:', connectionMode)
 
-    // For static deployments without backend, show helpful message
+    // For static deployments without a backend URL, server/WS are not available
+    // The Upload Roster app uses Supabase for cloud, but can use WebSocket if backend is configured
     if (isStaticDeployment && !hasBackendUrl) {
-      console.log('[Roster DEBUG] Static deployment without backend - skipping server/WS polling')
-      setConnectionStatuses({
+      console.log('[Roster DEBUG] Static deployment without backend - server/WS not available')
+      setConnectionStatuses(prev => ({
+        ...prev, // Preserve supabase status
         server: 'not_available',
         websocket: 'not_available'
+      }))
+      setConnectionDebugInfo({
+        server: {
+          status: 'not_available',
+          message: 'Server/WebSocket requires backend configuration',
+          details: 'This deployment uses Supabase for data sync. Server/WebSocket connections are only available with a configured backend URL or on local network.'
+        }
       })
       return // Don't start polling
     }
 
+    // For static deployments WITH backend URL or local dev, check connection based on mode
+    // In Supabase mode, we don't need server/WS polling - connection is already tracked in loadMatches
+    if (connectionMode === CONNECTION_MODES.SUPABASE) {
+      console.log('[Roster DEBUG] Supabase mode - server/WS not needed')
+      setConnectionStatuses(prev => ({
+        ...prev,
+        server: 'not_applicable',
+        websocket: 'not_applicable'
+      }))
+      return
+    }
+
+    // For AUTO or WEBSOCKET mode, check server status using listAvailableMatches
+    // This is more reliable than getServerStatus() as it tests actual API functionality
     const checkConnections = async () => {
       try {
-        console.log('[Roster DEBUG] Checking server status...')
-        const serverStatus = await getServerStatus()
-        console.log('[Roster DEBUG] Server status result:', serverStatus)
+        console.log('[Roster DEBUG] Checking server status via listAvailableMatches...')
+        const result = await listAvailableMatches()
+        console.log('[Roster DEBUG] listAvailableMatches result:', result?.success)
 
+        const serverConnected = result?.success
         const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
         console.log('[Roster DEBUG] WebSocket status for matchId', matchId, ':', wsStatus)
 
         setConnectionStatuses(prev => {
           const newStatus = {
             ...prev, // Preserve supabase status
-            server: serverStatus?.running ? 'connected' : 'disconnected',
+            server: serverConnected ? 'connected' : 'disconnected',
             websocket: wsStatus
           }
           console.log('[Roster DEBUG] Updated connection statuses:', newStatus)
           return newStatus
         })
+
+        // Build debug info for disconnected services
+        if (!serverConnected) {
+          setConnectionDebugInfo(prev => ({
+            ...prev,
+            server: {
+              status: 'disconnected',
+              message: 'Cannot reach the server API',
+              details: 'Make sure the backend server is running and accessible.'
+            }
+          }))
+        }
       } catch (err) {
         console.error('[Roster DEBUG] Error checking connections:', err)
         setConnectionStatuses(prev => ({
@@ -314,14 +350,22 @@ export default function UploadRosterApp() {
           server: 'disconnected',
           websocket: 'not_applicable'
         }))
+        setConnectionDebugInfo(prev => ({
+          ...prev,
+          server: {
+            status: 'error',
+            message: 'Failed to check server status',
+            details: err.message || 'Network error occurred while checking connection.'
+          }
+        }))
       }
     }
 
     checkConnections()
-    const interval = setInterval(checkConnections, 5000)
+    const interval = setInterval(checkConnections, 10000) // Check every 10s (reduced from 5s)
 
     return () => clearInterval(interval)
-  }, [matchId])
+  }, [matchId, connectionMode])
 
   // Handle match selection
   const handleMatchSelect = async (match) => {
@@ -1250,11 +1294,11 @@ export default function UploadRosterApp() {
             {/* Column headers for players */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'auto auto auto auto auto auto auto',
-              gap: '20px',
+              gridTemplateColumns: '60px 1fr 1fr 140px 100px 100px 70px',
+              gap: '12px',
               alignItems: 'center',
               padding: '8px 16px',
-              marginBottom: '8px',
+              marginBottom: '4px',
               fontSize: '12px',
               fontWeight: 600,
               color: 'rgba(255, 255, 255, 0.6)'
@@ -1271,19 +1315,19 @@ export default function UploadRosterApp() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
               {parsedData.players.map((player, index) => (
                 <div key={index} style={{
-                  padding: '16px',
+                  padding: '12px 16px',
                   background: 'rgba(255, 255, 255, 0.05)',
                   borderRadius: '8px',
                   display: 'grid',
-                  gridTemplateColumns: 'auto auto auto auto auto auto auto',
-                  gap: '20px',
+                  gridTemplateColumns: '60px 1fr 1fr 140px 100px 100px 70px',
+                  gap: '12px',
                   alignItems: 'center'
                 }}>
                   <input
                     type="number"
                     value={player.number || ''}
                     onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
-                    placeholder={t('rosterSetup.number', '#')}
+                    placeholder="#"
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1291,7 +1335,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: '40px',
+                      width: '100%',
+                      boxSizing: 'border-box',
                       textAlign: 'center'
                     }}
                   />
@@ -1307,7 +1352,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   />
                   <input
@@ -1322,7 +1368,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   />
                   <input
@@ -1336,7 +1383,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   />
                   <select
@@ -1345,35 +1393,39 @@ export default function UploadRosterApp() {
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',  // much darker background
+                      background: 'rgba(26, 26, 46, 0.95)',
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
-                      color: 'var(--text)'
+                      color: 'var(--text)',
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   >
                     <option value=""></option>
                     <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
                     <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
                   </select>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <input
                       type="radio"
                       checked={player.isCaptain}
                       onChange={(e) => handlePlayerChange(index, 'isCaptain', e.target.checked)}
+                      style={{ width: '18px', height: '18px' }}
                     />
-                    <span style={{ fontSize: '14px' }}>{t('rosterSetup.captain', 'Captain')}</span>
                   </label>
                   <button
                     type="button"
                     onClick={() => handleDeletePlayer(index)}
                     style={{
-                      padding: '6px 12px',
+                      padding: '6px 10px',
                       fontSize: '12px',
                       background: '#ef4444',
                       color: '#fff',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   >
                     {t('common.delete')}
@@ -1404,11 +1456,11 @@ export default function UploadRosterApp() {
             {/* Column headers for bench officials */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'auto auto auto auto auto',
-              gap: '20px',
+              gridTemplateColumns: '180px 1fr 1fr 140px 70px',
+              gap: '12px',
               alignItems: 'center',
               padding: '8px 16px',
-              marginBottom: '8px',
+              marginBottom: '4px',
               fontSize: '12px',
               fontWeight: 600,
               color: 'rgba(255, 255, 255, 0.6)'
@@ -1420,15 +1472,15 @@ export default function UploadRosterApp() {
               <span></span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
               {parsedData.bench.map((official, index) => (
                 <div key={index} style={{
-                  padding: '16px',
+                  padding: '12px 16px',
                   background: 'rgba(255, 255, 255, 0.05)',
                   borderRadius: '8px',
                   display: 'grid',
-                  gridTemplateColumns: 'auto auto auto auto auto',
-                  gap: '20px',
+                  gridTemplateColumns: '180px 1fr 1fr 140px 70px',
+                  gap: '12px',
                   alignItems: 'center'
                 }}>
                   <select
@@ -1441,7 +1493,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   >
                     <option value="Coach">{t('benchRoles.coach', 'Coach')}</option>
@@ -1462,7 +1515,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   />
                   <input
@@ -1477,7 +1531,8 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   />
                   <input
@@ -1491,20 +1546,23 @@ export default function UploadRosterApp() {
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '4px',
                       color: 'var(--text)',
-                      width: 'auto'
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   />
                   <button
                     type="button"
                     onClick={() => handleDeleteBench(index)}
                     style={{
-                      padding: '6px 12px',
+                      padding: '6px 10px',
                       fontSize: '12px',
                       background: '#ef4444',
                       color: '#fff',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      width: '100%',
+                      boxSizing: 'border-box'
                     }}
                   >
                     {t('common.delete')}

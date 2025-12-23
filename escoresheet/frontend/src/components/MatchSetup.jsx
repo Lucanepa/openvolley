@@ -347,7 +347,7 @@ function formatDobForSync(dob) {
   return null // Unknown format, don't sync
 }
 
-export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const { t } = useTranslation()
   const [home, setHome] = useState('')
   // Match created popup state
@@ -6081,11 +6081,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               Options
             </button>
           )}
-          {onGoHome && (
-            <button className="secondary" onClick={onGoHome}>
-              {t('common.home')}
-            </button>
-          )}
         </div>
       </div>
       <div className="setup-cards-grid setup-section">
@@ -6620,11 +6615,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                 // Go to coin toss
                 onOpenCoinToss()
               } else {
-                // Create new match or update existing
-                await createMatch()
+                // Match has data already - just go to coin toss (don't create new match)
+                // The match already exists with data, so just navigate
+                onOpenCoinToss()
               }
             } else {
-              // Create new match
+              // No match exists - create new match
               await createMatch()
             }
           }}>Coin toss</button>

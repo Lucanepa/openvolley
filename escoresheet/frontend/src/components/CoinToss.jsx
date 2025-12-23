@@ -95,7 +95,7 @@ const sortBenchByHierarchy = (bench) => {
 
 const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
-export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
+export default function CoinToss({ matchId, onConfirm, onBack }) {
   const { t } = useTranslation()
 
   // Check if compact mode
@@ -929,12 +929,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isCompact ? 16 : 24 }}>
         <button className="secondary" onClick={onBack}>← {t('common.back')}</button>
         <h1 style={{ margin: 0, fontSize: '50px', fontWeight: 700, textAlign: 'center' }}>{t('coinToss.title')}</h1>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          
-          {onGoHome && (
-            <button className="secondary" onClick={onGoHome}>{t('common.home')}</button>
-          )}
-        </div>
+        <div style={{ width: '80px' }}></div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, marginBottom: sizes.marginBottom, alignItems: 'start' }}>
