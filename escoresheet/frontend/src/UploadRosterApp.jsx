@@ -77,6 +77,7 @@ export default function UploadRosterApp() {
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
+  const [manuallyValidated, setManuallyValidated] = useState(false) // For when no PIN is required
 
   // Signature states
   const [coachSignature, setCoachSignature] = useState(null)
@@ -323,6 +324,7 @@ export default function UploadRosterApp() {
     setAwayTeam(null)
     setValidationError('')
     setMatchStatusCheck(null)
+    setManuallyValidated(false)
   }
 
   // Check if match exists and is in setup (not started or finished)
@@ -438,25 +440,29 @@ export default function UploadRosterApp() {
 
   // Auto-validate PIN when it changes
   useEffect(() => {
-    if (!match || !uploadPin || uploadPin.length !== 6) {
-      if (uploadPin && uploadPin.length === 6 && match) {
-        const correctPin = team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin
-        if (correctPin && uploadPin !== correctPin) {
-          setValidationError('Invalid upload PIN')
-        } else if (correctPin && uploadPin === correctPin) {
-          setValidationError('')
-        }
-      } else {
-        setValidationError('')
-      }
+    if (!match) {
+      setValidationError('')
       return
     }
 
     const correctPin = team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin
-    if (correctPin && uploadPin === correctPin) {
+    const pinIsRequired = correctPin != null && correctPin !== ''
+
+    // If no PIN is required, clear any errors
+    if (!pinIsRequired) {
       setValidationError('')
-    } else if (correctPin) {
-      setValidationError('Invalid upload PIN')
+      return
+    }
+
+    // PIN is required - validate it
+    if (uploadPin && uploadPin.length === 6) {
+      if (uploadPin === correctPin) {
+        setValidationError('')
+      } else {
+        setValidationError('Invalid upload PIN')
+      }
+    } else {
+      setValidationError('')
     }
   }, [uploadPin, match, team])
 
@@ -482,14 +488,18 @@ export default function UploadRosterApp() {
       setMatchId(foundMatch.id)
 
       const correctPin = team === 'home' ? foundMatch.homeTeamUploadPin : foundMatch.awayTeamUploadPin
-      if (!uploadPin.trim()) {
-        setValidationError('Please enter an upload PIN')
-        return false
-      }
+      const pinIsRequired = correctPin != null && correctPin !== ''
 
-      if (!correctPin || uploadPin.trim() !== correctPin) {
-        setValidationError('Invalid upload PIN')
-        return false
+      if (pinIsRequired) {
+        if (!uploadPin.trim()) {
+          setValidationError('Please enter an upload PIN')
+          return false
+        }
+
+        if (uploadPin.trim() !== correctPin) {
+          setValidationError('Invalid upload PIN')
+          return false
+        }
       }
 
       return true
@@ -727,13 +737,18 @@ export default function UploadRosterApp() {
     setParsedData(null)
     setMatchStatusCheck(null)
     setSelectedMatch(null)
+    setManuallyValidated(false)
 
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
   }
 
-  const isValid = match && matchId && uploadPin && (team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin) === uploadPin
+  // Check if PIN is required (only if a PIN is set in the match)
+  const teamUploadPin = team === 'home' ? match?.homeTeamUploadPin : match?.awayTeamUploadPin
+  const isPinRequired = teamUploadPin != null && teamUploadPin !== ''
+  // When PIN is required, validate with PIN. When no PIN required, require manual validation click.
+  const isValid = match && matchId && (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
 
   // Handle connection mode change
   const handleConnectionModeChange = useCallback((mode) => {
@@ -976,6 +991,7 @@ export default function UploadRosterApp() {
                         setTeam('home')
                         setValidationError('')
                         setUploadPin('')
+                        setManuallyValidated(false)
                       }}
                       style={{
                         flex: 1,
@@ -998,6 +1014,7 @@ export default function UploadRosterApp() {
                         setTeam('away')
                         setValidationError('')
                         setUploadPin('')
+                        setManuallyValidated(false)
                       }}
                       style={{
                         flex: 1,
@@ -1017,43 +1034,74 @@ export default function UploadRosterApp() {
                   </div>
                 </div>
 
-                <div style={{ width: 320, maxWidth: '100%' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                    {t('uploadRoster.uploadPin')}
-                  </label>
-                  <input
-                    type="text"
-                    value={uploadPin}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 6)
-                      setUploadPin(val)
-                    }}
-                    placeholder={t('uploadRoster.enterPin')}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      fontSize: '18px',
-                      fontFamily: 'monospace',
-                      textAlign: 'center',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: isValid
-                        ? '1px solid #10b981'
-                        : validationError && uploadPin.length === 6
-                        ? '1px solid #ef4444'
-                        : '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'var(--text)'
-                    }}
-                    maxLength={6}
-                  />
-                  {isValid && (
-                    <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
-                      ✓ {t('uploadRoster.validate')}
-                    </p>
-                  )}
-                </div>
+                {isPinRequired ? (
+                  <div style={{ width: 320, maxWidth: '100%' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                      {t('uploadRoster.uploadPin')}
+                    </label>
+                    <input
+                      type="text"
+                      value={uploadPin}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6)
+                        setUploadPin(val)
+                      }}
+                      placeholder={t('uploadRoster.enterPin')}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        fontSize: '18px',
+                        fontFamily: 'monospace',
+                        textAlign: 'center',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: isValid
+                          ? '1px solid #10b981'
+                          : validationError && uploadPin.length === 6
+                          ? '1px solid #ef4444'
+                          : '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '6px',
+                        color: 'var(--text)'
+                      }}
+                      maxLength={6}
+                    />
+                    {isValid && (
+                      <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
+                        ✓ {t('uploadRoster.validate')}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ width: 320, maxWidth: '100%', textAlign: 'center' }}>
+                    {manuallyValidated ? (
+                      <p style={{ color: '#10b981', fontSize: '14px', margin: 0 }}>
+                        ✓ {t('uploadRoster.validated', 'Validated')}
+                      </p>
+                    ) : (
+                      <>
+                        <p style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '13px', margin: '0 0 12px 0' }}>
+                          {t('uploadRoster.noPinRequired', 'No PIN required')}
+                        </p>
+                        <button
+                          onClick={() => setManuallyValidated(true)}
+                          style={{
+                            padding: '10px 24px',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            background: '#10b981',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('uploadRoster.validate', 'Validate')}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
 
-                {validationError && uploadPin.length === 6 && (
+                {validationError && uploadPin.length === 6 && isPinRequired && (
                   <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', width: 320, maxWidth: '100%' }}>
                     {validationError}
                   </p>
