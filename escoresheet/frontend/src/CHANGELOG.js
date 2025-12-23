@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.22',
+    date: '23.12.25',
+    changes: [
+      'Implement roster synchronization with Supabase for scorer approval'
+    ]
+  },
+  {
     version: '0.14.21',
     date: '23.12.25',
     changes: [
