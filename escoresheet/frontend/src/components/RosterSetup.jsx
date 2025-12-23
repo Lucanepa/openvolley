@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getMatchData, subscribeToMatchData, listAvailableMatchesSupabase } from '../utils/serverDataSync'
+import { getMatchData } from '../utils/serverDataSync'
+import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
@@ -31,7 +32,50 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
   const pendingRosterFieldSnake = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
   const [teamId, setTeamId] = useState(null)
 
-  // Load match data from server
+  // Helper to update state from match data result
+  const updateFromMatchData = useCallback((result) => {
+    if (!result || !result.success) return
+
+    setMatch(result.match)
+
+    const loadedTeamId = team === 'home' ? result.match.homeTeamId : result.match.awayTeamId
+    setTeamId(loadedTeamId)
+
+    const teamPlayers = team === 'home'
+      ? (result.homePlayers || [])
+      : (result.awayPlayers || [])
+
+    setPlayers(teamPlayers
+      .sort((a, b) => (a.number || 0) - (b.number || 0))
+      .map(p => ({
+        id: p.id,
+        number: p.number,
+        firstName: p.firstName || '',
+        lastName: p.lastName || p.name || '',
+        dob: p.dob || '',
+        libero: p.libero || '',
+        isCaptain: p.isCaptain || false
+      })))
+
+    const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
+    if (result.match[benchKey]) {
+      setBenchOfficials(result.match[benchKey].map(b => ({
+        role: b.role || '',
+        firstName: b.firstName || b.first_name || '',
+        lastName: b.lastName || b.last_name || '',
+        dob: b.dob || b.date_of_birth || b.dateOfBirth || ''
+      })))
+    }
+  }, [team])
+
+  // Use Supabase Realtime as primary connection, WebSocket as fallback
+  const { isConnected, activeConnection } = useRealtimeConnection({
+    matchId: matchId !== -1 ? matchId : null, // Disable for test mode
+    onData: updateFromMatchData,
+    enabled: matchId && matchId !== -1
+  })
+
+  // Load initial match data and handle test mode
   useEffect(() => {
     if (!matchId) {
       setMatch(null)
@@ -61,41 +105,11 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       return
     }
 
+    // Fetch initial data
     const fetchData = async () => {
       try {
         const result = await getMatchData(matchId)
-        if (result.success) {
-          setMatch(result.match)
-
-          // Load players and bench officials
-          const loadedTeamId = team === 'home' ? result.match.homeTeamId : result.match.awayTeamId
-          setTeamId(loadedTeamId)
-          const teamPlayers = team === 'home' 
-            ? (result.homePlayers || [])
-            : (result.awayPlayers || [])
-          
-          setPlayers(teamPlayers
-            .sort((a, b) => (a.number || 0) - (b.number || 0))
-            .map(p => ({
-              id: p.id,
-              number: p.number,
-              firstName: p.firstName || '',
-              lastName: p.lastName || p.name || '',
-              dob: p.dob || '',
-              libero: p.libero || '',
-              isCaptain: p.isCaptain || false
-            })))
-
-          const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
-          if (result.match[benchKey]) {
-            setBenchOfficials(result.match[benchKey].map(b => ({
-              role: b.role || '',
-              firstName: b.firstName || b.first_name || '',
-              lastName: b.lastName || b.last_name || '',
-              dob: b.dob || b.date_of_birth || b.dateOfBirth || ''
-            })))
-          }
-        }
+        updateFromMatchData(result)
       } catch (err) {
         console.error('Error loading roster:', err)
         setError('Failed to load roster. Make sure the main scoresheet is running.')
@@ -103,42 +117,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
     }
 
     fetchData()
-
-    // Subscribe to updates
-    const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
-      setMatch(updatedData.match)
-      
-      const teamPlayers = team === 'home' 
-        ? (updatedData.homePlayers || [])
-        : (updatedData.awayPlayers || [])
-      
-      setPlayers(teamPlayers
-        .sort((a, b) => (a.number || 0) - (b.number || 0))
-        .map(p => ({
-          id: p.id,
-          number: p.number,
-          firstName: p.firstName || '',
-          lastName: p.lastName || p.name || '',
-          dob: p.dob || '',
-          libero: p.libero || '',
-          isCaptain: p.isCaptain || false
-        })))
-
-      const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
-      if (updatedData.match[benchKey]) {
-        setBenchOfficials(updatedData.match[benchKey].map(b => ({
-          role: b.role || '',
-          firstName: b.firstName || b.first_name || '',
-          lastName: b.lastName || b.last_name || '',
-          dob: b.dob || b.date_of_birth || b.dateOfBirth || ''
-        })))
-      }
-    })
-
-    return () => {
-      unsubscribe()
-    }
-  }, [matchId, team])
+  }, [matchId, updateFromMatchData])
 
   // Check for pending roster from match data or Supabase
   useEffect(() => {

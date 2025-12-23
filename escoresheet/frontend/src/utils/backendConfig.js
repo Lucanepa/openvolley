@@ -31,11 +31,27 @@ export function isTabletOrMobile() {
   return !isDesktopPlatform()
 }
 
+/**
+ * Detect if running on a static deployment (*.openvolley.app)
+ * Static deployments have no backend server, so they need to use cloud relay
+ */
+export function isStaticDeployment() {
+  if (typeof window === 'undefined') return false
+  return window.location.hostname.endsWith('.openvolley.app')
+}
+
 // Get backend URL from environment or use current host
 export function getBackendUrl() {
   // If VITE_BACKEND_URL is set, use it (production with separate backend)
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL
+  }
+
+  // On static deployments (*.openvolley.app), always use cloud relay
+  // These deployments have no backend server
+  if (isStaticDeployment()) {
+    console.log('[BackendConfig] Static deployment detected, using cloud relay:', CLOUD_RELAY_URL)
+    return CLOUD_RELAY_URL
   }
 
   // On tablets/mobile in production, use cloud relay automatically
@@ -66,6 +82,13 @@ export function getWebSocketUrl() {
   // If backend URL is set, use it for WebSocket
   if (import.meta.env.VITE_BACKEND_URL) {
     const url = new URL(import.meta.env.VITE_BACKEND_URL)
+    const protocol = url.protocol === 'https:' ? 'wss' : 'ws'
+    return `${protocol}://${url.host}`
+  }
+
+  // On static deployments, use cloud relay WebSocket
+  if (isStaticDeployment()) {
+    const url = new URL(CLOUD_RELAY_URL)
     const protocol = url.protocol === 'https:' ? 'wss' : 'ws'
     return `${protocol}://${url.host}`
   }

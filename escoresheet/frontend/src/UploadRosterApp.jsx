@@ -265,9 +265,10 @@ export default function UploadRosterApp() {
   // Check connection status periodically
   useEffect(() => {
     // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    // Static deployments don't have a backend server - they rely on Supabase only
     const isStaticDeployment = !import.meta.env.DEV && (
       window.location.hostname.includes('github.io') ||
-      window.location.hostname.includes('openvolley.app')
+      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
     )
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 

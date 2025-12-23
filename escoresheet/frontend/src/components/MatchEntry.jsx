@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { getMatchData, subscribeToMatchData, updateMatchData } from '../utils/serverDataSync'
+import { getMatchData, updateMatchData } from '../utils/serverDataSync'
+import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
 import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
@@ -65,6 +66,38 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Load match data from server
   const [data, setData] = useState(null)
 
+  // Helper to update state from match data result
+  const updateFromMatchData = useCallback((result) => {
+    if (!result || !result.success) return
+
+    const allSets = (result.sets || []).sort((a, b) => a.index - b.index)
+    const currentSet = allSets.find(s => !s.finished) || null
+    const events = (result.events || []).sort((a, b) => {
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return aTime - bTime
+    })
+
+    setData({
+      match: result.match,
+      homeTeam: result.homeTeam,
+      awayTeam: result.awayTeam,
+      set: currentSet,
+      allSets,
+      events,
+      homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+      awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0))
+    })
+  }, [])
+
+  // Use Supabase Realtime as primary connection, WebSocket as fallback
+  useRealtimeConnection({
+    matchId: matchId !== -1 ? matchId : null, // Disable for test mode
+    onData: updateFromMatchData,
+    enabled: matchId && matchId !== -1
+  })
+
+  // Load initial data and handle test mode
   useEffect(() => {
     if (!matchId) {
       setData(null)
@@ -111,59 +144,14 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     const fetchData = async () => {
       try {
         const result = await getMatchData(matchId)
-        if (result.success) {
-          const allSets = (result.sets || []).sort((a, b) => a.index - b.index)
-          const currentSet = allSets.find(s => !s.finished) || null
-          const events = (result.events || []).sort((a, b) => {
-            const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-            const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-            return aTime - bTime
-          })
-          
-          setData({
-            match: result.match,
-            homeTeam: result.homeTeam,
-            awayTeam: result.awayTeam,
-            set: currentSet,
-            allSets,
-            events,
-            homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
-            awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0))
-          })
-        }
+        updateFromMatchData(result)
       } catch (err) {
         console.error('Error fetching match data:', err)
       }
     }
 
     fetchData()
-
-    // Subscribe to match data updates
-    const unsubscribe = subscribeToMatchData(matchId, (updatedData) => {
-      const allSets = (updatedData.sets || []).sort((a, b) => a.index - b.index)
-      const currentSet = allSets.find(s => !s.finished) || null
-      const events = (updatedData.events || []).sort((a, b) => {
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return aTime - bTime
-      })
-      
-      setData({
-        match: updatedData.match,
-        homeTeam: updatedData.homeTeam,
-        awayTeam: updatedData.awayTeam,
-        set: currentSet,
-        allSets,
-        events,
-        homePlayers: (updatedData.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
-        awayPlayers: (updatedData.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0))
-      })
-    })
-
-    return () => {
-      unsubscribe()
-    }
-  }, [matchId])
+  }, [matchId, updateFromMatchData])
 
   // Determine which side the team is on (same logic as Scoreboard)
   const teamSide = useMemo(() => {
