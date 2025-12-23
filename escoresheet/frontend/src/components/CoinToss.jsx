@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
+import { supabase } from '../lib/supabaseClient'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import MenuList from './MenuList'
@@ -177,6 +178,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   const [addPlayerModal, setAddPlayerModal] = useState(null)
   const [deletePlayerModal, setDeletePlayerModal] = useState(null)
   const [noticeModal, setNoticeModal] = useState(null)
+  const [initModal, setInitModal] = useState(null) // { status: 'syncing' | 'verifying' | 'success' | 'error', message: string }
   const [openSignature, setOpenSignature] = useState(null)
   const [birthdateConfirmModal, setBirthdateConfirmModal] = useState(null) // { suspiciousDates: [], onConfirm: fn }
   const [rosterModalSignature, setRosterModalSignature] = useState(null) // 'coach' | 'captain' | null - for signing within roster modal
@@ -625,7 +627,13 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     await db.matches.update(matchId, { status: 'live' })
     console.log('[CoinToss] Match status updated to live')
 
-    // Sync match status to Supabase (including referee connection info)
+    // Get officials from match to sync to Supabase
+    const ref1 = match?.officials?.find(o => o.role === '1st referee')
+    const ref2 = match?.officials?.find(o => o.role === '2nd referee')
+    const scorer = match?.officials?.find(o => o.role === 'scorer')
+    const asstScorer = match?.officials?.find(o => o.role === 'assistant scorer')
+
+    // Sync match status to Supabase (including officials, signatures, and referee connection info)
     await db.sync_queue.add({
       resource: 'match',
       action: 'update',
@@ -633,7 +641,17 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         id: String(matchId),
         status: 'live',
         referee_pin: match?.refereePin || null,
-        referee_connection_enabled: match?.refereeConnectionEnabled === true
+        referee_connection_enabled: match?.refereeConnectionEnabled === true,
+        // Officials (using seed_key format for foreign key resolution)
+        referee_1: (ref1?.firstName && ref1?.lastName) ? `${ref1.firstName.toLowerCase()}_${ref1.lastName.toLowerCase()}` : null,
+        referee_2: (ref2?.firstName && ref2?.lastName) ? `${ref2.firstName.toLowerCase()}_${ref2.lastName.toLowerCase()}` : null,
+        scorer: (scorer?.firstName && scorer?.lastName) ? `${scorer.firstName.toLowerCase()}_${scorer.lastName.toLowerCase()}` : null,
+        assistant_scorer: (asstScorer?.firstName && asstScorer?.lastName) ? `${asstScorer.firstName.toLowerCase()}_${asstScorer.lastName.toLowerCase()}` : null,
+        // Signatures (only for official matches)
+        home_coach_signature: !match?.test ? homeCoachSignature : null,
+        home_captain_signature: !match?.test ? homeCaptainSignature : null,
+        away_coach_signature: !match?.test ? awayCoachSignature : null,
+        away_captain_signature: !match?.test ? awayCaptainSignature : null
       },
       ts: new Date().toISOString(),
       status: 'queued'
@@ -655,9 +673,85 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       awayCaptain: awayCaptainSignature
     })
 
-    // Small delay to ensure DB commits
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // Show initialization modal and wait for sync
+    setInitModal({ status: 'syncing', message: t('coinToss.syncingMatch', 'Syncing match data...') })
 
+    // Wait for sync queue to process (poll for completion)
+    const maxAttempts = 30 // 15 seconds max
+    let attempts = 0
+    let syncComplete = false
+
+    while (attempts < maxAttempts && !syncComplete) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+      const queuedCount = await db.sync_queue.where('status').equals('queued').count()
+      if (queuedCount === 0) {
+        syncComplete = true
+      }
+      attempts++
+    }
+
+    if (!syncComplete) {
+      console.warn('[CoinToss] Sync queue still has items after timeout, proceeding anyway')
+    }
+
+    // Verify status is 'live' in Supabase (only for official matches with Supabase configured)
+    // This is non-blocking - if offline or error, we still proceed (local status is already 'live')
+    let verificationSkipped = false
+
+    if (!match?.test && supabase) {
+      setInitModal({ status: 'verifying', message: t('coinToss.verifyingStatus', 'Verifying match status...') })
+
+      try {
+        // Get the match's external_id (seed_key) to look up in Supabase
+        const localMatch = await db.matches.get(matchId)
+        const seedKey = localMatch?.seedKey
+
+        if (seedKey) {
+          const { data: supabaseMatch, error } = await supabase
+            .from('matches')
+            .select('status')
+            .eq('seed_key', seedKey)
+            .single()
+
+          if (error) {
+            // Network error or match not found - proceed anyway (offline mode)
+            console.warn('[CoinToss] Could not verify match status in Supabase (offline?):', error.message)
+            verificationSkipped = true
+          } else if (supabaseMatch?.status !== 'live') {
+            // Match exists but status is not 'live' - this is a real problem
+            console.error('[CoinToss] Match status not live in Supabase:', supabaseMatch?.status)
+            setInitModal({
+              status: 'error',
+              message: t('coinToss.statusNotLive', 'Match status is not "live" in database. Current status: {{status}}', { status: supabaseMatch?.status || 'unknown' })
+            })
+            return
+          } else {
+            console.log('[CoinToss] Match status verified as live in Supabase')
+          }
+        } else {
+          // No seed key - skip verification
+          verificationSkipped = true
+        }
+      } catch (err) {
+        // Network error - proceed anyway (offline mode)
+        console.warn('[CoinToss] Error verifying match status (offline?):', err.message)
+        verificationSkipped = true
+      }
+    } else {
+      verificationSkipped = true
+    }
+
+    if (verificationSkipped) {
+      console.log('[CoinToss] Verification skipped (offline or no Supabase), proceeding with local status')
+    }
+
+    // Success!
+    setInitModal({ status: 'success', message: t('coinToss.matchInitialized', 'Match initialized!') })
+
+    // Short delay to show success message
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    setInitModal(null)
     console.log('[CoinToss] Coin toss complete, navigating to scoreboard')
     // Navigate to scoreboard
     onConfirm(matchId)
@@ -1735,6 +1829,97 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           </div>
         </Modal>
       )}
+
+      {/* Initialization Modal */}
+      {initModal && (
+        <Modal
+          title={initModal.status === 'success' ? t('coinToss.initialized', 'Match Initialized') :
+                 initModal.status === 'error' ? t('coinToss.initError', 'Initialization Error') :
+                 t('coinToss.initializing', 'Initializing Match')}
+          open={true}
+          onClose={initModal.status === 'error' ? () => setInitModal(null) : undefined}
+          width={450}
+          hideCloseButton={initModal.status !== 'error'}
+        >
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            {/* Status Icon */}
+            <div style={{ marginBottom: '20px' }}>
+              {initModal.status === 'syncing' && (
+                <div style={{
+                  width: '60px', height: '60px', margin: '0 auto',
+                  border: '4px solid rgba(59, 130, 246, 0.3)',
+                  borderTop: '4px solid #3b82f6',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+              )}
+              {initModal.status === 'verifying' && (
+                <div style={{
+                  width: '60px', height: '60px', margin: '0 auto',
+                  border: '4px solid rgba(234, 179, 8, 0.3)',
+                  borderTop: '4px solid #eab308',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+              )}
+              {initModal.status === 'success' && (
+                <div style={{
+                  width: '60px', height: '60px', margin: '0 auto',
+                  background: 'rgba(34, 197, 94, 0.2)',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <span style={{ fontSize: '32px', color: '#22c55e' }}>✓</span>
+                </div>
+              )}
+              {initModal.status === 'error' && (
+                <div style={{
+                  width: '60px', height: '60px', margin: '0 auto',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <span style={{ fontSize: '32px', color: '#ef4444' }}>✕</span>
+                </div>
+              )}
+            </div>
+
+            {/* Message */}
+            <p style={{
+              marginBottom: '24px',
+              fontSize: '16px',
+              color: initModal.status === 'error' ? '#ef4444' :
+                     initModal.status === 'success' ? '#22c55e' : 'var(--text)'
+            }}>
+              {initModal.message}
+            </p>
+
+            {/* Error button */}
+            {initModal.status === 'error' && (
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => setInitModal(null)}
+                  style={{
+                    padding: '12px 24px', fontSize: '14px', fontWeight: 600,
+                    background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444',
+                    border: '1px solid #ef4444', borderRadius: '8px', cursor: 'pointer'
+                  }}
+                >
+                  {t('common.back', 'Back')}
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* CSS for spinner animation */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
 
       {/* Birthdate Confirmation Modal */}
       {birthdateConfirmModal && (

@@ -4116,12 +4116,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 homeShortName: homeShortName || home.substring(0, 3).toUpperCase()
               }
               
-              // Restore signatures if they were previously saved (re-lock the team)
-              if (!homeCoachSignature && savedSignatures.homeCoach) {
+              // Save current signatures (new or existing) to database
+              if (homeCoachSignature) {
+                updateData.homeCoachSignature = homeCoachSignature
+                setSavedSignatures(prev => ({ ...prev, homeCoach: homeCoachSignature }))
+              } else if (savedSignatures.homeCoach) {
+                // Restore previously saved signature if current is empty (re-lock the team)
                 updateData.homeCoachSignature = savedSignatures.homeCoach
                 setHomeCoachSignature(savedSignatures.homeCoach)
               }
-              if (!homeCaptainSignature && savedSignatures.homeCaptain) {
+              if (homeCaptainSignature) {
+                updateData.homeCaptainSignature = homeCaptainSignature
+                setSavedSignatures(prev => ({ ...prev, homeCaptain: homeCaptainSignature }))
+              } else if (savedSignatures.homeCaptain) {
                 updateData.homeCaptainSignature = savedSignatures.homeCaptain
                 setHomeCaptainSignature(savedSignatures.homeCaptain)
               }
@@ -4400,6 +4407,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </Modal>
         )}
+
+        {/* SignaturePad for home team view */}
+        <SignaturePad
+          open={openSignature !== null}
+          onClose={() => setOpenSignature(null)}
+          onSave={handleSignatureSave}
+          title={openSignature === 'home-coach' ? 'Home Coach Signature' :
+                 openSignature === 'home-captain' ? 'Home Captain Signature' :
+                 openSignature === 'away-coach' ? 'Away Coach Signature' :
+                 openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+        />
       </MatchSetupHomeTeamView>
     )
   }
@@ -5320,12 +5338,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 awayShortName: awayShortName || away.substring(0, 3).toUpperCase()
               }
               
-              // Restore signatures if they were previously saved (re-lock the team)
-              if (!awayCoachSignature && savedSignatures.awayCoach) {
+              // Save current signatures (new or existing) to database
+              if (awayCoachSignature) {
+                updateData.awayCoachSignature = awayCoachSignature
+                setSavedSignatures(prev => ({ ...prev, awayCoach: awayCoachSignature }))
+              } else if (savedSignatures.awayCoach) {
+                // Restore previously saved signature if current is empty (re-lock the team)
                 updateData.awayCoachSignature = savedSignatures.awayCoach
                 setAwayCoachSignature(savedSignatures.awayCoach)
               }
-              if (!awayCaptainSignature && savedSignatures.awayCaptain) {
+              if (awayCaptainSignature) {
+                updateData.awayCaptainSignature = awayCaptainSignature
+                setSavedSignatures(prev => ({ ...prev, awayCaptain: awayCaptainSignature }))
+              } else if (savedSignatures.awayCaptain) {
                 updateData.awayCaptainSignature = savedSignatures.awayCaptain
                 setAwayCaptainSignature(savedSignatures.awayCaptain)
               }
@@ -5604,6 +5629,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </Modal>
         )}
+
+        {/* SignaturePad for away team view */}
+        <SignaturePad
+          open={openSignature !== null}
+          onClose={() => setOpenSignature(null)}
+          onSave={handleSignatureSave}
+          title={openSignature === 'home-coach' ? 'Home Coach Signature' :
+                 openSignature === 'home-captain' ? 'Home Captain Signature' :
+                 openSignature === 'away-coach' ? 'Away Coach Signature' :
+                 openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+        />
       </MatchSetupAwayTeamView>
     )
   }
