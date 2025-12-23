@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.14.23',
+    date: '23.12.25',
+    changes: [
+      'Enhance roster management with signature functionality in RosterSetup and UploadRosterApp'
+    ]
+  },
+  {
     version: '0.14.22',
     date: '23.12.25',
     changes: [

@@ -1159,72 +1159,97 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         color: '#fff',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '24px',
-        padding: '20px'
+        flexDirection: 'column'
       }}>
-        {/* Team names if available */}
-        {data?.homeTeam?.name && data?.awayTeam?.name && (
-          <div style={{
-            fontSize: 'clamp(18px, 4vw, 28px)',
-            fontWeight: 700,
-            textAlign: 'center',
-            marginBottom: '16px'
-          }}>
-            {data.homeTeam.name} vs {data.awayTeam.name}
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '12px 16px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '18px', fontWeight: 600 }}>
+              {t('refereeDashboard.title', 'Referee Dashboard')}
+            </span>
           </div>
-        )}
-
-        {/* Awaiting Coin Toss Message */}
-        <div style={{
-          fontSize: 'clamp(20px, 5vw, 32px)',
-          fontWeight: 600,
-          color: '#fbbf24',
-          textAlign: 'center',
-          textTransform: 'uppercase',
-          letterSpacing: '2px'
-        }}>
-          {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
+          <button
+            onClick={onExit}
+            style={{
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: 500,
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            {t('refereeDashboard.exitFullscreen', 'Exit')}
+          </button>
         </div>
 
+        {/* Content */}
         <div style={{
-          fontSize: 'clamp(14px, 3vw, 18px)',
-          color: 'rgba(255, 255, 255, 0.7)',
-          textAlign: 'center',
-          maxWidth: '400px'
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '24px',
+          padding: '20px'
         }}>
-          {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
-        </div>
+          {/* Team names if available */}
+          {data?.homeTeam?.name && data?.awayTeam?.name && (
+            <div style={{
+              fontSize: 'clamp(18px, 4vw, 28px)',
+              fontWeight: 700,
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}>
+              {data.homeTeam.name} vs {data.awayTeam.name}
+            </div>
+          )}
 
-        {/* Loading indicator */}
-        <div style={{
-          width: '40px',
-          height: '40px',
-          border: '3px solid rgba(255, 255, 255, 0.2)',
-          borderTopColor: '#fbbf24',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
-
-        {/* Exit button */}
-        <button
-          onClick={onExit}
-          style={{
-            marginTop: '24px',
-            padding: '12px 24px',
-            fontSize: '14px',
+          {/* Awaiting Coin Toss Message */}
+          <div style={{
+            fontSize: 'clamp(20px, 5vw, 32px)',
             fontWeight: 600,
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            borderRadius: '8px',
-            color: '#fff',
-            cursor: 'pointer'
-          }}
-        >
-          {t('common.back', 'Back')}
-        </button>
+            color: '#fbbf24',
+            textAlign: 'center',
+            textTransform: 'uppercase',
+            letterSpacing: '2px'
+          }}>
+            {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
+          </div>
+
+          <div style={{
+            fontSize: 'clamp(14px, 3vw, 18px)',
+            color: 'rgba(255, 255, 255, 0.7)',
+            textAlign: 'center',
+            maxWidth: '400px'
+          }}>
+            {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
+          </div>
+
+          {/* Loading indicator */}
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid rgba(255, 255, 255, 0.2)',
+            borderTopColor: '#fbbf24',
+            borderRadius: '50%',
+            animation: 'awaiting-spin 1s linear infinite'
+          }} />
+        </div>
+
+        <style>{`
+          @keyframes awaiting-spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     )
   }

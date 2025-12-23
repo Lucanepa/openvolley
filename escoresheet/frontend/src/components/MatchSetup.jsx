@@ -3424,9 +3424,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                         const importedPlayers = pending.players || []
                         const importedBench = pending.bench || []
 
+                        // Extract signatures from pending roster
+                        const importedCoachSig = pending.coachSignature || null
+                        const importedCaptainSig = pending.captainSignature || null
+
                         // Update state
                         setHomeRoster(importedPlayers)
                         setBenchHome(importedBench)
+
+                        // Also update signature states if signatures were provided
+                        if (importedCoachSig) setHomeCoachSignature(importedCoachSig)
+                        if (importedCaptainSig) setHomeCaptainSignature(importedCaptainSig)
 
                         // Save to database immediately
                         if (match.homeTeamId) {
@@ -3454,11 +3462,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                             )
                           }
 
-                          // Update match with bench officials
-                          await db.matches.update(matchId, {
+                          // Update match with bench officials and signatures
+                          const matchUpdate = {
                             bench_home: importedBench,
                             pendingHomeRoster: null
-                          })
+                          }
+                          if (importedCoachSig) matchUpdate.homeCoachSignature = importedCoachSig
+                          if (importedCaptainSig) matchUpdate.homeCaptainSignature = importedCaptainSig
+
+                          await db.matches.update(matchId, matchUpdate)
+                          console.log('[MatchSetup] Accepted home roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
                         } else {
                           // If no teamId yet, just clear pending
                           await db.matches.update(matchId, { pendingHomeRoster: null })
@@ -3819,9 +3832,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )
         })}
         <div className="row" style={{ marginTop: 8 }}>
-          <button 
-            type="button" 
-            className="secondary" 
+          <button
+            type="button"
+            className="secondary"
             disabled={benchHome.length >= 5}
             onClick={() => {
               // Find the first available role
@@ -3830,12 +3843,124 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               if (availableRole) {
                 setBenchHome([...benchHome, initBench(availableRole.value)])
               }
-            }} 
+            }}
               style={{ padding: '4px 8px', fontSize: '12px' }}
             >
               Add Bench Official
             </button>
         </div>
+
+        {/* Signatures Section */}
+        <div style={{
+          marginTop: '24px',
+          padding: '16px',
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <h4 style={{ margin: 0, marginBottom: '12px' }}>
+            {t('rosterSetup.signatures', 'Signatures')}
+          </h4>
+          <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
+            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+          </p>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            {/* Coach Signature */}
+            <div style={{ flex: 1, minWidth: '150px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+                {t('rosterSetup.coachSignature', 'Coach Signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('home-coach')}
+                style={{
+                  width: '100%',
+                  height: '80px',
+                  background: homeCoachSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                  border: homeCoachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}
+              >
+                {homeCoachSignature ? (
+                  <img src={homeCoachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {homeCoachSignature && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setHomeCoachSignature(null); }}
+                  style={{
+                    marginTop: '6px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.clear', 'Clear')}
+                </button>
+              )}
+            </div>
+
+            {/* Captain Signature */}
+            <div style={{ flex: 1, minWidth: '150px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+                {t('rosterSetup.captainSignature', 'Captain Signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('home-captain')}
+                style={{
+                  width: '100%',
+                  height: '80px',
+                  background: homeCaptainSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                  border: homeCaptainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}
+              >
+                {homeCaptainSignature ? (
+                  <img src={homeCaptainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {homeCaptainSignature && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setHomeCaptainSignature(null); }}
+                  style={{
+                    marginTop: '6px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.clear', 'Clear')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             console.log('[MatchSetup] Home roster Confirm clicked, validating...')
@@ -4494,9 +4619,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                         const importedPlayers = pending.players || []
                         const importedBench = pending.bench || []
 
+                        // Extract signatures from pending roster
+                        const importedCoachSig = pending.coachSignature || null
+                        const importedCaptainSig = pending.captainSignature || null
+
                         // Update state
                         setAwayRoster(importedPlayers)
                         setBenchAway(importedBench)
+
+                        // Also update signature states if signatures were provided
+                        if (importedCoachSig) setAwayCoachSignature(importedCoachSig)
+                        if (importedCaptainSig) setAwayCaptainSignature(importedCaptainSig)
 
                         // Save to database immediately
                         if (match.awayTeamId) {
@@ -4524,11 +4657,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
                             )
                           }
 
-                          // Update match with bench officials
-                          await db.matches.update(matchId, {
+                          // Update match with bench officials and signatures
+                          const matchUpdate = {
                             bench_away: importedBench,
                             pendingAwayRoster: null
-                          })
+                          }
+                          if (importedCoachSig) matchUpdate.awayCoachSignature = importedCoachSig
+                          if (importedCaptainSig) matchUpdate.awayCaptainSignature = importedCaptainSig
+
+                          await db.matches.update(matchId, matchUpdate)
+                          console.log('[MatchSetup] Accepted away roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
                         } else {
                           // If no teamId yet, just clear pending
                           await db.matches.update(matchId, { pendingAwayRoster: null })
@@ -4898,9 +5036,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
           )
         })}
         <div className="row" style={{ marginTop: 8 }}>
-          <button 
-            type="button" 
-            className="secondary" 
+          <button
+            type="button"
+            className="secondary"
             disabled={benchAway.length >= 5}
             onClick={() => {
               // Find the first available role
@@ -4909,12 +5047,124 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
               if (availableRole) {
                 setBenchAway([...benchAway, initBench(availableRole.value)])
               }
-            }} 
+            }}
               style={{ padding: '4px 8px', fontSize: '12px' }}
             >
               Add Bench Official
             </button>
         </div>
+
+        {/* Signatures Section */}
+        <div style={{
+          marginTop: '24px',
+          padding: '16px',
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <h4 style={{ margin: 0, marginBottom: '12px' }}>
+            {t('rosterSetup.signatures', 'Signatures')}
+          </h4>
+          <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
+            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+          </p>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            {/* Coach Signature */}
+            <div style={{ flex: 1, minWidth: '150px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+                {t('rosterSetup.coachSignature', 'Coach Signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('away-coach')}
+                style={{
+                  width: '100%',
+                  height: '80px',
+                  background: awayCoachSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                  border: awayCoachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}
+              >
+                {awayCoachSignature ? (
+                  <img src={awayCoachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {awayCoachSignature && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setAwayCoachSignature(null); }}
+                  style={{
+                    marginTop: '6px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.clear', 'Clear')}
+                </button>
+              )}
+            </div>
+
+            {/* Captain Signature */}
+            <div style={{ flex: 1, minWidth: '150px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+                {t('rosterSetup.captainSignature', 'Captain Signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('away-captain')}
+                style={{
+                  width: '100%',
+                  height: '80px',
+                  background: awayCaptainSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                  border: awayCaptainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}
+              >
+                {awayCaptainSignature ? (
+                  <img src={awayCaptainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {awayCaptainSignature && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setAwayCaptainSignature(null); }}
+                  style={{
+                    marginTop: '6px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.clear', 'Clear')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button onClick={async () => {
             console.log('[MatchSetup] Away roster Confirm clicked, validating...')

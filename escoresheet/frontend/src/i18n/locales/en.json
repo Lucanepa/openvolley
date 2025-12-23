@@ -403,7 +403,16 @@
     "saving": "Saving...",
     "rosterSaved": "Roster saved successfully!",
     "previewRoster": "Preview",
-    "rosterPreviewTitle": "Roster Preview"
+    "rosterPreviewTitle": "Roster Preview",
+    "syncingToDatabase": "Syncing to Database",
+    "syncingMessage": "Sending roster to scoresheet for approval...",
+    "sentToDatabase": "Sent to Database",
+    "rosterSentMessage": "The roster has been sent to the scoresheet. The scorer will review and accept or reject the roster.",
+    "signatures": "Signatures",
+    "signaturesDescription": "Optional: Coach and captain can sign the roster before submitting.",
+    "coachSignature": "Coach Signature",
+    "captainSignature": "Captain Signature",
+    "tapToSign": "Tap to sign"
   },
   "uploadRoster": {
     "title": "Upload Roster",

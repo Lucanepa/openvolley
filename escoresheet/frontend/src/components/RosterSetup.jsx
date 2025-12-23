@@ -4,6 +4,7 @@ import { getMatchData, subscribeToMatchData, listAvailableMatchesSupabase } from
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
+import SignaturePad from './SignaturePad'
 
 export default function RosterSetup({ matchId, team, onBack, embedded = false, useSupabaseConnection = false, matchData = null }) {
   const { t } = useTranslation()
@@ -14,7 +15,14 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
   const [pdfFile, setPdfFile] = useState(null)
   const [pendingRoster, setPendingRoster] = useState(null) // The actual pending roster data
   const [showPreview, setShowPreview] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
   const fileInputRef = useRef(null)
+
+  // Signature states
+  const [coachSignature, setCoachSignature] = useState(null)
+  const [captainSignature, setCaptainSignature] = useState(null)
+  const [openSignature, setOpenSignature] = useState(null) // 'coach' | 'captain' | null
 
   const [match, setMatch] = useState(matchData)
 
@@ -214,6 +222,10 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         dob: b.dob || b.date_of_birth || ''
       })))
 
+      // Extract signatures from pending roster
+      const importedCoachSignature = pendingRoster.coachSignature || null
+      const importedCaptainSignature = pendingRoster.captainSignature || null
+
       // Save to database
       if (teamId && matchId && matchId !== -1 && teamId !== -1) {
         // Delete existing players
@@ -240,20 +252,51 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
           )
         }
 
-        // Update match with bench officials and clear pending roster
+        // Update match with bench officials, signatures, and clear pending roster
         const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
-        await db.matches.update(matchId, {
+        const coachSigKey = team === 'home' ? 'homeCoachSignature' : 'awayCoachSignature'
+        const captainSigKey = team === 'home' ? 'homeCaptainSignature' : 'awayCaptainSignature'
+
+        const matchUpdate = {
           [benchKey]: importedBench,
           [pendingRosterField]: null
-        })
+        }
+
+        // Only update signatures if they were provided
+        if (importedCoachSignature) {
+          matchUpdate[coachSigKey] = importedCoachSignature
+        }
+        if (importedCaptainSignature) {
+          matchUpdate[captainSigKey] = importedCaptainSignature
+        }
+
+        await db.matches.update(matchId, matchUpdate)
+        console.log('[RosterSetup] Saved signatures to local match:', { coachSigKey, captainSigKey, hasCoach: !!importedCoachSignature, hasCaptain: !!importedCaptainSignature })
       }
 
-      // Clear pending roster in Supabase if connected
+      // Clear pending roster and save signatures in Supabase if connected
       if (useSupabaseConnection && supabase && matchData?.external_id) {
+        const coachSigKeySnake = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
+        const captainSigKeySnake = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
+
+        const supabaseUpdate = {
+          [pendingRosterFieldSnake]: null
+        }
+
+        // Only update signatures if they were provided
+        if (importedCoachSignature) {
+          supabaseUpdate[coachSigKeySnake] = importedCoachSignature
+        }
+        if (importedCaptainSignature) {
+          supabaseUpdate[captainSigKeySnake] = importedCaptainSignature
+        }
+
         await supabase
           .from('matches')
-          .update({ [pendingRosterFieldSnake]: null })
+          .update(supabaseUpdate)
           .eq('external_id', matchData.external_id)
+
+        console.log('[RosterSetup] Saved signatures to Supabase:', { coachSigKeySnake, captainSigKeySnake, hasCoach: !!importedCoachSignature, hasCaptain: !!importedCaptainSignature })
       }
 
       setPendingRoster(null)
@@ -563,6 +606,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
 
       // If connected to Supabase, also send roster as pending for scorer approval
       if (useSupabaseConnection && supabase && matchData?.external_id) {
+        setSyncing(true)
+
         const pendingRosterData = {
           players: players.map(p => ({
             number: p.number,
@@ -578,22 +623,44 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             lastName: o.lastName,
             dob: o.dob || ''
           })),
+          coachSignature: coachSignature || null,
+          captainSignature: captainSignature || null,
           timestamp: new Date().toISOString()
+        }
+
+        // Build update object with pending roster and signatures
+        const coachSigKeySnake = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
+        const captainSigKeySnake = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
+
+        const supabaseUpdate = {
+          [pendingRosterFieldSnake]: pendingRosterData
+        }
+
+        // Also save signatures directly to main signature columns
+        if (coachSignature) {
+          supabaseUpdate[coachSigKeySnake] = coachSignature
+        }
+        if (captainSignature) {
+          supabaseUpdate[captainSigKeySnake] = captainSignature
         }
 
         const { error: supabaseError } = await supabase
           .from('matches')
-          .update({ [pendingRosterFieldSnake]: pendingRosterData })
+          .update(supabaseUpdate)
           .eq('external_id', matchData.external_id)
+
+        setSyncing(false)
 
         if (supabaseError) {
           console.error('[RosterSetup] Failed to sync roster to Supabase:', supabaseError)
+          alert(t('rosterSetup.rosterSaved'))
         } else {
-          console.log('[RosterSetup] Roster synced to Supabase as pending for scorer approval')
+          console.log('[RosterSetup] Roster synced to Supabase with signatures:', { coachSigKeySnake, captainSigKeySnake })
+          setShowSuccessModal(true)
         }
+      } else {
+        alert(t('rosterSetup.rosterSaved'))
       }
-
-      alert(t('rosterSetup.rosterSaved'))
     } catch (err) {
       console.error('Error saving roster:', err)
       setError('Failed to save roster')
@@ -1170,6 +1237,117 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
           </div>
         </div>
 
+        {/* Signatures Section */}
+        <div style={{
+          marginBottom: '30px',
+          padding: '20px',
+          background: 'var(--bg)',
+          borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
+            {t('rosterSetup.signatures', 'Signatures')}
+          </h2>
+          <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '20px' }}>
+            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+          </p>
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+            {/* Coach Signature */}
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>
+                {t('rosterSetup.coachSignature', 'Coach Signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('coach')}
+                style={{
+                  width: '100%',
+                  height: '100px',
+                  background: coachSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                  border: coachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}
+              >
+                {coachSignature ? (
+                  <img src={coachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {coachSignature && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCoachSignature(null); }}
+                  style={{
+                    marginTop: '8px',
+                    padding: '4px 12px',
+                    fontSize: '12px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.clear', 'Clear')}
+                </button>
+              )}
+            </div>
+
+            {/* Captain Signature */}
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>
+                {t('rosterSetup.captainSignature', 'Captain Signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('captain')}
+                style={{
+                  width: '100%',
+                  height: '100px',
+                  background: captainSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                  border: captainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}
+              >
+                {captainSignature ? (
+                  <img src={captainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {captainSignature && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCaptainSignature(null); }}
+                  style={{
+                    marginTop: '8px',
+                    padding: '4px 12px',
+                    fontSize: '12px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('common.clear', 'Clear')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Save Button */}
         <div style={{
           display: 'flex',
@@ -1313,6 +1491,128 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             </div>
           </div>
         )}
+
+        {/* Syncing Modal */}
+        {syncing && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001
+          }}>
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '12px',
+              padding: '32px',
+              textAlign: 'center',
+              maxWidth: '400px',
+              width: '90%'
+            }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                border: '4px solid rgba(255, 255, 255, 0.2)',
+                borderTopColor: 'var(--accent)',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 20px'
+              }} />
+              <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 600 }}>
+                {t('rosterSetup.syncingToDatabase', 'Syncing to Database')}
+              </h3>
+              <p style={{ margin: 0, fontSize: '14px', color: 'var(--muted)' }}>
+                {t('rosterSetup.syncingMessage', 'Sending roster to scoresheet for approval...')}
+              </p>
+              <style>{`
+                @keyframes spin {
+                  to { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          </div>
+        )}
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001
+          }}>
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '12px',
+              padding: '32px',
+              textAlign: 'center',
+              maxWidth: '400px',
+              width: '90%'
+            }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                background: 'rgba(34, 197, 94, 0.2)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px'
+              }}>
+                <span style={{ fontSize: '32px', color: '#22c55e' }}>✓</span>
+              </div>
+              <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 600, color: '#22c55e' }}>
+                {t('rosterSetup.sentToDatabase', 'Sent to Database')}
+              </h3>
+              <p style={{ margin: '0 0 24px', fontSize: '14px', color: 'var(--muted)' }}>
+                {t('rosterSetup.rosterSentMessage', 'The roster has been sent to the scoresheet. The scorer will review and accept or reject the roster.')}
+              </p>
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                style={{
+                  padding: '12px 32px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('common.ok', 'OK')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Signature Pad */}
+        <SignaturePad
+          open={openSignature !== null}
+          onClose={() => setOpenSignature(null)}
+          onSave={(signature) => {
+            if (openSignature === 'coach') {
+              setCoachSignature(signature)
+            } else if (openSignature === 'captain') {
+              setCaptainSignature(signature)
+            }
+            setOpenSignature(null)
+          }}
+          title={openSignature === 'coach'
+            ? t('rosterSetup.coachSignature', 'Coach Signature')
+            : t('rosterSetup.captainSignature', 'Captain Signature')}
+        />
       </div>
     </div>
   )

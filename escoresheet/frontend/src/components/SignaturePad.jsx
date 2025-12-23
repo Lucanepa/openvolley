@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import Modal from './Modal'
 
-export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null }) {
+export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false }) {
   const canvasRef = useRef(null)
   const isDrawingRef = useRef(false)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -95,14 +95,17 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
         setIsDrawing(false)
       }
       
-      canvas.addEventListener('touchstart', touchStartHandler, { passive: false })
-      canvas.addEventListener('touchmove', touchMoveHandler, { passive: false })
-      canvas.addEventListener('touchend', touchEndHandler, { passive: false })
-      
-      cleanup = () => {
-        canvas.removeEventListener('touchstart', touchStartHandler)
-        canvas.removeEventListener('touchmove', touchMoveHandler)
-        canvas.removeEventListener('touchend', touchEndHandler)
+      // Only add drawing event listeners if not read-only
+      if (!readOnly) {
+        canvas.addEventListener('touchstart', touchStartHandler, { passive: false })
+        canvas.addEventListener('touchmove', touchMoveHandler, { passive: false })
+        canvas.addEventListener('touchend', touchEndHandler, { passive: false })
+
+        cleanup = () => {
+          canvas.removeEventListener('touchstart', touchStartHandler)
+          canvas.removeEventListener('touchmove', touchMoveHandler)
+          canvas.removeEventListener('touchend', touchEndHandler)
+        }
       }
     }, 100)
     
@@ -110,7 +113,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
       if (timerId) clearTimeout(timerId)
       if (cleanup) cleanup()
     }
-  }, [open, existingSignature])
+  }, [open, existingSignature, readOnly])
 
   function getPoint(e) {
     const canvas = canvasRef.current
@@ -190,23 +193,29 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
         }}>
           <canvas
             ref={canvasRef}
-            style={{ 
-              width: '100%', 
-              height: '200px', 
+            style={{
+              width: '100%',
+              height: '200px',
               display: 'block',
-              cursor: 'crosshair',
+              cursor: readOnly ? 'default' : 'crosshair',
               background: '#ffffff'
             }}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
+            onMouseDown={readOnly ? undefined : startDrawing}
+            onMouseMove={readOnly ? undefined : draw}
+            onMouseUp={readOnly ? undefined : stopDrawing}
+            onMouseLeave={readOnly ? undefined : stopDrawing}
           />
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="secondary" onClick={clear}>Clear</button>
-          <button className="secondary" onClick={handleCancel}>Cancel</button>
-          <button onClick={save} disabled={!hasSignature}>Save</button>
+          {readOnly ? (
+            <button onClick={onClose}>Close</button>
+          ) : (
+            <>
+              <button className="secondary" onClick={clear}>Clear</button>
+              <button className="secondary" onClick={handleCancel}>Cancel</button>
+              <button onClick={save} disabled={!hasSignature}>Save</button>
+            </>
+          )}
         </div>
       </div>
     </Modal>

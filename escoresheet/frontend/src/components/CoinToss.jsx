@@ -1810,6 +1810,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, onGoHome }) {
           openSignature === 'away-coach' ? awayCoachSignature :
           openSignature === 'away-captain' ? awayCaptainSignature : null
         }
+        readOnly={
+          (openSignature === 'home-coach' && !!homeCoachSignature) ||
+          (openSignature === 'home-captain' && !!homeCaptainSignature) ||
+          (openSignature === 'away-coach' && !!awayCoachSignature) ||
+          (openSignature === 'away-captain' && !!awayCaptainSignature)
+        }
       />
     </div>
   )
