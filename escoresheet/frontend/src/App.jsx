@@ -3021,14 +3021,12 @@ export default function App() {
               setShowCoinToss(false)
               setShowMatchSetup(true)
             }}
-            onGoHome={goHome}
           />
         ) : showMatchSetup && matchId ? (
           <MatchSetup
             matchId={matchId}
             onStart={continueMatch}
             onReturn={returnToMatch}
-            onGoHome={goHome}
             onOpenOptions={() => setHomeOptionsModal(true)}
             onOpenCoinToss={() => {
               setShowMatchSetup(false)
