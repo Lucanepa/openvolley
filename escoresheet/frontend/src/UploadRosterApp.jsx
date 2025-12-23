@@ -8,6 +8,7 @@ import { parseRosterPdf } from './utils/parseRosterPdf'
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
+import SignaturePad from './components/SignaturePad'
 import { supabase } from './lib/supabaseClient'
 
 // Connection modes
@@ -76,6 +77,11 @@ export default function UploadRosterApp() {
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
+
+  // Signature states
+  const [coachSignature, setCoachSignature] = useState(null)
+  const [captainSignature, setCaptainSignature] = useState(null)
+  const [openSignature, setOpenSignature] = useState(null) // 'coach' | 'captain' | null
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null)
@@ -634,22 +640,41 @@ export default function UploadRosterApp() {
       const rosterData = {
         players: parsedData.players,
         bench: parsedData.bench,
+        coachSignature: coachSignature || null,
+        captainSignature: captainSignature || null,
         timestamp: new Date().toISOString()
       }
 
       // Try Supabase first if connected
       if (activeConnection === 'supabase' && supabase && selectedMatch?.external_id) {
         console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
+
+        // Build update object with pending roster and signatures
+        const coachSigKey = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
+        const captainSigKey = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
+
+        const supabaseUpdate = {
+          [pendingField]: rosterData
+        }
+
+        // Also save signatures directly to main signature columns
+        if (coachSignature) {
+          supabaseUpdate[coachSigKey] = coachSignature
+        }
+        if (captainSignature) {
+          supabaseUpdate[captainSigKey] = captainSignature
+        }
+
         const { error } = await supabase
           .from('matches')
-          .update({ [pendingField]: rosterData })
+          .update(supabaseUpdate)
           .eq('external_id', selectedMatch.external_id)
 
         if (error) {
           console.error('[Roster] Supabase write error:', error)
           // Fall back to server
         } else {
-          console.log('[Roster] Successfully wrote roster to Supabase')
+          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', { coachSigKey, captainSigKey })
         }
       }
 
@@ -1368,6 +1393,117 @@ export default function UploadRosterApp() {
               + {t('roster.benchOfficials')}
             </button>
 
+            {/* Signatures Section */}
+            <div style={{
+              marginTop: '32px',
+              padding: '20px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: '8px',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
+                {t('rosterSetup.signatures', 'Signatures')}
+              </h2>
+              <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '20px' }}>
+                {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+              </p>
+              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                {/* Coach Signature */}
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>
+                    {t('rosterSetup.coachSignature', 'Coach Signature')}
+                  </div>
+                  <div
+                    onClick={() => setOpenSignature('coach')}
+                    style={{
+                      width: '100%',
+                      height: '100px',
+                      background: coachSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                      border: coachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {coachSignature ? (
+                      <img src={coachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                    ) : (
+                      <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                        {t('rosterSetup.tapToSign', 'Tap to sign')}
+                      </span>
+                    )}
+                  </div>
+                  {coachSignature && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setCoachSignature(null); }}
+                      style={{
+                        marginTop: '8px',
+                        padding: '4px 12px',
+                        fontSize: '12px',
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#ef4444',
+                        border: '1px solid #ef4444',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.clear', 'Clear')}
+                    </button>
+                  )}
+                </div>
+
+                {/* Captain Signature */}
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>
+                    {t('rosterSetup.captainSignature', 'Captain Signature')}
+                  </div>
+                  <div
+                    onClick={() => setOpenSignature('captain')}
+                    style={{
+                      width: '100%',
+                      height: '100px',
+                      background: captainSignature ? 'white' : 'rgba(255,255,255,0.05)',
+                      border: captainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {captainSignature ? (
+                      <img src={captainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                    ) : (
+                      <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                        {t('rosterSetup.tapToSign', 'Tap to sign')}
+                      </span>
+                    )}
+                  </div>
+                  {captainSignature && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setCaptainSignature(null); }}
+                      style={{
+                        marginTop: '8px',
+                        padding: '4px 12px',
+                        fontSize: '12px',
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#ef4444',
+                        border: '1px solid #ef4444',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.clear', 'Clear')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
               <button
                 type="button"
@@ -1499,6 +1635,23 @@ export default function UploadRosterApp() {
             </div>
           </Modal>
         )}
+
+        {/* Signature Pad */}
+        <SignaturePad
+          open={openSignature !== null}
+          onClose={() => setOpenSignature(null)}
+          onSave={(signature) => {
+            if (openSignature === 'coach') {
+              setCoachSignature(signature)
+            } else if (openSignature === 'captain') {
+              setCaptainSignature(signature)
+            }
+            setOpenSignature(null)
+          }}
+          title={openSignature === 'coach'
+            ? t('rosterSetup.coachSignature', 'Coach Signature')
+            : t('rosterSetup.captainSignature', 'Captain Signature')}
+        />
       </div>
       </div>
     </div>
