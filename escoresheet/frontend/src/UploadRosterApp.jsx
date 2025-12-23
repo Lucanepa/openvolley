@@ -415,7 +415,13 @@ export default function UploadRosterApp() {
   }
 
   // Check match status when game number changes (with debounce)
+  // Skip if we already have a selectedMatch from Supabase - it's already validated
   useEffect(() => {
+    // If we have a selected match from Supabase, don't run server-based validation
+    if (selectedMatch && activeConnection === 'supabase') {
+      return
+    }
+
     const timeoutId = setTimeout(() => {
       if (gameNumber) {
         checkMatchStatus(gameNumber)
@@ -428,7 +434,7 @@ export default function UploadRosterApp() {
     }, 500) // 500ms debounce
 
     return () => clearTimeout(timeoutId)
-  }, [gameNumber])
+  }, [gameNumber, selectedMatch, activeConnection])
 
   // Auto-validate PIN when it changes
   useEffect(() => {
@@ -797,6 +803,7 @@ export default function UploadRosterApp() {
 
       <SimpleHeader
         title={t('uploadRoster.title')}
+        subtitle={selectedMatch ? `${t('uploadRoster.game')} ${selectedMatch.gameNumber || selectedMatch.id}` : null}
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
@@ -805,6 +812,8 @@ export default function UploadRosterApp() {
         activeConnection={activeConnection}
         onConnectionModeChange={handleConnectionModeChange}
         showConnectionOptions={true}
+        onBack={selectedMatch ? handleBackToGames : null}
+        backLabel={t('uploadRoster.changeGame', 'Change Game')}
       />
 
       <div style={{
@@ -929,22 +938,7 @@ export default function UploadRosterApp() {
               width: 'auto'
             }}
           >
-            <button
-              onClick={handleBackToGames}
-              style={{
-                padding: '8px 16px',
-                fontSize: '14px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: 'var(--text)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                alignSelf: 'flex-start'
-              }}
-            >
-              ← {t('uploadRoster.changeGame')}
-            </button>
-
+            {/* Match info */}
             <div style={{
               padding: '16px 24px',
               background: 'rgba(255, 255, 255, 0.05)',
@@ -952,9 +946,6 @@ export default function UploadRosterApp() {
               textAlign: 'center',
               marginBottom: '8px'
             }}>
-              <div style={{ fontSize: '14px', color: 'var(--accent)', marginBottom: '4px' }}>
-                {t('uploadRoster.game')} {selectedMatch.gameNumber || selectedMatch.id}
-              </div>
               <div style={{ fontSize: '18px', fontWeight: 600 }}>
                 {homeTeam?.name || t('common.home')} {t('uploadRoster.vs')} {awayTeam?.name || t('common.away')}
               </div>
