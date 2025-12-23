@@ -825,6 +825,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         }
         if (Object.keys(updates).length > 0) {
           await db.matches.update(matchId, updates)
+
+          // Also sync upload PINs to Supabase if connected
+          if (supabase && match.seed_key && (updates.homeTeamUploadPin || updates.awayTeamUploadPin)) {
+            const supabaseUpdates = {}
+            if (updates.homeTeamUploadPin) {
+              supabaseUpdates.home_team_upload_pin = updates.homeTeamUploadPin
+            }
+            if (updates.awayTeamUploadPin) {
+              supabaseUpdates.away_team_upload_pin = updates.awayTeamUploadPin
+            }
+            try {
+              await supabase
+                .from('matches')
+                .update(supabaseUpdates)
+                .eq('external_id', match.seed_key)
+              console.log('[MatchSetup] Synced upload PINs to Supabase:', supabaseUpdates)
+            } catch (err) {
+              console.warn('[MatchSetup] Failed to sync upload PINs to Supabase:', err)
+            }
+          }
         }
         
         // Load players only on initial load (when matchId changes, not when match updates)

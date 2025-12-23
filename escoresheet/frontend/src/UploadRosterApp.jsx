@@ -445,7 +445,10 @@ export default function UploadRosterApp() {
       return
     }
 
-    const correctPin = team === 'home' ? match.homeTeamUploadPin : match.awayTeamUploadPin
+    // Handle both camelCase (local) and snake_case (Supabase) field names
+    const correctPin = team === 'home'
+      ? (match.homeTeamUploadPin || match.home_team_upload_pin)
+      : (match.awayTeamUploadPin || match.away_team_upload_pin)
     const pinIsRequired = correctPin != null && correctPin !== ''
 
     // If no PIN is required, clear any errors
@@ -487,7 +490,10 @@ export default function UploadRosterApp() {
       setMatch(foundMatch)
       setMatchId(foundMatch.id)
 
-      const correctPin = team === 'home' ? foundMatch.homeTeamUploadPin : foundMatch.awayTeamUploadPin
+      // Handle both camelCase (local) and snake_case (Supabase) field names
+      const correctPin = team === 'home'
+        ? (foundMatch.homeTeamUploadPin || foundMatch.home_team_upload_pin)
+        : (foundMatch.awayTeamUploadPin || foundMatch.away_team_upload_pin)
       const pinIsRequired = correctPin != null && correctPin !== ''
 
       if (pinIsRequired) {
@@ -745,7 +751,10 @@ export default function UploadRosterApp() {
   }
 
   // Check if PIN is required (only if a PIN is set in the match)
-  const teamUploadPin = team === 'home' ? match?.homeTeamUploadPin : match?.awayTeamUploadPin
+  // Handle both camelCase (local) and snake_case (Supabase) field names
+  const teamUploadPin = team === 'home'
+    ? (match?.homeTeamUploadPin || match?.home_team_upload_pin)
+    : (match?.awayTeamUploadPin || match?.away_team_upload_pin)
   const isPinRequired = teamUploadPin != null && teamUploadPin !== ''
   // When PIN is required, validate with PIN. When no PIN required, require manual validation click.
   const isValid = match && matchId && (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
