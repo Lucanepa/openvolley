@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.5',
+    date: '23.12.25',
+    changes: [
+      'Update MatchSetup component styling for team headers'
+    ]
+  },
+  {
     version: '0.16.4',
     date: '23.12.25',
     changes: [
