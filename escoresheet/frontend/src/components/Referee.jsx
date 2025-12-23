@@ -1161,34 +1161,92 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         flexDirection: 'column'
       }}>
-        {/* Header */}
+        {/* Header - same as main view */}
         <div style={{
+          height: '40px',
+          minHeight: '40px',
+          maxHeight: '40px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '12px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)'
+          padding: '0 12px',
+          background: 'rgba(0, 0, 0, 0.3)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '18px', fontWeight: 600 }}>
-              {t('refereeDashboard.title', 'Referee Dashboard')}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={toggleFullscreen}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: 'rgba(255,255,255,0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : '⛶'}
+            </button>
+
+            <button
+              onClick={toggleWakeLock}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
+                color: wakeLockActive ? '#22c55e' : '#fff',
+                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
+            >
+              {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
+            </button>
+
+            <ConnectionStatus
+              connectionStatuses={connectionStatuses}
+              connectionDebugInfo={{
+                ...connectionDebugInfo,
+                match: {
+                  ...connectionDebugInfo?.match,
+                  matchId: matchId,
+                  homeTeam: data?.homeTeam?.name,
+                  awayTeam: data?.awayTeam?.name
+                }
+              }}
+              position="right"
+              size="small"
+            />
           </div>
-          <button
-            onClick={onExit}
-            style={{
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: 500,
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              color: '#fff',
-              cursor: 'pointer'
-            }}
-          >
-            {t('refereeDashboard.exitFullscreen', 'Exit')}
-          </button>
+
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {/* Version */}
+            <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
+              v{currentVersion}
+            </span>
+            {/* Exit Button with Icon */}
+            <button
+              onClick={onExit}
+              style={{
+                padding: '4px 8px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: 'rgba(239, 68, 68, 0.2)',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                lineHeight: 1
+              }}
+              title="Exit"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Content */}

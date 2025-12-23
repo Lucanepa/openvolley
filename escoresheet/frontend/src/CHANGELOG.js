@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.15.1',
+    date: '23.12.25',
+    changes: [
+      'Refactor UploadRosterApp and Referee components for improved match handling and UI'
+    ]
+  },
+  {
     version: '0.14.23',
     date: '23.12.25',
     changes: [
