@@ -499,7 +499,7 @@
       "directDesc": "WebSocket direct"
     },
     "awaitingCoinToss": "En attente du tirage au sort",
-    "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort sur la feuille principale.",
+    "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort sur la feuille de match.",
     "matchHasEnded": "Le match est terminé",
     "lineupSet": "Composition reçue",
     "showLineup": "Afficher la composition",
