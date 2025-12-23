@@ -825,15 +825,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onGoHome, onOpe
         }
         if (Object.keys(updates).length > 0) {
           await db.matches.update(matchId, updates)
+        }
 
-          // Also sync upload PINs to Supabase if connected
-          if (supabase && match.seed_key && (updates.homeTeamUploadPin || updates.awayTeamUploadPin)) {
+        // Always sync upload PINs to Supabase if connected (whether newly generated or existing)
+        // This ensures existing local PINs get pushed to Supabase
+        if (supabase && match.seed_key) {
+          const homeUploadPin = updates.homeTeamUploadPin || match.homeTeamUploadPin
+          const awayUploadPin = updates.awayTeamUploadPin || match.awayTeamUploadPin
+          if (homeUploadPin || awayUploadPin) {
             const supabaseUpdates = {}
-            if (updates.homeTeamUploadPin) {
-              supabaseUpdates.home_team_upload_pin = updates.homeTeamUploadPin
+            if (homeUploadPin) {
+              supabaseUpdates.home_team_upload_pin = homeUploadPin
             }
-            if (updates.awayTeamUploadPin) {
-              supabaseUpdates.away_team_upload_pin = updates.awayTeamUploadPin
+            if (awayUploadPin) {
+              supabaseUpdates.away_team_upload_pin = awayUploadPin
             }
             try {
               await supabase

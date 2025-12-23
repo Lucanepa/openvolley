@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.15.4',
+    date: '23.12.25',
+    changes: [
+      'Refactor MatchSetup for improved upload PIN synchronization with Supabase'
+    ]
+  },
+  {
     version: '0.15.3',
     date: '23.12.25',
     changes: [
