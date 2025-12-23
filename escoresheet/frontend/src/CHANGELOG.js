@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.15.2',
+    date: '23.12.25',
+    changes: [
+      'Enhance UploadRosterApp with manual validation and improved PIN handling'
+    ]
+  },
+  {
     version: '0.15.1',
     date: '23.12.25',
     changes: [
