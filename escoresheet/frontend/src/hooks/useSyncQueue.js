@@ -231,15 +231,118 @@ export function useSyncQueue() {
 
       if (job.resource === 'match' && job.action === 'delete') {
         const { id } = job.payload
-        const { error } = await supabase
+
+        // First, look up the match to get its UUID and team IDs
+        const { data: matchData, error: lookupError } = await supabase
           .from('matches')
-          .delete()
+          .select('id, home_team_id, away_team_id')
           .eq('external_id', id)
-        if (error) {
-          console.error('[SyncQueue] Match delete error:', error, job.payload)
+          .maybeSingle()
+
+        if (lookupError) {
+          console.error('[SyncQueue] Match lookup error:', lookupError, job.payload)
           return false
         }
-        console.log('[SyncQueue] Deleted match from Supabase:', id)
+
+        if (!matchData) {
+          // Match doesn't exist in Supabase, consider it successfully deleted
+          console.log('[SyncQueue] Match not found in Supabase (already deleted?):', id)
+          return true
+        }
+
+        const matchUuid = matchData.id
+        const homeTeamId = matchData.home_team_id
+        const awayTeamId = matchData.away_team_id
+
+        // Delete events for this match
+        const { error: eventsError } = await supabase
+          .from('events')
+          .delete()
+          .eq('match_id', matchUuid)
+        if (eventsError) {
+          console.warn('[SyncQueue] Events delete error (continuing):', eventsError)
+        }
+
+        // Delete sets for this match
+        const { error: setsError } = await supabase
+          .from('sets')
+          .delete()
+          .eq('match_id', matchUuid)
+        if (setsError) {
+          console.warn('[SyncQueue] Sets delete error (continuing):', setsError)
+        }
+
+        // Delete players for home and away teams
+        if (homeTeamId) {
+          const { error: homePlayersError } = await supabase
+            .from('players')
+            .delete()
+            .eq('team_id', homeTeamId)
+          if (homePlayersError) {
+            console.warn('[SyncQueue] Home players delete error (continuing):', homePlayersError)
+          }
+
+          // Delete team officials for home team
+          const { error: homeOfficialsError } = await supabase
+            .from('team_officials')
+            .delete()
+            .eq('team_id', homeTeamId)
+          if (homeOfficialsError) {
+            console.warn('[SyncQueue] Home team officials delete error (continuing):', homeOfficialsError)
+          }
+        }
+
+        if (awayTeamId) {
+          const { error: awayPlayersError } = await supabase
+            .from('players')
+            .delete()
+            .eq('team_id', awayTeamId)
+          if (awayPlayersError) {
+            console.warn('[SyncQueue] Away players delete error (continuing):', awayPlayersError)
+          }
+
+          // Delete team officials for away team
+          const { error: awayOfficialsError } = await supabase
+            .from('team_officials')
+            .delete()
+            .eq('team_id', awayTeamId)
+          if (awayOfficialsError) {
+            console.warn('[SyncQueue] Away team officials delete error (continuing):', awayOfficialsError)
+          }
+        }
+
+        // Delete the match
+        const { error: matchError } = await supabase
+          .from('matches')
+          .delete()
+          .eq('id', matchUuid)
+        if (matchError) {
+          console.error('[SyncQueue] Match delete error:', matchError, job.payload)
+          return false
+        }
+
+        // Delete the teams (after match is deleted to avoid FK constraint)
+        if (homeTeamId) {
+          const { error: homeTeamError } = await supabase
+            .from('teams')
+            .delete()
+            .eq('id', homeTeamId)
+          if (homeTeamError) {
+            console.warn('[SyncQueue] Home team delete error (continuing):', homeTeamError)
+          }
+        }
+
+        if (awayTeamId) {
+          const { error: awayTeamError } = await supabase
+            .from('teams')
+            .delete()
+            .eq('id', awayTeamId)
+          if (awayTeamError) {
+            console.warn('[SyncQueue] Away team delete error (continuing):', awayTeamError)
+          }
+        }
+
+        console.log('[SyncQueue] Deleted match and related records from Supabase:', id)
         return true
       }
 
