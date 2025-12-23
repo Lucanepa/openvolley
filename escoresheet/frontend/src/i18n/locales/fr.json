@@ -71,7 +71,7 @@
     "scorerNotSet": "Marqueur(se) non défini(e)",
     "hallNotSet": "Salle non définie",
     "cityNotSet": "Ville non définie",
-    "leagueNotSet": "Niveau de la compétition non définie",
+    "leagueNotSet": "Niveau de la compétition non défini",
     "dateNotSet": "Date/Heure du match non définie",
     "needMorePlayers": "L'équipe {{team}} doit avoir au moins 6 joueurs (hors Libéros). Actuellement: {{count}}",
     "coachNotSet": "Entraîneur de l'équipe {{team}} non défini",
