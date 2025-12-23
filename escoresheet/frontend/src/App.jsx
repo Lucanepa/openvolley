@@ -1528,14 +1528,14 @@ export default function App() {
     // Continue to next set (legacy logic - shouldn't reach here with new logic)
     const setId = await db.sets.add({ matchId: cur.matchId, index: cur.index + 1, homePoints: 0, awayPoints: 0, finished: false })
     
-    // Only sync official matches
-    if (!isTestMatch) {
+    // Only sync official matches with seed_key
+    if (!isTestMatch && matchRecord?.seed_key) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'insert',
         payload: {
           external_id: String(setId),
-          match_id: matchRecord?.externalId || String(cur.matchId),
+          match_id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: cur.index + 1,
           home_points: 0,
           away_points: 0,

@@ -2339,14 +2339,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const matchForSet = await db.matches.get(matchId)
     const isTest = matchForSet?.test || false
 
-    // Only sync official matches (not test matches)
-    if (!isTest) {
+    // Only sync official matches (not test matches) with seed_key
+    if (!isTest && matchForSet?.seed_key) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'insert',
         payload: {
           external_id: String(firstSetId),
-          match_id: String(matchId),
+          match_id: matchForSet.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: 1,
           home_points: 0,
           away_points: 0,
@@ -2827,7 +2827,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               {/* Home Team */}
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{t('matchSetup.homeTeam')}</div>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background:' #06110a' }}>{t('matchSetup.homeTeam')}</div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                   <div className="field" style={{ flex: 1, marginBottom: 0}}>
                     <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
@@ -2872,7 +2872,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
               {/* Away Team */}
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{t('matchSetup.awayTeam')}</div>
+                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: '#06110a' }}>{t('matchSetup.awayTeam')}</div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                   <div className="field" style={{ flex: 1, marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>

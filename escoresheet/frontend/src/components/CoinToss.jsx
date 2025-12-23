@@ -604,13 +604,13 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     const isTest = match?.test || false
 
     // Add first set to sync queue (only for official matches)
-    if (!isTest) {
+    if (!isTest && match?.seed_key) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'insert',
         payload: {
           external_id: String(firstSetId),
-          match_id: String(matchId),
+          match_id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: 1,
           home_points: 0,
           away_points: 0,
