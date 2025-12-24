@@ -1965,6 +1965,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       homeCaptainSignature: null,
       awayCoachSignature: null,
       awayCaptainSignature: null,
+      coinTossConfirmed: false,  // Set to true when coin toss is confirmed
       createdAt: new Date().toISOString()
     })
 
@@ -2180,7 +2181,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       coinTossTeamA: teamA, // 'home' or 'away'
       coinTossTeamB: teamB, // 'home' or 'away'
       coinTossServeA: serveA, // true or false
-      coinTossServeB: serveB // true or false
+      coinTossServeB: serveB, // true or false
+      coinTossConfirmed: true  // Mark coin toss as confirmed
     }
 
     // Only save signatures for official matches
@@ -3171,19 +3173,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }
 
               // Update match with officials references (using seed_keys for lookup)
-              await db.sync_queue.add({
-                resource: 'match',
-                action: 'update',
-                payload: {
-                  id: String(matchId),
-                  referee_1: (ref1First && ref1Last) ? `${ref1First.toLowerCase()}_${ref1Last.toLowerCase()}` : null,
-                  referee_2: (ref2First && ref2Last) ? `${ref2First.toLowerCase()}_${ref2Last.toLowerCase()}` : null,
-                  scorer: (scorerFirst && scorerLast) ? `${scorerFirst.toLowerCase()}_${scorerLast.toLowerCase()}` : null,
-                  assistant_scorer: (asstFirst && asstLast) ? `${asstFirst.toLowerCase()}_${asstLast.toLowerCase()}` : null
-                },
-                ts: new Date().toISOString(),
-                status: 'queued'
-              })
+              const matchForOfficials = await db.matches.get(matchId)
+              if (matchForOfficials?.seed_key) {
+                await db.sync_queue.add({
+                  resource: 'match',
+                  action: 'update',
+                  payload: {
+                    id: matchForOfficials.seed_key, // Use seed_key (external_id) for Supabase lookup
+                    referee_1: (ref1First && ref1Last) ? `${ref1First.toLowerCase()}_${ref1Last.toLowerCase()}` : null,
+                    referee_2: (ref2First && ref2Last) ? `${ref2First.toLowerCase()}_${ref2Last.toLowerCase()}` : null,
+                    scorer: (scorerFirst && scorerLast) ? `${scorerFirst.toLowerCase()}_${scorerLast.toLowerCase()}` : null,
+                    assistant_scorer: (asstFirst && asstLast) ? `${asstFirst.toLowerCase()}_${asstLast.toLowerCase()}` : null
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
+              }
 
               setNoticeModal({ message: t('matchSetup.officialsSaved'), type: 'success', syncing: true })
 
