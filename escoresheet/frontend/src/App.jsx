@@ -160,14 +160,12 @@ export default function App() {
         if ('wakeLock' in navigator) {
           if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
-          console.log('[WakeLock] Screen wake lock acquired (App)')
           setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
-            console.log('[WakeLock] Screen wake lock released (App)')
             if (!wakeLockRef.current) setWakeLockActive(false)
           })
         }
-      } catch (err) { console.log('[WakeLock] Native wake lock failed:', err.message) }
+      } catch (err) { /* WakeLock failed, ignore */ }
       try {
         if (!noSleepVideoRef.current) {
           const video = document.createElement('video')
@@ -180,8 +178,7 @@ export default function App() {
           noSleepVideoRef.current = video
         }
         await noSleepVideoRef.current.play()
-        console.log('[NoSleep] Video playing for keep-awake (App)')
-      } catch (err) { console.log('[NoSleep] Video fallback failed:', err.message) }
+      } catch (err) { /* NoSleep video failed, ignore */ }
     }
     const handleInteraction = async () => { await enableNoSleep() }
     enableNoSleep()
@@ -203,12 +200,11 @@ export default function App() {
       if ('wakeLock' in navigator) {
         if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
         wakeLockRef.current = await navigator.wakeLock.request('screen')
-        console.log('[WakeLock] Re-acquired wake lock (App)')
         setWakeLockActive(true)
-        wakeLockRef.current.addEventListener('release', () => console.log('[WakeLock] Released (App)'))
+        wakeLockRef.current.addEventListener('release', () => {})
         return true
       }
-    } catch (err) { console.log('[WakeLock] Failed to re-acquire:', err.message) }
+    } catch (err) { /* Failed to re-acquire, ignore */ }
     return false
   }, [])
 
@@ -216,11 +212,9 @@ export default function App() {
     if (wakeLockActive) {
       if (wakeLockRef.current) { try { await wakeLockRef.current.release(); wakeLockRef.current = null } catch (e) {} }
       setWakeLockActive(false)
-      console.log('[WakeLock] Manually disabled (App)')
     } else {
       const success = await reEnableWakeLock()
       if (!success) setWakeLockActive(true)
-      console.log('[WakeLock] Manually enabled (App)')
     }
   }, [wakeLockActive, reEnableWakeLock])
 
@@ -1407,9 +1401,8 @@ export default function App() {
           wsRef.current.send(JSON.stringify({
             type: 'clear-all-matches'
           }))
-          console.log('[App WebSocket] Cleared all matches from server (component unmounting)')
         } catch (err) {
-          console.error('[App WebSocket] Error clearing matches on unmount:', err)
+          // Ignore error on unmount
         }
       }
       
@@ -1514,9 +1507,8 @@ export default function App() {
             type: 'delete-match',
             matchId: String(cur.matchId)
           }))
-          console.log('[App WebSocket] Notified server to delete ended match:', cur.matchId)
         } catch (err) {
-          console.error('[App WebSocket] Error notifying server of match end:', err)
+          // Ignore error
         }
       }
       
@@ -1939,7 +1931,6 @@ export default function App() {
       coinTossServeB: matchData.coin_toss_serve_b ?? null,
       coinTossConfirmed: matchData.coin_toss_confirmed ?? false
     })
-    console.log('[TestMatch] Created Dexie match', matchDexieId)
 
     if (Array.isArray(setsData) && setsData.length > 0) {
       await db.sets.bulkAdd(setsData.map(set => ({
@@ -2130,9 +2121,8 @@ export default function App() {
           type: 'delete-match',
           matchId: String(matchIdToDelete)
         }))
-        console.log('[App WebSocket] Notified server to delete match:', matchIdToDelete)
       } catch (err) {
-        console.error('[App WebSocket] Error notifying server of match deletion:', err)
+        // Ignore error
       }
     }
 
@@ -2149,7 +2139,6 @@ export default function App() {
           ts: new Date().toISOString(),
           status: 'queued'
         })
-        console.log('[App] Queued Supabase deletion for non-final match:', matchToDelete.seed_key)
       } catch (err) {
         console.error('[App] Error queuing Supabase match deletion:', err)
       }

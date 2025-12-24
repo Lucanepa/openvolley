@@ -704,26 +704,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || ''
         })
 
+        // DEBUG: Log match bench data
+        console.log('[MatchSetup DEBUG] Match object bench_home:', match.bench_home)
+        console.log('[MatchSetup DEBUG] Match object bench_away:', match.bench_away)
+        console.log('[MatchSetup DEBUG] homeTeam.benchStaff:', homeTeam?.benchStaff)
+        console.log('[MatchSetup DEBUG] awayTeam.benchStaff:', awayTeam?.benchStaff)
+
         // For bench officials: only load if match has saved bench data
         // For brand new/empty matches, keep default (Coach only) - don't load from team.benchStaff
         const resolvedHomeBench = (() => {
           // Only load if match explicitly has bench_home data
           if (Array.isArray(match.bench_home) && match.bench_home.length > 0) {
+            console.log('[MatchSetup DEBUG] Using match.bench_home:', match.bench_home)
             return match.bench_home.map(normalizeBenchMember)
           }
           // For new/empty matches, only show Coach (don't load from team.benchStaff)
+          console.log('[MatchSetup DEBUG] No bench_home on match, using default Coach')
           return [initBench('Coach')]
         })()
 
         const resolvedAwayBench = (() => {
           // Only load if match explicitly has bench_away data
           if (Array.isArray(match.bench_away) && match.bench_away.length > 0) {
+            console.log('[MatchSetup DEBUG] Using match.bench_away:', match.bench_away)
             return match.bench_away.map(normalizeBenchMember)
           }
           // For new/empty matches, only show Coach (don't load from team.benchStaff)
+          console.log('[MatchSetup DEBUG] No bench_away on match, using default Coach')
           return [initBench('Coach')]
         })()
 
+        console.log('[MatchSetup DEBUG] Final resolvedHomeBench:', resolvedHomeBench)
+        console.log('[MatchSetup DEBUG] Final resolvedAwayBench:', resolvedAwayBench)
         setBenchHome(resolvedHomeBench)
         setBenchAway(resolvedAwayBench)
         
