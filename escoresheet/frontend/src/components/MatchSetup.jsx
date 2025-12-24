@@ -1570,7 +1570,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           external_id: String(homeTeamId),
           name: home.trim(),
-          short_name: homeShortName || generateShortName(home.trim())
+          short_name: homeShortName || generateShortName(home.trim()),
+          color: homeColor
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -1598,7 +1599,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           external_id: String(awayTeamId),
           name: away.trim(),
-          short_name: awayShortName || generateShortName(away.trim())
+          short_name: awayShortName || generateShortName(away.trim()),
+          color: awayColor
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -1673,6 +1675,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match_type_3: type3 || null,
           match_type_3_other: type3Other || null,
           game_n: gameN ? parseInt(gameN, 10) : null,
+          bench_home: benchHome || null,
+          bench_away: benchAway || null,
           test: false
         },
         ts: new Date().toISOString(),
@@ -1970,6 +1974,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     })
 
       // Add match to sync queue (official match, so test: false)
+      // Note: referee_1, referee_2, scorer, assistant_scorer are synced separately via foreign keys
+      // when officials are saved - no need for redundant 'officials' JSONB column
       await db.sync_queue.add({
         resource: 'match',
         action: 'insert',
@@ -1984,6 +1990,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           city: city || null,
           league: league || null,
           scheduled_at: scheduledAt || null,
+          bench_home: benchHome || null,
+          bench_away: benchAway || null,
           test: false,
           created_at: new Date().toISOString()
         },
@@ -3173,6 +3181,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }
 
               // Update match with officials references (using seed_keys for lookup)
+              // The seed_keys are resolved to UUIDs by useSyncQueue when processing the job
               const matchForOfficials = await db.matches.get(matchId)
               if (matchForOfficials?.seed_key) {
                 await db.sync_queue.add({
@@ -4154,7 +4163,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 payload: {
                   external_id: String(match.homeTeamId),
                   name: home?.trim() || '',
-                  short_name: homeShortName || generateShortName(home)
+                  short_name: homeShortName || generateShortName(home),
+                  color: homeColor
                 },
                 ts: new Date().toISOString(),
                 status: 'queued'
@@ -5376,7 +5386,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 payload: {
                   external_id: String(match.awayTeamId),
                   name: away?.trim() || '',
-                  short_name: awayShortName || generateShortName(away)
+                  short_name: awayShortName || generateShortName(away),
+                  color: awayColor
                 },
                 ts: new Date().toISOString(),
                 status: 'queued'
