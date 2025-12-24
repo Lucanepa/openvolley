@@ -3,7 +3,7 @@
 
 export const changelog = [
   {
-    version: '0.16.7',
+    version: '0.16.8',
     date: '24.12.25',
     changes: [
       'Enhance MatchSetup component with additional team color and bench information'

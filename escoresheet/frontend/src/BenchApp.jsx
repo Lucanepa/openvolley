@@ -85,27 +85,24 @@ export default function BenchApp() {
             try { await wakeLockRef.current.release() } catch (e) {}
           }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
-          console.log('[WakeLock] Screen wake lock acquired (Bench)')
           setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
-            console.log('[WakeLock] Screen wake lock released (Bench)')
             if (!wakeLockRef.current) {
               setWakeLockActive(false)
             }
           })
         }
       } catch (err) {
-        console.log('[WakeLock] Native wake lock failed:', err.message)
+        // WakeLock failed, ignore
       }
-      
+
       try {
         const video = createNoSleepVideo()
         if (video) {
           await video.play()
-          console.log('[NoSleep] Video wake lock enabled (Bench)')
         }
       } catch (err) {
-        console.log('[NoSleep] Video wake lock failed:', err.message)
+        // NoSleep video failed, ignore
       }
     }
 
@@ -178,41 +175,28 @@ export default function BenchApp() {
   // Load available matches on mount and periodically
   useEffect(() => {
     const loadMatches = async () => {
-      console.log('[Bench] loadMatches called, connectionMode:', connectionMode)
       setLoadingMatches(true)
       try {
         // Try Supabase first if in AUTO or SUPABASE mode
         const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
           (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
-        console.log('[Bench] useSupabase:', useSupabase, 'supabase client exists:', !!supabase)
-
         if (useSupabase && supabase) {
-          console.log('[Bench] Loading matches from Supabase...')
           const result = await listAvailableMatchesSupabase()
-          console.log('[Bench] Supabase result:', JSON.stringify(result, null, 2))
           if (result.success && result.matches && result.matches.length > 0) {
-            console.log('[Bench] Found', result.matches.length, 'matches from Supabase')
             setAvailableMatches(result.matches)
             setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
-          } else {
-            console.log('[Bench] Supabase returned no matches or failed, falling back to WebSocket')
           }
         }
 
         // Fall back to WebSocket/server
-        console.log('[Bench] Loading matches from WebSocket server...')
         const result = await listAvailableMatches()
-        console.log('[Bench] WebSocket server result:', JSON.stringify(result, null, 2))
         if (result.success && result.matches) {
-          console.log('[Bench] Found', result.matches.length, 'matches from WebSocket')
           setAvailableMatches(result.matches)
           setActiveConnection('websocket')
-        } else {
-          console.log('[Bench] WebSocket returned no matches or failed')
         }
       } catch (err) {
         console.error('[Bench] Error loading matches:', err)
@@ -329,7 +313,6 @@ export default function BenchApp() {
   }, [match, selectedTeam])
 
   const handleTeamSelect = (team) => {
-    console.log('[Bench] Team selected:', team, 'for match:', selectedMatch?.id)
     setSelectedTeam(team)
     setPinInput('')
     setError('')
@@ -338,8 +321,6 @@ export default function BenchApp() {
   const handlePinSubmit = async (e) => {
     e.preventDefault()
     setError('')
-
-    console.log('[Bench] PIN submit - input:', pinInput, 'selectedTeam:', selectedTeam, 'selectedMatch:', selectedMatch?.id)
 
     if (!pinInput || pinInput.length !== 6) {
       setError('Please enter a 6-digit PIN code')
@@ -354,16 +335,12 @@ export default function BenchApp() {
     try {
       // Validate PIN with server (no local IndexedDB)
       const pinType = selectedTeam === 'home' ? 'homeTeam' : 'awayTeam'
-      console.log('[Bench] Validating PIN, type:', pinType)
       const result = await validatePin(pinInput.trim(), pinType)
-      console.log('[Bench] PIN validation result:', JSON.stringify(result, null, 2))
 
       if (result.success && result.match) {
-        console.log('[Bench] PIN valid, match ID:', result.match.id)
         setMatchId(result.match.id)
         setMatch(result.match)
       } else {
-        console.log('[Bench] PIN invalid or no match returned')
         setError('Invalid PIN code. Please check and try again.')
         setPinInput('')
       }
@@ -412,22 +389,18 @@ export default function BenchApp() {
 
   // Handle connection mode change
   const handleConnectionModeChange = useCallback((mode) => {
-    console.log('[Bench] Connection mode changing from', connectionMode, 'to', mode)
     setConnectionMode(mode)
     try {
       localStorage.setItem('bench_connection_mode', mode)
-      console.log('[Bench] Saved connection mode to localStorage')
     } catch (e) {
-      console.warn('[Bench] Failed to save connection mode:', e)
+      // Ignore localStorage errors
     }
     // Force reconnection by clearing states
     if (supabaseChannelRef.current) {
-      console.log('[Bench] Removing existing Supabase channel')
       supabase?.removeChannel(supabaseChannelRef.current)
       supabaseChannelRef.current = null
     }
     setActiveConnection(null)
-    console.log('[Bench] Connection mode change complete, will reload matches')
   }, [connectionMode])
 
   const handleBack = () => {
@@ -446,7 +419,6 @@ export default function BenchApp() {
   }
 
   const handleMatchSelect = (matchObj) => {
-    console.log('[Bench] Match selected:', matchObj?.id, matchObj?.homeTeamName, 'vs', matchObj?.awayTeamName)
     setSelectedMatch(matchObj)
     setError('')
   }

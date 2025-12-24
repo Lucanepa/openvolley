@@ -153,6 +153,11 @@ export function useSyncQueue() {
         // Resolve home_team_id and away_team_id from external_id
         let matchPayload = { ...job.payload }
 
+        // DEBUG: Log bench data being synced
+        console.log('[SyncQueue DEBUG] Match insert - job.payload:', job.payload)
+        console.log('[SyncQueue DEBUG] Match insert - bench_home:', job.payload.bench_home)
+        console.log('[SyncQueue DEBUG] Match insert - bench_away:', job.payload.bench_away)
+
         if (matchPayload.home_team_id && typeof matchPayload.home_team_id === 'string') {
           const { data: homeTeamData } = await supabase
             .from('teams')
@@ -171,6 +176,7 @@ export function useSyncQueue() {
           matchPayload.away_team_id = awayTeamData?.id || null
         }
 
+        console.log('[SyncQueue DEBUG] Match insert - final payload to Supabase:', matchPayload)
         const { error } = await supabase
           .from('matches')
           .upsert(matchPayload, { onConflict: 'external_id' })
@@ -178,11 +184,17 @@ export function useSyncQueue() {
           console.error('[SyncQueue] Match insert error:', error, matchPayload)
           return false
         }
+        console.log('[SyncQueue DEBUG] Match insert successful')
         return true
       }
 
       if (job.resource === 'match' && job.action === 'update') {
         const { id, ...updateData } = job.payload
+
+        // DEBUG: Log bench data in update
+        console.log('[SyncQueue DEBUG] Match update - job.payload:', job.payload)
+        console.log('[SyncQueue DEBUG] Match update - bench_home:', updateData.bench_home)
+        console.log('[SyncQueue DEBUG] Match update - bench_away:', updateData.bench_away)
 
         // Resolve official seed_keys to UUIDs
         if (updateData.referee_1 && typeof updateData.referee_1 === 'string' && !updateData.referee_1.includes('-')) {
@@ -218,6 +230,7 @@ export function useSyncQueue() {
           updateData.assistant_scorer = asstData?.id || null
         }
 
+        console.log('[SyncQueue DEBUG] Match update - final updateData to Supabase:', updateData)
         const { error } = await supabase
           .from('matches')
           .update(updateData)
@@ -226,6 +239,7 @@ export function useSyncQueue() {
           console.error('[SyncQueue] Match update error:', error, job.payload)
           return false
         }
+        console.log('[SyncQueue DEBUG] Match update successful')
         return true
       }
 

@@ -92,27 +92,24 @@ export default function LivescoreApp() {
             try { await wakeLockRef.current.release() } catch (e) {}
           }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
-          console.log('[WakeLock] Screen wake lock acquired (Livescore)')
           setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
-            console.log('[WakeLock] Screen wake lock released (Livescore)')
             if (!wakeLockRef.current) {
               setWakeLockActive(false)
             }
           })
         }
       } catch (err) {
-        console.log('[WakeLock] Native wake lock failed:', err.message)
+        // WakeLock failed, ignore
       }
-      
+
       try {
         const video = createNoSleepVideo()
         if (video) {
           await video.play()
-          console.log('[NoSleep] Video wake lock enabled (Livescore)')
         }
       } catch (err) {
-        console.log('[NoSleep] Video wake lock failed:', err.message)
+        // NoSleep video failed, ignore
       }
     }
 
@@ -163,20 +160,17 @@ export default function LivescoreApp() {
         noSleepVideoRef.current.pause()
       }
       setWakeLockActive(false)
-      console.log('[WakeLock] Manually disabled')
     } else {
       // Enable wake lock
       try {
         if ('wakeLock' in navigator) {
           wakeLockRef.current = await navigator.wakeLock.request('screen')
           setWakeLockActive(true)
-          console.log('[WakeLock] Manually enabled')
         }
         if (noSleepVideoRef.current) {
           await noSleepVideoRef.current.play()
         }
       } catch (err) {
-        console.log('[WakeLock] Failed to enable:', err.message)
         setWakeLockActive(true) // Visual feedback even if API failed
       }
     }
@@ -185,41 +179,28 @@ export default function LivescoreApp() {
   // Load available matches on mount and periodically
   useEffect(() => {
     const loadMatches = async () => {
-      console.log('[Livescore] loadMatches called, connectionMode:', connectionMode)
       setLoadingMatches(true)
       try {
         // Try Supabase first if in AUTO or SUPABASE mode
         const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
           (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
-        console.log('[Livescore] useSupabase:', useSupabase, 'supabase client exists:', !!supabase)
-
         if (useSupabase && supabase) {
-          console.log('[Livescore] Loading matches from Supabase...')
           const result = await listAvailableMatchesSupabase()
-          console.log('[Livescore] Supabase result:', JSON.stringify(result, null, 2))
           if (result.success && result.matches && result.matches.length > 0) {
-            console.log('[Livescore] Found', result.matches.length, 'matches from Supabase')
             setAvailableMatches(result.matches)
             setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
-          } else {
-            console.log('[Livescore] Supabase returned no matches or failed, falling back to WebSocket')
           }
         }
 
         // Fall back to WebSocket/server
-        console.log('[Livescore] Loading matches from WebSocket server...')
         const result = await listAvailableMatches()
-        console.log('[Livescore] WebSocket server result:', JSON.stringify(result, null, 2))
         if (result.success && result.matches) {
-          console.log('[Livescore] Found', result.matches.length, 'matches from WebSocket')
           setAvailableMatches(result.matches)
           setActiveConnection('websocket')
-        } else {
-          console.log('[Livescore] WebSocket returned no matches or failed')
         }
       } catch (err) {
         console.error('[Livescore] Error loading matches:', err)
@@ -414,7 +395,6 @@ export default function LivescoreApp() {
 
     // Subscribe to Supabase match_live_state if using Supabase
     if (useSupabase && supabase) {
-      console.log('[Livescore] Connecting to Supabase for match:', gameId)
       setActiveConnection('supabase')
 
       // Fetch initial live state
@@ -427,7 +407,6 @@ export default function LivescoreApp() {
             .maybeSingle()
 
           if (!error && liveState) {
-            console.log('[Livescore] Initial live state:', liveState)
             setSupabaseLiveState(liveState)
             setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
           }
@@ -449,12 +428,10 @@ export default function LivescoreApp() {
             filter: `match_id=eq.${gameId}`
           },
           (payload) => {
-            console.log('[Livescore] Supabase live state update:', payload.new)
             setSupabaseLiveState(payload.new)
           }
         )
         .subscribe((status) => {
-          console.log('[Livescore] Supabase channel status:', status)
           if (status === 'SUBSCRIBED') {
             setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -472,7 +449,6 @@ export default function LivescoreApp() {
     // Subscribe to WebSocket if using WebSocket
     if (useWebSocket || (connectionMode === CONNECTION_MODES.AUTO && !supabase)) {
       wsUnsubscribe = subscribeToMatchData(gameId, (updatedData) => {
-        console.log('[Livescore] WebSocket update received')
         setActiveConnection('websocket')
         const currentSet = (updatedData.sets || []).find(s => !s.finished) ||
                           (updatedData.sets || []).sort((a, b) => b.index - a.index)[0]
@@ -493,7 +469,6 @@ export default function LivescoreApp() {
     // Refetch data when page becomes visible (handles screen wake from sleep)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[Livescore] Page became visible, refetching data...')
         fetchData()
       }
     }
@@ -889,7 +864,6 @@ export default function LivescoreApp() {
         }
         setGameId(-1)
         setData(testData)
-        console.log('[Test Mode] Activated with mock data')
         return 0
       }
       return newCount

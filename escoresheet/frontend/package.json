@@ -1,6 +1,6 @@
 {
   "name": "escoresheet",
-  "version": "0.16.7",
+  "version": "0.16.8",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
