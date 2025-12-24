@@ -408,22 +408,22 @@ export async function restoreMatchInPlace(matchId, jsonData) {
 }
 
 /**
- * Fetch match from Supabase by Match ID and PIN
+ * Fetch match from Supabase by Game N and Game PIN
  */
-export async function fetchMatchByPin(gamePin, matchId) {
+export async function fetchMatchByPin(gamePin, gameN) {
   if (!supabase) {
     throw new Error('Supabase not configured')
   }
 
-  // Find match by external_id (Match ID) and referee_pin
+  // Find match by game_n and game_pin
   let query = supabase
     .from('matches')
     .select('*')
-    .eq('referee_pin', gamePin)
+    .eq('game_pin', gamePin)
 
-  // If matchId provided, also filter by external_id
-  if (matchId) {
-    query = query.eq('external_id', matchId)
+  // If gameN provided, also filter by game_n
+  if (gameN) {
+    query = query.eq('game_n', parseInt(gameN, 10))
   }
 
   const { data: matchData, error: matchError } = await query.maybeSingle()

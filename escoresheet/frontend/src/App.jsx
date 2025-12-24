@@ -3138,79 +3138,77 @@ export default function App() {
                 <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
                   Restore from Database
                 </h3>
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                    Match ID:
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={restoreMatchIdInput}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '')
-                      setRestoreMatchIdInput(value)
-                      setRestoreError('')
-                    }}
-                    placeholder="Enter Match ID"
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      fontFamily: 'monospace',
-                      background: 'var(--bg)',
-                      border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
-                      borderRadius: '8px',
-                      color: 'var(--text)',
-                      outline: 'none'
-                    }}
-                  />
-                </div>
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                    Game PIN:
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={restorePin}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '')
-                      if (value.length <= 6) {
-                        setRestorePin(value)
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                      Game N:
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={restoreMatchIdInput}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '')
+                        setRestoreMatchIdInput(value)
                         setRestoreError('')
-                      }
-                    }}
-                    placeholder="000000"
-                    maxLength={6}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      fontSize: '20px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      letterSpacing: '4px',
-                      fontFamily: 'monospace',
-                      background: 'var(--bg)',
-                      border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
-                      borderRadius: '8px',
-                      color: 'var(--text)',
-                      outline: 'none'
-                    }}
-                  />
-                  {restoreError && (
-                    <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '8px' }}>{restoreError}</p>
-                  )}
+                      }}
+                      placeholder="123"
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        fontSize: '20px',
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        fontFamily: 'monospace',
+                        background: 'var(--bg)',
+                        border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                        borderRadius: '8px',
+                        color: 'var(--text)',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1.5 }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                      Game PIN:
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={restorePin}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '')
+                        if (value.length <= 6) {
+                          setRestorePin(value)
+                          setRestoreError('')
+                        }
+                      }}
+                      placeholder="000000"
+                      maxLength={6}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        fontSize: '20px',
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        letterSpacing: '4px',
+                        fontFamily: 'monospace',
+                        background: 'var(--bg)',
+                        border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                        borderRadius: '8px',
+                        color: 'var(--text)',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
                 </div>
+                {restoreError && (
+                  <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '12px' }}>{restoreError}</p>
+                )}
                 <button
                   onClick={async () => {
-                    if (!restoreMatchIdInput) {
-                      setRestoreError('Please enter a Match ID')
-                      return
-                    }
                     if (restorePin.length !== 6) {
                       setRestoreError('Please enter a 6-digit Game PIN')
                       return
@@ -3218,9 +3216,9 @@ export default function App() {
                     setRestoreLoading(true)
                     setRestoreError('')
                     try {
-                      const cloudData = await fetchMatchByPin(restorePin, restoreMatchIdInput)
+                      const cloudData = await fetchMatchByPin(restorePin, restoreMatchIdInput || null)
                       if (!cloudData) {
-                        setRestoreError('Match not found with this ID and PIN')
+                        setRestoreError('Match not found')
                         setRestoreLoading(false)
                         return
                       }
@@ -3236,20 +3234,20 @@ export default function App() {
                       setRestoreLoading(false)
                     }
                   }}
-                  disabled={restoreLoading || !restoreMatchIdInput || restorePin.length !== 6}
+                  disabled={restoreLoading || restorePin.length !== 6}
                   style={{
                     width: '100%',
                     padding: '12px 24px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: restoreLoading || !restoreMatchIdInput || restorePin.length !== 6 ? 'rgba(59, 130, 246, 0.3)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    background: restoreLoading || restorePin.length !== 6 ? 'rgba(59, 130, 246, 0.3)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
                     color: '#fff',
                     border: 'none',
                     borderRadius: '8px',
-                    cursor: restoreLoading || !restoreMatchIdInput || restorePin.length !== 6 ? 'not-allowed' : 'pointer'
+                    cursor: restoreLoading || restorePin.length !== 6 ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {restoreLoading ? 'Restoring...' : 'Restored from Database'}
+                  {restoreLoading ? 'Restoring...' : 'Restore from Database'}
                 </button>
               </div>
             )}

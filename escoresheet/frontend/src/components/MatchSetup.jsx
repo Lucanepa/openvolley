@@ -1689,6 +1689,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           game_n: gameN ? parseInt(gameN, 10) : null,
           bench_home: benchHome || null,
           bench_away: benchAway || null,
+          game_pin: match?.gamePin || null,
           test: false
         },
         ts: new Date().toISOString(),

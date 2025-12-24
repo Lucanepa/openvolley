@@ -8,10 +8,6 @@ export default function ConnectionStatus({
   position = 'right', // 'left' | 'right' | 'center'
   size = 'normal' // 'normal' | 'small' | 'large'
 }) {
-  // Debug logging for connection statuses
-  console.log('[ConnectionStatus DEBUG] ========== RENDER ==========')
-  console.log('[ConnectionStatus DEBUG] connectionStatuses:', JSON.stringify(connectionStatuses, null, 2))
-  console.log('[ConnectionStatus DEBUG] connectionDebugInfo:', JSON.stringify(connectionDebugInfo, null, 2))
 
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
@@ -134,8 +130,7 @@ export default function ConnectionStatus({
   const getOverallStatus = () => {
     // Check all connection statuses
     const statuses = Object.entries(connectionStatuses)
-    console.log('[ConnectionStatus DEBUG] getOverallStatus - statuses:', statuses)
-    
+
     // Check if only match is disconnected
     const matchStatus = connectionStatuses.match
     const otherStatuses = statuses.filter(([key]) => key !== 'match')
@@ -170,19 +165,15 @@ export default function ConnectionStatus({
              status === 'not_available' // Static deployment - no backend
     })
     
-    let result
     if (allConnected && statuses.length > 0) {
-      result = 'connected'
+      return 'connected'
     } else {
-      result = 'attention' // Use 'attention' instead of 'disconnected' for the overall status
+      return 'attention' // Use 'attention' instead of 'disconnected' for the overall status
     }
-    console.log('[ConnectionStatus DEBUG] getOverallStatus result:', result)
-    return result
   }
 
   const overallStatus = getOverallStatus()
   const statusInfo = getStatusColor(overallStatus)
-  console.log('[ConnectionStatus DEBUG] overallStatus:', overallStatus, 'statusInfo:', statusInfo)
 
   const sizeStyles = {
     normal: {
