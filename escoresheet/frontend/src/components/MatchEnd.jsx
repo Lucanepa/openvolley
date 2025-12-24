@@ -682,13 +682,13 @@ export default function MatchEnd({ matchId, onGoHome }) {
     setShowCloseConfirm(false)
 
     if (closeMatch) {
-      // Save to sync queue if official match
-      if (!match.test) {
+      // Save to sync queue if official match with seed_key
+      if (!match.test && match?.seed_key) {
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
           payload: {
-            id: String(matchId),
+            id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'final',
             approved: true,
             approvedAt: new Date().toISOString()

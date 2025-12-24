@@ -196,13 +196,11 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   })
 
   // Check if coin toss was previously confirmed
+  // Use the dedicated coinTossConfirmed field instead of signature comparison
+  // This prevents false positives when signatures were already set in MatchSetup
   const isCoinTossConfirmed = useMemo(() => {
-    return homeCoachSignature && homeCaptainSignature && awayCoachSignature && awayCaptainSignature &&
-           homeCoachSignature === savedSignatures.homeCoach &&
-           homeCaptainSignature === savedSignatures.homeCaptain &&
-           awayCoachSignature === savedSignatures.awayCoach &&
-           awayCaptainSignature === savedSignatures.awayCaptain
-  }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
+    return !!match?.coinTossConfirmed
+  }, [match?.coinTossConfirmed])
 
   // Helper function to compare roster/bench for changes
   const hasRosterChanges = (originalRoster, currentRoster, originalBench, currentBench) => {
@@ -455,7 +453,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         coinTossTeamA: teamA,
         coinTossTeamB: teamB,
         coinTossServeA: serveA,
-        coinTossServeB: serveB
+        coinTossServeB: serveB,
+        coinTossConfirmed: true  // Mark coin toss as confirmed
       }
 
       // Only save signatures for official matches
@@ -492,19 +491,23 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         })
       }
 
-      // Add match update to sync queue
+      // Add match update to sync queue (only if match has seed_key)
       const updatedMatch = await db.matches.get(matchId)
-      if (updatedMatch) {
+      if (updatedMatch?.seed_key) {
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
           payload: {
-            id: String(matchId),
-            status: updatedMatch.status || null,
+            id: updatedMatch.seed_key, // Use seed_key (external_id) for Supabase lookup
+            status: 'live', // Set status to live after coin toss is confirmed
             hall: updatedMatch.hall || null,
             city: updatedMatch.city || null,
             league: updatedMatch.league || null,
-            scheduled_at: updatedMatch.scheduledAt || null
+            scheduled_at: updatedMatch.scheduledAt || null,
+            coin_toss_confirmed: true,
+            coin_toss_team_a: teamA,
+            coin_toss_team_b: teamB,
+            first_serve: firstServeTeam
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -634,28 +637,31 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     const asstScorer = match?.officials?.find(o => o.role === 'assistant scorer')
 
     // Sync match status to Supabase (including officials, signatures, and referee connection info)
-    await db.sync_queue.add({
-      resource: 'match',
-      action: 'update',
-      payload: {
-        id: String(matchId),
-        status: 'live',
-        referee_pin: match?.refereePin || null,
-        referee_connection_enabled: match?.refereeConnectionEnabled === true,
-        // Officials (using seed_key format for foreign key resolution)
-        referee_1: (ref1?.firstName && ref1?.lastName) ? `${ref1.firstName.toLowerCase()}_${ref1.lastName.toLowerCase()}` : null,
-        referee_2: (ref2?.firstName && ref2?.lastName) ? `${ref2.firstName.toLowerCase()}_${ref2.lastName.toLowerCase()}` : null,
-        scorer: (scorer?.firstName && scorer?.lastName) ? `${scorer.firstName.toLowerCase()}_${scorer.lastName.toLowerCase()}` : null,
-        assistant_scorer: (asstScorer?.firstName && asstScorer?.lastName) ? `${asstScorer.firstName.toLowerCase()}_${asstScorer.lastName.toLowerCase()}` : null,
-        // Signatures (only for official matches)
-        home_coach_signature: !match?.test ? homeCoachSignature : null,
-        home_captain_signature: !match?.test ? homeCaptainSignature : null,
-        away_coach_signature: !match?.test ? awayCoachSignature : null,
-        away_captain_signature: !match?.test ? awayCaptainSignature : null
-      },
-      ts: new Date().toISOString(),
-      status: 'queued'
-    })
+    // Only sync if match has seed_key (for Supabase lookup)
+    if (match?.seed_key) {
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'update',
+        payload: {
+          id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
+          status: 'live',
+          referee_pin: match?.refereePin || null,
+          referee_connection_enabled: match?.refereeConnectionEnabled === true,
+          // Officials (using seed_key format for foreign key resolution)
+          referee_1: (ref1?.firstName && ref1?.lastName) ? `${ref1.firstName.toLowerCase()}_${ref1.lastName.toLowerCase()}` : null,
+          referee_2: (ref2?.firstName && ref2?.lastName) ? `${ref2.firstName.toLowerCase()}_${ref2.lastName.toLowerCase()}` : null,
+          scorer: (scorer?.firstName && scorer?.lastName) ? `${scorer.firstName.toLowerCase()}_${scorer.lastName.toLowerCase()}` : null,
+          assistant_scorer: (asstScorer?.firstName && asstScorer?.lastName) ? `${asstScorer.firstName.toLowerCase()}_${asstScorer.lastName.toLowerCase()}` : null,
+          // Signatures (only for official matches)
+          home_coach_signature: !match?.test ? homeCoachSignature : null,
+          home_captain_signature: !match?.test ? homeCaptainSignature : null,
+          away_coach_signature: !match?.test ? awayCoachSignature : null,
+          away_captain_signature: !match?.test ? awayCaptainSignature : null
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
 
     // Cloud backup at coin toss (non-blocking)
     if (!match?.test) {
@@ -936,12 +942,12 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       })
 
       const matchData = await db.matches.get(matchId)
-      if (matchData) {
+      if (matchData?.seed_key) {
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
           payload: {
-            id: String(matchId),
+            id: matchData.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: matchData.status || null,
             hall: matchData.hall || null,
             city: matchData.city || null,

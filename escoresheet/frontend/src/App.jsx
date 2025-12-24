@@ -1479,8 +1479,8 @@ export default function App() {
         console.error('Error unlocking session:', error)
       }
       
-      // Only sync official matches
-      if (!isTestMatch) {
+      // Only sync official matches with seed_key
+      if (!isTestMatch && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
           .sort((a, b) => a.index - b.index)
@@ -1494,7 +1494,7 @@ export default function App() {
           resource: 'match',
           action: 'update',
           payload: {
-            id: String(cur.matchId),
+            id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'final',
             set_results: setResults,
             winner,
@@ -1936,7 +1936,8 @@ export default function App() {
       coinTossTeamA: matchData.coin_toss_team_a || null,
       coinTossTeamB: matchData.coin_toss_team_b || null,
       coinTossServeA: matchData.coin_toss_serve_a ?? null,
-      coinTossServeB: matchData.coin_toss_serve_b ?? null
+      coinTossServeB: matchData.coin_toss_serve_b ?? null,
+      coinTossConfirmed: matchData.coin_toss_confirmed ?? false
     })
     console.log('[TestMatch] Created Dexie match', matchDexieId)
 
@@ -2182,6 +2183,7 @@ export default function App() {
     const newMatchId = await db.matches.add({
       status: 'scheduled',
       refereePin: generateRefereePin(),
+      coinTossConfirmed: false,
       createdAt: new Date().toISOString()
     })
 
@@ -2242,6 +2244,7 @@ export default function App() {
       const newMatchId = await db.matches.add({
         status: 'scheduled',
         refereePin: generateRefereePin(),
+        coinTossConfirmed: false,
         createdAt: new Date().toISOString()
       })
       setMatchId(newMatchId)
@@ -2616,6 +2619,7 @@ export default function App() {
         homeCaptainSignature: null,
         awayCoachSignature: null,
         awayCaptainSignature: null,
+        coinTossConfirmed: false,
         test: true,
         seedKey: TEST_MATCH_SEED_KEY,
         externalId: TEST_MATCH_EXTERNAL_ID,

@@ -3996,7 +3996,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       // Add match update to sync queue with results
       const matchRecord = await db.matches.get(matchId)
-      if (matchRecord?.test !== true) {
+      if (matchRecord?.test !== true && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
           .sort((a, b) => a.index - b.index)
@@ -4010,7 +4010,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           resource: 'match',
           action: 'update',
           payload: {
-            id: String(matchId),
+            id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'final',
             set_results: setResults,
             winner,
