@@ -508,7 +508,7 @@ export default function App() {
     
     // Check WebSocket server availability
     // Skip WebSocket check for static deployments without backend URL
-    if (isGitHubPages && !hasBackendUrl) {
+    if (isStaticDeployment && !hasBackendUrl) {
       statuses.websocket = 'not_available'
       debugInfo.websocket = {
         status: 'not_available',
