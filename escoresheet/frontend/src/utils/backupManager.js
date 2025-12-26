@@ -409,6 +409,7 @@ export async function restoreMatchInPlace(matchId, jsonData) {
 
 /**
  * Fetch match from Supabase by Game N and Game PIN
+ * Uses JSONB columns for team/player data (teams/players tables were dropped)
  */
 export async function fetchMatchByPin(gamePin, gameN) {
   if (!supabase) {
@@ -431,24 +432,15 @@ export async function fetchMatchByPin(gamePin, gameN) {
   if (matchError) throw matchError
   if (!matchData) throw new Error('Match not found with this ID and PIN')
 
-  // Fetch related data
-  const teamIds = [matchData.home_team_id, matchData.away_team_id].filter(Boolean)
-
-  const [teamsResult, playersResult, setsResult, eventsResult] = await Promise.all([
-    teamIds.length > 0
-      ? supabase.from('teams').select('*').in('external_id', teamIds)
-      : { data: [] },
-    teamIds.length > 0
-      ? supabase.from('players').select('*').in('team_id', teamIds)
-      : { data: [] },
+  // Fetch sets and events (teams/players are now in JSONB columns)
+  const [setsResult, eventsResult] = await Promise.all([
     supabase.from('sets').select('*').eq('match_id', matchData.external_id),
     supabase.from('events').select('*').eq('match_id', matchData.external_id)
   ])
 
   return {
     match: matchData,
-    teams: teamsResult.data || [],
-    players: playersResult.data || [],
+    // JSONB data is already in matchData: home_team, away_team, players_home, players_away, bench_home, bench_away, officials
     sets: setsResult.data || [],
     events: eventsResult.data || []
   }
@@ -456,49 +448,95 @@ export async function fetchMatchByPin(gamePin, gameN) {
 
 /**
  * Import match data from Supabase to local Dexie
+ * Uses JSONB columns for team/player data (teams/players tables were dropped)
  */
 export async function importMatchFromSupabase(cloudData) {
-  const { match, teams, players, sets, events } = cloudData
+  const { match, sets, events } = cloudData
 
   let importedMatchId = null
 
   await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, async () => {
-    // Create/update teams
-    const teamIdMap = {} // Map cloud external_ids to local IDs
+    // Extract team data from JSONB columns
+    const homeTeamData = match.home_team || {}
+    const awayTeamData = match.away_team || {}
+    const playersHome = match.players_home || []
+    const playersAway = match.players_away || []
 
-    for (const team of teams) {
-      const existingTeam = await db.teams.where('name').equals(team.name).first()
-      if (existingTeam) {
-        teamIdMap[team.external_id] = existingTeam.id
-        await db.teams.update(existingTeam.id, {
-          shortName: team.short_name,
-          color: team.color,
+    // Create local teams
+    let homeTeamId = null
+    let awayTeamId = null
+
+    if (homeTeamData.name) {
+      const existingHome = await db.teams.where('name').equals(homeTeamData.name).first()
+      if (existingHome) {
+        homeTeamId = existingHome.id
+        await db.teams.update(homeTeamId, {
+          shortName: homeTeamData.short_name,
+          color: homeTeamData.color,
           updatedAt: new Date().toISOString()
         })
       } else {
-        const localId = await db.teams.add({
-          name: team.name,
-          shortName: team.short_name,
-          color: team.color,
-          externalId: team.external_id,
-          createdAt: team.created_at || new Date().toISOString()
+        homeTeamId = await db.teams.add({
+          name: homeTeamData.name,
+          shortName: homeTeamData.short_name,
+          color: homeTeamData.color,
+          createdAt: new Date().toISOString()
         })
-        teamIdMap[team.external_id] = localId
       }
     }
 
-    // Create match
+    if (awayTeamData.name) {
+      const existingAway = await db.teams.where('name').equals(awayTeamData.name).first()
+      if (existingAway) {
+        awayTeamId = existingAway.id
+        await db.teams.update(awayTeamId, {
+          shortName: awayTeamData.short_name,
+          color: awayTeamData.color,
+          updatedAt: new Date().toISOString()
+        })
+      } else {
+        awayTeamId = await db.teams.add({
+          name: awayTeamData.name,
+          shortName: awayTeamData.short_name,
+          color: awayTeamData.color,
+          createdAt: new Date().toISOString()
+        })
+      }
+    }
+
+    // Create match with all JSONB data
     const localMatchId = await db.matches.add({
-      homeTeamId: teamIdMap[match.home_team_id] || null,
-      awayTeamId: teamIdMap[match.away_team_id] || null,
+      homeTeamId,
+      awayTeamId,
       status: match.status,
       scheduledAt: match.scheduled_at,
       hall: match.hall,
       city: match.city,
       league: match.league,
       refereePin: match.referee_pin,
+      gamePin: match.game_pin,
+      gameN: match.game_n,
       test: match.test || false,
-      externalId: match.external_id,
+      seed_key: match.external_id,
+      // JSONB data stored locally
+      officials: match.officials || [],
+      bench_home: match.bench_home || [],
+      bench_away: match.bench_away || [],
+      // Signatures
+      homeCoachSignature: match.home_coach_signature,
+      homeCaptainSignature: match.home_captain_signature,
+      awayCoachSignature: match.away_coach_signature,
+      awayCaptainSignature: match.away_captain_signature,
+      // Coin toss
+      coinTossConfirmed: match.coin_toss_confirmed,
+      coinTossTeamA: match.coin_toss_team_a,
+      coinTossTeamB: match.coin_toss_team_b,
+      firstServe: match.first_serve,
+      // Match result
+      setResults: match.set_results,
+      winner: match.winner,
+      finalScore: match.final_score,
+      // Import metadata
       importedFrom: 'supabase',
       importedAt: new Date().toISOString(),
       createdAt: match.created_at || new Date().toISOString()
@@ -506,21 +544,35 @@ export async function importMatchFromSupabase(cloudData) {
 
     importedMatchId = localMatchId
 
-    // Create players
-    for (const player of players) {
-      const localTeamId = teamIdMap[player.team_id]
-      if (localTeamId) {
+    // Create players from JSONB arrays
+    if (playersHome.length && homeTeamId) {
+      for (const p of playersHome) {
         await db.players.add({
-          teamId: localTeamId,
-          number: player.number,
-          name: player.name,
-          firstName: player.first_name,
-          lastName: player.last_name,
-          dob: player.dob,
-          libero: player.libero,
-          isCaptain: player.is_captain,
-          externalId: player.external_id,
-          createdAt: player.created_at || new Date().toISOString()
+          teamId: homeTeamId,
+          number: p.number,
+          name: `${p.last_name || ''} ${p.first_name || ''}`.trim(),
+          firstName: p.first_name,
+          lastName: p.last_name,
+          dob: p.dob,
+          libero: p.libero,
+          isCaptain: p.is_captain,
+          createdAt: new Date().toISOString()
+        })
+      }
+    }
+
+    if (playersAway.length && awayTeamId) {
+      for (const p of playersAway) {
+        await db.players.add({
+          teamId: awayTeamId,
+          number: p.number,
+          name: `${p.last_name || ''} ${p.first_name || ''}`.trim(),
+          firstName: p.first_name,
+          lastName: p.last_name,
+          dob: p.dob,
+          libero: p.libero,
+          isCaptain: p.is_captain,
+          createdAt: new Date().toISOString()
         })
       }
     }

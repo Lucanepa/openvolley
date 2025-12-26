@@ -1238,7 +1238,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Determine left/right teams based on set index
       const setIndex = currentSet.index
-      const teamAKey = data.match.teamAKey || 'home'
+      const teamAKey = data.match.coinTossTeamA || 'home'
       const is5thSet = setIndex === 5
       const set5CourtSwitched = data.match.set5CourtSwitched
       const set5LeftTeam = data.match.set5LeftTeam
@@ -2960,7 +2960,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           action: 'insert',
           payload: {
             external_id: String(eventId),
-            match_id: String(matchId), // Use local matchId - sync queue will resolve to Supabase ID
+            match_id: match?.seed_key || String(matchId), // Use seed_key (external_id) for Supabase lookup
             set_index: data.set.index,
             type,
             payload: payload || {},
@@ -3612,7 +3612,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               const availableLiberos = teamLiberos.map(libero => ({
                 number: libero.number,
                 type: libero.libero,
-                label: libero.libero === 'libero1' ? 'L1' : 'L2'
+                label: libero.libero === 'libero1' ? 'L1' : libero.libero === 'redesignated' ? 'R' : 'L2'
               }))
 
               // Find which libero was last on court (default selection)
@@ -4405,22 +4405,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     } else if (event.type === 'libero_entry') {
       const liberoNumber = event.payload?.liberoIn || '?'
       const playerOut = event.payload?.playerOut || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
+      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'R' : 'L2'
       eventDescription = `Libero entry — ${teamName} (${liberoType} ${liberoNumber} in for ${playerOut})`
     } else if (event.type === 'libero_exit') {
       const liberoNumber = event.payload?.liberoOut || '?'
       const playerIn = event.payload?.playerIn || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
+      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'R' : 'L2'
       eventDescription = `Libero exit — ${teamName} (${liberoType} ${liberoNumber} out, ${playerIn} in)`
     } else if (event.type === 'libero_exchange') {
       const liberoOut = event.payload?.liberoOut || '?'
       const liberoIn = event.payload?.liberoIn || '?'
-      const liberoOutType = event.payload?.liberoOutType === 'libero1' ? 'L1' : 'L2'
-      const liberoInType = event.payload?.liberoInType === 'libero1' ? 'L1' : 'L2'
+      const liberoOutType = event.payload?.liberoOutType === 'libero1' ? 'L1' : event.payload?.liberoOutType === 'redesignated' ? 'R' : 'L2'
+      const liberoInType = event.payload?.liberoInType === 'libero1' ? 'L1' : event.payload?.liberoInType === 'redesignated' ? 'R' : 'L2'
       eventDescription = `Libero exchange — ${teamName} (${liberoOutType} ${liberoOut} ↔ ${liberoInType} ${liberoIn})`
     } else if (event.type === 'libero_unable') {
       const liberoNumber = event.payload?.liberoNumber || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : 'L2'
+      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'R' : 'L2'
       const reason = event.payload?.reason || 'declared'
       if (reason === 'declared') {
         eventDescription = `Libero declared unable — ${teamName} (${liberoType} ${liberoNumber})`
@@ -6344,6 +6344,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Check if a libero is unable to play (injured, expelled, disqualified, or declared unable)
   // MUST be defined before handlers that use it in dependency arrays
   const isLiberoUnable = useCallback((teamKey, liberoNumber) => {
+    // Check if player is marked as 'unable' in database (from libero redesignation)
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const player = teamPlayers?.find(p => Number(p.number) === Number(liberoNumber))
+    if (player?.libero === 'unable') return true
+
     if (!data?.events) return false
 
     // Check for expulsion or disqualification
@@ -6373,7 +6378,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (injurySubs.length > 0) return true
 
     return false
-  }, [data?.events])
+  }, [data?.events, data?.homePlayers, data?.awayPlayers])
 
   // Handle drop on court player - triggers substitution or libero exchange
   const handleCourtDrop = useCallback((e, teamKey, position, courtPlayerNumber) => {
@@ -6784,27 +6789,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Check team libero rules
     const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-    const liberos = teamPlayers.filter(p => p.libero && p.libero !== '')
-    const unableLiberos = liberos.filter(p => isLiberoUnable(teamKey, p.number))
-    
-    // If team has 2 liberos, can only re-designate if both are unable
-    if (liberos.length === 2) {
-      if (unableLiberos.length < 2) {
-        // Still have one able libero, no re-designation needed
-        // But if this is the second libero becoming unable, trigger re-designation
-        if (unableLiberos.length === 1 && unableLiberos[0].number === liberoNumber) {
-          // This is the second libero becoming unable, trigger re-designation
-          const availablePlayers = getAvailablePlayersForRedesignation(teamKey, liberoNumber)
-          if (availablePlayers.length === 0) {
-            alert('No available players for libero re-designation. All players are either on court or already liberos.')
-            return
-          }
-          setLiberoRedesignationModal({ team: teamKey, unableLiberoNumber: liberoNumber, unableLiberoType: liberoType })
-          return
-        }
+    // Get all liberos (including 'unable' ones for counting original liberos)
+    const allLiberos = teamPlayers.filter(p => p.libero && p.libero !== '')
+    // Get active liberos (libero1, libero2, or redesignated - NOT 'unable')
+    const activeLiberos = allLiberos.filter(p => p.libero !== 'unable')
+    // Count original liberos (libero1 or libero2 - not redesignated)
+    const originalLiberoCount = allLiberos.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
+    const unableLiberos = allLiberos.filter(p => isLiberoUnable(teamKey, p.number))
+
+    // If team started with 2 liberos, and still has at least 1 active libero that isn't the one becoming unable
+    // then no redesignation needed
+    if (originalLiberoCount === 2) {
+      const otherActiveLiberos = activeLiberos.filter(p => Number(p.number) !== Number(liberoNumber))
+      if (otherActiveLiberos.length > 0) {
+        // Still have at least one other active libero, no redesignation needed
         return
       }
     }
+
+    // If team started with 1 libero (or all other liberos are unable), allow redesignation
+    // Also allow if no active liberos remain after this one becomes unable
     
     // Get available players
     const availablePlayers = getAvailablePlayersForRedesignation(teamKey, liberoNumber)
@@ -8180,16 +8184,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Handle libero re-designation
   const confirmLiberoRedesignation = useCallback(async (newLiberoNumber) => {
     if (!liberoRedesignationModal || !data?.set) return
-    
+
     const { team, unableLiberoNumber, unableLiberoType } = liberoRedesignationModal
-    
+
     // Log the libero_unable event if not already logged (with reason='declared' if not specified)
-    const hasUnableEvent = data?.events?.some(e => 
-      e.type === 'libero_unable' && 
+    const hasUnableEvent = data?.events?.some(e =>
+      e.type === 'libero_unable' &&
       e.payload?.team === team &&
       e.payload?.liberoNumber === unableLiberoNumber
     )
-    
+
     if (!hasUnableEvent) {
       await logEvent('libero_unable', {
         team,
@@ -8198,7 +8202,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         reason: 'declared' // Default to declared if not specified
       })
     }
-    
+
     // Log the re-designation event
     await logEvent('libero_redesignation', {
       team,
@@ -8206,7 +8210,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       unableLiberoType,
       newLiberoNumber
     })
-    
+
+    // Update the player records: remove libero status from old player, add to new player
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const teamId = team === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId
+
+    if (teamId) {
+      // Find the old libero and new player
+      const oldLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(unableLiberoNumber))
+      const newLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(newLiberoNumber))
+
+      // Update old libero - mark as unable (out for rest of game)
+      if (oldLiberoPlayer?.id) {
+        await db.players.update(oldLiberoPlayer.id, { libero: 'unable' })
+      }
+
+      // Update new player - mark as redesignated libero (only one allowed per team)
+      if (newLiberoPlayer?.id) {
+        await db.players.update(newLiberoPlayer.id, { libero: 'redesignated' })
+      }
+    }
+
     // Record in remarks
     const teamLabel = team === teamAKey ? 'A' : 'B'
     const setIndex = data.set.index
@@ -8219,14 +8243,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const seconds = Math.floor((diffMs % 60000) / 1000)
       timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
     }
-    
+
     const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Player ${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
     const currentRemarks = data?.match?.remarks || ''
     const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
     await db.matches.update(matchId, { remarks: newRemarks })
-    
+
     setLiberoRedesignationModal(null)
-  }, [liberoRedesignationModal, data?.set, data?.events, data?.match, logEvent, teamAKey, matchId])
+  }, [liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, teamAKey, matchId])
 
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(async () => {
@@ -8235,6 +8259,52 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const { team, liberoNumber, liberoType, reason = 'declared' } = liberoUnableModal
 
     try {
+      // Check if this libero is currently on court
+      const liberoOnCourt = getLiberoOnCourt(team)
+      if (liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(liberoNumber)) {
+        // Libero is on court - need to force them out first
+        // Get current lineup
+        const lineupEvents = (data.events || [])
+          .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
+        if (lineupEvents.length > 0) {
+          const currentLineup = { ...lineupEvents[lineupEvents.length - 1].payload?.lineup }
+          const position = liberoOnCourt.position
+
+          // Get the original player who was replaced by libero
+          const liberoEntryEvents = (data.events || [])
+            .filter(e => e.type === 'libero_entry' && e.payload?.team === team && e.setIndex === data.set.index)
+            .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+          const lastEntry = liberoEntryEvents.find(e => e.payload?.position === position)
+          const originalPlayerNumber = lastEntry?.payload?.playerNumber
+
+          if (originalPlayerNumber) {
+            // Put original player back in
+            currentLineup[position] = originalPlayerNumber
+
+            // Log the libero exit first
+            await logEvent('libero_exit', {
+              team,
+              position,
+              liberoOut: liberoNumber,
+              playerIn: originalPlayerNumber,
+              liberoType,
+              reason: 'unable'
+            })
+
+            // Update lineup
+            await logEvent('lineup', {
+              team,
+              lineup: currentLineup,
+              fromSubstitution: true,
+              liberoSubstitution: null
+            })
+          }
+        }
+      }
+
       // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
         team,
@@ -8242,17 +8312,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         liberoType,
         reason
       })
-      
+
       // Check if re-designation is needed
       setTimeout(() => {
         checkLiberoRedesignation(team, liberoNumber, liberoType)
       }, 100)
-      
+
       setLiberoUnableModal(null)
     } catch (error) {
       // Silently handle error
     }
-  }, [liberoUnableModal, data?.set, logEvent, checkLiberoRedesignation])
+  }, [liberoUnableModal, data?.set, data?.events, logEvent, checkLiberoRedesignation, getLiberoOnCourt])
 
   // Handle libero in button click
   const handleLiberoIn = useCallback((side, event) => {
@@ -8313,13 +8383,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Get the other libero
     const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-    const otherLibero = teamPlayers?.find(p => 
-      p.libero && 
-      p.libero !== '' && 
+    const otherLibero = teamPlayers?.find(p =>
+      p.libero &&
+      p.libero !== '' &&
+      p.libero !== 'unable' &&
       String(p.number) !== String(liberoOnCourt.liberoNumber) &&
-      (liberoOnCourt.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+      // Find the other active libero (L1, L2, or redesignated) that's not the one currently on court
+      (p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated')
     )
-    
+
     if (!otherLibero) {
       alert('Other libero not found')
       return
@@ -11555,7 +11627,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             padding: '1px 3px',
                             borderRadius: '2px'
                           }}>
-                            {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : 'L2'}
+                            {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : player.substitutedByLibero.liberoType === 'redesignated' ? 'R' : 'L2'}
                           </span>
                         )}
                         {showX && (
@@ -11773,7 +11845,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
                           <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
-                            {player.libero === 'libero1' ? 'L1' : 'L2'}
+                            {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'R' : 'L2'}
                           </span>
                           {sanctions.length > 0 && (
                             <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
@@ -12414,8 +12486,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
                             const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                             return (
                               <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
                             )
@@ -12445,8 +12517,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                           return (
                             <span style={{
                               position: 'absolute',
@@ -12643,8 +12715,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
                             const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                             return (
                               <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
                             )
@@ -12674,8 +12746,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                           return (
                             <span style={{
                               position: 'absolute',
@@ -12921,8 +12993,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
                             const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                             return (
                               <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
                             )
@@ -12952,8 +13024,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {/* Libero indicator (bottom-left) - only if not captain */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                           return (
                             <span style={{
                               position: 'absolute',
@@ -13149,8 +13221,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
                             const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                             return (
                               <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
                             )
@@ -13180,8 +13252,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {/* Libero indicator (bottom-left) */}
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = rightTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+                          const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'R' : 'L2')
                           return (
                             <span style={{
                               position: 'absolute',
@@ -14260,7 +14332,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             padding: '1px 3px',
                             borderRadius: '2px'
                           }}>
-                            {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : 'L2'}
+                            {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : player.substitutedByLibero.liberoType === 'redesignated' ? 'R' : 'L2'}
                           </span>
                         )}
                         {showX && (
@@ -14478,7 +14550,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
                           <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
-                            {player.libero === 'libero1' ? 'L1' : 'L2'}
+                            {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'R' : 'L2'}
                           </span>
                           {sanctions.length > 0 && (
                             <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
@@ -18562,7 +18634,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     .map(p => ({
                       number: p.number,
                       type: p.libero,
-                      label: p.libero === 'libero1' ? 'L1' : 'L2'
+                      label: p.libero === 'libero1' ? 'L1' : p.libero === 'redesignated' ? 'R' : 'L2'
                     }))
 
                   const handleLiberoSelect = async (libero) => {
@@ -18721,7 +18793,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   const liberoOnCourtUnable = liberoOnCourt && isLiberoUnable(team, liberoOnCourt.liberoNumber)
                   const otherLibero = liberos.find(p =>
                     String(p.number) !== String(liberoOnCourt?.liberoNumber) &&
-                    (liberoOnCourt?.liberoType === 'libero1' ? p.libero === 'libero2' : p.libero === 'libero1')
+                    p.libero !== 'unable' &&
+                    (p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated')
                   )
                   const otherLiberoUnable = otherLibero && isLiberoUnable(team, otherLibero.number)
                   const exchangeLiberoDisabled = !hasPointSinceLibero || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
@@ -18808,6 +18881,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           Exchange Libero
                         </button>
                       )}
+                      {/* Becomes Unable button for libero on court */}
+                      <button
+                        onClick={() => {
+                          setPlayerActionMenu(null)
+                          setCourtSubExpanded(false)
+                          setCourtLiberoExpanded(false)
+                          setCourtSanctionExpanded(false)
+                          // Open the libero unable modal for the libero on court
+                          setLiberoUnableModal({
+                            team,
+                            liberoNumber: liberoOnCourt.liberoNumber,
+                            liberoType: liberoOnCourt.liberoType,
+                            reason: 'declared'
+                          })
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: '#ef4444',
+                          color: '#fff',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          transition: 'all 0.2s',
+                          width: '100%'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#dc2626'
+                          e.currentTarget.style.transform = 'scale(1.02)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#ef4444'
+                          e.currentTarget.style.transform = 'scale(1)'
+                        }}
+                      >
+                        Becomes Unable
+                      </button>
                     </div>
                   )
                 })()}
@@ -19268,7 +19380,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         e.currentTarget.style.transform = 'scale(1)'
                       }}
                     >
-                      {player.libero === 'libero1' ? 'L1' : 'L2'} # {player.number}
+                      {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'R' : 'L2'} # {player.number}
                     </button>
                   ))}
                 </div>
@@ -20666,7 +20778,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 <span style={{ fontSize: '29px', fontWeight: 700 }}>↓</span>
               </div>
               <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <span>IN: {liberoConfirm.liberoIn === 'libero1' ? 'L1' : 'L2'}</span>
+                <span>IN: {liberoConfirm.liberoIn === 'libero1' ? 'L1' : liberoConfirm.liberoIn === 'redesignated' ? 'R' : 'L2'}</span>
                 <span style={{ fontSize: '29px', fontWeight: 700 }}>↑</span>
               </div>
             </div>
@@ -20902,7 +21014,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           >
             <div style={{ padding: '29px' }}>
               <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--text)' }}>
-                Libero #{liberoRedesignationModal.unableLiberoNumber} ({liberoRedesignationModal.unableLiberoType === 'libero1' ? 'L1' : 'L2'}) is unable to play.
+                Libero #{liberoRedesignationModal.unableLiberoNumber} ({liberoRedesignationModal.unableLiberoType === 'libero1' ? 'L1' : liberoRedesignationModal.unableLiberoType === 'redesignated' ? 'R' : 'L2'}) is unable to play.
               </p>
               <p style={{ marginBottom: '29px', fontSize: '17px', color: 'var(--muted)' }}>
                 Select a player to re-designate as Libero:
@@ -21340,8 +21452,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <div style={{ padding: '29px' }}>
               <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--text)' }}>
                 {liberoUnableModal.reason === 'injury'
-                  ? `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as injured?`
-                  : `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : 'L2'}) as unable to play?`
+                  ? `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : liberoUnableModal.liberoType === 'redesignated' ? 'R' : 'L2'}) as injured?`
+                  : `Mark Libero #${liberoUnableModal.liberoNumber} (${liberoUnableModal.liberoType === 'libero1' ? 'L1' : liberoUnableModal.liberoType === 'redesignated' ? 'R' : 'L2'}) as unable to play?`
                 }
               </p>
               <p style={{ marginBottom: '29px', fontSize: '14px', color: 'var(--muted)' }}>
@@ -22272,7 +22384,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </p>
                 <div style={{ marginBottom: isCompactMode ? '12px' : '28px', fontSize: isCompactMode ? '10px' : '19px', fontWeight: 600 }}>
                   <div style={{ marginBottom: isCompactMode ? '5px' : '10px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '5px' : '10px' }}>
-                    <span>OUT: {liberoRotationModal.liberoType === 'libero1' ? 'L1' : 'L2'} # {liberoRotationModal.liberoNumber}</span>
+                    <span>OUT: {liberoRotationModal.liberoType === 'libero1' ? 'L1' : liberoRotationModal.liberoType === 'redesignated' ? 'R' : 'L2'} # {liberoRotationModal.liberoNumber}</span>
                     <span style={{ fontSize: isCompactMode ? '14px' : '29px', fontWeight: 700 }}>↓</span>
                   </div>
                   <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompactMode ? '5px' : '10px' }}>

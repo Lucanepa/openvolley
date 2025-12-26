@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.11',
+    date: '26.12.25',
+    changes: [
+      'Refactor CoinToss and MatchSetup components for improved data handling and UI consistency'
+    ]
+  },
+  {
     version: '0.16.10',
     date: '26.12.25',
     changes: [
