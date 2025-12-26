@@ -2344,56 +2344,10 @@ export default function App() {
     const seededReferees = []
     const seededScorers = []
 
-    await db.transaction('rw', db.referees, db.scorers, db.sync_queue, async () => {
-      const queueRefereeRecord = async (record, timestamp = new Date().toISOString()) => {
-        if (!record) return
-        if (record.seedKey?.startsWith('test-')) return
-        const createdAt = record.createdAt || timestamp
-        await db.sync_queue.add({
-          resource: 'referee',
-          action: 'insert',
-          payload: {
-            external_id: String(record.id),
-            seed_key: record.seedKey,
-            first_name: record.firstName,
-            last_name: record.lastName,
-            country: record.country || 'CHE',
-            dob: record.dob || null,
-            test: true,
-            created_at: createdAt
-          },
-          ts: timestamp,
-          status: 'queued'
-        })
-        await db.referees.update(record.id, { synced: false })
-      }
-
-      const queueScorerRecord = async (record, timestamp = new Date().toISOString()) => {
-        if (!record) return
-        if (record.seedKey?.startsWith('test-')) return
-        const createdAt = record.createdAt || timestamp
-        await db.sync_queue.add({
-          resource: 'scorer',
-          action: 'insert',
-          payload: {
-            external_id: String(record.id),
-            seed_key: record.seedKey,
-            first_name: record.firstName,
-            last_name: record.lastName,
-            country: record.country || 'CHE',
-            dob: record.dob || null,
-            test: true,
-            created_at: createdAt
-          },
-          ts: timestamp,
-          status: 'queued'
-        })
-        await db.scorers.update(record.id, { synced: false })
-      }
-
+    // Local Dexie records only - no Supabase sync (officials stored as JSONB in match)
+    await db.transaction('rw', db.referees, db.scorers, async () => {
       for (const definition of TEST_REFEREE_SEED_DATA) {
         let referee = await db.referees.filter(r => r.seedKey === definition.seedKey).first()
-        let queued = false
 
         if (!referee) {
           const timestamp = new Date().toISOString()
@@ -2404,13 +2358,10 @@ export default function App() {
             country: definition.country,
             dob: definition.dob,
             test: true,
-            createdAt: timestamp,
-            synced: false
+            createdAt: timestamp
           }
           const refereeId = await db.referees.add(baseRecord)
           referee = { id: refereeId, ...baseRecord }
-          await queueRefereeRecord(referee, timestamp)
-          queued = true
         } else {
           const definitionChanged =
             referee.firstName !== definition.firstName ||
@@ -2419,34 +2370,20 @@ export default function App() {
             referee.dob !== definition.dob
 
           if (definitionChanged) {
-            const timestamp = new Date().toISOString()
             await db.referees.update(referee.id, {
               firstName: definition.firstName,
               lastName: definition.lastName,
               country: definition.country,
-              dob: definition.dob,
-              synced: false
+              dob: definition.dob
             })
             referee = {
               ...referee,
               firstName: definition.firstName,
               lastName: definition.lastName,
               country: definition.country,
-              dob: definition.dob,
-              synced: false
+              dob: definition.dob
             }
-            await queueRefereeRecord(referee, timestamp)
-            queued = true
           }
-        }
-
-        if (referee && !queued) {
-          if (referee.synced === true) {
-            await db.referees.update(referee.id, { synced: false })
-            referee = { ...referee, synced: false }
-          }
-          await queueRefereeRecord(referee)
-          queued = true
         }
 
         seededReferees.push(referee)
@@ -2454,7 +2391,6 @@ export default function App() {
 
       for (const definition of TEST_SCORER_SEED_DATA) {
         let scorer = await db.scorers.filter(s => s.seedKey === definition.seedKey).first()
-        let queued = false
 
         if (!scorer) {
           const timestamp = new Date().toISOString()
@@ -2465,49 +2401,32 @@ export default function App() {
             country: definition.country || 'CHE',
             dob: definition.dob,
             test: true,
-            createdAt: timestamp,
-            synced: false
+            createdAt: timestamp
           }
           const scorerId = await db.scorers.add(baseRecord)
           scorer = { id: scorerId, ...baseRecord }
-          await queueScorerRecord(scorer, timestamp)
-          queued = true
         } else {
           const definitionChanged =
             scorer.firstName !== definition.firstName ||
             scorer.lastName !== definition.lastName ||
-            scorer.country !== definition.country || 'CHE'
+            (scorer.country || 'CHE') !== (definition.country || 'CHE') ||
             scorer.dob !== definition.dob
 
           if (definitionChanged) {
-            const timestamp = new Date().toISOString()
             await db.scorers.update(scorer.id, {
               firstName: definition.firstName,
               lastName: definition.lastName,
               country: definition.country || 'CHE',
-              dob: definition.dob,
-              synced: false
+              dob: definition.dob
             })
             scorer = {
               ...scorer,
               firstName: definition.firstName,
               lastName: definition.lastName,
               country: definition.country || 'CHE',
-              dob: definition.dob,
-              synced: false
+              dob: definition.dob
             }
-            await queueScorerRecord(scorer, timestamp)
-            queued = true
           }
-        }
-
-        if (scorer && !queued) {
-          if (scorer.synced === true) {
-            await db.scorers.update(scorer.id, { synced: false })
-            scorer = { ...scorer, synced: false }
-          }
-          await queueScorerRecord(scorer)
-          queued = true
         }
 
         seededScorers.push(scorer)
