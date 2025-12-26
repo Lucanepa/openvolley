@@ -69,6 +69,35 @@ function safeParseScheduledAt(scheduledAt) {
   }
 }
 
+// Helper to build officials array, filtering out entries with no name
+function buildOfficialsArray(ref1, ref2, scorer, asst, lineJudges = {}, useSnakeCase = false) {
+  const officials = []
+  const fnKey = useSnakeCase ? 'first_name' : 'firstName'
+  const lnKey = useSnakeCase ? 'last_name' : 'lastName'
+
+  // Add main officials only if they have a name
+  if (ref1?.firstName || ref1?.lastName || ref1?.first_name || ref1?.last_name) {
+    officials.push({ role: '1st referee', [fnKey]: ref1.firstName || ref1.first_name || '', [lnKey]: ref1.lastName || ref1.last_name || '', country: ref1.country || null, dob: ref1.dob || null })
+  }
+  if (ref2?.firstName || ref2?.lastName || ref2?.first_name || ref2?.last_name) {
+    officials.push({ role: '2nd referee', [fnKey]: ref2.firstName || ref2.first_name || '', [lnKey]: ref2.lastName || ref2.last_name || '', country: ref2.country || null, dob: ref2.dob || null })
+  }
+  if (scorer?.firstName || scorer?.lastName || scorer?.first_name || scorer?.last_name) {
+    officials.push({ role: 'scorer', [fnKey]: scorer.firstName || scorer.first_name || '', [lnKey]: scorer.lastName || scorer.last_name || '', country: scorer.country || null, dob: scorer.dob || null })
+  }
+  if (asst?.firstName || asst?.lastName || asst?.first_name || asst?.last_name) {
+    officials.push({ role: 'assistant scorer', [fnKey]: asst.firstName || asst.first_name || '', [lnKey]: asst.lastName || asst.last_name || '', country: asst.country || null, dob: asst.dob || null })
+  }
+
+  // Add line judges if present
+  if (lineJudges.lj1) officials.push({ role: 'line judge 1', name: lineJudges.lj1 })
+  if (lineJudges.lj2) officials.push({ role: 'line judge 2', name: lineJudges.lj2 })
+  if (lineJudges.lj3) officials.push({ role: 'line judge 3', name: lineJudges.lj3 })
+  if (lineJudges.lj4) officials.push({ role: 'line judge 4', name: lineJudges.lj4 })
+
+  return officials
+}
+
 // Helper to validate and create an ISO string from date and time inputs
 // Throws an error if the date/time is invalid (unless allowEmpty is true and both are empty)
 function createScheduledAt(date, time, options = {}) {
@@ -1303,16 +1332,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             return pin
           })()) : null,
           scheduledAt,
-          officials: [
-            { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-            { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-            { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-            { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-            ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
-            ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
-            ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
-            ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
-          ],
+          officials: buildOfficialsArray(
+            { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+            { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+            { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+            { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+            { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+          ),
           bench_home: benchHome,
           bench_away: benchAway
         })
@@ -1911,16 +1937,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       refereeConnectionEnabled: false,
       homeTeamConnectionEnabled: false,
       awayTeamConnectionEnabled: false,
-      officials: [
-        { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-        { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-        { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-        { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-        ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
-        ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
-        ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
-        ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
-      ],
+      officials: buildOfficialsArray(
+        { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+        { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+        { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+        { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+        { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+      ),
       bench_home: benchHome,
       bench_away: benchAway,
       homeCoachSignature: null,
@@ -1965,16 +1988,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })),
           bench_home: benchHome || [],
           bench_away: benchAway || [],
-          officials: [
-            { role: '1st referee', first_name: ref1First, last_name: ref1Last, country: ref1Country, dob: ref1Dob },
-            { role: '2nd referee', first_name: ref2First, last_name: ref2Last, country: ref2Country, dob: ref2Dob },
-            { role: 'scorer', first_name: scorerFirst, last_name: scorerLast, country: scorerCountry, dob: scorerDob },
-            { role: 'assistant scorer', first_name: asstFirst, last_name: asstLast, country: asstCountry, dob: asstDob },
-            ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
-            ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
-            ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
-            ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
-          ]
+          officials: buildOfficialsArray(
+            { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+            { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+            { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+            { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+            { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
+            true // useSnakeCase for Supabase
+          )
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -3075,16 +3096,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             // Save officials to database if matchId exists
             if (matchId) {
               await db.matches.update(matchId, {
-                officials: [
-                  { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-                  { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-                  { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-                  { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-                  ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
-                  ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
-                  ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
-                  ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
-                ]
+                officials: buildOfficialsArray(
+                  { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+                  { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+                  { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+                  { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+                  { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+                )
               })
 
               // Sync officials to Supabase as JSONB
@@ -3095,16 +3113,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   action: 'update',
                   payload: {
                     id: matchForOfficials.seed_key,
-                    officials: [
-                      { role: '1st referee', first_name: ref1First, last_name: ref1Last, country: ref1Country || null, dob: formatDobForSync(ref1Dob) },
-                      { role: '2nd referee', first_name: ref2First, last_name: ref2Last, country: ref2Country || null, dob: formatDobForSync(ref2Dob) },
-                      { role: 'scorer', first_name: scorerFirst, last_name: scorerLast, country: scorerCountry || null, dob: formatDobForSync(scorerDob) },
-                      { role: 'assistant scorer', first_name: asstFirst, last_name: asstLast, country: asstCountry || null, dob: formatDobForSync(asstDob) },
-                      ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
-                      ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
-                      ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
-                      ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
-                    ]
+                    officials: buildOfficialsArray(
+                      { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: formatDobForSync(ref1Dob) },
+                      { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: formatDobForSync(ref2Dob) },
+                      { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: formatDobForSync(scorerDob) },
+                      { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: formatDobForSync(asstDob) },
+                      { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
+                      true // useSnakeCase for Supabase
+                    )
                   },
                   ts: new Date().toISOString(),
                   status: 'queued'
@@ -6421,16 +6437,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   gameNumber: gameN ? gameN : null,
                   league,
                   scheduledAt,
-                  officials: [
-                    { role: '1st referee', firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-                    { role: '2nd referee', firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-                    { role: 'scorer', firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-                    { role: 'assistant scorer', firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-                    ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
-                    ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
-                    ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
-                    ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
-                  ],
+                  officials: buildOfficialsArray(
+                    { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+                    { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+                    { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+                    { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+                    { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+                  ),
                   bench_home: benchHome,
                   bench_away: benchAway
                 })

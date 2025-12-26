@@ -195,13 +195,6 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null
   })
 
-  // Check if coin toss was previously confirmed
-  // Use the dedicated coinTossConfirmed field instead of signature comparison
-  // This prevents false positives when signatures were already set in MatchSetup
-  const isCoinTossConfirmed = useMemo(() => {
-    return !!match?.coinTossConfirmed
-  }, [match?.coinTossConfirmed])
-
   // Helper function to compare roster/bench for changes
   const hasRosterChanges = (originalRoster, currentRoster, originalBench, currentBench) => {
     if (!originalRoster || !originalBench) return false
@@ -305,6 +298,13 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       return null
     }
   }, [matchId])
+
+  // Check if coin toss was previously confirmed
+  // Use the dedicated coinTossConfirmed field instead of signature comparison
+  // This prevents false positives when signatures were already set in MatchSetup
+  const isCoinTossConfirmed = useMemo(() => {
+    return !!match?.coinTossConfirmed
+  }, [match?.coinTossConfirmed])
 
   // Load initial data from DB
   useEffect(() => {
@@ -733,13 +733,13 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       try {
         // Get the match's external_id (seed_key) to look up in Supabase
         const localMatch = await db.matches.get(matchId)
-        const seedKey = localMatch?.seedKey
+        const seedKey = localMatch?.seed_key
 
         if (seedKey) {
           const { data: supabaseMatch, error } = await supabase
             .from('matches')
             .select('status')
-            .eq('seed_key', seedKey)
+            .eq('external_id', seedKey)
             .single()
 
           if (error) {

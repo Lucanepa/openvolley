@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 
 /**
  * Reusable RefereeSelector component for selecting referees from history
- * Uses Supabase referee_history table for suggestions
+ * Uses Supabase referee_database table for suggestions
  * @param {boolean} open - Whether dropdown is open
  * @param {function} onClose - Function to call when closing
  * @param {function} onSelect - Function to call when a referee is selected: (referee) => void
@@ -32,7 +32,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
       }
 
       const { data, error } = await supabase
-        .from('referee_history')
+        .from('referee_database')
         .select('first_name, last_name, country, dob, created_at')
         .order('last_name', { ascending: true })
 
