@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.10',
+    date: '26.12.25',
+    changes: [
+      'Refactor match synchronization and data handling for JSONB integration'
+    ]
+  },
+  {
     version: '0.16.9',
     date: '24.12.25',
     changes: [

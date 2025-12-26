@@ -1575,19 +1575,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           benchStaff: benchHome
         })
       }
-      // Always queue home team for sync (upsert)
-      await db.sync_queue.add({
-        resource: 'team',
-        action: 'insert',
-        payload: {
-          external_id: String(homeTeamId),
-          name: home.trim(),
-          short_name: homeShortName || generateShortName(home.trim()),
-          color: homeColor
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
 
       if (!awayTeamId) {
         awayTeamId = await db.teams.add({
@@ -1604,19 +1591,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           benchStaff: benchAway
         })
       }
-      // Always queue away team for sync (upsert)
-      await db.sync_queue.add({
-        resource: 'team',
-        action: 'insert',
-        payload: {
-          external_id: String(awayTeamId),
-          name: away.trim(),
-          short_name: awayShortName || generateShortName(away.trim()),
-          color: awayColor
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
 
       // Build scheduledAt if date is set
       let scheduledAt = null
@@ -1664,16 +1638,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         updatedAt: new Date().toISOString()
       })
 
-      // Queue match for Supabase sync (uses upsert internally)
+      // Queue match for Supabase sync - all data stored as JSONB
       const syncJobId = await db.sync_queue.add({
         resource: 'match',
         action: 'insert',
         payload: {
-          external_id: matchSeedKey, // Use unique seed_key instead of numeric ID
-          home_team_id: String(homeTeamId),
-          away_team_id: String(awayTeamId),
-          home_team_name: home.trim(),
-          away_team_name: away.trim(),
+          external_id: matchSeedKey,
           status: 'setup',
           hall: hall || null,
           city: city || null,
@@ -1687,10 +1657,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match_type_3: type3 || null,
           match_type_3_other: type3Other || null,
           game_n: gameN ? parseInt(gameN, 10) : null,
-          bench_home: benchHome || null,
-          bench_away: benchAway || null,
           game_pin: match?.gamePin || null,
-          test: false
+          test: false,
+          // JSONB columns for all team/player/official data
+          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
+          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
+          bench_home: benchHome || [],
+          bench_away: benchAway || []
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -1856,34 +1829,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const homeId = await db.teams.add({ name: home, color: homeColor, createdAt: new Date().toISOString() })
     const awayId = await db.teams.add({ name: away, color: awayColor, createdAt: new Date().toISOString() })
 
-      // Add teams to sync queue (official match, so test: false)
-      await db.sync_queue.add({
-        resource: 'team',
-        action: 'insert',
-        payload: {
-          external_id: String(homeId),
-          name: home,
-          color: homeColor,
-          test: false,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-      await db.sync_queue.add({
-        resource: 'team',
-        action: 'insert',
-        payload: {
-          external_id: String(awayId),
-          name: away,
-          color: awayColor,
-          test: false,
-          created_at: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-
     // Generate 6-digit PIN code for referee authentication
     const generatePinCode = (existingPins = []) => {
       const chars = '0123456789'
@@ -1986,34 +1931,58 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       createdAt: new Date().toISOString()
     })
 
-      // Add match to sync queue (official match, so test: false)
-      // Note: referee_1, referee_2, scorer, assistant_scorer are synced separately via foreign keys
-      // when officials are saved - no need for redundant 'officials' JSONB column
+      // Add match to sync queue - all data stored as JSONB
       await db.sync_queue.add({
         resource: 'match',
         action: 'insert',
         payload: {
-          external_id: seedKey, // Use unique seed_key instead of numeric ID
-          home_team_id: String(homeId),
-          away_team_id: String(awayId),
-          home_team_name: home.trim(),
-          away_team_name: away.trim(),
+          external_id: seedKey,
           status: 'live',
           hall: hall || null,
           city: city || null,
           league: league || null,
           scheduled_at: scheduledAt || null,
-          bench_home: benchHome || null,
-          bench_away: benchAway || null,
           test: false,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          // JSONB columns for all team/player/official data
+          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
+          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
+          players_home: homeRoster.map(p => ({
+            number: p.number,
+            first_name: p.firstName,
+            last_name: p.lastName,
+            dob: formatDobForSync(p.dob),
+            libero: p.libero || null,
+            is_captain: !!p.isCaptain
+          })),
+          players_away: awayRoster.map(p => ({
+            number: p.number,
+            first_name: p.firstName,
+            last_name: p.lastName,
+            dob: formatDobForSync(p.dob),
+            libero: p.libero || null,
+            is_captain: !!p.isCaptain
+          })),
+          bench_home: benchHome || [],
+          bench_away: benchAway || [],
+          officials: [
+            { role: '1st referee', first_name: ref1First, last_name: ref1Last, country: ref1Country, dob: ref1Dob },
+            { role: '2nd referee', first_name: ref2First, last_name: ref2Last, country: ref2Country, dob: ref2Dob },
+            { role: 'scorer', first_name: scorerFirst, last_name: scorerLast, country: scorerCountry, dob: scorerDob },
+            { role: 'assistant scorer', first_name: asstFirst, last_name: asstLast, country: asstCountry, dob: asstDob },
+            ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
+            ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
+            ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
+            ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
+          ]
         },
         ts: new Date().toISOString(),
         status: 'queued'
       })
 
+    // Add players to local Dexie (still needed for local functionality)
     if (homeRoster.length) {
-        const homePlayerIds = await db.players.bulkAdd(
+        await db.players.bulkAdd(
         homeRoster.map(p => ({
           teamId: homeId,
           number: p.number,
@@ -2027,30 +1996,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           createdAt: new Date().toISOString()
         }))
       )
-        
-        // Add home players to sync queue
-        for (let i = 0; i < homeRoster.length; i++) {
-          const p = homeRoster[i]
-          await db.sync_queue.add({
-            resource: 'player',
-            action: 'insert',
-            payload: {
-              external_id: String(homePlayerIds[i]),
-              team_id: String(homeId),
-              number: p.number,
-              first_name: p.firstName,
-              last_name: p.lastName,
-              dob: formatDobForSync(p.dob),
-              libero: p.libero || null,
-              is_captain: !!p.isCaptain
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-        }
     }
     if (awayRoster.length) {
-        const awayPlayerIds = await db.players.bulkAdd(
+        await db.players.bulkAdd(
         awayRoster.map(p => ({
           teamId: awayId,
           number: p.number,
@@ -2064,29 +2012,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           createdAt: new Date().toISOString()
         }))
       )
-        
-        // Add away players to sync queue (official match, so test: false)
-        for (let i = 0; i < awayRoster.length; i++) {
-          const p = awayRoster[i]
-          await db.sync_queue.add({
-            resource: 'player',
-            action: 'insert',
-            payload: {
-              external_id: String(awayPlayerIds[i]),
-              team_id: String(awayId),
-              number: p.number,
-              first_name: p.firstName,
-              last_name: p.lastName,
-              dob: formatDobForSync(p.dob),
-              libero: p.libero || null,
-              is_captain: !!p.isCaptain
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-        }
       }
-      
+
     // Don't start match yet - go to coin toss first
     // Check if team names and short names are set
     if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
@@ -2240,19 +2167,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       })
     }
     
-    // Add match update to sync queue (only sync fields that exist in Supabase)
+    // Add match update to sync queue (only sync if match has seed_key)
     const updatedMatch = await db.matches.get(matchId)
-    if (updatedMatch) {
+    if (updatedMatch?.seed_key) {
       await db.sync_queue.add({
         resource: 'match',
         action: 'update',
         payload: {
-          id: String(matchId),
+          id: updatedMatch.seed_key,
           status: updatedMatch.status || null,
           hall: updatedMatch.hall || null,
           city: updatedMatch.city || null,
           league: updatedMatch.league || null,
-          scheduled_at: updatedMatch.scheduledAt || null
+          scheduled_at: updatedMatch.scheduledAt || null,
+          coin_toss_confirmed: true,
+          coin_toss_team_a: teamA,
+          coin_toss_team_b: teamB,
+          first_serve: firstServeTeam,
+          // JSONB columns
+          home_team: { name: home?.trim() || '', short_name: homeShortName || '', color: homeColor },
+          away_team: { name: away?.trim() || '', short_name: awayShortName || '', color: awayColor },
+          players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
+            number: p.number || null,
+            first_name: p.firstName || '',
+            last_name: p.lastName || '',
+            dob: p.dob || null,
+            is_captain: !!p.isCaptain,
+            libero: p.libero || null
+          })),
+          players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
+            number: p.number || null,
+            first_name: p.firstName || '',
+            last_name: p.lastName || '',
+            dob: p.dob || null,
+            is_captain: !!p.isCaptain,
+            libero: p.libero || null
+          })),
+          bench_home: benchHome || [],
+          bench_away: benchAway || [],
+          officials: updatedMatch.officials || [],
+          // Signatures (only for official matches)
+          home_coach_signature: !updatedMatch.test ? homeCoachSignature : null,
+          home_captain_signature: !updatedMatch.test ? homeCaptainSignature : null,
+          away_coach_signature: !updatedMatch.test ? awayCoachSignature : null,
+          away_captain_signature: !updatedMatch.test ? awayCaptainSignature : null
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -3129,83 +3087,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 ]
               })
 
-              // Sync referees to Supabase
-              if (ref1First && ref1Last) {
-                await db.sync_queue.add({
-                  resource: 'referee',
-                  action: 'insert',
-                  payload: {
-                    seed_key: `${ref1First.toLowerCase()}_${ref1Last.toLowerCase()}`,
-                    first_name: ref1First,
-                    last_name: ref1Last,
-                    country: ref1Country || null,
-                    dob: formatDobForSync(ref1Dob)
-                  },
-                  ts: new Date().toISOString(),
-                  status: 'queued'
-                })
-              }
-              if (ref2First && ref2Last) {
-                await db.sync_queue.add({
-                  resource: 'referee',
-                  action: 'insert',
-                  payload: {
-                    seed_key: `${ref2First.toLowerCase()}_${ref2Last.toLowerCase()}`,
-                    first_name: ref2First,
-                    last_name: ref2Last,
-                    country: ref2Country || null,
-                    dob: formatDobForSync(ref2Dob)
-                  },
-                  ts: new Date().toISOString(),
-                  status: 'queued'
-                })
-              }
-
-              // Sync scorers to Supabase
-              if (scorerFirst && scorerLast) {
-                await db.sync_queue.add({
-                  resource: 'scorer',
-                  action: 'insert',
-                  payload: {
-                    seed_key: `${scorerFirst.toLowerCase()}_${scorerLast.toLowerCase()}`,
-                    first_name: scorerFirst,
-                    last_name: scorerLast,
-                    country: scorerCountry || null,
-                    dob: formatDobForSync(scorerDob)
-                  },
-                  ts: new Date().toISOString(),
-                  status: 'queued'
-                })
-              }
-              if (asstFirst && asstLast) {
-                await db.sync_queue.add({
-                  resource: 'scorer',
-                  action: 'insert',
-                  payload: {
-                    seed_key: `${asstFirst.toLowerCase()}_${asstLast.toLowerCase()}`,
-                    first_name: asstFirst,
-                    last_name: asstLast,
-                    country: asstCountry || null,
-                    dob: formatDobForSync(asstDob)
-                  },
-                  ts: new Date().toISOString(),
-                  status: 'queued'
-                })
-              }
-
-              // Update match with officials references (using seed_keys for lookup)
-              // The seed_keys are resolved to UUIDs by useSyncQueue when processing the job
+              // Sync officials to Supabase as JSONB
               const matchForOfficials = await db.matches.get(matchId)
               if (matchForOfficials?.seed_key) {
                 await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
-                    id: matchForOfficials.seed_key, // Use seed_key (external_id) for Supabase lookup
-                    referee_1: (ref1First && ref1Last) ? `${ref1First.toLowerCase()}_${ref1Last.toLowerCase()}` : null,
-                    referee_2: (ref2First && ref2Last) ? `${ref2First.toLowerCase()}_${ref2Last.toLowerCase()}` : null,
-                    scorer: (scorerFirst && scorerLast) ? `${scorerFirst.toLowerCase()}_${scorerLast.toLowerCase()}` : null,
-                    assistant_scorer: (asstFirst && asstLast) ? `${asstFirst.toLowerCase()}_${asstLast.toLowerCase()}` : null
+                    id: matchForOfficials.seed_key,
+                    officials: [
+                      { role: '1st referee', first_name: ref1First, last_name: ref1Last, country: ref1Country || null, dob: formatDobForSync(ref1Dob) },
+                      { role: '2nd referee', first_name: ref2First, last_name: ref2Last, country: ref2Country || null, dob: formatDobForSync(ref2Dob) },
+                      { role: 'scorer', first_name: scorerFirst, last_name: scorerLast, country: scorerCountry || null, dob: formatDobForSync(scorerDob) },
+                      { role: 'assistant scorer', first_name: asstFirst, last_name: asstLast, country: asstCountry || null, dob: formatDobForSync(asstDob) },
+                      ...(lineJudge1 ? [{ role: 'line judge 1', name: lineJudge1 }] : []),
+                      ...(lineJudge2 ? [{ role: 'line judge 2', name: lineJudge2 }] : []),
+                      ...(lineJudge3 ? [{ role: 'line judge 3', name: lineJudge3 }] : []),
+                      ...(lineJudge4 ? [{ role: 'line judge 4', name: lineJudge4 }] : [])
+                    ]
                   },
                   ts: new Date().toISOString(),
                   status: 'queued'
@@ -4145,11 +4044,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
               
-              // Update match with short name and restore signatures (re-lock)
+              // Update match with short name, bench officials, and restore signatures (re-lock)
               const updateData = {
-                homeShortName: homeShortName || home.substring(0, 3).toUpperCase()
+                homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
+                bench_home: benchHome  // Save bench officials to match record
               }
-              
+
               // Save current signatures (new or existing) to database
               if (homeCoachSignature) {
                 updateData.homeCoachSignature = homeCoachSignature
@@ -4169,61 +4069,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               
               await db.matches.update(matchId, updateData)
 
-              // Sync team to Supabase
-              await db.sync_queue.add({
-                resource: 'team',
-                action: 'insert',
-                payload: {
-                  external_id: String(match.homeTeamId),
-                  name: home?.trim() || '',
-                  short_name: homeShortName || generateShortName(home),
-                  color: homeColor
-                },
-                ts: new Date().toISOString(),
-                status: 'queued'
-              })
-
-              // Sync players to Supabase
-              for (const player of homeRoster) {
-                if (player.firstName || player.lastName) {
-                  await db.sync_queue.add({
-                    resource: 'player',
-                    action: 'insert',
-                    payload: {
-                      external_id: `${match.homeTeamId}_${player.number || 'bench'}_${player.firstName}_${player.lastName}`,
-                      team_id: String(match.homeTeamId),
-                      number: player.number || null,
-                      first_name: player.firstName || '',
-                      last_name: player.lastName || '',
-                      dob: formatDobForSync(player.dob),
-                      is_captain: !!player.isCaptain,
-                      libero: player.libero || null
-                    },
-                    ts: new Date().toISOString(),
-                    status: 'queued'
-                  })
-                }
-              }
-
-              // Sync team officials (bench staff) to Supabase
-              for (const official of benchHome) {
-                if (official.firstName || official.lastName) {
-                  await db.sync_queue.add({
-                    resource: 'team_official',
-                    action: 'insert',
-                    payload: {
-                      external_id: `${match.homeTeamId}_${official.role}_${official.firstName}_${official.lastName}`,
-                      team_id: String(match.homeTeamId),
-                      role: official.role || '',
-                      first_name: official.firstName || '',
-                      last_name: official.lastName || '',
-                      country: official.country || null,
-                      dob: formatDobForSync(official.dob)
-                    },
-                    ts: new Date().toISOString(),
-                    status: 'queued'
-                  })
-                }
+              // Sync home team data to Supabase as JSONB
+              if (match?.seed_key) {
+                await db.sync_queue.add({
+                  resource: 'match',
+                  action: 'update',
+                  payload: {
+                    id: match.seed_key,
+                    home_team: { name: home?.trim() || '', short_name: homeShortName || generateShortName(home), color: homeColor },
+                    players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
+                      number: p.number || null,
+                      first_name: p.firstName || '',
+                      last_name: p.lastName || '',
+                      dob: formatDobForSync(p.dob),
+                      is_captain: !!p.isCaptain,
+                      libero: p.libero || null
+                    })),
+                    bench_home: benchHome || [],
+                    // Signatures
+                    home_coach_signature: homeCoachSignature || savedSignatures.homeCoach || null,
+                    home_captain_signature: homeCaptainSignature || savedSignatures.homeCaptain || null
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
               }
 
               setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
@@ -5368,11 +5237,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
               
-              // Update match with short name and restore signatures (re-lock)
+              // Update match with short name, bench officials, and restore signatures (re-lock)
               const updateData = {
-                awayShortName: awayShortName || away.substring(0, 3).toUpperCase()
+                awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
+                bench_away: benchAway  // Save bench officials to match record
               }
-              
+
               // Save current signatures (new or existing) to database
               if (awayCoachSignature) {
                 updateData.awayCoachSignature = awayCoachSignature
@@ -5392,61 +5262,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               
               await db.matches.update(matchId, updateData)
 
-              // Sync team to Supabase
-              await db.sync_queue.add({
-                resource: 'team',
-                action: 'insert',
-                payload: {
-                  external_id: String(match.awayTeamId),
-                  name: away?.trim() || '',
-                  short_name: awayShortName || generateShortName(away),
-                  color: awayColor
-                },
-                ts: new Date().toISOString(),
-                status: 'queued'
-              })
-
-              // Sync players to Supabase
-              for (const player of awayRoster) {
-                if (player.firstName || player.lastName) {
-                  await db.sync_queue.add({
-                    resource: 'player',
-                    action: 'insert',
-                    payload: {
-                      external_id: `${match.awayTeamId}_${player.number || 'bench'}_${player.firstName}_${player.lastName}`,
-                      team_id: String(match.awayTeamId),
-                      number: player.number || null,
-                      first_name: player.firstName || '',
-                      last_name: player.lastName || '',
-                      dob: formatDobForSync(player.dob),
-                      is_captain: !!player.isCaptain,
-                      libero: player.libero || null
-                    },
-                    ts: new Date().toISOString(),
-                    status: 'queued'
-                  })
-                }
-              }
-
-              // Sync team officials (bench staff) to Supabase
-              for (const official of benchAway) {
-                if (official.firstName || official.lastName) {
-                  await db.sync_queue.add({
-                    resource: 'team_official',
-                    action: 'insert',
-                    payload: {
-                      external_id: `${match.awayTeamId}_${official.role}_${official.firstName}_${official.lastName}`,
-                      team_id: String(match.awayTeamId),
-                      role: official.role || '',
-                      first_name: official.firstName || '',
-                      last_name: official.lastName || '',
-                      country: official.country || null,
-                      dob: formatDobForSync(official.dob)
-                    },
-                    ts: new Date().toISOString(),
-                    status: 'queued'
-                  })
-                }
+              // Sync away team data to Supabase as JSONB
+              if (match?.seed_key) {
+                await db.sync_queue.add({
+                  resource: 'match',
+                  action: 'update',
+                  payload: {
+                    id: match.seed_key,
+                    away_team: { name: away?.trim() || '', short_name: awayShortName || generateShortName(away), color: awayColor },
+                    players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
+                      number: p.number || null,
+                      first_name: p.firstName || '',
+                      last_name: p.lastName || '',
+                      dob: formatDobForSync(p.dob),
+                      is_captain: !!p.isCaptain,
+                      libero: p.libero || null
+                    })),
+                    bench_away: benchAway || [],
+                    // Signatures
+                    away_coach_signature: awayCoachSignature || savedSignatures.awayCoach || null,
+                    away_captain_signature: awayCaptainSignature || savedSignatures.awayCaptain || null
+                  },
+                  ts: new Date().toISOString(),
+                  status: 'queued'
+                })
               }
 
               setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })

@@ -507,7 +507,39 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             coin_toss_confirmed: true,
             coin_toss_team_a: teamA,
             coin_toss_team_b: teamB,
-            first_serve: firstServeTeam
+            first_serve: firstServeTeam,
+            // JSONB columns
+            home_team: { name: home, short_name: homeShortName, color: homeColor },
+            away_team: { name: away, short_name: awayShortName, color: awayColor },
+            players_home: homeRoster.map(p => ({
+              number: p.number,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              is_captain: !!p.isCaptain
+            })),
+            players_away: awayRoster.map(p => ({
+              number: p.number,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              is_captain: !!p.isCaptain
+            })),
+            bench_home: benchHome.map(b => ({
+              role: b.role,
+              first_name: b.firstName || '',
+              last_name: b.lastName || '',
+              dob: b.dob || null
+            })),
+            bench_away: benchAway.map(b => ({
+              role: b.role,
+              first_name: b.firstName || '',
+              last_name: b.lastName || '',
+              dob: b.dob || null
+            })),
+            officials: updatedMatch.officials || []
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -630,12 +662,6 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     await db.matches.update(matchId, { status: 'live' })
     console.log('[CoinToss] Match status updated to live')
 
-    // Get officials from match to sync to Supabase
-    const ref1 = match?.officials?.find(o => o.role === '1st referee')
-    const ref2 = match?.officials?.find(o => o.role === '2nd referee')
-    const scorer = match?.officials?.find(o => o.role === 'scorer')
-    const asstScorer = match?.officials?.find(o => o.role === 'assistant scorer')
-
     // Sync match status to Supabase (including officials, signatures, and referee connection info)
     // Only sync if match has seed_key (for Supabase lookup)
     if (match?.seed_key) {
@@ -647,11 +673,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           status: 'live',
           referee_pin: match?.refereePin || null,
           referee_connection_enabled: match?.refereeConnectionEnabled === true,
-          // Officials (using seed_key format for foreign key resolution)
-          referee_1: (ref1?.firstName && ref1?.lastName) ? `${ref1.firstName.toLowerCase()}_${ref1.lastName.toLowerCase()}` : null,
-          referee_2: (ref2?.firstName && ref2?.lastName) ? `${ref2.firstName.toLowerCase()}_${ref2.lastName.toLowerCase()}` : null,
-          scorer: (scorer?.firstName && scorer?.lastName) ? `${scorer.firstName.toLowerCase()}_${scorer.lastName.toLowerCase()}` : null,
-          assistant_scorer: (asstScorer?.firstName && asstScorer?.lastName) ? `${asstScorer.firstName.toLowerCase()}_${asstScorer.lastName.toLowerCase()}` : null,
+          // Officials as JSONB
+          officials: match?.officials || [],
           // Signatures (only for official matches)
           home_coach_signature: !match?.test ? homeCoachSignature : null,
           home_captain_signature: !match?.test ? homeCaptainSignature : null,
@@ -952,7 +975,39 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             hall: matchData.hall || null,
             city: matchData.city || null,
             league: matchData.league || null,
-            scheduled_at: matchData.scheduledAt || null
+            scheduled_at: matchData.scheduledAt || null,
+            // JSONB columns
+            home_team: { name: home, short_name: homeShortName, color: homeColor },
+            away_team: { name: away, short_name: awayShortName, color: awayColor },
+            players_home: homeRoster.map(p => ({
+              number: p.number,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              is_captain: !!p.isCaptain
+            })),
+            players_away: awayRoster.map(p => ({
+              number: p.number,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              dob: p.dob || null,
+              libero: p.libero || '',
+              is_captain: !!p.isCaptain
+            })),
+            bench_home: benchHome.map(b => ({
+              role: b.role,
+              first_name: b.firstName || '',
+              last_name: b.lastName || '',
+              dob: b.dob || null
+            })),
+            bench_away: benchAway.map(b => ({
+              role: b.role,
+              first_name: b.firstName || '',
+              last_name: b.lastName || '',
+              dob: b.dob || null
+            })),
+            officials: matchData.officials || []
           },
           ts: new Date().toISOString(),
           status: 'queued'
