@@ -192,7 +192,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
-  const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string } | null
+  const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string, selectedOption: 'swap'|'replay' } | null
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }] - for flashing effect
   const recentSubFlashTimeoutRef = useRef(null) // Timeout ref for clearing flash
 
@@ -204,7 +204,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Header collapse state
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [showNamesOnCourt, setShowNamesOnCourt] = useState(true)
-  const [courtPlayerNameMode, setCourtPlayerNameMode] = useState({}) // { 'home-12': 'first', 'away-5': 'first', ... } - tracks which players show first name
+  const [expandedPlayerName, setExpandedPlayerName] = useState(null) // 'home-12' | 'away-5' | null - tracks which player name is expanded
   const [autoDownloadAtSetEnd, setAutoDownloadAtSetEnd] = useState(true)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
@@ -1913,7 +1913,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Check if the last event was a point (can replay rally)
   const canReplayRally = useMemo(() => {
-    if (!data?.events || !data?.set || data.events.length === 0) return false
+    if (!data?.events || !data?.set || data.events.length === 0) {
+      console.log('[canReplayRally] No events or set, returning false')
+      return false
+    }
 
     // Get events for current set only and sort by sequence number (most recent first)
     const currentSetEvents = data.events
@@ -1929,11 +1932,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return bTime - aTime
       })
 
-    if (currentSetEvents.length === 0) return false
+    if (currentSetEvents.length === 0) {
+      console.log('[canReplayRally] No events in current set, returning false')
+      return false
+    }
 
     const lastEvent = currentSetEvents[0]
+    const lastFewEvents = currentSetEvents.slice(0, 5).map(e => ({ type: e.type, seq: e.seq }))
+    console.log('[canReplayRally] Last event:', lastEvent.type, 'seq:', lastEvent.seq, '| Last 5 events:', JSON.stringify(lastFewEvents))
+
     // Can replay rally if the last event was a point
-    return lastEvent.type === 'point'
+    // OR if the last event is a rotation lineup that followed a point (same base seq)
+    if (lastEvent.type === 'point') {
+      console.log('[canReplayRally] Last event is point, returning true')
+      return true
+    }
+
+    // Check if last event is a sub-event following a point (decimal seq like 5.1 or 5.2)
+    // This covers rotation lineups, libero_exit, etc. that happen automatically after a point
+    const lastSeq = lastEvent.seq || 0
+    const isSubEvent = lastSeq !== Math.floor(lastSeq)
+    if (isSubEvent) {
+      // This is a sub-event - check if parent event was a point
+      const baseSeq = Math.floor(lastSeq)
+      const parentEvent = currentSetEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
+      if (parentEvent) {
+        console.log('[canReplayRally] Last event is sub-event following point (type:', lastEvent.type, '), returning true')
+        return true
+      }
+    }
+
+    console.log('[canReplayRally] Last event is not point or sub-event of point, returning false')
+    return false
   }, [data?.events, data?.set])
 
   const isFirstRally = useMemo(() => {
@@ -3766,13 +3796,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       })
 
       const lastEvent = allEvents[0]
+      let pointEvent = null
+
       if (lastEvent && lastEvent.type === 'point') {
-        // Simple description for replay confirmation
-        const teamName = lastEvent.payload?.team === 'home'
+        // Last event is the point itself
+        pointEvent = lastEvent
+      } else if (lastEvent) {
+        // Last event might be a sub-event (decimal seq) following a point
+        const lastSeq = lastEvent.seq || 0
+        const isSubEvent = lastSeq !== Math.floor(lastSeq)
+        if (isSubEvent) {
+          // Find the parent point event
+          const baseSeq = Math.floor(lastSeq)
+          pointEvent = allEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
+        }
+      }
+
+      if (pointEvent) {
+        // Simple description for decision change confirmation
+        const teamName = pointEvent.payload?.team === 'home'
           ? (data?.homeTeam?.name || 'Home')
           : (data?.awayTeam?.name || 'Away')
         const description = `Point for ${teamName}`
-        setReplayRallyConfirm({ event: lastEvent, description })
+        setReplayRallyConfirm({ event: pointEvent, description, selectedOption: 'swap' }) // Default to swap
       }
     }
   }, [logEvent, rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
@@ -4370,6 +4416,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       } else {
         eventDescription = 'Rally replayed'
       }
+    } else if (event.type === 'decision_change') {
+      const fromTeam = event.payload?.fromTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+      const toTeam = event.payload?.toTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+      eventDescription = `Decision change — Point swapped from ${fromTeam} to ${toTeam}`
     } else if (event.type === 'lineup') {
       // Only show initial lineups, not rotation lineups or libero substitution lineups
       const isInitial = event.payload?.isInitial === true
@@ -4433,6 +4483,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       } else {
         eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber})`
       }
+    } else if (event.type === 'libero_redesignation') {
+      const unableLiberoNumber = event.payload?.unableLiberoNumber || '?'
+      const newLiberoNumber = event.payload?.newLiberoNumber || '?'
+      const unableType = event.payload?.unableLiberoType === 'libero1' ? 'L1' : event.payload?.unableLiberoType === 'libero2' ? 'L2' : 'L'
+      eventDescription = `Libero redesignation — ${teamName} (${unableType} ${unableLiberoNumber} → R ${newLiberoNumber})`
     } else if (event.type === 'set_end') {
       const winnerLabel = event.payload?.teamLabel || '?'
       const setIndex = event.payload?.setIndex || event.setIndex || '?'
@@ -5228,6 +5283,49 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
+    // If it's a libero_redesignation, revert player libero flags in database
+    if (lastEvent.type === 'libero_redesignation' && lastEvent.payload?.team) {
+      const team = lastEvent.payload.team
+      const unableLiberoNumber = lastEvent.payload?.unableLiberoNumber
+      const unableLiberoType = lastEvent.payload?.unableLiberoType // Original type: 'libero1' or 'libero2'
+      const newLiberoNumber = lastEvent.payload?.newLiberoNumber
+
+      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+
+      // Revert the old libero - change from 'unable' back to original type
+      const oldLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(unableLiberoNumber))
+      if (oldLiberoPlayer?.id && unableLiberoType) {
+        await db.players.update(oldLiberoPlayer.id, { libero: unableLiberoType })
+      }
+
+      // Revert the new player - remove 'redesignated' flag (set to empty string)
+      const newLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(newLiberoNumber))
+      if (newLiberoPlayer?.id) {
+        await db.players.update(newLiberoPlayer.id, { libero: '' })
+      }
+
+      // Also delete the associated libero_unable event (logged just before redesignation)
+      const unableEvents = data.events?.filter(e =>
+        e.type === 'libero_unable' &&
+        e.payload?.team === team &&
+        e.payload?.liberoNumber === unableLiberoNumber
+      ) || []
+      for (const unableEvent of unableEvents) {
+        await db.events.delete(unableEvent.id)
+      }
+
+      // Remove remarks about redesignation from match
+      const currentRemarks = data?.match?.remarks || ''
+      const remarkPattern = new RegExp(`\\n?Set \\d+, Team [AB], Time \\d{2}:\\d{2}, Player ${newLiberoNumber} re-designated as Libero \\(replacing ${unableLiberoNumber}\\)`, 'g')
+      const cleanedRemarks = currentRemarks.replace(remarkPattern, '').trim()
+      if (cleanedRemarks !== currentRemarks) {
+        await db.matches.update(matchId, { remarks: cleanedRemarks })
+      }
+    }
+
+    // If it's a libero_unable that was manually declared (not part of redesignation), just delete the event
+    // The event deletion happens at the start, so no additional action needed here
+
     // If it's a sanction, clear the sanction flag from the match
     if (lastEvent.type === 'sanction' && lastEvent.payload?.team && lastEvent.payload?.type) {
       const teamKey = lastEvent.payload.team
@@ -5406,6 +5504,94 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
   }, [])
+
+  // Handle decision change - either swap point to other team or replay rally
+  const handleDecisionChange = useCallback(async () => {
+    if (!replayRallyConfirm || !data?.set) {
+      setReplayRallyConfirm(null)
+      return
+    }
+
+    const { event: lastEvent, selectedOption } = replayRallyConfirm
+
+    if (selectedOption === 'swap') {
+      // Swap the point to the other team
+      const oldTeam = lastEvent.payload?.team
+      const newTeam = oldTeam === 'home' ? 'away' : 'home'
+      const oldField = oldTeam === 'home' ? 'homePoints' : 'awayPoints'
+      const newField = newTeam === 'home' ? 'homePoints' : 'awayPoints'
+
+      try {
+        // Update scores: decrement old team, increment new team
+        const oldTeamPoints = data.set[oldField]
+        const newTeamPoints = data.set[newField]
+
+        await db.sets.update(data.set.id, {
+          [oldField]: Math.max(0, oldTeamPoints - 1),
+          [newField]: newTeamPoints + 1
+        })
+
+        // Update the point event's team
+        await db.events.update(lastEvent.id, {
+          payload: {
+            ...lastEvent.payload,
+            team: newTeam,
+            swappedFrom: oldTeam // Track that this was swapped
+          }
+        })
+
+        // Log a decision_change event for the record
+        const nextSeq = await getNextSeq()
+        await db.events.add({
+          matchId,
+          setIndex: data.set.index,
+          type: 'decision_change',
+          payload: {
+            reason: 'point_swap',
+            fromTeam: oldTeam,
+            toTeam: newTeam,
+            oldHomePoints: data.set.homePoints,
+            oldAwayPoints: data.set.awayPoints,
+            newHomePoints: oldTeam === 'home' ? data.set.homePoints - 1 : data.set.homePoints + 1,
+            newAwayPoints: oldTeam === 'away' ? data.set.awayPoints - 1 : data.set.awayPoints + 1
+          },
+          ts: new Date().toISOString(),
+          seq: nextSeq
+        })
+
+        // Handle rotation changes if serve changed
+        // If old team was NOT serving (sideout happened), we need to undo their rotation
+        // and apply rotation to new team if new team wasn't serving
+        const lastEventSeq = lastEvent.seq || 0
+
+        // Find rotation events that happened after the point
+        const rotationEvents = data.events.filter(e =>
+          e.type === 'lineup' &&
+          e.setIndex === data.set.index &&
+          !e.payload?.isInitial &&
+          !e.payload?.fromSubstitution &&
+          !e.payload?.liberoSubstitution &&
+          (e.seq || 0) > lastEventSeq
+        ).sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
+        // Delete any rotations that were for the old team (sideout that shouldn't have happened)
+        for (const rotEvent of rotationEvents) {
+          if (rotEvent.payload?.team === oldTeam) {
+            await db.events.delete(rotEvent.id)
+          }
+        }
+
+      } catch (error) {
+        console.error('[handleDecisionChange] Error swapping point:', error)
+      }
+    } else {
+      // Replay rally - use existing logic
+      await handleReplayRally()
+      return // handleReplayRally already closes the modal
+    }
+
+    setReplayRallyConfirm(null)
+  }, [replayRallyConfirm, data?.set, data?.events, matchId, getNextSeq, handleReplayRally])
 
   const handleTimeout = useCallback(
     side => {
@@ -6214,27 +6400,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return eventsAfter.length > 0
   }, [data?.events, data?.set])
 
-  // ========== Court Player Name Toggle Handler ==========
+  // ========== Court Player Name Handlers ==========
 
-  // Toggle between showing first name and last name for a court player
-  const toggleCourtPlayerName = useCallback((teamKey, playerNumber, e) => {
-    e.stopPropagation() // Prevent triggering player click
-    const key = `${teamKey}-${playerNumber}`
-    setCourtPlayerNameMode(prev => ({
-      ...prev,
-      [key]: prev[key] === 'first' ? 'last' : 'first'
-    }))
+  // Get display name for court player (shows last name by default)
+  const getCourtPlayerDisplayName = useCallback((teamKey, playerNumber, firstName, lastName) => {
+    return lastName || firstName || ''
   }, [])
 
-  // Get display name for court player (first or last based on mode)
-  const getCourtPlayerDisplayName = useCallback((teamKey, playerNumber, firstName, lastName) => {
+  // Toggle expanded player name (collapsible menu showing full name and number)
+  const toggleExpandedPlayerName = useCallback((teamKey, playerNumber, e) => {
+    e.stopPropagation()
     const key = `${teamKey}-${playerNumber}`
-    const mode = courtPlayerNameMode[key] || 'last' // default to last name
-    if (mode === 'first') {
-      return firstName || lastName || ''
-    }
-    return lastName || firstName || ''
-  }, [courtPlayerNameMode])
+    setExpandedPlayerName(prev => prev === key ? null : key)
+  }, [])
 
   // ========== Drag and Drop Handlers for Substitution/Libero ==========
 
@@ -8510,7 +8688,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         if (replayRallyConfirm) {
           e.preventDefault()
-          handleReplayRally()
+          handleDecisionChange()
           return
         }
       }
@@ -8608,7 +8786,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
     accidentalPointConfirmModal, undoConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
-    confirmSubstitution, confirmLibero, handleReplayRally
+    confirmSubstitution, confirmLibero, handleReplayRally, handleDecisionChange
   ])
 
   const sanctionButtonStyles = useMemo(() => ({
@@ -9476,6 +9654,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 case 'libero_exit': return 'Libero exit'
                 case 'libero_exchange': return 'Libero exchange'
                 case 'libero_unable': return 'Libero unable'
+                case 'libero_redesignation': return 'Libero redesignation'
+                case 'decision_change': return 'Decision change'
                 case 'sanction': {
                   const sanctionType = event.payload?.sanctionType
                   if (sanctionType === 'warning') return 'Warning'
@@ -12591,10 +12771,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {/* Player name rectangle - clickable to expand/collapse full name */}
                         {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
                           <div
-                            onClick={(e) => toggleCourtPlayerName(teamKey, player.number, e)}
+                            onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                             style={{
                               position: 'absolute',
                               bottom: '-7px',
@@ -12608,19 +12788,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               fontWeight: 600,
                               color: '#fff',
                               whiteSpace: 'nowrap',
-                              maxWidth: '70px',
+                              maxWidth: expandedPlayerName === `${teamKey}-${player.number}` ? 'none' : '70px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              zIndex: 4,
+                              zIndex: 10,
                               textTransform: 'uppercase',
                               letterSpacing: '0.3px',
                               cursor: 'pointer',
                               display: 'flex',
+                              flexDirection: 'column',
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
-                            {getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                              {expandedPlayerName === `${teamKey}-${player.number}`
+                                ? `#${player.number}`
+                                : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
+                            </div>
+                            {expandedPlayerName === `${teamKey}-${player.number}` && (
+                              <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px' }}>
+                                {player.firstName} {player.lastName}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -12820,10 +13010,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {/* Player name rectangle - clickable to expand/collapse full name */}
                         {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
                           <div
-                            onClick={(e) => toggleCourtPlayerName(leftTeamKey, player.number, e)}
+                            onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
                             style={{
                               position: 'absolute',
                               bottom: '-7px',
@@ -12837,19 +13027,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               fontWeight: 600,
                               color: '#fff',
                               whiteSpace: 'nowrap',
-                              maxWidth: '70px',
+                              maxWidth: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'none' : '70px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              zIndex: 4,
+                              zIndex: 10,
                               textTransform: 'uppercase',
                               letterSpacing: '0.3px',
                               cursor: 'pointer',
                               display: 'flex',
+                              flexDirection: 'column',
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
-                            {getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                              {expandedPlayerName === `${leftTeamKey}-${player.number}`
+                                ? `#${player.number}`
+                                : getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
+                            </div>
+                            {expandedPlayerName === `${leftTeamKey}-${player.number}` && (
+                              <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px' }}>
+                                {player.firstName} {player.lastName}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -13098,10 +13298,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {/* Player name rectangle - clickable to expand/collapse full name */}
                         {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
                           <div
-                            onClick={(e) => toggleCourtPlayerName(teamKey, player.number, e)}
+                            onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                             style={{
                               position: 'absolute',
                               bottom: '-7px',
@@ -13115,19 +13315,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               fontWeight: 600,
                               color: '#fff',
                               whiteSpace: 'nowrap',
-                              maxWidth: '70px',
+                              maxWidth: expandedPlayerName === `${teamKey}-${player.number}` ? 'none' : '70px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              zIndex: 4,
+                              zIndex: 10,
                               textTransform: 'uppercase',
                               letterSpacing: '0.3px',
                               cursor: 'pointer',
                               display: 'flex',
+                              flexDirection: 'column',
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
-                            {getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                              {expandedPlayerName === `${teamKey}-${player.number}`
+                                ? `#${player.number}`
+                                : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
+                            </div>
+                            {expandedPlayerName === `${teamKey}-${player.number}` && (
+                              <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px' }}>
+                                {player.firstName} {player.lastName}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -13326,10 +13536,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             )}
                           </div>
                         )}
-                        {/* Player name rectangle - clickable to toggle first/last name */}
+                        {/* Player name rectangle - clickable to expand/collapse full name */}
                         {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
                           <div
-                            onClick={(e) => toggleCourtPlayerName(rightTeamKey, player.number, e)}
+                            onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
                             style={{
                               position: 'absolute',
                               bottom: '-7px',
@@ -13343,19 +13553,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               fontWeight: 600,
                               color: '#fff',
                               whiteSpace: 'nowrap',
-                              maxWidth: '70px',
+                              maxWidth: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'none' : '70px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              zIndex: 4,
+                              zIndex: 10,
                               textTransform: 'uppercase',
                               letterSpacing: '0.3px',
                               cursor: 'pointer',
                               display: 'flex',
+                              flexDirection: 'column',
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                            <span style={{ fontSize: '8px', opacity: 0.7 }}>&#x21C4;</span>
-                            {getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                              {expandedPlayerName === `${rightTeamKey}-${player.number}`
+                                ? `#${player.number}`
+                                : getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
+                            </div>
+                            {expandedPlayerName === `${rightTeamKey}-${player.number}` && (
+                              <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px' }}>
+                                {player.firstName} {player.lastName}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -13711,13 +13931,31 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </>
                   )}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    {(rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) && (
+                    {rallyStatus === 'in_play' && (
                       <button
                         className="secondary"
                         onClick={handleReplay}
                         style={{ flex: 1 }}
                       >
                         Replay
+                      </button>
+                    )}
+                    {rallyStatus === 'idle' && canReplayRally && (
+                      <button
+                        onClick={handleReplay}
+                        style={{
+                          flex: 1,
+                          background: '#eab308',
+                          color: '#000',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '12px 16px',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Decision change
                       </button>
                     )}
                     <button
@@ -22464,58 +22702,159 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         </Modal>
       )}
 
-      {replayRallyConfirm && (
-        <Modal
-          title="Replay Rally"
-          open={true}
-          onClose={cancelReplayRally}
-          width={400}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-              Do you want to replay the rally?
-            </p>
-            <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
-              {replayRallyConfirm.description}
-            </p>
-            <p style={{ marginBottom: '24px', fontSize: '13px', color: 'var(--muted)' }}>
-              This will undo the last point. Click "Start rally" to replay.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={handleReplayRally}
+      {replayRallyConfirm && (() => {
+        const lastEvent = replayRallyConfirm.event
+        const oldTeam = lastEvent?.payload?.team
+        const newTeam = oldTeam === 'home' ? 'away' : 'home'
+        const selectedOption = replayRallyConfirm.selectedOption || 'swap'
+
+        // Current scores
+        const currentHomePoints = data?.set?.homePoints || 0
+        const currentAwayPoints = data?.set?.awayPoints || 0
+
+        // Calculate new scores for swap option
+        const swapHomePoints = oldTeam === 'home' ? currentHomePoints - 1 : currentHomePoints + 1
+        const swapAwayPoints = oldTeam === 'away' ? currentAwayPoints - 1 : currentAwayPoints + 1
+
+        // Calculate new scores for replay option
+        const replayHomePoints = oldTeam === 'home' ? currentHomePoints - 1 : currentHomePoints
+        const replayAwayPoints = oldTeam === 'away' ? currentAwayPoints - 1 : currentAwayPoints
+
+        // Get team names for display
+        const homeTeamName = data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'
+        const awayTeamName = data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
+        const oldTeamName = oldTeam === 'home' ? homeTeamName : awayTeamName
+        const newTeamName = newTeam === 'home' ? homeTeamName : awayTeamName
+
+        // Determine which team has serve after each option
+        // For swap: the new team gets the point, so they get/keep serve
+        // For replay: no point scored, serve stays with who had it before this point
+        const swapServeTeam = newTeam
+        const replayServeTeam = oldTeam // The team that WAS going to have serve (sideout was reversed)
+
+        return (
+          <Modal
+            title="Decision Change"
+            open={true}
+            onClose={cancelReplayRally}
+            width={450}
+          >
+            <div style={{ padding: '24px' }}>
+              <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
+                Last point was assigned to <strong>{oldTeamName}</strong>
+              </p>
+
+              {/* Option 1: Assign point to other team */}
+              <div
+                onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'swap' })}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
+                  padding: '16px',
+                  marginBottom: '12px',
+                  background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
                   borderRadius: '8px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
                 }}
               >
-                Yes, Replay
-              </button>
-              <button
-                onClick={cancelReplayRally}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    border: selectedOption === 'swap' ? '6px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: selectedOption === 'swap' ? '#eab308' : 'transparent'
+                  }} />
+                  <span style={{ fontSize: '15px', fontWeight: 600 }}>Assign point to other team</span>
+                </div>
+                <div style={{ marginLeft: '32px', fontSize: '13px', color: 'var(--muted)' }}>
+                  <div style={{ marginBottom: '8px' }}>
+                    <span>Current: </span>
+                    <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
+                  </div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <span>New: </span>
+                    <strong style={{ color: '#22c55e' }}>{homeTeamName} {swapHomePoints} : {swapAwayPoints} {awayTeamName}</strong>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>Serve:</span>
+                    <span style={{ fontSize: '16px' }}>🏐</span>
+                    <strong>{swapServeTeam === 'home' ? homeTeamName : awayTeamName}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Option 2: Replay the rally */}
+              <div
+                onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'replay' })}
                 style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  padding: '16px',
+                  marginBottom: '24px',
+                  background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
                   borderRadius: '8px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
                 }}
               >
-                Cancel
-              </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    border: selectedOption === 'replay' ? '6px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: selectedOption === 'replay' ? '#eab308' : 'transparent'
+                  }} />
+                  <span style={{ fontSize: '15px', fontWeight: 600 }}>Replay the rally</span>
+                </div>
+                <div style={{ marginLeft: '32px', fontSize: '13px', color: 'var(--muted)' }}>
+                  <div style={{ marginBottom: '8px' }}>
+                    <span>New score (point deleted): </span>
+                    <strong style={{ color: '#22c55e' }}>{homeTeamName} {replayHomePoints} : {replayAwayPoints} {awayTeamName}</strong>
+                  </div>
+                  <div style={{ fontSize: '12px', fontStyle: 'italic' }}>
+                    Click "Start rally" after confirming to replay
+                  </div>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={handleDecisionChange}
+                  style={{
+                    padding: '12px 32px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: '#eab308',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={cancelReplayRally}
+                  style={{
+                    padding: '12px 32px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'var(--text)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )
+      })()}
 
       {postMatchSignature && (
         <Modal

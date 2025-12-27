@@ -620,9 +620,7 @@ export async function listAvailableMatchesSupabase() {
         home_team_name,
         away_team_name,
         home_team_upload_pin,
-        away_team_upload_pin,
-        home_team:teams!matches_home_team_id_fkey(id, name, short_name),
-        away_team:teams!matches_away_team_id_fkey(id, name, short_name)
+        away_team_upload_pin
       `)
       .in('status', ['setup', 'live'])
       .eq('referee_connection_enabled', true)
@@ -668,10 +666,10 @@ export async function listAvailableMatchesSupabase() {
         id: m.external_id || m.id,
         external_id: m.external_id, // Keep original for Supabase writes
         gameNumber: m.game_n || m.external_id,
-        homeTeam: m.home_team_name || m.home_team?.name || 'Home',
-        awayTeam: m.away_team_name || m.away_team?.name || 'Away',
-        homeTeamName: m.home_team_name || m.home_team?.name || 'Home',
-        awayTeamName: m.away_team_name || m.away_team?.name || 'Away',
+        homeTeam: m.home_team_name || 'Home',
+        awayTeam: m.away_team_name || 'Away',
+        homeTeamName: m.home_team_name || 'Home',
+        awayTeamName: m.away_team_name || 'Away',
         scheduledAt: m.scheduled_at,
         dateTime,
         refereeConnectionEnabled: m.referee_connection_enabled,
@@ -701,7 +699,7 @@ export async function validatePinSupabase(pin, type = 'referee') {
       return { success: false, error: 'Invalid PIN format' }
     }
 
-    // Query matches by referee_pin
+    // Query matches by referee_pin (using JSONB columns, no FK joins needed)
     const { data, error } = await supabase
       .from('matches')
       .select(`
@@ -714,8 +712,8 @@ export async function validatePinSupabase(pin, type = 'referee') {
         referee_connection_enabled,
         home_team_name,
         away_team_name,
-        home_team:teams!matches_home_team_id_fkey(id, name, short_name, color),
-        away_team:teams!matches_away_team_id_fkey(id, name, short_name, color)
+        home_team,
+        away_team
       `)
       .eq('referee_pin', pinStr)
       .in('status', ['setup', 'live'])
@@ -731,7 +729,7 @@ export async function validatePinSupabase(pin, type = 'referee') {
       return { success: false, error: 'Invalid PIN code' }
     }
 
-    // Format match data to match WebSocket server format
+    // Format match data to match WebSocket server format (using JSONB columns)
     const match = {
       id: data.external_id || data.id,
       gameNumber: data.game_n || data.external_id,
