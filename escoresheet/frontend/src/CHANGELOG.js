@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.12',
+    date: '27.12.25',
+    changes: [
+      'Enhance Scoreboard component with decision change handling and player name expansion'
+    ]
+  },
+  {
     version: '0.16.11',
     date: '26.12.25',
     changes: [
