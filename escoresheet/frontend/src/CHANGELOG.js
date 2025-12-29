@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.17',
+    date: '29.12.25',
+    changes: [
+      'Refactor App and Scoreboard components to improve match handling and libero management'
+    ]
+  },
+  {
     version: '0.16.16',
     date: '29.12.25',
     changes: [

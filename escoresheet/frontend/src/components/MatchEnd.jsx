@@ -668,6 +668,9 @@ export default function MatchEnd({ matchId, onGoHome }) {
       dataLink.href = URL.createObjectURL(dataBlob)
       dataLink.click()
 
+      // Also save the scoresheet PDF
+      handleShowScoresheet('save')
+
       // Show confirmation dialog after download
       setIsSaving(false)
       setShowCloseConfirm(true)
@@ -698,8 +701,12 @@ export default function MatchEnd({ matchId, onGoHome }) {
         })
       }
 
-      // Mark as approved
-      await db.matches.update(matchId, { approved: true, approvedAt: new Date().toISOString() })
+      // Mark as approved and set status to 'final'
+      await db.matches.update(matchId, {
+        approved: true,
+        approvedAt: new Date().toISOString(),
+        status: 'final'
+      })
       setIsApproved(true)
 
       // Go home
@@ -794,7 +801,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
       <div className="card" style={{ marginBottom: '16px' }}>
         <h3 style={{ margin: '0 0 12px 0' }}>Remarks</h3>
         <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
-          <RemarksBox overflowSanctions={overflowSanctions} />
+          <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
         </div>
       </div>
 
