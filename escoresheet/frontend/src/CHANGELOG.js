@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.15',
+    date: '29.12.25',
+    changes: [
+      'Enhance Scoreboard component with improved libero confirmation UI'
+    ]
+  },
+  {
     version: '0.16.13',
     date: '29.12.25',
     changes: [
