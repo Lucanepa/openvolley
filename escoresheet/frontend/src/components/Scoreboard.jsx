@@ -1383,7 +1383,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           set_interval_active: isSetInterval,
           set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
           match_status: isSetInterval ? 'interval' : 'in_progress',
-          team_left_is_home: leftIsHome,
+          team_left: (leftIsHome === (teamAKey === 'home')) ? 'A' : 'B',
+          team_right: (leftIsHome === (teamAKey === 'home')) ? 'B' : 'A',
           updated_at: new Date().toISOString()
         }, { onConflict: 'match_id' })
 
