@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.16',
+    date: '29.12.25',
+    changes: [
+      'Refactor Scoreboard component to enhance libero information display and confirm Set 5 setup'
+    ]
+  },
+  {
     version: '0.16.15',
     date: '29.12.25',
     changes: [
