@@ -4041,6 +4041,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Update set with end time and finished status
     await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
 
+    // Sync set update to Supabase (if not a test match)
+    const setMatch = await db.matches.get(matchId)
+    if (setMatch?.test !== true && setMatch?.seed_key) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'update',
+        payload: {
+          external_id: String(data.set.id),
+          home_points: homePoints,
+          away_points: awayPoints,
+          finished: true,
+          end_time: time
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
+
     // Get all sets and calculate sets won by each team
     const sets = await db.sets.where({ matchId }).toArray()
     const finishedSets = sets.filter(s => s.finished)

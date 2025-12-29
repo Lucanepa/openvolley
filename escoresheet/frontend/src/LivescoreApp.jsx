@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import SimpleHeader from './components/SimpleHeader'
@@ -27,6 +28,7 @@ const isBrightColor = (color) => {
 }
 
 export default function LivescoreApp() {
+  const { t } = useTranslation()
   const [gameId, setGameId] = useState(null)
   const [gameIdInput, setGameIdInput] = useState('')
   const [error, setError] = useState('')
@@ -314,7 +316,7 @@ export default function LivescoreApp() {
     
     const gameNum = gameIdInput.trim()
     if (!gameNum) {
-      setError('Please enter a game number')
+      setError(t('livescore.errors.enterGameNumber'))
       return
     }
     
@@ -330,12 +332,12 @@ export default function LivescoreApp() {
         if (!isNaN(id) && id > 0) {
           setGameId(id)
         } else {
-          setError('Match not found with this game number')
+          setError(t('livescore.errors.matchNotFound'))
         }
       }
     } catch (err) {
       console.error('Error finding match:', err)
-      setError('Failed to find match. Make sure the main scoresheet is running.')
+      setError(t('livescore.errors.failedToFindMatch'))
     }
   }
 
@@ -373,11 +375,11 @@ export default function LivescoreApp() {
             set: currentSet
           })
         } else {
-          setDataError('Failed to load match data')
+          setDataError(t('livescore.errors.failedToLoadData'))
         }
       } catch (err) {
         console.error('Error fetching match data:', err)
-        setDataError('Failed to load match data. Make sure the main scoresheet is running.')
+        setDataError(t('livescore.errors.failedToLoadDataConnection'))
       } finally {
         setLoading(false)
       }
@@ -831,7 +833,7 @@ export default function LivescoreApp() {
     } else if (gameId && dataError) {
       setError(dataError)
     } else if (gameId && !data && !loading) {
-      setError('Game not in progress or not existing')
+      setError(t('livescore.gameNotFound'))
     }
   }, [gameId, data, dataError, loading])
 
@@ -888,7 +890,7 @@ export default function LivescoreApp() {
         <UpdateBanner />
 
         <SimpleHeader
-          title="Live Scoring"
+          title={t('livescore.title')}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -916,7 +918,7 @@ export default function LivescoreApp() {
             fontWeight: 700,
             marginBottom: '8px'
           }}>
-            Live Scoring
+            {t('livescore.title')}
           </h1>
 
           {loadingMatches ? (
@@ -925,7 +927,7 @@ export default function LivescoreApp() {
               color: 'rgba(255, 255, 255, 0.7)',
               fontSize: '16px'
             }}>
-              Loading available games...
+              {t('livescore.loadingGames')}
             </div>
           ) : availableMatches.length > 0 ? (
             <>
@@ -934,7 +936,7 @@ export default function LivescoreApp() {
               color: 'rgba(255, 255, 255, 0.7)',
               marginBottom: '32px'
             }}>
-              Select a game to view live scores
+              {t('livescore.selectGame')}
             </p>
             <div style={{
               display: 'flex',
@@ -974,13 +976,13 @@ export default function LivescoreApp() {
                     color: 'var(--accent)',
                     marginBottom: '4px'
                   }}>
-                    Game {match.gameNumber || match.id}
+                    {t('livescore.game', { number: match.gameNumber || match.id })}
                   </div>
                   <div style={{
                     fontSize: '16px',
                     fontWeight: 500
                   }}>
-                    {match.homeTeamName || 'Home'} vs {match.awayTeamName || 'Away'}
+                    {match.homeTeamName || t('common.home')} {t('livescore.vs')} {match.awayTeamName || t('common.away')}
                   </div>
                 </button>
               ))}
@@ -1003,7 +1005,7 @@ export default function LivescoreApp() {
                 color: 'var(--muted)',
                 marginBottom: '8px'
               }}>
-                No active game found
+                {t('livescore.noActiveGame')}
               </div>
             </div>
           )}
@@ -1041,7 +1043,7 @@ export default function LivescoreApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Live Scoring"
+          title={t('livescore.title')}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -1064,7 +1066,7 @@ export default function LivescoreApp() {
             fontWeight: 600,
             marginBottom: '16px'
           }}>
-            {error || 'Game not in progress or not existing'}
+            {error || t('livescore.gameNotFound')}
           </div>
           <button
             onClick={() => {
@@ -1090,7 +1092,7 @@ export default function LivescoreApp() {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
             }}
           >
-            Enter Different Game Number
+            {t('livescore.enterDifferentGame')}
           </button>
         </div>
         </div>
@@ -1117,7 +1119,7 @@ export default function LivescoreApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Match Finished"
+          title={t('livescore.matchFinished')}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -1127,7 +1129,7 @@ export default function LivescoreApp() {
             setGameIdInput('')
             setError('')
           }}
-          backLabel="Back"
+          backLabel={t('common.back')}
         />
         <div style={{
           flex: 1,
@@ -1146,7 +1148,7 @@ export default function LivescoreApp() {
             textTransform: 'uppercase',
             letterSpacing: '2px'
           }}>
-            The match has ended
+            {t('livescore.matchEnded')}
           </div>
 
           {/* Winner and Result */}
@@ -1209,7 +1211,7 @@ export default function LivescoreApp() {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
             }}
           >
-            Back to Games
+            {t('livescore.backToGames')}
           </button>
         </div>
       </div>
@@ -1227,7 +1229,7 @@ export default function LivescoreApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
         <SimpleHeader
-          title="Live Scoring"
+          title={t('livescore.title')}
           wakeLockActive={wakeLockActive}
           toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
@@ -1244,7 +1246,7 @@ export default function LivescoreApp() {
             textAlign: 'center',
             fontSize: '18px'
           }}>
-            Loading...
+            {t('common.loading')}
           </div>
         </div>
       </div>
@@ -1259,8 +1261,8 @@ export default function LivescoreApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       <SimpleHeader
-        title="Live Scoring"
-        subtitle={`Game: ${gameId}`}
+        title={t('livescore.title')}
+        subtitle={t('livescore.game', { number: gameId })}
         wakeLockActive={wakeLockActive}
         toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
@@ -1274,7 +1276,7 @@ export default function LivescoreApp() {
           setGameIdInput('')
           setError('')
         }}
-        backLabel="Change Game"
+        backLabel={t('livescore.changeGame')}
         rightContent={
           <button
             onClick={() => setSidesSwitched(!sidesSwitched)}
@@ -1297,7 +1299,7 @@ export default function LivescoreApp() {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
             }}
           >
-            Switch Sides
+            {t('livescore.switchSides')}
           </button>
         }
       />
@@ -1327,7 +1329,7 @@ export default function LivescoreApp() {
           {leftIsServing && (
             <img
               src={mikasaVolleyball}
-              alt="Serving team"
+              alt={t('livescore.servingTeam')}
               style={{
                 width: 'clamp(40px, 10vw, 80px)',
                 height: 'clamp(40px, 10vw, 80px)',
@@ -1389,7 +1391,7 @@ export default function LivescoreApp() {
           {rightIsServing && (
             <img
               src={mikasaVolleyball}
-              alt="Serving team"
+              alt={t('livescore.servingTeam')}
               style={{
                 width: 'clamp(40px, 10vw, 80px)',
                 height: 'clamp(40px, 10vw, 80px)',
@@ -1462,7 +1464,7 @@ export default function LivescoreApp() {
             gap: '10px',
             lineHeight: '1'
           }}>
-            SET
+            {t('livescore.set')}
           </span>
           <span style={{
               fontSize: 'clamp(40px, 12vw, 100px)',

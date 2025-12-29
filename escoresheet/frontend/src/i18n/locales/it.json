@@ -210,7 +210,22 @@
     "deleteMatch": "Elimina partita",
     "restoreMatch": "Ripristina partita",
     "gamePin": "PIN partita",
-    "options": "Opzioni"
+    "options": "Opzioni",
+    "modals": {
+      "existingMatchWarning": "Esiste già una partita. Vuoi eliminarla e creare una nuova partita ufficiale?",
+      "testMatchOverwriteWarning": "Una partita ufficiale è in corso. Iniziare una partita test cancellerà la sessione precedente. Continuare?",
+      "deleteTestMatchConfirm": "Questo eliminerà la partita test e tutti i suoi dati. Continuare?",
+      "noTestMatchFound": "Nessuna partita test trovata. Crea prima una nuova partita test.",
+      "testMatchDeleted": "Partita test eliminata con successo.",
+      "isTestMatchWarning": "Questa è una partita test. Usa \"Continua partita test\" invece.",
+      "errorOpeningMatch": "Errore nell'apertura della partita. Riprova.",
+      "unableToPrepareTestMatch": "Impossibile preparare la partita test: {{error}}",
+      "unableToDeleteTestMatch": "Impossibile eliminare la partita test: {{error}}",
+      "failedToRestoreMatch": "Ripristino della partita fallito",
+      "failedToRestoreFromFile": "Ripristino dal file fallito",
+      "enter6DigitPin": "Inserisci un PIN a 6 cifre",
+      "matchNotFound": "Partita non trovata"
+    }
   },
   "options": {
     "title": "Opzioni",
@@ -504,5 +519,29 @@
     "lineupSet": "Formazione inserita",
     "showLineup": "Mostra formazione",
     "loadGames": "Carica partite"
+  },
+  "livescore": {
+    "title": "Punteggio Live",
+    "loadingGames": "Caricamento partite disponibili...",
+    "selectGame": "Seleziona una partita per vedere il punteggio live",
+    "game": "Partita {{number}}",
+    "vs": "vs",
+    "noActiveGame": "Nessuna partita attiva trovata",
+    "matchFinished": "Partita terminata",
+    "matchEnded": "La partita è terminata",
+    "backToGames": "Torna alle partite",
+    "switchSides": "Inverti lati",
+    "servingTeam": "Squadra al servizio",
+    "set": "SET",
+    "changeGame": "Cambia partita",
+    "enterDifferentGame": "Inserisci un altro numero di partita",
+    "gameNotFound": "Partita non trovata o non in corso",
+    "errors": {
+      "enterGameNumber": "Inserisci un numero di partita",
+      "matchNotFound": "Partita non trovata con questo numero",
+      "failedToFindMatch": "Impossibile trovare la partita. Assicurati che il referto principale sia in esecuzione.",
+      "failedToLoadData": "Impossibile caricare i dati",
+      "failedToLoadDataConnection": "Impossibile caricare i dati. Assicurati che il referto principale sia in esecuzione."
+    }
   }
 }
