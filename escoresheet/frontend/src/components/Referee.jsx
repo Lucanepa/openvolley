@@ -404,9 +404,18 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           console.log(`[Referee] 📡 Supabase realtime: ${state.last_event_type}`, state)
 
+          // Convert left/right to home/away using team_left and local teamAKey
+          const localTeamAKey = data?.match?.coinTossTeamA || 'home'
+          const teamLeft = state.team_left || 'A'
+          const homeTeamOnLeft = (teamLeft === 'A') === (localTeamAKey === 'home')
+          const getTeamFromSide = (side) => {
+            if (side === 'left') return homeTeamOnLeft ? 'home' : 'away'
+            return homeTeamOnLeft ? 'away' : 'home'
+          }
+
           // Handle timeout
           if (state.last_event_type === 'timeout') {
-            const team = state.last_event_team === 'left' ? 'home' : 'away'
+            const team = getTeamFromSide(state.last_event_team)
             setTimeoutModal({
               team,
               countdown: state.last_event_data?.duration || 30,
@@ -416,7 +425,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           // Handle substitution
           if (state.last_event_type === 'substitution') {
-            const team = state.last_event_team === 'left' ? 'home' : 'away'
+            const team = getTeamFromSide(state.last_event_team)
             setSubstitutionModal({
               team,
               playerOut: state.last_event_data?.playerOut,
@@ -436,7 +445,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           // Handle libero entry/exit/exchange
           if (['libero_entry', 'libero_exit', 'libero_exchange'].includes(state.last_event_type)) {
-            const team = state.last_event_team === 'left' ? 'home' : 'away'
+            const team = getTeamFromSide(state.last_event_team)
             const playerNumber = state.last_event_data?.liberoNumber || state.last_event_data?.playerIn
             if (playerNumber) {
               setRecentlySubstitutedPlayers(prev => [
@@ -464,7 +473,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [matchId, isMasterMode])
+  }, [matchId, isMasterMode, data?.match?.coinTossTeamA])
 
   // Handle timeout countdown timer
   useEffect(() => {
@@ -698,17 +707,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
   const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
-  // Determine which team is on the left
-  const leftIsHomeFor2ndRef = useMemo(() => {
+  // Determine which team is on the left (from referee's perspective)
+  const homeOnLeftFor2ndRef = useMemo(() => {
     if (!data?.currentSet) return true
     if (data.currentSet.index === 1) return teamAKey === 'home'
     return teamAKey !== 'home'
   }, [data?.currentSet, teamAKey])
 
-  const leftIsHome = refereeView === '1st' ? !leftIsHomeFor2ndRef : leftIsHomeFor2ndRef
-  
-  const leftTeam = leftIsHome ? 'home' : 'away'
-  const rightTeam = leftIsHome ? 'away' : 'home'
+  const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
+
+  const leftTeam = homeTeamOnLeft ? 'home' : 'away'
+  const rightTeam = homeTeamOnLeft ? 'away' : 'home'
   const leftTeamData = leftTeam === 'home' ? data?.homeTeam : data?.awayTeam
   const rightTeamData = rightTeam === 'home' ? data?.homeTeam : data?.awayTeam
   const leftLabel = leftTeam === 'home' ? homeLabel : awayLabel

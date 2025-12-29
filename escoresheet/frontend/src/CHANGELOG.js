@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.20',
+    date: '30.12.25',
+    changes: [
+      'Refactor LivescoreApp and Referee components for improved team handling and score calculation'
+    ]
+  },
+  {
     version: '0.16.19',
     date: '29.12.25',
     changes: [
