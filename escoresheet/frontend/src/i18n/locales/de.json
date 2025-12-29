@@ -210,7 +210,22 @@
     "deleteMatch": "Spiel loschen",
     "restoreMatch": "Spiel wiederherstellen",
     "gamePin": "Spiel-PIN",
-    "options": "Optionen"
+    "options": "Optionen",
+    "modals": {
+      "existingMatchWarning": "Es existiert bereits ein Spiel. Möchten Sie es löschen und ein neues offizielles Spiel erstellen?",
+      "testMatchOverwriteWarning": "Ein offizielles Spiel wird aufgezeichnet. Das Starten eines Testspiels löscht die vorherige Sitzung. Fortfahren?",
+      "deleteTestMatchConfirm": "Dies löscht das Testspiel und alle seine Daten. Fortfahren?",
+      "noTestMatchFound": "Kein Testspiel gefunden. Bitte erstellen Sie zuerst ein neues Testspiel.",
+      "testMatchDeleted": "Testspiel erfolgreich gelöscht.",
+      "isTestMatchWarning": "Dies ist ein Testspiel. Verwenden Sie stattdessen \"Testspiel fortsetzen\".",
+      "errorOpeningMatch": "Fehler beim Öffnen des Spiels. Bitte erneut versuchen.",
+      "unableToPrepareTestMatch": "Testspiel konnte nicht vorbereitet werden: {{error}}",
+      "unableToDeleteTestMatch": "Testspiel konnte nicht gelöscht werden: {{error}}",
+      "failedToRestoreMatch": "Spiel konnte nicht wiederhergestellt werden",
+      "failedToRestoreFromFile": "Wiederherstellung aus Datei fehlgeschlagen",
+      "enter6DigitPin": "Bitte geben Sie einen 6-stelligen PIN ein",
+      "matchNotFound": "Spiel nicht gefunden"
+    }
   },
   "options": {
     "title": "Optionen",
@@ -504,5 +519,29 @@
     "lineupSet": "Aufstellung gesetzt",
     "showLineup": "Aufstellung anzeigen",
     "loadGames": "Spiele laden"
+  },
+  "livescore": {
+    "title": "Live-Ergebnis",
+    "loadingGames": "Verfügbare Spiele werden geladen...",
+    "selectGame": "Wählen Sie ein Spiel aus, um das Live-Ergebnis anzuzeigen",
+    "game": "Spiel {{number}}",
+    "vs": "vs",
+    "noActiveGame": "Kein aktives Spiel gefunden",
+    "matchFinished": "Spiel beendet",
+    "matchEnded": "Das Spiel ist beendet",
+    "backToGames": "Zurück zu den Spielen",
+    "switchSides": "Seiten wechseln",
+    "servingTeam": "Aufschlagteam",
+    "set": "SATZ",
+    "changeGame": "Spiel wechseln",
+    "enterDifferentGame": "Andere Spielnummer eingeben",
+    "gameNotFound": "Spiel nicht gefunden oder nicht im Gange",
+    "errors": {
+      "enterGameNumber": "Bitte geben Sie eine Spielnummer ein",
+      "matchNotFound": "Spiel mit dieser Nummer nicht gefunden",
+      "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stellen Sie sicher, dass der Hauptspielbericht läuft.",
+      "failedToLoadData": "Daten konnten nicht geladen werden",
+      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stellen Sie sicher, dass der Hauptspielbericht läuft."
+    }
   }
 }

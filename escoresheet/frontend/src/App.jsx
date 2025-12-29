@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import MatchSetup from './components/MatchSetup'
@@ -55,6 +56,7 @@ function generateRefereePin() {
 }
 
 export default function App() {
+  const { t } = useTranslation()
   const [matchId, setMatchId] = useState(null)
   const [showMatchSetup, setShowMatchSetup] = useState(false)
   const [showCoinToss, setShowCoinToss] = useState(false)
@@ -2164,7 +2166,7 @@ export default function App() {
     if (currentMatch) {
       setNewMatchModal({
         type: 'official',
-        message: 'There is an existing match. Do you want to delete it and create a new official match?'
+        message: t('home.modals.existingMatchWarning')
       })
       return
     }
@@ -2574,7 +2576,7 @@ export default function App() {
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
     if (officialMatchRecording) {
       setConfirmModal({
-        message: 'An official match is still recording. Starting a new test match will wipe the previous test session. Continue?',
+        message: t('home.modals.testMatchOverwriteWarning'),
         onConfirm: async () => {
           setConfirmModal(null)
           setTestMatchLoading(true)
@@ -2583,7 +2585,7 @@ export default function App() {
             await createTestMatchData()
           } catch (error) {
             console.error('Failed to prepare test match:', error)
-            setAlertModal(`Unable to prepare the test match: ${error.message || error}`)
+            setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
           } finally {
             setTestMatchLoading(false)
           }
@@ -2605,7 +2607,7 @@ export default function App() {
       await createTestMatchData()
     } catch (error) {
       console.error('Failed to prepare test match:', error)
-      setAlertModal(`Unable to prepare the test match: ${error.message || error}`)
+      setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
     } finally {
       setTestMatchLoading(false)
     }
@@ -2671,7 +2673,7 @@ export default function App() {
         setShowCoinToss(false)
       }
     } else {
-      setAlertModal('No test match found. Please create a new test match first.')
+      setAlertModal(t('home.modals.noTestMatchFound'))
     }
   }
 
@@ -2682,7 +2684,7 @@ export default function App() {
     setTestMatchLoading(true)
     
     setConfirmModal({
-      message: 'This will delete the test match and all its data. Continue?',
+      message: t('home.modals.deleteTestMatchConfirm'),
       onConfirm: async () => {
         setConfirmModal(null)
         try {
@@ -2690,7 +2692,7 @@ export default function App() {
           const matches = await db.matches.orderBy('createdAt').reverse().toArray()
           const testMatch = matches.find(m => m.test === true && m.status !== 'final')
           if (!testMatch) {
-            setAlertModal('No test match found.')
+            setAlertModal(t('home.modals.noTestMatchFound'))
             setTestMatchLoading(false)
             return
           }
@@ -2703,10 +2705,10 @@ export default function App() {
           setShowMatchSetup(false)
           setShowCoinToss(false)
 
-          setAlertModal('Test match deleted successfully.')
+          setAlertModal(t('home.modals.testMatchDeleted'))
         } catch (error) {
           console.error('Failed to delete test match:', error)
-          setAlertModal(`Unable to delete test match: ${error.message || error}`)
+          setAlertModal(t('home.modals.unableToDeleteTestMatch', { error: error.message || error }))
         } finally {
           setTestMatchLoading(false)
         }
@@ -2765,7 +2767,7 @@ export default function App() {
       
       // Reject test matches for other cases
       if (match.test === true) {
-        setAlertModal('This is a test match. Use "Continue test match" instead.')
+        setAlertModal(t('home.modals.isTestMatchWarning'))
         return
       }
       
@@ -2796,7 +2798,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Error continuing match:', error)
-      setAlertModal('Error opening match. Please try again.')
+      setAlertModal(t('home.modals.errorOpeningMatch'))
     }
   }
 
@@ -3158,7 +3160,7 @@ export default function App() {
                 <button
                   onClick={async () => {
                     if (restorePin.length !== 6) {
-                      setRestoreError('Please enter a 6-digit Game PIN')
+                      setRestoreError(t('home.modals.enter6DigitPin'))
                       return
                     }
                     setRestoreLoading(true)
@@ -3166,7 +3168,7 @@ export default function App() {
                     try {
                       const cloudData = await fetchMatchByPin(restorePin, restoreMatchIdInput || null)
                       if (!cloudData) {
-                        setRestoreError('Match not found')
+                        setRestoreError(t('home.modals.matchNotFound'))
                         setRestoreLoading(false)
                         return
                       }
@@ -3199,7 +3201,7 @@ export default function App() {
                         setShowMatchSetup(true)
                       }
                     } catch (err) {
-                      setRestoreError(err.message || 'Failed to restore match')
+                      setRestoreError(err.message || t('home.modals.failedToRestoreMatch'))
                     } finally {
                       setRestoreLoading(false)
                     }
@@ -3257,7 +3259,7 @@ export default function App() {
                     setMatchId(newMatchId)
                     setShowMatchSetup(true)
                   } catch (err) {
-                    setRestoreError(err.message || 'Failed to restore from file')
+                    setRestoreError(err.message || t('home.modals.failedToRestoreFromFile'))
                   } finally {
                     setRestoreLoading(false)
                   }

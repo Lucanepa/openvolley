@@ -182,7 +182,12 @@ export function useSyncQueue() {
             .select('id')
             .eq('external_id', setPayload.match_id)
             .maybeSingle()
-          setPayload.match_id = matchData?.id || null
+
+          if (!matchData) {
+            // Match not yet synced - keep job queued for retry
+            return null // null means "retry later"
+          }
+          setPayload.match_id = matchData.id
         }
 
         const { error } = await supabase
@@ -190,6 +195,21 @@ export function useSyncQueue() {
           .upsert(setPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Set insert error:', error, setPayload)
+          return false
+        }
+        return true
+      }
+
+      if (job.resource === 'set' && job.action === 'update') {
+        // Update set by external_id
+        const { external_id, ...updateData } = job.payload
+
+        const { error } = await supabase
+          .from('sets')
+          .update(updateData)
+          .eq('external_id', external_id)
+        if (error) {
+          console.error('[SyncQueue] Set update error:', error, job.payload)
           return false
         }
         return true

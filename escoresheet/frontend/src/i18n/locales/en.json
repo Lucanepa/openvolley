@@ -287,7 +287,22 @@
     "deleteMatch": "Delete Match",
     "restoreMatch": "Restore Match",
     "gamePin": "Game PIN",
-    "options": "Options"
+    "options": "Options",
+    "modals": {
+      "existingMatchWarning": "There is an existing match. Do you want to delete it and create a new official match?",
+      "testMatchOverwriteWarning": "An official match is still recording. Starting a new test match will wipe the previous test session. Continue?",
+      "deleteTestMatchConfirm": "This will delete the test match and all its data. Continue?",
+      "noTestMatchFound": "No test match found. Please create a new test match first.",
+      "testMatchDeleted": "Test match deleted successfully.",
+      "isTestMatchWarning": "This is a test match. Use \"Continue test match\" instead.",
+      "errorOpeningMatch": "Error opening match. Please try again.",
+      "unableToPrepareTestMatch": "Unable to prepare the test match: {{error}}",
+      "unableToDeleteTestMatch": "Unable to delete test match: {{error}}",
+      "failedToRestoreMatch": "Failed to restore match",
+      "failedToRestoreFromFile": "Failed to restore from file",
+      "enter6DigitPin": "Please enter a 6-digit Game PIN",
+      "matchNotFound": "Match not found"
+    }
   },
   "options": {
     "title": "Options",
@@ -590,5 +605,29 @@
     "lineupSet": "Line-up set",
     "showLineup": "Show Line-up",
     "loadGames": "Load Games"
+  },
+  "livescore": {
+    "title": "Live Scoring",
+    "loadingGames": "Loading available games...",
+    "selectGame": "Select a game to view live scores",
+    "game": "Game {{number}}",
+    "vs": "vs",
+    "noActiveGame": "No active game found",
+    "matchFinished": "Match Finished",
+    "matchEnded": "The match has ended",
+    "backToGames": "Back to Games",
+    "switchSides": "Switch Sides",
+    "servingTeam": "Serving team",
+    "set": "SET",
+    "changeGame": "Change Game",
+    "enterDifferentGame": "Enter Different Game Number",
+    "gameNotFound": "Game not in progress or not existing",
+    "errors": {
+      "enterGameNumber": "Please enter a game number",
+      "matchNotFound": "Match not found with this game number",
+      "failedToFindMatch": "Failed to find match. Make sure the main scoresheet is running.",
+      "failedToLoadData": "Failed to load match data",
+      "failedToLoadDataConnection": "Failed to load match data. Make sure the main scoresheet is running."
+    }
   }
 }

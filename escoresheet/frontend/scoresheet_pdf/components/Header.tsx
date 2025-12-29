@@ -27,8 +27,8 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             {/* Swiss Volley Logo Section with Fallback */}
             {!imageError ? (
                 <img
-                    src={swissvolleyLogo}
-                    alt="Swiss Volley Region Zürich"
+                    src={favicon}
+                    alt="Openvolley eScoresheet"
                     className="h-8 object-contain mx-auto"
                     onError={() => setImageError(true)}
                 />

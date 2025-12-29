@@ -210,7 +210,22 @@
     "deleteMatch": "Supprimer le match",
     "restoreMatch": "Restaurer le match",
     "gamePin": "PIN du match",
-    "options": "Options"
+    "options": "Options",
+    "modals": {
+      "existingMatchWarning": "Un match existe déjà. Voulez-vous le supprimer et créer un nouveau match officiel ?",
+      "testMatchOverwriteWarning": "Un match officiel est en cours. Démarrer un match amical effacera la session précédente. Continuer ?",
+      "deleteTestMatchConfirm": "Cela supprimera le match amical et toutes ses données. Continuer ?",
+      "noTestMatchFound": "Aucun match amical trouvé. Veuillez d'abord créer un nouveau match amical.",
+      "testMatchDeleted": "Match amical supprimé avec succès.",
+      "isTestMatchWarning": "C'est un match amical. Utilisez \"Continuer le match amical\" à la place.",
+      "errorOpeningMatch": "Erreur lors de l'ouverture du match. Veuillez réessayer.",
+      "unableToPrepareTestMatch": "Impossible de préparer le match amical : {{error}}",
+      "unableToDeleteTestMatch": "Impossible de supprimer le match amical : {{error}}",
+      "failedToRestoreMatch": "Échec de la restauration du match",
+      "failedToRestoreFromFile": "Échec de la restauration depuis le fichier",
+      "enter6DigitPin": "Veuillez entrer un code PIN à 6 chiffres",
+      "matchNotFound": "Match non trouvé"
+    }
   },
   "options": {
     "title": "Options",
@@ -504,5 +519,29 @@
     "lineupSet": "Composition reçue",
     "showLineup": "Afficher la composition",
     "loadGames": "Charger les matchs"
+  },
+  "livescore": {
+    "title": "Score en direct",
+    "loadingGames": "Chargement des matchs disponibles...",
+    "selectGame": "Sélectionnez un match pour voir le score en direct",
+    "game": "Match {{number}}",
+    "vs": "vs",
+    "noActiveGame": "Aucun match actif trouvé",
+    "matchFinished": "Match terminé",
+    "matchEnded": "Le match est terminé",
+    "backToGames": "Retour aux matchs",
+    "switchSides": "Inverser les côtés",
+    "servingTeam": "Équipe au service",
+    "set": "SET",
+    "changeGame": "Changer de match",
+    "enterDifferentGame": "Entrer un autre numéro de match",
+    "gameNotFound": "Match non trouvé ou pas en cours",
+    "errors": {
+      "enterGameNumber": "Veuillez entrer un numéro de match",
+      "matchNotFound": "Match non trouvé avec ce numéro",
+      "failedToFindMatch": "Impossible de trouver le match. Vérifiez que la feuille de match principale est en cours.",
+      "failedToLoadData": "Échec du chargement des données",
+      "failedToLoadDataConnection": "Échec du chargement des données. Vérifiez que la feuille de match principale est en cours."
+    }
   }
 }
