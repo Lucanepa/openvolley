@@ -445,20 +445,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return () => clearInterval(interval)
   }, [matchId])
 
-  // Check if Set 5 was already confirmed (on mount or when entering Set 5)
-  useEffect(() => {
-    if (!data?.set || !data?.events) return
-    if (data.set.index !== 5) return
-
-    // Check if Set 5 has already started (has points or set5_coin_toss event)
-    const hasSet5CoinToss = data.events.some(e => e.type === 'set5_coin_toss' && e.setIndex === 5)
-    const hasSet5Points = data.events.some(e => e.type === 'point' && e.setIndex === 5)
-
-    if (hasSet5CoinToss || hasSet5Points) {
-      setSet5SetupConfirmed(true)
-    }
-  }, [data?.set?.index, data?.events])
-
   // Screen size detection for display mode suggestions
   // Improved detection: check both screen size and touch capability
   // < 600px + touch = smartphone, 600-900px + touch = tablet, > 900px or no touch = desktop
@@ -662,6 +648,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     return result
   }, [matchId])
+
+  // Check if Set 5 was already confirmed (on mount or when entering Set 5)
+  useEffect(() => {
+    if (!data?.set || !data?.events) return
+    if (data.set.index !== 5) return
+
+    // Check if Set 5 has already started (has points or set5_coin_toss event)
+    const hasSet5CoinToss = data.events.some(e => e.type === 'set5_coin_toss' && e.setIndex === 5)
+    const hasSet5Points = data.events.some(e => e.type === 'point' && e.setIndex === 5)
+
+    if (hasSet5CoinToss || hasSet5Points) {
+      setSet5SetupConfirmed(true)
+    }
+  }, [data?.set?.index, data?.events])
 
   // Helper to create state snapshot for debug logging
   const getStateSnapshot = useCallback(() => {
@@ -21140,13 +21140,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamLabel = liberoConfirm.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoConfirm.team === 'home' ? 'Home' : 'Away')
 
-        // Get libero number from lineup
-        const lineup = liberoConfirm.team === 'home' ? data?.homeLineup : data?.awayLineup
-        const liberoNumber = liberoConfirm.liberoIn === 'libero1'
-          ? lineup?.libero1
-          : liberoConfirm.liberoIn === 'redesignated'
-          ? lineup?.redesignatedLibero
-          : lineup?.libero2
+        // Get libero number from players list
+        const teamPlayers = liberoConfirm.team === 'home' ? data?.homePlayers : data?.awayPlayers
+        const liberoPlayer = teamPlayers?.find(p => p.libero === liberoConfirm.liberoIn)
+        const liberoNumber = liberoConfirm.newLiberoNumber || liberoPlayer?.number
         const liberoLabel = liberoConfirm.liberoIn === 'libero1' ? 'L1' : liberoConfirm.liberoIn === 'redesignated' ? 'R' : 'L2'
 
         return (
@@ -21196,67 +21193,71 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 }}>{teamLabel}</span>
               </div>
 
-              {/* Libero IN */}
-              <div style={{
-                marginBottom: '16px',
-                padding: '16px',
-                background: '#dcfce7',
-                borderRadius: '12px',
-                border: '2px solid #22c55e'
-              }}>
+              {/* Libero IN and Player Replaced - side by side */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                {/* Libero IN */}
                 <div style={{
-                  fontSize: '13px',
-                  color: '#166534',
-                  fontWeight: 600,
-                  marginBottom: '4px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
+                  flex: 1,
+                  padding: '14px',
+                  background: '#dcfce7',
+                  borderRadius: '12px',
+                  border: '2px solid #22c55e',
+                  textAlign: 'center'
                 }}>
-                  Libero IN
-                </div>
-                <div style={{
-                  fontSize: '28px',
-                  fontWeight: 700,
-                  color: '#166534',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  #{liberoNumber}
-                  <span style={{
-                    fontSize: '16px',
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#166534',
+                    fontWeight: 600,
+                    marginBottom: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Libero IN
+                  </div>
+                  <div style={{
+                    fontSize: '26px',
+                    fontWeight: 700,
+                    color: '#166534'
+                  }}>
+                    #{liberoNumber || '?'}
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
                     padding: '2px 8px',
                     background: '#22c55e',
                     color: '#fff',
-                    borderRadius: '4px'
-                  }}>{liberoLabel}</span>
+                    borderRadius: '4px',
+                    display: 'inline-block',
+                    marginTop: '4px'
+                  }}>{liberoLabel}</div>
                 </div>
-              </div>
 
-              {/* Player Replaced */}
-              <div style={{
-                marginBottom: '24px',
-                padding: '16px',
-                background: '#fef2f2',
-                borderRadius: '12px',
-                border: '2px solid #ef4444'
-              }}>
+                {/* Player Replaced */}
                 <div style={{
-                  fontSize: '13px',
-                  color: '#991b1b',
-                  fontWeight: 600,
-                  marginBottom: '4px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
+                  flex: 1,
+                  padding: '14px',
+                  background: '#fef2f2',
+                  borderRadius: '12px',
+                  border: '2px solid #ef4444',
+                  textAlign: 'center'
                 }}>
-                  Player Replaced
-                </div>
-                <div style={{
-                  fontSize: '28px',
-                  fontWeight: 700,
-                  color: '#991b1b'
-                }}>
-                  #{liberoConfirm.playerOut}
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#991b1b',
+                    fontWeight: 600,
+                    marginBottom: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Replaced
+                  </div>
+                  <div style={{
+                    fontSize: '26px',
+                    fontWeight: 700,
+                    color: '#991b1b'
+                  }}>
+                    #{liberoConfirm.playerOut}
+                  </div>
                 </div>
               </div>
 
