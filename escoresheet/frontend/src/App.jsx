@@ -1462,22 +1462,23 @@ export default function App() {
       // - All events remain in db.events
       // - All players remain in db.players
       // - All teams remain in db.teams
-      // - Only update match status to 'final' - DO NOT DELETE ANYTHING
-      await db.matches.update(cur.matchId, { status: 'final' })
-      
+      // - Keep status as 'live' - MatchEnd component will set to 'final' after approval
+      // DO NOT set status to 'final' here
+
       // Unlock session when match ends
       try {
         await unlockMatchSession(cur.matchId)
       } catch (error) {
         console.error('Error unlocking session:', error)
       }
-      
+
       // Only sync official matches with seed_key
+      // Keep status as 'live' - MatchEnd will set 'final' after approval
       if (!isTestMatch && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
           .sort((a, b) => a.index - b.index)
-          .map(s => ({ home: s.homePoints, away: s.awayPoints }))
+          .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
 
         // Determine winner
         const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
@@ -1488,7 +1489,7 @@ export default function App() {
           action: 'update',
           payload: {
             id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-            status: 'final',
+            // Keep status as 'live' - MatchEnd will set 'final' after approval
             set_results: setResults,
             winner,
             final_score: finalScore,
@@ -2636,12 +2637,26 @@ export default function App() {
                                     existing.awayCaptainSignature
       
       setMatchId(existing.id)
-      
+
       // Determine where to continue based on status
       if (existing.status === 'live' || existing.status === 'final') {
-        // Go directly to scoreboard
+        // Check if match is finished (one team has won 3 sets) - go to MatchEnd
+        const sets = await db.sets.where('matchId').equals(existing.id).toArray()
+        const finishedSets = sets.filter(s => s.finished)
+        const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+        const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+        const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+
         setShowMatchSetup(false)
         setShowCoinToss(false)
+
+        if (existing.status === 'live' && isMatchFinished && !existing.approved) {
+          // Match finished but not yet approved - go to MatchEnd
+          setShowMatchEnd(true)
+        } else {
+          // Match in progress - go to scoreboard
+          setShowMatchEnd(false)
+        }
       } else if (isMatchSetupComplete && isCoinTossConfirmed) {
         // Match setup and coin toss complete - go to scoreboard
         setShowMatchSetup(false)
@@ -2756,10 +2771,24 @@ export default function App() {
       
       // Determine where to continue based on status
       if (match.status === 'live' || match.status === 'final') {
-        // Go directly to scoreboard
+        // Check if match is finished (one team has won 3 sets) - go to MatchEnd
+        const sets = await db.sets.where('matchId').equals(targetMatchId).toArray()
+        const finishedSets = sets.filter(s => s.finished)
+        const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+        const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+        const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+
         setMatchId(targetMatchId)
         setShowMatchSetup(false)
         setShowCoinToss(false)
+
+        if (match.status === 'live' && isMatchFinished && !match.approved) {
+          // Match finished but not yet approved - go to MatchEnd
+          setShowMatchEnd(true)
+        } else {
+          // Match in progress or already approved - go to scoreboard
+          setShowMatchEnd(false)
+        }
       } else {
         // Go to match setup
         setMatchId(targetMatchId)
@@ -3146,7 +3175,29 @@ export default function App() {
                       setRestoreMatchIdInput('')
                       setRestorePin('')
                       setMatchId(newMatchId)
-                      setShowMatchSetup(true)
+
+                      // Check match state to determine where to go
+                      const matchStatus = cloudData.match?.status
+                      const hasEvents = cloudData.events && cloudData.events.length > 0
+                      const hasSets = cloudData.sets && cloudData.sets.length > 0
+
+                      // Check if match is finished (one team has won 3 sets)
+                      const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+                      const homeSetsWon = finishedSets.filter(s => s.home_points > s.away_points).length
+                      const awaySetsWon = finishedSets.filter(s => s.away_points > s.home_points).length
+                      const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+
+                      if (matchStatus === 'live' && isMatchFinished) {
+                        // Match finished but not yet approved - go to MatchEnd
+                        setShowMatchSetup(false)
+                        setShowMatchEnd(true)
+                      } else if (matchStatus === 'live' && (hasEvents || hasSets)) {
+                        // Live match in progress - go directly to scoreboard
+                        setShowMatchSetup(false)
+                      } else {
+                        // New or scheduled match - go to match setup
+                        setShowMatchSetup(true)
+                      }
                     } catch (err) {
                       setRestoreError(err.message || 'Failed to restore match')
                     } finally {

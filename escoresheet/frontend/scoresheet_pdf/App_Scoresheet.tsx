@@ -635,7 +635,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         const opponentTeam = sanctionedTeam === 'home' ? 'away' : 'home';
         
         // Check if this sanction awards a point to the opponent
-        const awardsPoint = ['penalty', 'expulsion', 'disqualification', 'delay_penalty'].includes(sanctionType);
+        // Only penalty and delay_penalty award points
+        // Warning, delay_warning, expulsion, and disqualification do NOT award points
+        const awardsPoint = ['penalty', 'delay_penalty'].includes(sanctionType);
         
         if (awardsPoint) {
           // Find the next point event scored by the opponent after this sanction
@@ -1524,8 +1526,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       const opponentTeam = sanctionedTeam === 'home' ? 'away' : 'home';
       
       // Check if this sanction awards a point to the opponent
-      const awardsPoint = ['penalty', 'expulsion', 'disqualification', 'delay_penalty'].includes(sanctionType);
-      
+      // Only penalty and delay_penalty award points
+      // Warning, delay_warning, expulsion, and disqualification do NOT award points
+      const awardsPoint = ['penalty', 'delay_penalty'].includes(sanctionType);
+
       if (awardsPoint) {
         // Find the next point event scored by the opponent after this sanction
         for (let j = i + 1; j < set5AllEvents.length; j++) {
