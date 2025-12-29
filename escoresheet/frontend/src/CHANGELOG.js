@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.13',
+    date: '29.12.25',
+    changes: [
+      'Remove deprecated Docker and Nixpacks configuration files, along with test match import data. Update styles for improved font sizes and layout consistency across various components, including Scoreboard and general UI elements. These changes streamline the project structure and enhance user experience through better visual presentation.'
+    ]
+  },
+  {
     version: '0.16.12',
     date: '27.12.25',
     changes: [

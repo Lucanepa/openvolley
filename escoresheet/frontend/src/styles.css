@@ -18,7 +18,7 @@
     background: var(--bg);
     color: var(--text);
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.3;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -74,9 +74,9 @@
   
   .container { margin: 0 0 0 0; padding: 8px 8px; }
   
-  h1 { margin: 0 0 12px; font-size: 28px; }
-  h2 { margin: 0 0 12px; font-size: 20px; }
-  h3 { margin: 0 0 12px; font-size: 18px; }
+  h1 { margin: 0 0 12px; font-size: 29px; }
+  h2 { margin: 0 0 12px; font-size: 21px; }
+  h3 { margin: 0 0 12px; font-size: 19px; }
   p { color: var(--muted); }
   
   .panel {
@@ -152,7 +152,7 @@
       gap: 14px;
     }
   }
-  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
   .card p { margin: 0; color: var(--muted); }
   .card .actions { display:flex; gap:8px; justify-content:flex-end; }
 
@@ -281,7 +281,7 @@
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 8px;
     color: var(--text);
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.2;
   }
   
@@ -301,7 +301,7 @@
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 8px;
     text-transform: capitalize;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.2;
   }
  
@@ -313,7 +313,7 @@
     padding: 8px 12px;
     font-weight: 600;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
     width: 160px;
     height: 40px;
     text-align: center;
@@ -335,7 +335,7 @@
     padding: 8px 12px;
     font-weight: 600;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
   }
   button.secondary { background: #334155; color: var(--text); }
   button.danger { background: var(--danger); }
@@ -455,27 +455,27 @@
   
   .scoreboard { display: grid; gap: 12px; }
   .scores { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
-  .score { font-size: 42px; font-weight: 800; letter-spacing: 1px; }
+  .score { font-size: 43px; font-weight: 800; letter-spacing: 1px; }
   
   /* Small text utilities for dense layouts */
-  .text-sm { font-size: 13px; letter-spacing: .2px; }
-  .text-xs { font-size: 12px; letter-spacing: .2px; }
+  .text-sm { font-size: 14px; letter-spacing: .2px; }
+  .text-xs { font-size: 13px; letter-spacing: .2px; }
   
   @media (max-width: 520px) {
-    .score { font-size: 34px; }
+    .score { font-size: 35px; }
   }
 
   /* Responsive scaling for smaller laptops */
   @media (max-width: 1400px) {
-    .score { font-size: 36px; }
+    .score { font-size: 37px; }
   }
 
   @media (max-width: 1280px) {
-    .score { font-size: 32px; }
+    .score { font-size: 33px; }
   }
 
   @media (max-height: 850px) {
-    .score { font-size: 30px; }
+    .score { font-size: 31px; }
   }
 
   /* Match record layout - responsive with minimum 960x540 */
@@ -566,7 +566,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .status-dot {
@@ -651,7 +651,7 @@
 
   .toolbar-title {
     margin: 0;
-    font-size: 18px;
+    font-size: 19px;
   }
 
   .toolbar-score-section {
@@ -682,17 +682,17 @@
     height: 32px;
     border-radius: 6px;
     font-weight: 700;
-    font-size: 16px;
+    font-size: 17px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .toolbar-team-name {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 15px;
   }
 
   .toolbar-score-display {
-    font-size: 48px;
+    font-size: 49px;
     font-weight: 800;
     letter-spacing: 2px;
     background: rgba(15, 23, 42, 0.8);
@@ -730,7 +730,7 @@
 
   .roster-table-wrapper h3 {
     margin: 0 0 16px;
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 600;
     color: var(--text);
   }
@@ -751,7 +751,7 @@
   .roster-table th {
     padding: 12px 8px;
     text-align: left;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--muted);
     text-transform: uppercase;
@@ -760,7 +760,7 @@
 
   .roster-table td {
     padding: 10px 8px;
-    font-size: 14px;
+    font-size: 15px;
     color: var(--text);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
@@ -861,7 +861,7 @@
 
   .roster-dob {
     color: var(--muted);
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .roster-role {
@@ -876,7 +876,7 @@
     display: inline-block;
     padding: 2px 8px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1153,7 +1153,7 @@
 
   .team-info h3 {
     margin: 0;
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
   }
 
@@ -1165,7 +1165,7 @@
     height: 32px;
     border-radius: 6px;
     font-weight: 700;
-    font-size: 16px;
+    font-size: 17px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
@@ -1218,14 +1218,14 @@
 
   .set-title {
     margin: 0;
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 600;
     text-align: center;
     width: min(100%, 240px);
   }
 
   .set-score-display {
-    font-size: 60px;
+    font-size: 61px;
     font-weight: 800;
     letter-spacing: 0;
     background: rgba(15, 23, 42, 0.8);
@@ -1235,13 +1235,13 @@
 
   @media (max-width: 1400px) {
     .set-score-display {
-      font-size: 40px;
+      font-size: 41px;
     }
   }
 
   @media (max-height: 850px) {
     .set-score-display {
-      font-size: 36px;
+      font-size: 37px;
     }
   }
 
@@ -1255,14 +1255,14 @@
   .summary-label {
     color: var(--muted);
     text-transform: uppercase;
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.4px;
     white-space: nowrap;
   }
 
   .summary-value {
     font-weight: 600;
-    font-size: 12px;
+    font-size: 13px;
     white-space: nowrap;
   }
 
@@ -1415,7 +1415,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 38px;
+    font-size: 39px;
     font-weight: 700;
     color: var(--text);
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
@@ -1429,7 +1429,7 @@
       height: 62px;
       min-width: 62px;
       min-height: 62px;
-      font-size: 34px;
+      font-size: 35px;
     }
   }
 
@@ -1455,7 +1455,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text) !important;
   }
@@ -1472,7 +1472,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--accent);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
@@ -1485,14 +1485,14 @@
       left: -6px;
       width: 16px;
       height: 16px;
-      font-size: 9px;
+      font-size: 10px;
     }
     .court-player-captain {
       bottom: -6px;
       left: -6px;
       width: 16px;
       height: 16px;
-      font-size: 9px;
+      font-size: 10px;
     }
   }
 
@@ -1502,7 +1502,7 @@
       left: -5px;
       width: 14px;
       height: 14px;
-      font-size: 8px;
+      font-size: 9px;
       border-width: 1px;
     }
     .court-player-captain {
@@ -1510,7 +1510,7 @@
       left: -5px;
       width: 14px;
       height: 14px;
-      font-size: 8px;
+      font-size: 9px;
       border-width: 1px;
     }
   }
@@ -1545,7 +1545,7 @@
   .rally-point-button {
     min-width: 138px;
     min-height: 92px;
-    font-size: 23px;
+    font-size: 24px;
     font-weight: 700;
     padding: 18px 28px;
   }
@@ -1560,7 +1560,7 @@
     .rally-point-button {
       min-width: 115px;
       min-height: 75px;
-      font-size: 21px;
+      font-size: 22px;
       padding: 14px 23px;
     }
   }
@@ -1575,7 +1575,7 @@
     .rally-point-button {
       min-width: 104px;
       min-height: 63px;
-      font-size: 18px;
+      font-size: 19px;
       padding: 12px 18px;
     }
   }
@@ -1592,7 +1592,7 @@
     .rally-point-button {
       min-width: 90px;
       min-height: 55px;
-      font-size: 16px;
+      font-size: 17px;
       padding: 10px 14px;
     }
   }
@@ -1643,7 +1643,7 @@
     border-radius: 8px;
     color: var(--text);
     padding: 10px;
-    font-size: 12px;
+    font-size: 13px;
     resize: vertical;
   }
 
@@ -1658,7 +1658,7 @@
 
   .game-list-header h2 {
     margin: 0 0 8px 0;
-    font-size: 24px;
+    font-size: 25px;
     font-weight: 700;
     color: var(--text);
   }
@@ -1678,13 +1678,13 @@
 
   .game-league-header h3 {
     margin: 0;
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 600;
     color: var(--text);
   }
 
   .game-league-header span {
-    font-size: 14px;
+    font-size: 15px;
     color: var(--muted);
   }
 
@@ -1727,7 +1727,7 @@
   }
 
   .game-card-day {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text);
     text-transform: uppercase;
@@ -1735,7 +1735,7 @@
   }
 
   .game-card-time {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--accent);
   }
@@ -1747,13 +1747,13 @@
   }
 
   .game-card-team {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--text);
   }
 
   .game-card-vs {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--muted);
     text-transform: uppercase;
@@ -1763,7 +1763,7 @@
   }
 
   .game-card-location {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--muted);
     margin-top: 4px;
     padding-top: 12px;
@@ -1780,13 +1780,13 @@
   }
 
   .game-card-status-label {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
     font-weight: 500;
   }
 
   .game-card-status-value {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--text);
     font-weight: 600;
     text-transform: capitalize;
@@ -1827,7 +1827,7 @@
   }
 
   .connection-status-label {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--muted);
     font-weight: 500;
   }
@@ -1849,7 +1849,7 @@
   }
 
   .test-match-label {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     color: #fbbf24;
   }
@@ -1870,19 +1870,19 @@
   }
 
   .match-status-label {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--muted);
     font-weight: 500;
   }
 
   .match-status-teams {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--text);
   }
 
   .match-status-value {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--accent);
     text-transform: capitalize;
@@ -2006,7 +2006,7 @@
   }
 
   .home-support {
-    font-size: 14px;
+    font-size: 15px;
     color: var(--muted);
     text-align: center;
     margin-top: 8px;
@@ -2046,7 +2046,7 @@
 
   .home-card h2 {
     margin: 0;
-    font-size: 24px;
+    font-size: 25px;
     width: auto;
     font-weight: 700;
     text-align: center;
@@ -2055,7 +2055,7 @@
   .home-card-description {
     margin: 0;
     width: auto;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--muted);
   }
 
@@ -2071,7 +2071,7 @@
   .home-card-actions button {
     flex: 1 1 calc(50% - 6px);
     padding: 16px 24px;
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     border-radius: 12px;
     min-height: 56px;
@@ -2120,7 +2120,7 @@
   }
 
   .home-card-hint {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: #f59e0b;
     text-transform: uppercase;
@@ -2131,17 +2131,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .connection-status-inline .connection-status-label {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted);
     font-weight: 500;
   }
 
   .connection-status-inline .status-indicator {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   /* Sanction Card Icons */
@@ -2203,6 +2203,12 @@
 
   .sanction-cards-separate .sanction-card:nth-child(2) {
     transform: rotate(2deg);
+  }
+
+  /* Team sanction buttons - override compact mode styles */
+  .sanction-team-btn {
+    font-size: 14px !important;
+    padding: 8px !important;
   }
 
   /* Modal roll animations */
