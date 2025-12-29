@@ -172,6 +172,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [set5SideServiceModal, setSet5SideServiceModal] = useState(null) // { setIndex: number, set4LeftTeamLabel: string, set4RightTeamLabel: string, set4ServingTeamLabel: string } | null - shown after set 4 ends
   const [set5SelectedLeftTeam, setSet5SelectedLeftTeam] = useState('A')
   const [set5SelectedFirstServe, setSet5SelectedFirstServe] = useState('A')
+  const [set5SetupConfirmed, setSet5SetupConfirmed] = useState(false) // Track if Set 5 coin toss setup is confirmed (inline UI)
   const [postMatchSignature, setPostMatchSignature] = useState(null) // 'home-captain' | 'away-captain' | null
   const [sanctionConfirm, setSanctionConfirm] = useState(null) // { side: 'left'|'right', type: 'improper_request'|'delay_warning'|'delay_penalty' } | null
   const [sanctionDropdown, setSanctionDropdown] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, element: HTMLElement, x?: number, y?: number } | null
@@ -443,6 +444,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     return () => clearInterval(interval)
   }, [matchId])
+
+  // Check if Set 5 was already confirmed (on mount or when entering Set 5)
+  useEffect(() => {
+    if (!data?.set || !data?.events) return
+    if (data.set.index !== 5) return
+
+    // Check if Set 5 has already started (has points or set5_coin_toss event)
+    const hasSet5CoinToss = data.events.some(e => e.type === 'set5_coin_toss' && e.setIndex === 5)
+    const hasSet5Points = data.events.some(e => e.type === 'point' && e.setIndex === 5)
+
+    if (hasSet5CoinToss || hasSet5Points) {
+      setSet5SetupConfirmed(true)
+    }
+  }, [data?.set?.index, data?.events])
 
   // Screen size detection for display mode suggestions
   // Improved detection: check both screen size and touch capability
@@ -4030,7 +4045,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Check if either team has won 3 sets (match win)
     const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
-    
+
+    // Get match record for both branches (test check, cloud backup)
+    const matchRecord = await db.matches.get(matchId)
+
     if (isMatchEnd) {
       // IMPORTANT: When match ends, preserve ALL data in database:
       // - All sets remain in db.sets
@@ -4039,9 +4057,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // - All teams remain in db.teams
       // - Only update match status to 'final' - DO NOT DELETE ANYTHING
       await db.matches.update(matchId, { status: 'final' })
-      
+
       // Add match update to sync queue with results
-      const matchRecord = await db.matches.get(matchId)
       if (matchRecord?.test !== true && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
@@ -4162,43 +4179,80 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         countdown: setIntervalDuration
       })
 
-      // If set 4 just ended, show modal to choose sides and service for set 5
+      // If set 4 just ended, prepare for Set 5 inline setup (no modal)
       if (setIndex === 4) {
         // Close the set end time modal first
         setSetEndTimeModal(null)
 
-        // Get team A/B assignments for set 5 modal (use local scope to avoid reference errors)
+        // Get team A/B assignments for set 5 (use local scope to avoid reference errors)
         const set4TeamAKey = data.match.coinTossTeamA || 'home'
         const set4TeamBKey = data.match.coinTossTeamB || 'away'
 
         // Determine current positions at end of set 4 (set 2, 3, 4 have teams switched)
         const set4LeftIsHome = set4TeamAKey !== 'home'
         const set4LeftTeamKey = set4LeftIsHome ? 'home' : 'away'
-        const set4RightTeamKey = set4LeftIsHome ? 'away' : 'home'
         const set4LeftTeamLabel = set4LeftTeamKey === set4TeamAKey ? 'A' : 'B'
-        const set4RightTeamLabel = set4RightTeamKey === set4TeamAKey ? 'A' : 'B'
 
         // Get current serve at end of set 4
         const currentServe = getCurrentServe()
         const set4ServingTeamKey = currentServe
         const set4ServingTeamLabel = set4ServingTeamKey === set4TeamAKey ? 'A' : 'B'
-        
+
         // Use existing values if set, otherwise use current positions
         const selectedLeftTeam = data.match?.set5LeftTeam || set4LeftTeamLabel
         const selectedFirstServe = data.match?.set5FirstServe || set4ServingTeamLabel
-        
-        // Use setTimeout to ensure setEndTimeModal closes before showing set5 modal
-        setTimeout(() => {
-          setSet5SelectedLeftTeam(selectedLeftTeam)
-          setSet5SelectedFirstServe(selectedFirstServe)
-          setSet5SideServiceModal({ 
-            setIndex: setIndex + 1,
-            set4LeftTeamLabel,
-            set4RightTeamLabel,
-            set4ServingTeamLabel
+
+        // Set default values for inline setup UI
+        setSet5SelectedLeftTeam(selectedLeftTeam)
+        setSet5SelectedFirstServe(selectedFirstServe)
+        setSet5SetupConfirmed(false) // Mark as not confirmed - inline UI will show
+
+        // Create Set 5 immediately (don't wait for modal)
+        const newSetIndex = 5
+        const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
+        const existingSet5 = allSetsForMatch.find(s => s.index === newSetIndex)
+
+        let newSetId
+        if (existingSet5) {
+          await db.sets.update(existingSet5.id, { finished: false, homePoints: 0, awayPoints: 0 })
+          newSetId = existingSet5.id
+        } else {
+          newSetId = await db.sets.add({
+            matchId,
+            index: newSetIndex,
+            homePoints: 0,
+            awayPoints: 0,
+            finished: false
           })
-        }, 100)
-        return
+        }
+
+        // Update match with default Set 5 configuration
+        await db.matches.update(matchId, {
+          set5LeftTeam: selectedLeftTeam,
+          set5FirstServe: selectedFirstServe,
+          set5CourtSwitched: false
+        })
+
+        // Sync Set 5 creation
+        const isTest = matchRecord?.test || false
+        if (!isTest && !existingSet5) {
+          await db.sync_queue.add({
+            resource: 'set',
+            action: 'insert',
+            payload: {
+              external_id: String(newSetId),
+              match_id: data.match?.seed_key || String(matchId),
+              index: newSetIndex,
+              home_points: 0,
+              away_points: 0,
+              finished: false
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
+
+        return newSetId
       }
       
       const newSetIndex = setIndex + 1
@@ -4252,11 +4306,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup])
 
-  // Confirm set 5 side and service choices
-  const confirmSet5SideService = useCallback(async (leftTeam, firstServe) => {
-    if (!set5SideServiceModal || !data?.match) return
+  // Confirm set 5 side and service choices (works with both modal and inline UI)
+  const confirmSet5SideService = useCallback(async (leftTeam, firstServe, inlineMode = false) => {
+    // For inline mode, we don't need the modal - just verify we have match data and it's set 5
+    if (!inlineMode && !set5SideServiceModal) return
+    if (!data?.match) return
 
-    const { setIndex } = set5SideServiceModal
+    const setIndex = inlineMode ? 5 : set5SideServiceModal.setIndex
     const teamAKey = data.match.coinTossTeamA || 'home'
     const teamBKey = data.match.coinTossTeamB || 'away'
 
@@ -4266,29 +4322,55 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Determine which team (home/away) serves first
     const firstServeTeamKey = firstServe === 'A' ? teamAKey : teamBKey
 
-    // Update match with set 5 configuration (don't update firstServe - keep original coin toss result)
-    // getCurrentServe() uses set5FirstServe for set 5 logic
-    await db.matches.update(matchId, {
-      set5LeftTeam: leftTeam,
-      set5FirstServe: firstServe,
-      set5CourtSwitched: false
-    })
-
-    // Create set 5 (check if already exists first)
-    const existingSet5 = await db.sets.where({ matchId, index: setIndex }).first()
-    let newSetId
-    if (existingSet5) {
-      // Make sure it's not marked as finished (in case of redo)
-      await db.sets.update(existingSet5.id, { finished: false, homePoints: 0, awayPoints: 0 })
-      newSetId = existingSet5.id
-    } else {
-      newSetId = await db.sets.add({
-        matchId,
-        index: setIndex,
-        homePoints: 0,
-        awayPoints: 0,
-        finished: false
+    // For inline mode, database is already updated on button press, so just log the event
+    // For modal mode, update the database now
+    if (!inlineMode) {
+      // Update match with set 5 configuration
+      await db.matches.update(matchId, {
+        set5LeftTeam: leftTeam,
+        set5FirstServe: firstServe,
+        set5CourtSwitched: false
       })
+
+      // Create set 5 (check if already exists first)
+      const existingSet5 = await db.sets.where({ matchId, index: setIndex }).first()
+      let newSetId
+      if (existingSet5) {
+        await db.sets.update(existingSet5.id, { finished: false, homePoints: 0, awayPoints: 0 })
+        newSetId = existingSet5.id
+      } else {
+        newSetId = await db.sets.add({
+          matchId,
+          index: setIndex,
+          homePoints: 0,
+          awayPoints: 0,
+          finished: false
+        })
+      }
+
+      // Get match to check if it's a test match
+      const match = await db.matches.get(matchId)
+      const isTest = match?.test || false
+
+      // Only add to sync queue if set was newly created and it's an official match
+      if (!existingSet5 && !isTest) {
+        await db.sync_queue.add({
+          resource: 'set',
+          action: 'insert',
+          payload: {
+            external_id: String(newSetId),
+            match_id: match?.externalId || String(matchId),
+            index: setIndex,
+            home_points: 0,
+            away_points: 0,
+            finished: false,
+            test: isTest,
+            start_time: new Date().toISOString()
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
     }
 
     // Log the set 5 coin toss event so it can be undone
@@ -4309,32 +4391,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       stateBefore: set5CoinTossStateBefore
     })
 
-    // Get match to check if it's a test match
-    const match = await db.matches.get(matchId)
-    const isTest = match?.test || false
-
-    // Only add to sync queue if set was newly created and it's an official match
-    if (!existingSet5 && !isTest) {
-      await db.sync_queue.add({
-        resource: 'set',
-        action: 'insert',
-        payload: {
-          external_id: String(newSetId),
-          match_id: match?.externalId || String(matchId),
-          index: setIndex,
-          home_points: 0,
-          away_points: 0,
-          finished: false,
-          test: isTest,
-          start_time: new Date().toISOString()
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
+    // Close modal or confirm inline setup
+    if (inlineMode) {
+      setSet5SetupConfirmed(true)
+    } else {
+      setSet5SideServiceModal(null)
     }
-
-    setSet5SideServiceModal(null)
-  }, [set5SideServiceModal, data?.match, matchId, getNextSeq])
+  }, [set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
 
   // Get action description for an event
   const getActionDescription = useCallback((event) => {
@@ -8412,17 +8475,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Record in remarks
     const teamLabel = team === teamAKey ? 'A' : 'B'
     const setIndex = data.set.index
-    const setStartTime = data.set.startTime ? new Date(data.set.startTime) : null
-    const currentTime = new Date()
-    let timeStr = '00:00'
-    if (setStartTime) {
-      const diffMs = currentTime.getTime() - setStartTime.getTime()
-      const minutes = Math.floor(diffMs / 60000)
-      const seconds = Math.floor((diffMs % 60000) / 1000)
-      timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-    }
 
-    const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Player ${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
+    // Get current score: left = team involved, right = other team
+    const teamPoints = team === 'home' ? data.set.homePoints : data.set.awayPoints
+    const otherPoints = team === 'home' ? data.set.awayPoints : data.set.homePoints
+    const scoreStr = `${teamPoints}:${otherPoints}`
+
+    // Get actual time of day (HHhMMm format, no seconds)
+    const currentTime = new Date()
+    const hours = String(currentTime.getHours()).padStart(2, '0')
+    const minutes = String(currentTime.getMinutes()).padStart(2, '0')
+    const timeStr = `${hours}h${minutes}m`
+
+    const remark = `Set ${setIndex}, Team ${teamLabel}, Score ${scoreStr}, Time ${timeStr}, Player ${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
     const currentRemarks = data?.match?.remarks || ''
     const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
     await db.matches.update(matchId, { remarks: newRemarks })
@@ -10619,10 +10684,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   padding: '6px',
                   borderRadius: '4px',
                   textAlign: 'center',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}>
                   <div style={{ fontWeight: 600 }}>TO</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{leftTimeouts}</div>
+                  <div style={{ fontSize: '17px', fontWeight: 700 }}>{leftTimeouts}</div>
                 </div>
                 <div style={{
                   flex: 1,
@@ -10630,10 +10695,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   padding: '6px',
                   borderRadius: '4px',
                   textAlign: 'center',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}>
                   <div style={{ fontWeight: 600 }}>SUB</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{leftSubstitutions}</div>
+                  <div style={{ fontSize: '17px', fontWeight: 700 }}>{leftSubstitutions}</div>
                 </div>
               </div>
 
@@ -10643,7 +10708,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 style={{
                   width: '100%',
                   padding: '8px',
-                  fontSize: '12px',
+                  fontSize: '13px',
                   fontWeight: 600,
                   background: leftTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
                   color: 'var(--text)',
@@ -10662,15 +10727,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   borderRadius: '6px',
                   padding: '8px',
                   marginBottom: '8px',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}>
                   <button
+                    className="sanction-team-btn"
                     onClick={() => handleTeamSanction(leftIsHome ? 'home' : 'away', 'improper_request')}
                     style={{
                       width: '100%',
                       padding: '6px',
                       marginBottom: '4px',
-                      fontSize: '11px',
                       background: 'rgba(255,255,255,0.1)',
                       color: 'var(--text)',
                       border: 'none',
@@ -10681,12 +10746,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     Improper Request
                   </button>
                   <button
+                    className="sanction-team-btn"
                     onClick={() => handleTeamSanction(leftIsHome ? 'home' : 'away', 'delay_warning')}
                     style={{
                       width: '100%',
                       padding: '6px',
                       marginBottom: '4px',
-                      fontSize: '11px',
                       background: 'rgba(234, 179, 8, 0.3)',
                       color: '#fbbf24',
                       border: 'none',
@@ -10697,11 +10762,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     Delay Warning
                   </button>
                   <button
+                    className="sanction-team-btn"
                     onClick={() => handleTeamSanction(leftIsHome ? 'home' : 'away', 'delay_penalty')}
                     style={{
                       width: '100%',
                       padding: '6px',
-                      fontSize: '11px',
                       background: 'rgba(239, 68, 68, 0.3)',
                       color: '#ef4444',
                       border: 'none',
@@ -10960,28 +11025,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   </>
                 ) : betweenSetsCountdown ? (
                   <>
-                    {/* Show which team will serve next set */}
+                    {/* Show which team will serve in the current set */}
                     {(() => {
-                      // Determine which team serves first in the next set
-                      const currentSetIndex = data?.set?.index || 1
-                      const nextSetIndex = currentSetIndex + 1
+                      // Determine which team serves first in this set (data.set.index is already the new set)
+                      const setIndex = data?.set?.index || 1
                       const set1FirstServe = data?.match?.firstServe || 'home'
 
-                      // For set 5, use set5FirstServe if available; otherwise alternate from set 4
-                      let nextSetServeTeam
-                      if (nextSetIndex === 5 && data?.match?.set5FirstServe) {
+                      // For set 5, use set5FirstServe if available; otherwise alternate
+                      let serveTeam
+                      if (setIndex === 5 && data?.match?.set5FirstServe) {
                         const teamAKey = data?.match?.coinTossTeamA || 'home'
                         const teamBKey = data?.match?.coinTossTeamB || 'away'
-                        nextSetServeTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+                        serveTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
                       } else {
                         // Serve alternates: odd sets (1, 3, 5) same as Set 1, even sets (2, 4) opposite
-                        nextSetServeTeam = nextSetIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+                        serveTeam = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
                       }
 
-                      // Teams switch sides between sets, so next set's left side is opposite of current
-                      const nextSetLeftIsHome = !leftIsHome
-                      const serveOnLeft = (nextSetLeftIsHome && nextSetServeTeam === 'home') || (!nextSetLeftIsHome && nextSetServeTeam === 'away')
-                      const teamName = nextSetServeTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+                      // leftIsHome already reflects the current set's side configuration
+                      const serveOnLeft = (leftIsHome && serveTeam === 'home') || (!leftIsHome && serveTeam === 'away')
+                      const teamName = serveTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
 
                       return (
                         <div style={{
@@ -10994,7 +11057,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           {serveOnLeft && (
                             <>
                               <div style={{
-                                fontSize: '14px',
+                                fontSize: '15px',
                                 fontWeight: 600,
                                 color: 'var(--accent)',
                                 textTransform: 'uppercase'
@@ -11013,7 +11076,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             </>
                           )}
                           <div style={{
-                            fontSize: '12px',
+                            fontSize: '13px',
                             color: 'var(--muted)'
                           }}>
                             {teamName}
@@ -11030,7 +11093,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 }}
                               />
                               <div style={{
-                                fontSize: '14px',
+                                fontSize: '15px',
                                 fontWeight: 600,
                                 color: 'var(--accent)',
                                 textTransform: 'uppercase'
@@ -11043,7 +11106,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       )
                     })()}
                     <div style={{
-                      fontSize: '32px',
+                      fontSize: '33px',
                       fontWeight: 700,
                       color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
@@ -11053,7 +11116,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                     <button onClick={endSetInterval} style={{
                       padding: '12px',
-                      fontSize: '14px',
+                      fontSize: '15px',
                       fontWeight: 600,
                       background: 'var(--accent)',
                       color: '#000',
@@ -11210,10 +11273,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   padding: '6px',
                   borderRadius: '4px',
                   textAlign: 'center',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}>
                   <div style={{ fontWeight: 600 }}>TO</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{rightTimeouts}</div>
+                  <div style={{ fontSize: '17px', fontWeight: 700 }}>{rightTimeouts}</div>
                 </div>
                 <div style={{
                   flex: 1,
@@ -11221,10 +11284,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   padding: '6px',
                   borderRadius: '4px',
                   textAlign: 'center',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}>
                   <div style={{ fontWeight: 600 }}>SUB</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{rightSubstitutions}</div>
+                  <div style={{ fontSize: '17px', fontWeight: 700 }}>{rightSubstitutions}</div>
                 </div>
               </div>
 
@@ -11234,7 +11297,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 style={{
                   width: '100%',
                   padding: '8px',
-                  fontSize: '12px',
+                  fontSize: '13px',
                   fontWeight: 600,
                   background: rightTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
                   color: 'var(--text)',
@@ -11253,15 +11316,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   borderRadius: '6px',
                   padding: '8px',
                   marginBottom: '8px',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}>
                   <button
+                    className="sanction-team-btn"
                     onClick={() => handleTeamSanction(leftIsHome ? 'away' : 'home', 'improper_request')}
                     style={{
                       width: '100%',
                       padding: '6px',
                       marginBottom: '4px',
-                      fontSize: '11px',
                       background: 'rgba(255,255,255,0.1)',
                       color: 'var(--text)',
                       border: 'none',
@@ -11272,12 +11335,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     Improper Request
                   </button>
                   <button
+                    className="sanction-team-btn"
                     onClick={() => handleTeamSanction(leftIsHome ? 'away' : 'home', 'delay_warning')}
                     style={{
                       width: '100%',
                       padding: '6px',
                       marginBottom: '4px',
-                      fontSize: '11px',
                       background: 'rgba(234, 179, 8, 0.3)',
                       color: '#fbbf24',
                       border: 'none',
@@ -11288,11 +11351,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     Delay Warning
                   </button>
                   <button
+                    className="sanction-team-btn"
                     onClick={() => handleTeamSanction(leftIsHome ? 'away' : 'home', 'delay_penalty')}
                     style={{
                       width: '100%',
                       padding: '6px',
-                      fontSize: '11px',
                       background: 'rgba(239, 68, 68, 0.3)',
                       color: '#ef4444',
                       border: 'none',
@@ -11605,7 +11668,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {data?.match?.sanctions?.improperRequestLeft && (
               <div style={{ 
                 padding: '4px 8px', 
-                fontSize: '10px', 
+                fontSize: '12px', 
                 background: 'rgba(156, 163, 175, 0.15)', 
                 border: '1px solid rgba(156, 163, 175, 0.3)',
                 borderRadius: '4px',
@@ -11617,7 +11680,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {data?.match?.sanctions?.delayWarningLeft && (
               <div style={{ 
                 padding: '4px 8px', 
-                fontSize: '10px', 
+                fontSize: '12px', 
                 background: 'rgba(234, 179, 8, 0.15)', 
                 border: '1px solid rgba(234, 179, 8, 0.3)',
                 borderRadius: '4px',
@@ -11629,7 +11692,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {teamHasFormalWarning(leftIsHome ? 'home' : 'away') && (
               <div style={{ 
                 padding: '4px 8px', 
-                fontSize: '10px', 
+                fontSize: '12px', 
                 background: 'rgba(250, 204, 21, 0.15)', 
                 border: '1px solid rgba(250, 204, 21, 0.3)',
                 borderRadius: '4px',
@@ -12239,26 +12302,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       border: '1px solid rgba(255, 255, 255, 0.08)',
                       borderRadius: '6px',
                       padding: '8px',
-                      fontSize: '8px'
+                      fontSize: '10px',
+                      minWidth: '110px'
                     }}>
-                      <h4 style={{ margin: '0 0 4px', fontSize: '9px', fontWeight: 600, textAlign: 'center' }}>
+                      <h4 style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 600, textAlign: 'center' }}>
                         <span style={{
                           padding: '1px 6px',
                           borderRadius: '3px',
-                          fontSize: '8px',
+                          fontSize: '10px',
                           fontWeight: 700,
                           background: leftTeamColor,
                           color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                         }}>{leftTeamLabel}</span>
                       </h4>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px', tableLayout: 'fixed' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', tableLayout: 'fixed' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>Set</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>P</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>W</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>S</th>
-                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>T</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>Set</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>P</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>W</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>S</th>
+                            <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>T</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -12728,7 +12792,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {sanctions.length > 0 && (
                           <div style={{
                             position: 'absolute',
-                            bottom: '-6px',
+                            bottom: '-3px',
                             right: '-6px',
                             zIndex: 10
                           }}>
@@ -12777,7 +12841,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                             style={{
                               position: 'absolute',
-                              bottom: '-7px',
+                              bottom: '-22px',
                               left: '50%',
                               transform: 'translateX(-50%)',
                               background: 'rgba(0, 0, 0, 0.85)',
@@ -12967,7 +13031,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {sanctions.length > 0 && (
                           <div style={{
                             position: 'absolute',
-                            bottom: '-6px',
+                            bottom: '-3px',
                             right: '-6px',
                             zIndex: 10
                           }}>
@@ -13016,7 +13080,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
                             style={{
                               position: 'absolute',
-                              bottom: '-7px',
+                              bottom: '-22px',
                               left: '50%',
                               transform: 'translateX(-50%)',
                               background: 'rgba(0, 0, 0, 0.85)',
@@ -13255,7 +13319,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {sanctions.length > 0 && (
                           <div style={{
                             position: 'absolute',
-                            bottom: '-6px',
+                            bottom: '-3px',
                             right: '-6px',
                             zIndex: 10
                           }}>
@@ -13304,7 +13368,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                             style={{
                               position: 'absolute',
-                              bottom: '-7px',
+                              bottom: '-22px',
                               left: '50%',
                               transform: 'translateX(-50%)',
                               background: 'rgba(0, 0, 0, 0.85)',
@@ -13493,7 +13557,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {sanctions.length > 0 && (
                           <div style={{
                             position: 'absolute',
-                            bottom: '-6px',
+                            bottom: '-3px',
                             right: '-6px',
                             zIndex: 10
                           }}>
@@ -13542,7 +13606,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
                             style={{
                               position: 'absolute',
-                              bottom: '-7px',
+                              bottom: '-22px',
                               left: '50%',
                               transform: 'translateX(-50%)',
                               background: 'rgba(0, 0, 0, 0.85)',
@@ -13708,31 +13772,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
                 
                 return (
-                  <div style={{ 
+                  <div style={{
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     borderRadius: '8px',
                     padding: '12px',
-                    fontSize: '9px'
+                    fontSize: '10px',
+                    minWidth: '140px'
                   }}>
-                    <h4 style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 600, textAlign: 'center' }}>
-                      <span style={{ 
-                        padding: '2px 8px', 
-                        borderRadius: '4px', 
-                        fontSize: '10px', 
-                        fontWeight: 700, 
-                        background: leftTeamColor, 
-                        color: isBrightColor(leftTeamColor) ? '#000' : '#fff' 
+                    <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: leftTeamColor,
+                        color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                       }}>{leftTeamLabel}</span>
                     </h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>Set</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>P</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>W</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>S</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>T</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -13808,28 +13873,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </>
               ) : betweenSetsCountdown ? (
                 <>
-                  {/* Show which team will serve next set */}
+                  {/* Show which team will serve in the current set */}
                   {(() => {
-                    // Determine which team serves first in the next set
-                    const currentSetIndex = data?.set?.index || 1
-                    const nextSetIndex = currentSetIndex + 1
+                    // Determine which team serves first in this set (data.set.index is already the new set)
+                    const setIndex = data?.set?.index || 1
                     const set1FirstServe = data?.match?.firstServe || 'home'
 
-                    // For set 5, use set5FirstServe if available; otherwise alternate from set 4
-                    let nextSetServeTeam
-                    if (nextSetIndex === 5 && data?.match?.set5FirstServe) {
+                    // For set 5, use set5FirstServe if available; otherwise alternate
+                    let serveTeam
+                    if (setIndex === 5 && data?.match?.set5FirstServe) {
                       const teamAKey = data?.match?.coinTossTeamA || 'home'
                       const teamBKey = data?.match?.coinTossTeamB || 'away'
-                      nextSetServeTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+                      serveTeam = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
                     } else {
                       // Serve alternates: odd sets (1, 3, 5) same as Set 1, even sets (2, 4) opposite
-                      nextSetServeTeam = nextSetIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+                      serveTeam = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
                     }
 
-                    // Teams switch sides between sets, so next set's left side is opposite of current
-                    const nextSetLeftIsHome = !leftIsHome
-                    const serveOnLeft = (nextSetLeftIsHome && nextSetServeTeam === 'home') || (!nextSetLeftIsHome && nextSetServeTeam === 'away')
-                    const teamName = nextSetServeTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+                    // leftIsHome already reflects the current set's side configuration
+                    const serveOnLeft = (leftIsHome && serveTeam === 'home') || (!leftIsHome && serveTeam === 'away')
+                    const teamName = serveTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
 
                     return (
                       <div style={{
@@ -13842,7 +13905,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {serveOnLeft && (
                           <>
                             <div style={{
-                              fontSize: '18px',
+                              fontSize: '19px',
                               fontWeight: 600,
                               color: 'var(--accent)',
                               textTransform: 'uppercase'
@@ -13861,7 +13924,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           </>
                         )}
                         <div style={{
-                          fontSize: '14px',
+                          fontSize: '15px',
                           color: 'var(--muted)'
                         }}>
                           {teamName}
@@ -13878,7 +13941,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               }}
                             />
                             <div style={{
-                              fontSize: '18px',
+                              fontSize: '19px',
                               fontWeight: 600,
                               color: 'var(--accent)',
                               textTransform: 'uppercase'
@@ -13890,23 +13953,106 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </div>
                     )
                   })()}
-                  <div style={{
-                    fontSize: '48px',
-                    fontWeight: 700,
-                    color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
-                    textAlign: 'center',
-                    marginBottom: '5px',
-                    fontFamily: 'monospace'
-                  }}>
-                    {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
-                  </div>
-                  <button
-                    className="secondary"
-                    onClick={endSetInterval}
-                    style={{ width: 'auto' }}
-                  >
-                    End set interval
-                  </button>
+                  {/* Set 5 inline setup UI - show when set 5 and not confirmed */}
+                  {data?.set?.index === 5 && !set5SetupConfirmed ? (
+                    <>
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '10px',
+                        marginTop: '8px'
+                      }}>
+                        <button
+                          onClick={async () => {
+                            const newLeftTeam = data?.match?.set5LeftTeam === 'A' ? 'B' : 'A'
+                            await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            padding: '14px 28px',
+                            fontSize: '18px',
+                            fontWeight: 700,
+                            background: '#22c55e',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            minWidth: '200px'
+                          }}
+                        >
+                          <span style={{ fontSize: '22px' }}>🔄</span>
+                          Switch Sides
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const newFirstServe = data?.match?.set5FirstServe === 'A' ? 'B' : 'A'
+                            await db.matches.update(matchId, { set5FirstServe: newFirstServe })
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            padding: '14px 28px',
+                            fontSize: '18px',
+                            fontWeight: 700,
+                            background: '#22c55e',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            minWidth: '200px'
+                          }}
+                        >
+                          <img src={mikasaVolleyball} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                          Switch Serve
+                        </button>
+                        <button
+                          onClick={() => {
+                            confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
+                            setBetweenSetsCountdown(null) // Skip countdown, go straight to "Start set"
+                          }}
+                          style={{
+                            padding: '12px 32px',
+                            fontSize: '16px',
+                            fontWeight: 700,
+                            background: '#3b82f6',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            marginTop: '8px'
+                          }}
+                        >
+                          Confirm Set 5 Setup
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{
+                        fontSize: '49px',
+                        fontWeight: 700,
+                        color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
+                        textAlign: 'center',
+                        marginBottom: '5px',
+                        fontFamily: 'monospace'
+                      }}>
+                        {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
+                      </div>
+                      <button
+                        className="secondary"
+                        onClick={endSetInterval}
+                        style={{ width: 'auto' }}
+                      >
+                        End set interval
+                      </button>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -13949,8 +14095,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           color: '#000',
                           border: 'none',
                           borderRadius: '8px',
-                          padding: '12px 16px',
-                          fontSize: '14px',
+                          padding: '8px 12px',
+                          fontSize: '13px',
                           fontWeight: 600,
                           cursor: 'pointer'
                         }}
@@ -13962,7 +14108,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       className="danger"
                       onClick={showUndoConfirm}
                       disabled={!canUndo}
-                      style={{ flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none' }}
+                      style={{
+                        flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none',
+                        padding: '8px 12px',
+                        fontSize: '13px'
+                      }}
                     >
                       Undo
                     </button>
@@ -14079,31 +14229,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
                 
                 return (
-                  <div style={{ 
+                  <div style={{
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     borderRadius: '8px',
                     padding: '12px',
-                    fontSize: '9px'
+                    fontSize: '10px',
+                    minWidth: '140px'
                   }}>
-                    <h4 style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 600, textAlign: 'center' }}>
-                      <span style={{ 
-                        padding: '2px 8px', 
-                        borderRadius: '4px', 
-                        fontSize: '10px', 
-                        fontWeight: 700, 
-                        background: rightTeamColor, 
-                        color: isBrightColor(rightTeamColor) ? '#000' : '#fff' 
+                    <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: rightTeamColor,
+                        color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
                       }}>{rightTeamLabel}</span>
                     </h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>Set</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>P</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>W</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>S</th>
+                          <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>T</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -14368,7 +14519,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {data?.match?.sanctions?.improperRequestRight && (
               <div style={{ 
                 padding: '4px 8px', 
-                fontSize: '10px', 
+                fontSize: '12px', 
                 background: 'rgba(156, 163, 175, 0.15)', 
                 border: '1px solid rgba(156, 163, 175, 0.3)',
                 borderRadius: '4px',
@@ -14380,7 +14531,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {data?.match?.sanctions?.delayWarningRight && (
               <div style={{ 
                 padding: '4px 8px', 
-                fontSize: '10px', 
+                fontSize: '12px', 
                 background: 'rgba(234, 179, 8, 0.15)', 
                 border: '1px solid rgba(234, 179, 8, 0.3)',
                 borderRadius: '4px',
@@ -14392,7 +14543,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {teamHasFormalWarning(leftIsHome ? 'away' : 'home') && (
               <div style={{ 
                 padding: '4px 8px', 
-                fontSize: '10px', 
+                fontSize: '12px', 
                 background: 'rgba(250, 204, 21, 0.15)', 
                 border: '1px solid rgba(250, 204, 21, 0.3)',
                 borderRadius: '4px',
@@ -15002,7 +15153,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       border: '1px solid rgba(255, 255, 255, 0.08)',
                       borderRadius: '6px',
                       padding: '8px',
-                      fontSize: '8px'
+                      fontSize: '8px',
+                      minWidth: '110px'
                     }}>
                       <h4 style={{ margin: '0 0 4px', fontSize: '9px', fontWeight: 600, textAlign: 'center' }}>
                         <span style={{
@@ -21697,7 +21849,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <p style={{ marginBottom: '29px', fontSize: '14px', color: 'var(--muted)' }}>
                 {liberoUnableModal.reason === 'injury'
                   ? 'The libero will be marked as injured and unable to play for the remainder of the match.'
-                  : 'The libero can be declared unable to play if injured, ill, expelled, disqualified, or for any reason by the coach.'
+                  : 'The libero can be declared unable to play for any reason by the coach.'
                 }
               </p>
             <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
