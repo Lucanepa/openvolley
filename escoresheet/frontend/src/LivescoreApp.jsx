@@ -501,8 +501,10 @@ export default function LivescoreApp() {
   // Determine left/right teams - prioritize Supabase live state when available
   const leftIsHome = useMemo(() => {
     // Use Supabase live state if available (and not manually switched)
-    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.team_left_is_home !== undefined && supabaseLiveState.team_left_is_home !== null) {
-      const baseLeftIsHome = supabaseLiveState.team_left_is_home
+    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.team_left !== undefined) {
+      const teamLeft = supabaseLiveState.team_left
+      // If team_left is 'A' and teamAKey is 'home', then left is home
+      const baseLeftIsHome = (teamLeft === 'A') === (teamAKey === 'home')
       return sidesSwitched ? !baseLeftIsHome : baseLeftIsHome
     }
 
@@ -592,10 +594,11 @@ export default function LivescoreApp() {
   const setScore = useMemo(() => {
     // Use Supabase live state if available
     if (activeConnection === 'supabase' && supabaseLiveState) {
-      // Schema uses left/right columns with team_left_is_home to map to home/away
+      // Schema uses left/right columns with team_left to map to home/away
       const leftSetsWon = supabaseLiveState.set_score_left || 0
       const rightSetsWon = supabaseLiveState.set_score_right || 0
-      const teamLeftIsHome = supabaseLiveState.team_left_is_home !== false // Default to true
+      const teamLeft = supabaseLiveState.team_left || 'A'
+      const teamLeftIsHome = (teamLeft === 'A') === (teamAKey === 'home')
       const homeSetsWon = teamLeftIsHome ? leftSetsWon : rightSetsWon
       const awaySetsWon = teamLeftIsHome ? rightSetsWon : leftSetsWon
       return { home: homeSetsWon, away: awaySetsWon, left: leftSetsWon, right: rightSetsWon }
