@@ -21139,73 +21139,162 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamColor = teamData?.color || (liberoConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoConfirm.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (liberoConfirm.team === 'home' ? 'Home' : 'Away')
-        const isBright = isBrightColor(teamColor)
+
+        // Get libero number from lineup
+        const lineup = liberoConfirm.team === 'home' ? data?.homeLineup : data?.awayLineup
+        const liberoNumber = liberoConfirm.liberoIn === 'libero1'
+          ? lineup?.libero1
+          : liberoConfirm.liberoIn === 'redesignated'
+          ? lineup?.redesignatedLibero
+          : lineup?.libero2
+        const liberoLabel = liberoConfirm.liberoIn === 'libero1' ? 'L1' : liberoConfirm.liberoIn === 'redesignated' ? 'R' : 'L2'
 
         return (
-          <Modal
-            title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span style={{ fontSize: '19px' }}>{teamName}</span>
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999
+            }}
+            onClick={cancelLiberoConfirm}
+          >
+            <div
+              style={{
+                background: '#fff',
+                borderRadius: '16px',
+                padding: '24px 32px',
+                minWidth: '280px',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header with team name and badge */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                marginBottom: '20px',
+                paddingBottom: '16px',
+                borderBottom: '2px solid #e5e7eb'
+              }}>
+                <span style={{ fontSize: '18px', fontWeight: 600, color: '#1f2937' }}>{teamName}</span>
                 <span style={{
-                  padding: '5px 14px',
-                  borderRadius: '7px',
-                  fontSize: '17px',
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  fontSize: '14px',
                   fontWeight: 700,
                   background: teamColor,
-                  color: isBright ? '#000' : '#fff'
+                  color: isBrightColor(teamColor) ? '#000' : '#fff'
                 }}>{teamLabel}</span>
               </div>
-            }
-            open={true}
-            onClose={cancelLiberoConfirm}
-            width="auto"
-            hideCloseButton={true}
-          >
-          <div style={{ padding: '29px', textAlign: 'center' }}>
-            <div style={{ marginBottom: '29px', fontSize: '19px', fontWeight: 600 }}>
-              <div style={{ marginBottom: '10px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <span>OUT: # {liberoConfirm.playerOut}</span>
-                <span style={{ fontSize: '29px', fontWeight: 700 }}>↓</span>
-              </div>
-              <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <span>IN: {liberoConfirm.liberoIn === 'libero1' ? 'L1' : liberoConfirm.liberoIn === 'redesignated' ? 'R' : 'L2'}</span>
-                <span style={{ fontSize: '29px', fontWeight: 700 }}>↑</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
-              <button
-                onClick={confirmLibero}
-                style={{
-                  padding: '14px 29px',
-                  fontSize: '17px',
+
+              {/* Libero IN */}
+              <div style={{
+                marginBottom: '16px',
+                padding: '16px',
+                background: '#dcfce7',
+                borderRadius: '12px',
+                border: '2px solid #22c55e'
+              }}>
+                <div style={{
+                  fontSize: '13px',
+                  color: '#166534',
                   fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '10px',
-                  cursor: 'pointer'
-                }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={cancelLiberoConfirm}
-                style={{
-                  padding: '14px 29px',
-                  fontSize: '17px',
+                  marginBottom: '4px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  Libero IN
+                </div>
+                <div style={{
+                  fontSize: '28px',
+                  fontWeight: 700,
+                  color: '#166534',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  #{liberoNumber}
+                  <span style={{
+                    fontSize: '16px',
+                    padding: '2px 8px',
+                    background: '#22c55e',
+                    color: '#fff',
+                    borderRadius: '4px'
+                  }}>{liberoLabel}</span>
+                </div>
+              </div>
+
+              {/* Player Replaced */}
+              <div style={{
+                marginBottom: '24px',
+                padding: '16px',
+                background: '#fef2f2',
+                borderRadius: '12px',
+                border: '2px solid #ef4444'
+              }}>
+                <div style={{
+                  fontSize: '13px',
+                  color: '#991b1b',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '10px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
+                  marginBottom: '4px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  Player Replaced
+                </div>
+                <div style={{
+                  fontSize: '28px',
+                  fontWeight: 700,
+                  color: '#991b1b'
+                }}>
+                  #{liberoConfirm.playerOut}
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={confirmLibero}
+                  style={{
+                    padding: '12px 28px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: '#22c55e',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={cancelLiberoConfirm}
+                  style={{
+                    padding: '12px 28px',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    background: '#f3f4f6',
+                    color: '#374151',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-        </Modal>
         )
       })()}
       
