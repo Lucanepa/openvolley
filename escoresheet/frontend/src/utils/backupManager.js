@@ -462,46 +462,26 @@ export async function importMatchFromSupabase(cloudData) {
     const playersHome = match.players_home || []
     const playersAway = match.players_away || []
 
-    // Create local teams
+    // Create local teams (always create new teams for imported matches to avoid duplicates)
     let homeTeamId = null
     let awayTeamId = null
 
     if (homeTeamData.name) {
-      const existingHome = await db.teams.where('name').equals(homeTeamData.name).first()
-      if (existingHome) {
-        homeTeamId = existingHome.id
-        await db.teams.update(homeTeamId, {
-          shortName: homeTeamData.short_name,
-          color: homeTeamData.color,
-          updatedAt: new Date().toISOString()
-        })
-      } else {
-        homeTeamId = await db.teams.add({
-          name: homeTeamData.name,
-          shortName: homeTeamData.short_name,
-          color: homeTeamData.color,
-          createdAt: new Date().toISOString()
-        })
-      }
+      homeTeamId = await db.teams.add({
+        name: homeTeamData.name,
+        shortName: homeTeamData.short_name,
+        color: homeTeamData.color,
+        createdAt: new Date().toISOString()
+      })
     }
 
     if (awayTeamData.name) {
-      const existingAway = await db.teams.where('name').equals(awayTeamData.name).first()
-      if (existingAway) {
-        awayTeamId = existingAway.id
-        await db.teams.update(awayTeamId, {
-          shortName: awayTeamData.short_name,
-          color: awayTeamData.color,
-          updatedAt: new Date().toISOString()
-        })
-      } else {
-        awayTeamId = await db.teams.add({
-          name: awayTeamData.name,
-          shortName: awayTeamData.short_name,
-          color: awayTeamData.color,
-          createdAt: new Date().toISOString()
-        })
-      }
+      awayTeamId = await db.teams.add({
+        name: awayTeamData.name,
+        shortName: awayTeamData.short_name,
+        color: awayTeamData.color,
+        createdAt: new Date().toISOString()
+      })
     }
 
     // Create match with all JSONB data
@@ -516,8 +496,12 @@ export async function importMatchFromSupabase(cloudData) {
       refereePin: match.referee_pin,
       gamePin: match.game_pin,
       gameN: match.game_n,
+      gameNumber: match.game_n ? String(match.game_n) : null, // Also set gameNumber
       test: match.test || false,
       seed_key: match.external_id,
+      // Short names at match level (for easy access)
+      homeShortName: homeTeamData.short_name || null,
+      awayShortName: awayTeamData.short_name || null,
       // JSONB data stored locally
       officials: match.officials || [],
       bench_home: match.bench_home || [],
@@ -531,11 +515,18 @@ export async function importMatchFromSupabase(cloudData) {
       coinTossConfirmed: match.coin_toss_confirmed,
       coinTossTeamA: match.coin_toss_team_a,
       coinTossTeamB: match.coin_toss_team_b,
+      coinTossServeA: match.coin_toss_serve_a,
       firstServe: match.first_serve,
       // Match result
       setResults: match.set_results,
       winner: match.winner,
       finalScore: match.final_score,
+      // Referee connection settings
+      refereeConnectionEnabled: match.referee_connection_enabled,
+      homeTeamConnectionEnabled: match.home_team_connection_enabled,
+      awayTeamConnectionEnabled: match.away_team_connection_enabled,
+      homeTeamPin: match.home_team_pin,
+      awayTeamPin: match.away_team_pin,
       // Import metadata
       importedFrom: 'supabase',
       importedAt: new Date().toISOString(),
@@ -544,7 +535,7 @@ export async function importMatchFromSupabase(cloudData) {
 
     importedMatchId = localMatchId
 
-    // Create players from JSONB arrays
+    // Create players from JSONB arrays (fresh teams, so no duplicates)
     if (playersHome.length && homeTeamId) {
       for (const p of playersHome) {
         await db.players.add({

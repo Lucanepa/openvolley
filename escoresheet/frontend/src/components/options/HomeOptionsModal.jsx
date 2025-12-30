@@ -190,19 +190,19 @@ const defaultKeyBindings = {
   startRally: 'Enter'
 }
 
-// Key binding labels
-const keyBindingLabels = {
-  pointLeft: 'Point Left',
-  pointRight: 'Point Right',
-  timeoutLeft: 'Timeout Left',
-  timeoutRight: 'Timeout Right',
-  exchangeLiberoLeft: 'Libero Left',
-  exchangeLiberoRight: 'Libero Right',
-  undo: 'Undo',
-  confirm: 'Confirm',
-  cancel: 'Cancel',
-  startRally: 'Start Rally'
-}
+// Key binding keys (used for lookup)
+const keyBindingKeys = [
+  'pointLeft',
+  'pointRight',
+  'timeoutLeft',
+  'timeoutRight',
+  'exchangeLiberoLeft',
+  'exchangeLiberoRight',
+  'undo',
+  'confirm',
+  'cancel',
+  'startRally'
+]
 
 export default function HomeOptionsModal({
   open,
@@ -293,14 +293,11 @@ export default function HomeOptionsModal({
         localStorage.clear()
       }
 
-      // Show success alert before reload
-      alert(includeLocalStorage ? 'Cache and settings cleared!' : 'Cache cleared!')
-
       // Reload to apply changes
       window.location.reload()
     } catch (error) {
       console.error('Error clearing cache:', error)
-      alert('Failed to clear cache: ' + error.message)
+      alert(t('options.alerts.failedToClearCache', { error: error.message }))
     }
   }
 
@@ -339,9 +336,9 @@ export default function HomeOptionsModal({
   const { wakeLockActive, toggleWakeLock } = wakeLock
 
   const modeDescriptions = {
-    desktop: 'Full layout with court visualization',
-    tablet: 'Scaled-down layout optimized for 768-1024px screens',
-    smartphone: 'Compact 3-column layout without court, optimized for <768px screens'
+    desktop: t('options.desktopDesc'),
+    tablet: t('options.tabletDesc'),
+    smartphone: t('options.smartphoneDesc')
   }
 
   return (
@@ -641,7 +638,7 @@ export default function HomeOptionsModal({
                       gap: '6px'
                     }}
                   >
-                    <span>{mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}</span>
+                    <span>{mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode}</span>
                     {modeDescriptions[mode] ? (
                       <span
                         title={modeDescriptions[mode]}
@@ -1537,7 +1534,7 @@ export default function HomeOptionsModal({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {Object.entries(keyBindingLabels).map(([key, label]) => (
+              {keyBindingKeys.map((key) => (
                 <div
                   key={key}
                   style={{
@@ -1549,7 +1546,7 @@ export default function HomeOptionsModal({
                     borderRadius: '8px'
                   }}
                 >
-                  <span style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>{label}</span>
+                  <span style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>{t(`options.keybindingLabels.${key}`)}</span>
                   <button
                     onClick={() => {
                       if (editingKey === key) {

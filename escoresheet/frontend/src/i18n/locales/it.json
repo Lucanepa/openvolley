@@ -699,6 +699,18 @@
     "keybindings": "Tasti rapidi",
     "pressKey": "Premi un tasto...",
     "resetDefaults": "Ripristina",
+    "keybindingLabels": {
+      "pointLeft": "Punto Sinistra",
+      "pointRight": "Punto Destra",
+      "timeoutLeft": "Timeout Sinistra",
+      "timeoutRight": "Timeout Destra",
+      "exchangeLiberoLeft": "Libero Sinistra",
+      "exchangeLiberoRight": "Libero Destra",
+      "undo": "Annulla",
+      "confirm": "Conferma",
+      "cancel": "Annulla",
+      "startRally": "Inizia scambio"
+    },
     "matchOptions": "Opzioni partita",
     "liveServer": "Server Live",
     "serverRunning": "Server attivo",
@@ -733,7 +745,15 @@
     "warningStateReplaced": "Attenzione: Lo stato attuale della partita sarà sostituito.",
     "websocket": "WebSocket",
     "backupSetScore": "Set {{setIndex}}: {{homePoints}} - {{awayPoints}}",
-    "unknownTime": "Ora sconosciuta"
+    "unknownTime": "Ora sconosciuta",
+    "autoWithMode": "Auto ({{mode}})",
+    "alerts": {
+      "noMatchId": "Nessun ID partita disponibile",
+      "failedToLoadBackups": "Impossibile caricare i backup cloud",
+      "failedToLoadBackupData": "Impossibile caricare i dati del backup",
+      "failedToRestoreBackup": "Ripristino backup fallito: {{error}}",
+      "failedToClearCache": "Svuotamento cache fallito: {{error}}"
+    }
   },
   "supportFeedback": {
     "title": "Supporto & Feedback",

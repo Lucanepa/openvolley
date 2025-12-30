@@ -507,7 +507,11 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             coin_toss_confirmed: true,
             coin_toss_team_a: teamA,
             coin_toss_team_b: teamB,
+            coin_toss_serve_a: serveA,
             first_serve: firstServeTeam,
+            // Short names as separate columns for easy access
+            home_short_name: homeShortName || null,
+            away_short_name: awayShortName || null,
             // JSONB columns
             home_team: { name: home, short_name: homeShortName, color: homeColor },
             away_team: { name: away, short_name: awayShortName, color: awayColor },
@@ -976,6 +980,9 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             city: matchData.city || null,
             league: matchData.league || null,
             scheduled_at: matchData.scheduledAt || null,
+            // Short names as separate columns for easy access
+            home_short_name: homeShortName || null,
+            away_short_name: awayShortName || null,
             // JSONB columns
             home_team: { name: home, short_name: homeShortName, color: homeColor },
             away_team: { name: away, short_name: awayShortName, color: awayColor },

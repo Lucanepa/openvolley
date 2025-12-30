@@ -176,9 +176,15 @@ export async function getMatchData(matchId) {
           ...match,
           id: matchId, // Use external_id as the reference ID
           coinTossTeamA: match.coin_toss_team_a,
+          coinTossTeamB: match.coin_toss_team_b,
+          coinTossServeA: match.coin_toss_serve_a,
           firstServe: match.first_serve,
-          homeShortName: match.home_short_name,
-          awayShortName: match.away_short_name
+          // Get short names from columns, or extract from JSONB if columns are empty
+          homeShortName: match.home_short_name || match.home_team?.short_name || null,
+          awayShortName: match.away_short_name || match.away_team?.short_name || null,
+          // Also ensure gameNumber is set
+          gameNumber: match.game_n ? String(match.game_n) : null,
+          gameN: match.game_n
         },
         homeTeam: homeTeam ? { ...homeTeam, name: homeTeam.name || match.home_team_name } : null,
         awayTeam: awayTeam ? { ...awayTeam, name: awayTeam.name || match.away_team_name } : null,

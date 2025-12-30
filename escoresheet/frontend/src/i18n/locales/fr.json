@@ -699,6 +699,18 @@
     "keybindings": "Raccourcis clavier",
     "pressKey": "Appuyez sur une touche...",
     "resetDefaults": "Réinitialiser",
+    "keybindingLabels": {
+      "pointLeft": "Point Gauche",
+      "pointRight": "Point Droite",
+      "timeoutLeft": "Temps mort Gauche",
+      "timeoutRight": "Temps mort Droite",
+      "exchangeLiberoLeft": "Libéro Gauche",
+      "exchangeLiberoRight": "Libéro Droite",
+      "undo": "Annuler",
+      "confirm": "Confirmer",
+      "cancel": "Annuler",
+      "startRally": "Démarrer l'échange"
+    },
     "matchOptions": "Options du match",
     "liveServer": "Serveur Live",
     "serverRunning": "Serveur actif",
@@ -733,7 +745,15 @@
     "warningStateReplaced": "Attention : L'état actuel du match sera remplacé.",
     "websocket": "WebSocket",
     "backupSetScore": "Set {{setIndex}} : {{homePoints}} - {{awayPoints}}",
-    "unknownTime": "Heure inconnue"
+    "unknownTime": "Heure inconnue",
+    "autoWithMode": "Auto ({{mode}})",
+    "alerts": {
+      "noMatchId": "Aucun ID de match disponible",
+      "failedToLoadBackups": "Impossible de charger les sauvegardes cloud",
+      "failedToLoadBackupData": "Impossible de charger les données de sauvegarde",
+      "failedToRestoreBackup": "Échec de la restauration : {{error}}",
+      "failedToClearCache": "Échec du vidage du cache : {{error}}"
+    }
   },
   "supportFeedback": {
     "title": "Support & Avis",
