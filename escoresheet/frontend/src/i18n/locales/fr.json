@@ -319,7 +319,9 @@
       "toRight": "TM Droite",
       "confirmTimeout": "Confirmer temps mort",
       "substitute": "Remplacer",
-      "undo": "Annuler"
+      "undo": "Annuler",
+      "replay": "Rejouer l'échange",
+      "decisionChange": "Changement de décision"
     },
     "modals": {
       "confirmRallyStart": "Confirmer le début de l'échange",
@@ -924,6 +926,7 @@
     "loadingGames": "Chargement...",
     "noAvailableGames": "Aucun match disponible.",
     "testMode": "MODE AMICAL",
+    "refresh": "Actualiser",
     "errors": {
       "enterPin": "Code PIN à 6 chiffres requis",
       "invalidPin": "Code PIN incorrect.",

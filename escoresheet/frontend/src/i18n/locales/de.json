@@ -319,7 +319,9 @@
       "toRight": "TO Rechts",
       "confirmTimeout": "Timeout bestätigen",
       "substitute": "Auswechseln",
-      "undo": "Rückgängig"
+      "undo": "Rückgängig",
+      "replay": "Ballwechsel wiederholen",
+      "decisionChange": "Entscheidungsänderung"
     },
     "modals": {
       "confirmRallyStart": "Ballwechsel-Start bestätigen",
@@ -924,6 +926,7 @@
     "loadingGames": "Spiele werden geladen...",
     "noAvailableGames": "Keine verfügbaren Spiele.",
     "testMode": "TESTMODUS",
+    "refresh": "Aktualisieren",
     "errors": {
       "enterPin": "Bitte geben Sie einen 6-stelligen PIN-Code ein",
       "invalidPin": "Ungültiger PIN-Code. Bitte überprüfen und erneut versuchen.",

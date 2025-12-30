@@ -1219,23 +1219,41 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Sync live state to Supabase for referee.openvolley.app
   const syncLiveStateToSupabase = useCallback(async (eventType, eventTeam, eventData) => {
-    if (!supabase || !data?.match || !data?.set) return
-
-    // Only sync official matches, not test matches
-    if (data.match.test) return
+    if (!supabase || !matchId) return
 
     try {
+      // Query fresh data from IndexedDB to avoid stale closure issues
+      const match = await db.matches.get(matchId)
+      if (!match) return
+
+      // Only sync official matches, not test matches
+      if (match.test) return
+
+      // Get current set from database
+      const allSets = await db.sets.where({ matchId }).toArray()
+      const currentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
+      if (!currentSet) return
+
+      // Get all events from database
+      const allEvents = await db.events.where({ matchId }).toArray()
+
+      // Get players from database (query by teamId - players are indexed by teamId, not matchId)
+      const [homePlayersDb, awayPlayersDb] = await Promise.all([
+        match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
+        match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : []
+      ])
+      const allPlayersDb = [...homePlayersDb, ...awayPlayersDb]
+
       // Get the Supabase match UUID
       let supabaseMatchId = null
 
       // First check if we have a valid externalId (UUID from Supabase import)
-      const externalId = data.match.externalId
+      const externalId = match.externalId
       if (externalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
         supabaseMatchId = externalId
       } else {
         // For locally created matches, look up the Supabase UUID using our seed_key
-        // seed_key is more unique than numeric matchId (e.g., "game_364574_1734811234567")
-        const seedKey = data.match.seed_key || String(matchId)
+        const seedKey = match.seed_key || String(matchId)
         const { data: matchData, error } = await supabase
           .from('matches')
           .select('id')
@@ -1251,23 +1269,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       if (!supabaseMatchId) return
 
-      // Compute current state
-      const currentSet = data.set
-      const allSets = data.sets || []
+      // Compute current state from fresh database data
       const finishedSets = allSets.filter(s => s.finished)
       const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
       const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
       // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on (changes per set)
       const setIndex = currentSet.index
-      const teamAKey = data.match.coinTossTeamA || 'home' // 'home' or 'away'
+      const teamAKey = match.coinTossTeamA || 'home' // 'home' or 'away'
       const teamBKey = teamAKey === 'home' ? 'away' : 'home'
       const is5thSet = setIndex === 5
-      const set5CourtSwitched = data.match.set5CourtSwitched
-      const set5LeftTeam = data.match.set5LeftTeam
+      const set5CourtSwitched = match.set5CourtSwitched
+      const set5LeftTeam = match.set5LeftTeam
 
       // Determine which side Team A is on this set
-      const setLeftTeamOverrides = data.match.setLeftTeamOverrides || {}
+      const setLeftTeamOverrides = match.setLeftTeamOverrides || {}
       let sideA // 'left' or 'right'
       if (setLeftTeamOverrides[setIndex] !== undefined) {
         // Manual override - check if the left team matches Team A
@@ -1280,12 +1296,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
 
       // Get Team A info (coin toss winner - constant throughout match)
-      const teamAName = teamAKey === 'home' ? data.match.homeName : data.match.awayName
-      const teamBName = teamAKey === 'home' ? data.match.awayName : data.match.homeName
-      const teamAShort = teamAKey === 'home' ? data.match.homeShortName : data.match.awayShortName
-      const teamBShort = teamAKey === 'home' ? data.match.awayShortName : data.match.homeShortName
-      const teamAColor = teamAKey === 'home' ? data.match.homeColor : data.match.awayColor
-      const teamBColor = teamAKey === 'home' ? data.match.awayColor : data.match.homeColor
+      const teamAName = teamAKey === 'home' ? match.homeName : match.awayName
+      const teamBName = teamAKey === 'home' ? match.awayName : match.homeName
+      const teamAShort = teamAKey === 'home' ? match.homeShortName : match.awayShortName
+      const teamBShort = teamAKey === 'home' ? match.awayShortName : match.homeShortName
+      const teamAColor = teamAKey === 'home' ? match.homeColor : match.awayColor
+      const teamBColor = teamAKey === 'home' ? match.awayColor : match.homeColor
 
       // Points by team (A/B)
       const pointsA = teamAKey === 'home' ? currentSet.homePoints : currentSet.awayPoints
@@ -1296,7 +1312,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const setScoreB = teamAKey === 'home' ? awaySetsWon : homeSetsWon
 
       // Timeouts and subs for current set
-      const currentSetEvents = (data.events || []).filter(e => e.setIndex === currentSet.index)
+      const currentSetEvents = allEvents.filter(e => e.setIndex === currentSet.index)
       const timeouts = currentSetEvents.filter(e => e.type === 'timeout').reduce((acc, e) => {
         const team = e.payload?.team
         if (team) acc[team] = (acc[team] || 0) + 1
@@ -1313,9 +1329,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const subsA = teamAKey === 'home' ? subs.home : subs.away
       const subsB = teamAKey === 'home' ? subs.away : subs.home
 
-      // Get lineups
+      // Get lineups from fresh event data
       const getLineupForTeam = (teamKey) => {
-        const lineupEvents = (data.events || [])
+        const lineupEvents = allEvents
           .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
           .sort((a, b) => (a.seq || 0) - (b.seq || 0))
         if (lineupEvents.length === 0) return null
@@ -1328,16 +1344,69 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const lineupA = getLineupForTeam(teamAKey)
       const lineupB = getLineupForTeam(teamBKey)
 
-      // Check if libero is on court (simplified check)
-      const playersA = teamAKey === 'home' ? data.homePlayers : data.awayPlayers
-      const playersB = teamAKey === 'home' ? data.awayPlayers : data.homePlayers
-      const liberosA = (playersA || []).filter(p => p.libero)
-      const liberosB = (playersB || []).filter(p => p.libero)
+      // Get libero substitution details from latest lineup event
+      const getLiberoSubstitution = (teamKey) => {
+        const lineupEvents = allEvents
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+        const lastLineup = lineupEvents[lineupEvents.length - 1]
+        // Return full liberoSubstitution object if exists
+        return lastLineup.payload?.liberoSubstitution || null
+      }
+      const liberoSubA = getLiberoSubstitution(teamAKey)
+      const liberoSubB = getLiberoSubstitution(teamBKey)
 
-      // Determine server - serving_a is true if Team A is serving
-      const servingTeam = currentSet.servingTeam
+      // Get captain and court captain for each team
+      const getCaptainInfo = (playersDb) => {
+        const captain = playersDb.find(p => p.isCaptain || p.captain)
+        return captain ? captain.number : null
+      }
+      // Team A/B maps to home/away based on coin toss
+      const teamAPlayersDb = teamAKey === 'home' ? homePlayersDb : awayPlayersDb
+      const teamBPlayersDb = teamAKey === 'home' ? awayPlayersDb : homePlayersDb
+      const captainA = getCaptainInfo(teamAPlayersDb)
+      const captainB = getCaptainInfo(teamBPlayersDb)
+
+      // Get court captain from match record
+      const courtCaptainA = teamAKey === 'home' ? match.homeCourtCaptain : match.awayCourtCaptain
+      const courtCaptainB = teamBKey === 'home' ? match.homeCourtCaptain : match.awayCourtCaptain
+
+      // Build players list with libero status for each team (so Referee knows who is libero1/libero2)
+      const buildPlayersInfo = (playersDb) => {
+        return playersDb.map(p => ({
+          number: p.number,
+          name: p.name,
+          libero: p.libero || null, // 'libero1', 'libero2', or null
+          isCaptain: p.isCaptain || p.captain || false
+        }))
+      }
+      const playersA = buildPlayersInfo(teamAPlayersDb)
+      const playersB = buildPlayersInfo(teamBPlayersDb)
+
+      // Determine server - calculate from events since DB doesn't store serving state
+      // Find the last point event to determine who has serve
+      const pointEvents = allEvents
+        .filter(e => e.type === 'point' && e.setIndex === currentSet.index)
+        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+      // Calculate first serve for current set
+      const set1FirstServe = match.firstServe || 'home'
+      let currentSetFirstServe
+      if (setIndex === 5 && match.set5FirstServe) {
+        currentSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
+      } else if (setIndex === 5) {
+        currentSetFirstServe = set1FirstServe
+      } else {
+        currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+      }
+
+      const servingTeam = pointEvents.length > 0 ? (pointEvents[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
       const servingA = servingTeam === teamAKey
-      const serverNumber = currentSet.serverNumber || null
+
+      // Get server number from position I of serving team's lineup
+      const servingTeamLineup = getLineupForTeam(servingTeam)
+      const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
 
       // Get sanctions
       const getSanctionsForTeam = (teamKey) => {
@@ -1378,8 +1447,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           // Lineups
           lineup_a: lineupA,
           lineup_b: lineupB,
-          libero_on_a: false, // TODO: Track libero exchanges
-          libero_on_b: false,
+          // Libero substitution details (which libero is on court and who they replaced)
+          libero_sub_a: liberoSubA,
+          libero_sub_b: liberoSubB,
+          // Captain info
+          captain_a: captainA,
+          captain_b: captainB,
+          court_captain_a: courtCaptainA || null,
+          court_captain_b: courtCaptainB || null,
+          // Players with libero status (so Referee knows who is libero1/libero2)
+          players_a: playersA.length > 0 ? playersA : null,
+          players_b: playersB.length > 0 ? playersB : null,
           // Serving
           serving_a: servingA,
           server_number: serverNumber,
@@ -1404,11 +1482,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       if (error) {
         console.error('[LiveState] Sync error:', error)
+      } else {
+        console.log('[LiveState] Synced successfully - points:', pointsA, '-', pointsB, 'set:', setIndex)
       }
     } catch (err) {
       console.error('[LiveState] Exception:', err)
     }
-  }, [data, matchId])
+  }, [matchId]) // No data dependency - we query fresh from IndexedDB
 
   // Check connection statuses
   const checkConnectionStatuses = useCallback(async () => {
@@ -2978,53 +3058,59 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       // Only sync official matches to Supabase, not test matches
       if (!isTest) {
-        // Compute current lineups and serve info for event context
-        const getLineupForTeam = (teamKey) => {
-          const lineupEvents = (data.events || [])
-            .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data.set.index)
+        // Query fresh events from IndexedDB to get current lineups (avoid stale closure)
+        const allEventsForSync = await db.events.where({ matchId }).toArray()
+        const setIndex = data.set.index
+
+        // Get lineup for a team from fresh event data
+        const getLineupForTeamFresh = (teamKey) => {
+          const lineupEvents = allEventsForSync
+            .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
             .sort((a, b) => (a.seq || 0) - (b.seq || 0))
           if (lineupEvents.length === 0) return null
           const lastLineup = lineupEvents[lineupEvents.length - 1]
           return lastLineup.payload?.lineup || null
         }
 
-        // Determine which team is on which side based on set index
-        const setIndex = data.set.index
-        const teamAKey = data.match?.teamAKey || 'home'
-        const setLeftTeamOverrides = data.match?.setLeftTeamOverrides || {}
-        let leftIsHome
+        // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+        const teamAKey = match?.coinTossTeamA || 'home'
+        const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+        const setLeftTeamOverrides = match?.setLeftTeamOverrides || {}
+
+        // Determine which side Team A is on this set
+        let sideA // 'left' or 'right'
         if (setLeftTeamOverrides[setIndex] !== undefined) {
-          leftIsHome = setLeftTeamOverrides[setIndex] === 'home'
-        } else if (setIndex === 5 && data.match?.set5CourtSwitched && data.match?.set5LeftTeam) {
-          leftIsHome = data.match.set5LeftTeam === 'home'
+          sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
+        } else if (setIndex === 5 && match?.set5CourtSwitched && match?.set5LeftTeam) {
+          sideA = match.set5LeftTeam === teamAKey ? 'left' : 'right'
         } else {
-          leftIsHome = setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
+          // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
+          sideA = setIndex % 2 === 1 ? 'left' : 'right'
         }
 
-        const leftTeamKey = leftIsHome ? 'home' : 'away'
-        const rightTeamKey = leftIsHome ? 'away' : 'home'
+        // Derive left/right team keys from A/B model
+        const leftTeamKey = sideA === 'left' ? teamAKey : teamBKey
+        const rightTeamKey = sideA === 'left' ? teamBKey : teamAKey
 
         // Calculate serving team (same logic as getCurrentServe)
-        const set1FirstServe = data.match?.firstServe || 'home'
+        const set1FirstServe = match?.firstServe || 'home'
         let currentSetFirstServe
-        if (setIndex === 5 && data.match?.set5FirstServe) {
-          const coinTossTeamAKey = data.match.coinTossTeamA || 'home'
-          const coinTossTeamBKey = data.match.coinTossTeamB || 'away'
-          currentSetFirstServe = data.match.set5FirstServe === 'A' ? coinTossTeamAKey : coinTossTeamBKey
+        if (setIndex === 5 && match?.set5FirstServe) {
+          currentSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
         } else if (setIndex === 5) {
           currentSetFirstServe = set1FirstServe
         } else {
           currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
         }
 
-        // Find last point event to determine current serve
-        const pointEvents = (data.events || [])
-          .filter(e => e.type === 'point' && e.setIndex === data.set.index)
+        // Find last point event from fresh data to determine current serve
+        const pointEventsForSync = allEventsForSync
+          .filter(e => e.type === 'point' && e.setIndex === setIndex)
           .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-        const servingTeam = pointEvents.length > 0 ? (pointEvents[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
+        const servingTeam = pointEventsForSync.length > 0 ? (pointEventsForSync[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
 
         // Get server number from position I of serving team's lineup
-        const servingTeamLineup = getLineupForTeam(servingTeam)
+        const servingTeamLineup = getLineupForTeamFresh(servingTeam)
         const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
 
         await db.sync_queue.add({
@@ -3033,14 +3119,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           payload: {
             external_id: String(eventId),
             match_id: match?.seed_key || String(matchId), // Use seed_key (external_id) for Supabase lookup
-            set_index: data.set.index,
+            set_index: setIndex,
             type,
             payload: payload || {},
             seq: nextSeq,
             test: false,
             created_at: new Date().toISOString(),
-            lineup_left: getLineupForTeam(leftTeamKey),
-            lineup_right: getLineupForTeam(rightTeamKey),
+            lineup_left: getLineupForTeamFresh(leftTeamKey),
+            lineup_right: getLineupForTeamFresh(rightTeamKey),
             serve_team: servingTeam,
             serve_player: serverNumber
           },
@@ -12319,6 +12405,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
                             {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                           </span>
+                          {/* Captain badge for libero-captain on bench (left team) */}
+                          {(player.isCaptain || player.captain) && (
+                            <span style={{
+                              background: '#fff',
+                              color: '#10b981',
+                              border: '1px solid #10b981',
+                              borderRadius: '3px',
+                              padding: '0 3px',
+                              fontSize: '10px',
+                              fontWeight: 700
+                            }}>C</span>
+                          )}
                           {sanctions.length > 0 && (
                             <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
                               {hasExpulsion ? (
@@ -12996,14 +13094,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           </span>
                         )}
                         <span className="court-player-position">{player.position}</span>
-                        {/* Captain indicator */}
+                        {/* Captain indicator - show C for captain (including libero-captain) */}
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                            // Libero-captain ON COURT: only show green C on white bg (not both L and C)
                             return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                              <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
                             )
                           }
                           return <span className="court-player-captain">C</span>
@@ -13235,14 +13331,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           </span>
                         )}
                         <span className="court-player-position">{player.position}</span>
-                        {/* Captain indicator */}
+                        {/* Captain indicator - show C for captain (including libero-captain) */}
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
-                            const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                            // Libero-captain ON COURT: only show green C on white bg (not both L and C)
                             return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                              <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
                             )
                           }
                           return <span className="court-player-captain">C</span>
@@ -13523,14 +13617,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           </span>
                         )}
                         <span className="court-player-position">{player.position}</span>
-                        {/* Bottom-left indicators: Captain C */}
+                        {/* Bottom-left indicators: Captain C (including libero-captain) */}
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                            // Libero-captain ON COURT: only show green C on white bg (not both L and C)
                             return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                              <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
                             )
                           }
                           return <span className="court-player-captain">C</span>
@@ -13761,13 +13853,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           </span>
                         )}
                         <span className="court-player-position">{player.position}</span>
+                        {/* Captain indicator - show C for captain (including libero-captain) */}
                         {player.isCaptain && (() => {
                           if (player.isLibero) {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                            // Libero-captain ON COURT: only show green C on white bg (not both L and C)
                             return (
-                              <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                              <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
                             )
                           }
                           return <span className="court-player-captain">C</span>
@@ -15210,12 +15301,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
                             {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                           </span>
+                          {/* Captain badge for libero-captain on bench (right team) */}
+                          {(player.isCaptain || player.captain) && (
+                            <span style={{
+                              background: '#fff',
+                              color: '#10b981',
+                              border: '1px solid #10b981',
+                              borderRadius: '3px',
+                              padding: '0 3px',
+                              fontSize: '10px',
+                              fontWeight: 700
+                            }}>C</span>
+                          )}
                           {sanctions.length > 0 && (
                             <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
                               {hasExpulsion ? (
                                 <div style={{ position: 'relative', width: '9px', height: '9px' }}>
-                                  <div className="sanction-card yellow" style={{ 
-                                    width: '5px', 
+                                  <div className="sanction-card yellow" style={{
+                                    width: '5px',
                                     height: '7px',
                                     position: 'absolute',
                                     left: '0',
@@ -19143,7 +19246,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             checkAndRequestCaptainOnCourtRef.current?.(teamKey)
           }, 300)
         }}
-        onLineupSaved={syncToReferee}
+        onLineupSaved={() => {
+          syncToReferee()
+          // Also sync to Supabase match_live_state
+          syncLiveStateToSupabase('lineup', lineupModal?.team || null, null)
+        }}
       />}
       
       {playerActionMenu && (() => {

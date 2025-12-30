@@ -1203,8 +1203,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <button
               onClick={toggleWakeLock}
               style={{
-                padding: '4px 10px',
-                fontSize: '11px',
+                padding: '2px 8px',
+                fontSize: '9px',
                 fontWeight: 600,
                 background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
                 color: wakeLockActive ? '#22c55e' : '#fff',
@@ -1361,20 +1361,28 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
     const displayLiberoLabel = isLibero ? (liberoCount === 1 ? 'L' : liberoLabel) : null
 
+    // Check if this player is captain or court captain (liberos CAN be captains)
+    const teamCaptain = team === 'home' ? data.match?.homeCaptain : data.match?.awayCaptain
+    const teamCourtCaptain = team === 'home' ? data.match?.homeCourtCaptain : data.match?.awayCourtCaptain
+    const isCaptain = player?.isCaptain || player?.captain || (teamCaptain && String(teamCaptain) === String(number))
+    const isCourtCaptain = !isCaptain && teamCourtCaptain && String(teamCourtCaptain) === String(number)
+    const showCaptainBadge = isCaptain || isCourtCaptain // Liberos can be captains too
+    const isLiberoCaptain = isLibero && isCaptain // Special styling for libero who is also captain
+
     return (
       <div style={{
           position: 'relative',
         width: 'fit-content',
         aspectRatio: '1/1',
-        borderRadius: '0%',
-        padding: '2px',
+        padding: '4px',
         border: isRecentlySub ? '3px solid #22c55e' : '1px solid rgba(255, 255, 255, 0.4)',
+        borderRadius: '50%',
         background: isRecentlySub ? '#86efac' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
           color: isRecentlySub ? '#000' : isLibero ? '#000' : '#fff',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 'clamp(33px, 9vw, 80px)',
+          fontSize: 'clamp(33px, 9vw, 64px)',
         fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0,
@@ -1443,8 +1451,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </span>
         )}
         
-        {/* Bottom-left: Libero indicator (L, L1, L2) */}
-        {displayLiberoLabel && (
+        {/* Bottom-left: Libero indicator (L, L1, L2) - hide if libero-captain (only show C) */}
+        {displayLiberoLabel && !isLiberoCaptain && (
           <span style={{
               position: 'absolute',
             bottom: '-6px',
@@ -1465,7 +1473,31 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             {displayLiberoLabel}
           </span>
         )}
-        
+        {/* Captain badge (C) - show for captains including libero-captains */}
+        {showCaptainBadge && (
+          <span style={{
+            position: 'absolute',
+            bottom: '-6px',
+            // If libero but not libero-captain, position next to L badge; otherwise position at left
+            left: (isLibero && !isLiberoCaptain) ? 'calc(clamp(16px, 4vw, 22px) + 2px)' : '-6px',
+            minWidth: 'clamp(16px, 4vw, 22px)',
+            height: 'clamp(16px, 4vw, 22px)',
+            padding: '0 3px',
+            // Libero-captain: green C on white bg; Regular captain: green bg; Court captain: purple bg
+            background: isLiberoCaptain ? '#ffffff' : (isCaptain ? '#10b981' : '#6366f1'),
+            border: isLiberoCaptain ? '2px solid #10b981' : '2px solid rgba(255, 255, 255, 0.3)',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 'clamp(9px, 2vw, 12px)',
+            fontWeight: 700,
+            color: isLiberoCaptain ? '#10b981' : '#fff' // Green text on white for libero-captain
+          }}>
+            C
+          </span>
+        )}
+
         {/* Bottom-right: Sanction indicators */}
         {(hasWarning || hasPenalty || hasExpulsion || hasDisqualification) && (
           <div style={{
@@ -2044,6 +2076,25 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
             v{currentVersion}
           </span>
+          {/* Refresh Button */}
+          {!isMasterMode && (
+            <button
+              onClick={fetchFreshData}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#3b82f6',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title={t('refereeDashboard.refresh')}
+            >
+              🔄
+            </button>
+          )}
           {/* Connection Type Dropdown */}
           <div style={{ position: 'relative' }}>
             <button

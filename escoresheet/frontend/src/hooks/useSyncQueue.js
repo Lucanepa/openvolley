@@ -157,6 +157,15 @@ export function useSyncQueue() {
           console.warn('[SyncQueue] Sets delete error (continuing):', setsError)
         }
 
+        // Delete match_live_state for this match (foreign key constraint)
+        const { error: liveStateError } = await supabase
+          .from('match_live_state')
+          .delete()
+          .eq('match_id', matchUuid)
+        if (liveStateError) {
+          console.warn('[SyncQueue] match_live_state delete error (continuing):', liveStateError)
+        }
+
         // Delete the match
         const { error: matchError } = await supabase
           .from('matches')

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.5',
+    date: '30.12.25',
+    changes: [
+      'Refactor service worker and enhance MatchSetup, Referee, and Scoreboard components for improved data handling and UI'
+    ]
+  },
+  {
     version: '0.17.4',
     date: '30.12.25',
     changes: [

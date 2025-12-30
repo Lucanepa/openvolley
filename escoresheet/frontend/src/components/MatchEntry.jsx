@@ -573,6 +573,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           lastName: p.lastName || p.name || '',
           dob: p.dob || '',
           libero: p.libero,
+          isCaptain: p.isCaptain || p.captain || false,
           sanctions,
           type: 'libero'
         }
@@ -1000,8 +1001,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                       <span className="court-player-position">{player.position}</span>
                       {player.isCaptain && (() => {
                         if (player.isLibero) {
+                          // Libero-captain ON COURT: only show green C on white bg (not L badge)
                           return (
-                            <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                            <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
                           )
                         }
                         return <span className="court-player-captain">C</span>
@@ -1152,8 +1154,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                       <span className="court-player-position">{player.position}</span>
                       {player.isCaptain && (() => {
                         if (player.isLibero) {
+                          // Libero-captain ON COURT: only show green C on white bg (not L badge)
                           return (
-                            <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
+                            <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
                           )
                         }
                         return <span className="court-player-captain">C</span>
@@ -1387,6 +1390,18 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         }}>
                           {libero.libero === 'libero1' ? 'L1' : 'L2'}
                         </span>
+                        {/* Captain badge for libero-captain on bench */}
+                        {libero.isCaptain && (
+                          <span style={{
+                            background: '#fff',
+                            color: '#10b981',
+                            border: '1px solid #10b981',
+                            borderRadius: '3px',
+                            padding: '0 4px',
+                            fontSize: '10px',
+                            fontWeight: 700
+                          }}>C</span>
+                        )}
                         #{libero.number} {libero.firstName} {libero.lastName}
                       </div>
                       {libero.sanctions.length > 0 && (
