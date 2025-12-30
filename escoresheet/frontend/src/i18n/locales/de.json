@@ -34,8 +34,11 @@
     "captain": "Capitan",
     "confirmResult": "Coin Toss bestatigen",
     "returnToMatch": "Zuruck zum Spiel",
-    "scoresheet": "Scoresheet",
-    "preview": "Vorschau"
+    "scoresheet": "eMatchblatt",
+    "preview": "Vorschau",
+    "print": "Drucken",
+    "savePdf": "PDF speichern",
+    "allowPopups": "Bitte erlauben Sie Popups, um das eMatchblatt anzuzeigen"
   },
   "roster": {
     "title": "Roster",
@@ -313,7 +316,8 @@
       "toLeft": "TO Links",
       "toRight": "TO Rechts",
       "confirmTimeout": "Timeout bestätigen",
-      "substitute": "Auswechseln"
+      "substitute": "Auswechseln",
+      "undo": "Rückgängig"
     },
     "modals": {
       "confirmRallyStart": "Ballwechsel-Start bestätigen",
@@ -331,7 +335,7 @@
       "liberoReminder": "Libero-Erinnerung",
       "reopenSet": "Satz wieder öffnen",
       "scoresheetError": "Spielberichtsfehler",
-      "scoresheetAlreadyOpen": "Spielbericht bereits geöffnet",
+      "scoresheetAlreadyOpen": "eMatchblatt bereits geöffnet",
       "remarksRecording": "Bemerkungsaufzeichnung",
       "sanctionsAndResults": "Sanktionen und Ergebnisse",
       "confirmSecondTimeout": "{{ordinal}} Timeout-Anfrage bestätigen?",
@@ -389,7 +393,7 @@
       "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?"
     },
     "menu": {
-      "scoresheet": "Spielbericht",
+      "scoresheet": "eMatchblatt",
       "menu": "Menü",
       "showSanctionsResults": "Sanktionen und Ergebnisse anzeigen",
       "gamePins": "Spiel-PINs",
@@ -552,7 +556,12 @@
     "current": "Aktuell",
     "exitFullscreen": "Vollbild beenden",
     "fullscreen": "Vollbild",
-    "exit": "Beenden"
+    "exit": "Beenden",
+    "scoresheet": "eMatchblatt",
+    "preview": "Vorschau",
+    "print": "Drucken",
+    "savePdf": "PDF speichern",
+    "allowPopups": "Bitte erlauben Sie Popups, um das eMatchblatt anzuzeigen"
   },
   "home": {
     "title": "Openvolley eScoresheet",

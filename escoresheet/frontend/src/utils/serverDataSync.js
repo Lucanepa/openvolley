@@ -103,10 +103,12 @@ export async function validatePin(pin, type = 'referee') {
 
 /**
  * Get full match data from server (match, teams, players, sets, events)
+ * Falls back to Supabase direct fetch if HTTP endpoint is not available
  */
 export async function getMatchData(matchId) {
   const serverUrl = getServerUrl()
-  
+
+  // Try HTTP endpoint first (WebSocket server may have it)
   try {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'GET',
@@ -115,16 +117,83 @@ export async function getMatchData(matchId) {
       }
     })
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch match data')
+    if (response.ok) {
+      const result = await response.json()
+      return result
     }
-
-    const result = await response.json()
-    return result
   } catch (error) {
-    console.error('Error fetching match data:', error)
-    throw error
+    console.debug('[getMatchData] HTTP fetch failed, trying Supabase:', error.message)
   }
+
+  // Fallback to Supabase direct fetch
+  if (supabase) {
+    try {
+      console.log('[getMatchData] Fetching from Supabase for matchId:', matchId)
+
+      // Fetch match by external_id (seed_key)
+      const { data: match, error: matchError } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('external_id', matchId)
+        .single()
+
+      if (matchError || !match) {
+        console.error('[getMatchData] Supabase match fetch error:', matchError)
+        return { success: false, error: matchError?.message || 'Match not found' }
+      }
+
+      // Fetch related data in parallel
+      const [teamsResult, setsResult, eventsResult] = await Promise.all([
+        supabase.from('teams').select('*').eq('match_id', match.id),
+        supabase.from('sets').select('*').eq('match_id', match.id).order('index'),
+        supabase.from('events').select('*').eq('match_id', match.id).order('timestamp')
+      ])
+
+      // Find home and away teams
+      const homeTeam = teamsResult.data?.find(t => t.side === 'home') || null
+      const awayTeam = teamsResult.data?.find(t => t.side === 'away') || null
+
+      // Fetch players if teams exist
+      let homePlayers = []
+      let awayPlayers = []
+      if (homeTeam?.id || awayTeam?.id) {
+        const teamIds = [homeTeam?.id, awayTeam?.id].filter(Boolean)
+        const { data: players } = await supabase
+          .from('players')
+          .select('*')
+          .in('team_id', teamIds)
+          .order('number')
+
+        if (players) {
+          homePlayers = players.filter(p => p.team_id === homeTeam?.id)
+          awayPlayers = players.filter(p => p.team_id === awayTeam?.id)
+        }
+      }
+
+      return {
+        success: true,
+        match: {
+          ...match,
+          id: matchId, // Use external_id as the reference ID
+          coinTossTeamA: match.coin_toss_team_a,
+          firstServe: match.first_serve,
+          homeShortName: match.home_short_name,
+          awayShortName: match.away_short_name
+        },
+        homeTeam: homeTeam ? { ...homeTeam, name: homeTeam.name || match.home_team_name } : null,
+        awayTeam: awayTeam ? { ...awayTeam, name: awayTeam.name || match.away_team_name } : null,
+        homePlayers,
+        awayPlayers,
+        sets: setsResult.data || [],
+        events: eventsResult.data || []
+      }
+    } catch (supabaseError) {
+      console.error('[getMatchData] Supabase fallback error:', supabaseError)
+      return { success: false, error: supabaseError.message }
+    }
+  }
+
+  return { success: false, error: 'No data source available' }
 }
 
 // Global WebSocket connection manager to prevent multiple connections

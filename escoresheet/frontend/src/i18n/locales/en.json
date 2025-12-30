@@ -35,7 +35,10 @@
     "confirmResult": "Confirm Coin Toss Result",
     "returnToMatch": "Return to match",
     "scoresheet": "Scoresheet",
-    "preview": "Preview"
+    "preview": "Preview",
+    "print": "Print",
+    "savePdf": "Save PDF",
+    "allowPopups": "Please allow popups to view the scoresheet"
   },
   "roster": {
     "title": "Roster",
@@ -313,7 +316,8 @@
       "toLeft": "TO Left",
       "toRight": "TO Right",
       "confirmTimeout": "Confirm time-out",
-      "substitute": "Substitute"
+      "substitute": "Substitute",
+      "undo": "Undo"
     },
     "modals": {
       "confirmRallyStart": "Confirm Rally Start",
@@ -552,7 +556,12 @@
     "current": "Current",
     "exitFullscreen": "Exit Fullscreen",
     "fullscreen": "Fullscreen",
-    "exit": "Exit"
+    "exit": "Exit",
+    "scoresheet": "Scoresheet",
+    "preview": "Preview",
+    "print": "Print",
+    "savePdf": "Save PDF",
+    "allowPopups": "Please allow popups to view the scoresheet"
   },
   "home": {
     "title": "Openvolley eScoresheet",
