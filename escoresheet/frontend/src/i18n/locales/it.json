@@ -319,7 +319,9 @@
       "toRight": "TO Destra",
       "confirmTimeout": "Conferma timeout",
       "substitute": "Sostituisci",
-      "undo": "Annulla"
+      "undo": "Annulla",
+      "replay": "Ripeti scambio",
+      "decisionChange": "Cambio decisione"
     },
     "modals": {
       "confirmRallyStart": "Conferma inizio scambio",
@@ -924,6 +926,7 @@
     "loadingGames": "Caricamento partite...",
     "noAvailableGames": "Nessuna partita disponibile.",
     "testMode": "MODALITÀ TEST",
+    "refresh": "Aggiorna",
     "errors": {
       "enterPin": "Inserisci un codice PIN a 6 cifre",
       "invalidPin": "Codice PIN non valido. Verifica e riprova.",

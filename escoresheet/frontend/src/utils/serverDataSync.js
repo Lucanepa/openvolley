@@ -222,26 +222,80 @@ export async function getMatchData(matchId) {
       // Build events array with lineup info from live state
       let events = []
       if (liveState) {
-        // Convert A/B lineups to home/away
+        // Convert A/B lineups to home/away, including liberoSubstitution
         if (liveState.lineup_a) {
           events.push({
             type: 'lineup',
             setIndex: liveState.current_set || 1,
-            payload: { team: teamAIsHome ? 'home' : 'away', lineup: liveState.lineup_a }
+            payload: {
+              team: teamAIsHome ? 'home' : 'away',
+              lineup: liveState.lineup_a,
+              liberoSubstitution: liveState.libero_sub_a || null
+            }
           })
         }
         if (liveState.lineup_b) {
           events.push({
             type: 'lineup',
             setIndex: liveState.current_set || 1,
-            payload: { team: teamAIsHome ? 'away' : 'home', lineup: liveState.lineup_b }
+            payload: {
+              team: teamAIsHome ? 'away' : 'home',
+              lineup: liveState.lineup_b,
+              liberoSubstitution: liveState.libero_sub_b || null
+            }
           })
+        }
+
+        // Build sanction events from live state
+        if (liveState.sanctions_a) {
+          for (const sanction of liveState.sanctions_a) {
+            events.push({
+              type: 'sanction',
+              setIndex: liveState.current_set || 1,
+              payload: {
+                team: teamAIsHome ? 'home' : 'away',
+                playerNumber: sanction.player,
+                type: sanction.type
+              }
+            })
+          }
+        }
+        if (liveState.sanctions_b) {
+          for (const sanction of liveState.sanctions_b) {
+            events.push({
+              type: 'sanction',
+              setIndex: liveState.current_set || 1,
+              payload: {
+                team: teamAIsHome ? 'away' : 'home',
+                playerNumber: sanction.player,
+                type: sanction.type
+              }
+            })
+          }
         }
       }
 
-      // Build players from JSONB (home_players, away_players columns if they exist)
-      const homePlayers = match.home_players || []
-      const awayPlayers = match.away_players || []
+      // Build players from live state if available (has libero status), otherwise from JSONB
+      let homePlayers = []
+      let awayPlayers = []
+
+      if (liveState?.players_a || liveState?.players_b) {
+        // Use players from live state (includes libero status)
+        const playersAHome = teamAIsHome ? liveState.players_a : liveState.players_b
+        const playersBHome = teamAIsHome ? liveState.players_b : liveState.players_a
+        homePlayers = playersAHome || []
+        awayPlayers = playersBHome || []
+      } else {
+        // Fallback to JSONB columns
+        homePlayers = match.home_players || []
+        awayPlayers = match.away_players || []
+      }
+
+      // Add captain info from live state
+      const homeCaptain = teamAIsHome ? liveState?.captain_a : liveState?.captain_b
+      const awayCaptain = teamAIsHome ? liveState?.captain_b : liveState?.captain_a
+      const homeCourtCaptain = teamAIsHome ? liveState?.court_captain_a : liveState?.court_captain_b
+      const awayCourtCaptain = teamAIsHome ? liveState?.court_captain_b : liveState?.court_captain_a
 
       return {
         success: true,
@@ -259,6 +313,11 @@ export async function getMatchData(matchId) {
           awayName: awayTeam.name,
           homeColor: homeTeam.color,
           awayColor: awayTeam.color,
+          // Captain info from live state
+          homeCaptain: homeCaptain || null,
+          awayCaptain: awayCaptain || null,
+          homeCourtCaptain: homeCourtCaptain || null,
+          awayCourtCaptain: awayCourtCaptain || null,
           // Also ensure gameNumber is set
           gameNumber: match.game_n ? String(match.game_n) : null,
           gameN: match.game_n

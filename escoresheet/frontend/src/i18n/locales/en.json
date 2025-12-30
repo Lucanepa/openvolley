@@ -319,7 +319,9 @@
       "toRight": "TO Right",
       "confirmTimeout": "Confirm time-out",
       "substitute": "Substitute",
-      "undo": "Undo"
+      "undo": "Undo",
+      "replay": "Replay Rally",
+      "decisionChange": "Decision Change"
     },
     "modals": {
       "confirmRallyStart": "Confirm Rally Start",
@@ -933,6 +935,7 @@
     "loadingGames": "Loading games...",
     "noAvailableGames": "No available games.",
     "testMode": "TEST MODE",
+    "refresh": "Refresh",
     "errors": {
       "enterPin": "Please enter a 6-digit PIN code",
       "invalidPin": "Invalid PIN code. Please check and try again.",

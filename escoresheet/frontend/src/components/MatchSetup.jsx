@@ -1920,8 +1920,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       match_type_2: type2,
       match_type_3: type3,
       match_type_3_other: type3 === 'other' ? type3Other : null,
+      // Team names and colors for local access
+      homeName: home.trim(),
+      awayName: away.trim(),
       homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
       awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
+      homeColor: homeColor || '#ef4444',
+      awayColor: awayColor || '#3b82f6',
       game_n: gameN ? Number(gameN) : null,
       seed_key: seedKey, // Unique key for Supabase sync
       league,
@@ -1974,9 +1979,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           // Text columns for team names (used for listing matches)
           home_team_name: home.trim(),
           away_team_name: away.trim(),
+          // Text columns for short names and colors (for direct access)
+          home_short_name: homeShortName || generateShortName(home.trim()),
+          away_short_name: awayShortName || generateShortName(away.trim()),
           // JSONB columns for all team/player/official data
-          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
-          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
+          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor || '#ef4444' },
+          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor || '#3b82f6' },
           players_home: homeRoster.map(p => ({
             number: p.number,
             first_name: p.firstName,
