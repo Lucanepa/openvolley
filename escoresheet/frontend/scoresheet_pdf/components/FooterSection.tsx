@@ -24,7 +24,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                     <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
                         <span className="text-[12px] font-bold leading-none relative z-0">A</span>
                         {improperRequests.teamA && (
-                            <span className="absolute inset-0 flex items-center justify-center text-[20px] text-gray-200 leading-none z-10">X</span>
+                            <span className="absolute inset-0 flex items-center justify-center text-[20px] leading-none z-10">X</span>
                         )}
                     </div>
 
@@ -32,7 +32,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                     <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
                         <span className="text-[12px] font-bold leading-none relative z-0">B</span>
                         {improperRequests.teamB && (
-                            <span className="absolute inset-0 flex items-center justify-center text-[20px] text-gray-200 leading-none z-10">X</span>
+                            <span className="absolute inset-0 flex items-center justify-center text-[20px] leading-none z-10">X</span>
                         )}
                     </div>
                 </div>

@@ -55,14 +55,15 @@ function formatDateToISO(dateStr) {
 }
 
 // Helper to safely parse a date and extract components for input fields
+// Uses UTC methods to avoid timezone conversion - time is stored and displayed as-entered
 function safeParseScheduledAt(scheduledAt) {
   if (!scheduledAt) return { date: '', time: '' }
   try {
     const dateObj = new Date(scheduledAt)
     if (isNaN(dateObj.getTime())) return { date: '', time: '' }
     const date = dateObj.toISOString().split('T')[0]
-    const hours = String(dateObj.getHours()).padStart(2, '0')
-    const minutes = String(dateObj.getMinutes()).padStart(2, '0')
+    const hours = String(dateObj.getUTCHours()).padStart(2, '0')
+    const minutes = String(dateObj.getUTCMinutes()).padStart(2, '0')
     return { date, time: `${hours}:${minutes}` }
   } catch {
     return { date: '', time: '' }
@@ -1496,26 +1497,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
     // Validate format YYYY-MM-DD
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      setDateError('Invalid format')
+      setDateError(t('matchSetup.validation.invalidFormat'))
       return
     }
     const [year, month, day] = value.split('-').map(Number)
     if (year < 1900 || year > 2100) {
-      setDateError(`Invalid year: ${year}`)
+      setDateError(t('matchSetup.validation.invalidYear', { year }))
       return
     }
     if (month < 1 || month > 12) {
-      setDateError(`Invalid month: ${month}`)
+      setDateError(t('matchSetup.validation.invalidMonth', { month }))
       return
     }
     if (day < 1 || day > 31) {
-      setDateError(`Invalid day: ${day}`)
+      setDateError(t('matchSetup.validation.invalidDay', { day }))
       return
     }
     // Check if date is valid (e.g., Feb 30 is invalid)
     const dateObj = new Date(value)
     if (isNaN(dateObj.getTime()) || dateObj.getMonth() + 1 !== month) {
-      setDateError('Invalid date')
+      setDateError(t('matchSetup.validation.invalidDate'))
       return
     }
     setDateError('')
@@ -1530,16 +1531,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
     // Validate format HH:MM
     if (!/^\d{2}:\d{2}$/.test(value)) {
-      setTimeError('Invalid format')
+      setTimeError(t('matchSetup.validation.invalidFormat'))
       return
     }
     const [hours, minutes] = value.split(':').map(Number)
     if (hours < 0 || hours > 23) {
-      setTimeError(`Invalid hour: ${hours}`)
+      setTimeError(t('matchSetup.validation.invalidHour', { hour: hours }))
       return
     }
     if (minutes < 0 || minutes > 59) {
-      setTimeError(`Invalid minutes: ${minutes}`)
+      setTimeError(t('matchSetup.validation.invalidMinutes', { minutes }))
       return
     }
     setTimeError('')
@@ -1698,7 +1699,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
       setNoticeModal({
-        message: isCreating ? 'Match created! Syncing to database...' : 'Match info updated! Syncing to database...',
+        message: isCreating ? t('matchSetup.modals.matchCreatedSyncing') : t('matchSetup.modals.matchUpdatedSyncing'),
         type: 'success',
         syncing: true
       })
@@ -1719,13 +1720,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const job = await db.sync_queue.get(syncJobId)
             if (!job || job.status === 'sent') {
               clearInterval(interval)
-              setNoticeModal({ message: 'Match synced to database!', type: 'success' })
+              setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
             } else if (job.status === 'error') {
               clearInterval(interval)
-              setNoticeModal({ message: 'Match saved locally (sync failed - will retry)', type: 'error' })
+              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
             } else if (attempts >= maxAttempts) {
               clearInterval(interval)
-              setNoticeModal({ message: 'Match saved locally (sync pending)', type: 'success' })
+              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
             }
           } catch (err) {
             clearInterval(interval)
@@ -2130,7 +2131,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     if (!matchId) {
       console.error('[COIN TOSS] No match ID available')
-      setNoticeModal({ message: 'Error: No match ID found. Please try again.' })
+      setNoticeModal({ message: t('matchSetup.modals.errorNoMatchId') })
       return
     }
 
@@ -3675,16 +3676,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   setHomeRoster(updated)
                 }} 
               />
-              <input 
-                className="w-dob" 
-                placeholder="Date of birth (dd/mm/yyyy)" 
-                type="date" 
-                value={p.dob ? formatDateToISO(p.dob) : ''} 
+              <input
+                className="w-dob"
+                placeholder={t('matchSetup.dateOfBirthPlaceholder')}
+                type="date"
+                value={p.dob ? formatDateToISO(p.dob) : ''}
                 onChange={e => {
                   const updated = [...homeRoster]
                   updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
                   setHomeRoster(updated)
-                }} 
+                }}
               />
               <select
                 className="w-90"
@@ -4141,7 +4142,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* PDF Import Summary Modal - shown immediately after import */}
         {importSummaryModal && importSummaryModal.team === 'home' && (
           <Modal
-            title="Home Team Import Complete"
+            title={t('matchSetup.modals.homeTeamImportComplete')}
             open={true}
             onClose={() => setImportSummaryModal(null)}
             width={400}
@@ -4155,14 +4156,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 marginBottom: '16px'
               }}>
                 <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
-                  {importSummaryModal.players} Players
+                  {t('matchSetup.modals.playersCount', { count: importSummaryModal.players })}
                 </div>
                 <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                  Successfully imported
+                  {t('matchSetup.modals.successfullyImported')}
                 </div>
                 {importSummaryModal.benchOfficials > 0 && (
                   <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
-                    + {importSummaryModal.benchOfficials} bench official{importSummaryModal.benchOfficials > 1 ? 's' : ''}
+                    {importSummaryModal.benchOfficials > 1 ? t('matchSetup.modals.benchOfficialsCountPlural', { count: importSummaryModal.benchOfficials }) : t('matchSetup.modals.benchOfficialsCount', { count: importSummaryModal.benchOfficials })}
                   </div>
                 )}
               </div>
@@ -4174,19 +4175,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 marginBottom: '20px'
               }}>
                 <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
-                  Please review the imported data:
+                  {t('matchSetup.modals.reviewImportedData')}
                 </div>
                 <ul style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
-                  <li>Add any missing bench officials (Doctor, Physio, etc.)</li>
-                  <li>Verify dates of birth are correct</li>
-                  <li>Set captain and libero designations</li>
+                  <li>{t('matchSetup.modals.reviewAddBenchOfficials')}</li>
+                  <li>{t('matchSetup.modals.reviewVerifyDob')}</li>
+                  <li>{t('matchSetup.modals.reviewSetCaptainLibero')}</li>
                 </ul>
               </div>
               <button
                 onClick={() => setImportSummaryModal(null)}
                 style={{ width: '100%', padding: '12px', background: 'var(--accent)', border: 'none', borderRadius: '8px', color: '#000', fontWeight: 600, cursor: 'pointer' }}
               >
-                OK
+                {t('common.ok')}
               </button>
             </div>
           </Modal>
@@ -4194,7 +4195,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* Notice Modal - must be rendered in this view since early return prevents main render */}
         {noticeModal && (
           <Modal
-            title={noticeModal.syncing ? 'Syncing' : noticeModal.type === 'success' ? 'Success' : 'Notice'}
+            title={noticeModal.syncing ? t('matchSetup.modals.syncing') : noticeModal.type === 'success' ? t('matchSetup.modals.success') : t('matchSetup.modals.notice')}
             open={true}
             onClose={() => !noticeModal.syncing && setNoticeModal(null)}
             width={400}
@@ -4868,16 +4869,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   setAwayRoster(updated)
                 }} 
               />
-              <input 
-                className="w-dob" 
-                placeholder="Date of birth (dd/mm/yyyy)" 
-                type="date" 
-                value={p.dob ? formatDateToISO(p.dob) : ''} 
+              <input
+                className="w-dob"
+                placeholder={t('matchSetup.dateOfBirthPlaceholder')}
+                type="date"
+                value={p.dob ? formatDateToISO(p.dob) : ''}
                 onChange={e => {
                   const updated = [...awayRoster]
                   updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
                   setAwayRoster(updated)
-                }} 
+                }}
               />
               <select 
                 className="w-90" 
@@ -5334,7 +5335,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* PDF Import Summary Modal - shown immediately after import */}
         {importSummaryModal && importSummaryModal.team === 'away' && (
           <Modal
-            title="Away Team Import Complete"
+            title={t('matchSetup.modals.awayTeamImportComplete')}
             open={true}
             onClose={() => setImportSummaryModal(null)}
             width={400}
@@ -5348,14 +5349,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 marginBottom: '16px'
               }}>
                 <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
-                  {importSummaryModal.players} Players
+                  {t('matchSetup.modals.playersCount', { count: importSummaryModal.players })}
                 </div>
                 <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                  Successfully imported
+                  {t('matchSetup.modals.successfullyImported')}
                 </div>
                 {importSummaryModal.benchOfficials > 0 && (
                   <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
-                    + {importSummaryModal.benchOfficials} bench official{importSummaryModal.benchOfficials > 1 ? 's' : ''}
+                    {importSummaryModal.benchOfficials > 1 ? t('matchSetup.modals.benchOfficialsCountPlural', { count: importSummaryModal.benchOfficials }) : t('matchSetup.modals.benchOfficialsCount', { count: importSummaryModal.benchOfficials })}
                   </div>
                 )}
               </div>
@@ -5367,19 +5368,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 marginBottom: '20px'
               }}>
                 <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
-                  Please review the imported data:
+                  {t('matchSetup.modals.reviewImportedData')}
                 </div>
                 <ul style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
-                  <li>Add any missing bench officials (Doctor, Physio, etc.)</li>
-                  <li>Verify dates of birth are correct</li>
-                  <li>Set captain and libero designations</li>
+                  <li>{t('matchSetup.modals.reviewAddBenchOfficials')}</li>
+                  <li>{t('matchSetup.modals.reviewVerifyDob')}</li>
+                  <li>{t('matchSetup.modals.reviewSetCaptainLibero')}</li>
                 </ul>
               </div>
               <button
                 onClick={() => setImportSummaryModal(null)}
                 style={{ width: '100%', padding: '12px', background: 'var(--accent)', border: 'none', borderRadius: '8px', color: '#000', fontWeight: 600, cursor: 'pointer' }}
               >
-                OK
+                {t('common.ok')}
               </button>
             </div>
           </Modal>
@@ -5387,7 +5388,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* Notice Modal - must be rendered in this view since early return prevents main render */}
         {noticeModal && (
           <Modal
-            title={noticeModal.syncing ? 'Syncing' : noticeModal.type === 'success' ? 'Success' : 'Notice'}
+            title={noticeModal.syncing ? t('matchSetup.modals.syncing') : noticeModal.type === 'success' ? t('matchSetup.modals.success') : t('matchSetup.modals.notice')}
             open={true}
             onClose={() => !noticeModal.syncing && setNoticeModal(null)}
             width={400}
@@ -5728,10 +5729,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               const queued = await db.sync_queue.where('status').equals('queued').count()
               if (queued === 0) {
                 clearInterval(interval)
-                setNoticeModal({ message: 'Synced to database!', type: 'success' })
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
               } else if (attempts >= maxAttempts) {
                 clearInterval(interval)
-                setNoticeModal({ message: 'Saved locally (sync pending)', type: 'success' })
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
             } catch (err) {
               clearInterval(interval)
@@ -5789,10 +5790,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               const queued = await db.sync_queue.where('status').equals('queued').count()
               if (queued === 0) {
                 clearInterval(interval)
-                setNoticeModal({ message: 'Synced to database!', type: 'success' })
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
               } else if (attempts >= maxAttempts) {
                 clearInterval(interval)
-                setNoticeModal({ message: 'Saved locally (sync pending)', type: 'success' })
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
             } catch (err) {
               clearInterval(interval)
@@ -5850,10 +5851,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               const queued = await db.sync_queue.where('status').equals('queued').count()
               if (queued === 0) {
                 clearInterval(interval)
-                setNoticeModal({ message: 'Synced to database!', type: 'success' })
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
               } else if (attempts >= maxAttempts) {
                 clearInterval(interval)
-                setNoticeModal({ message: 'Saved locally (sync pending)', type: 'success' })
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
             } catch (err) {
               clearInterval(interval)
@@ -6389,10 +6390,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           onClick={() => setShowBothRosters(!showBothRosters)}
           disabled={!matchInfoConfirmed}
         >
-          {showBothRosters ? 'Hide' : 'Show'} Rosters
+          {showBothRosters ? t('scoreboard.hideRosters') : t('scoreboard.showRosters')}
         </button>
         {isMatchOngoing && onReturn ? (
-          <button onClick={onReturn}>Return to match</button>
+          <button onClick={onReturn}>{t('scoreboard.returnToMatch')}</button>
         ) : (
           <button onClick={async () => {
             // Check if match has no data (no sets, no signatures)
@@ -6913,7 +6914,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       {noticeModal && (
         <Modal
-          title={noticeModal.syncing ? 'Syncing' : noticeModal.type === 'success' ? 'Success' : 'Notice'}
+          title={noticeModal.syncing ? t('matchSetup.modals.syncing') : noticeModal.type === 'success' ? t('matchSetup.modals.success') : t('matchSetup.modals.notice')}
           open={true}
           onClose={() => !noticeModal.syncing && setNoticeModal(null)}
           width={400}
@@ -6958,7 +6959,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       {/* PDF Import Summary Modal */}
       {importSummaryModal && (
         <Modal
-          title={`${importSummaryModal.team === 'home' ? 'Home' : 'Away'} Team Import Complete`}
+          title={importSummaryModal.team === 'home' ? t('matchSetup.modals.homeTeamImportComplete') : t('matchSetup.modals.awayTeamImportComplete')}
           open={true}
           onClose={() => setImportSummaryModal(null)}
           width={400}
@@ -6973,14 +6974,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               marginBottom: '16px'
             }}>
               <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
-                {importSummaryModal.players} Players
+                {t('matchSetup.modals.playersCount', { count: importSummaryModal.players })}
               </div>
               <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                Successfully imported
+                {t('matchSetup.modals.successfullyImported')}
               </div>
               {importSummaryModal.benchOfficials > 0 && (
                 <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
-                  + {importSummaryModal.benchOfficials} bench official{importSummaryModal.benchOfficials > 1 ? 's' : ''}
+                  {importSummaryModal.benchOfficials > 1 ? t('matchSetup.modals.benchOfficialsCountPlural', { count: importSummaryModal.benchOfficials }) : t('matchSetup.modals.benchOfficialsCount', { count: importSummaryModal.benchOfficials })}
                 </div>
               )}
             </div>
@@ -6995,7 +6996,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 marginBottom: '16px'
               }}>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: '#ef4444', marginBottom: '8px' }}>
-                  {importSummaryModal.errors.length} Error{importSummaryModal.errors.length > 1 ? 's' : ''}
+                  {importSummaryModal.errors.length} {importSummaryModal.errors.length > 1 ? t('common.error') + 's' : t('common.error')}
                 </div>
                 {importSummaryModal.errors.map((err, i) => (
                   <div key={i} style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{err}</div>
@@ -7012,7 +7013,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               marginBottom: '20px'
             }}>
               <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
-                Please review the imported data:
+                {t('matchSetup.modals.reviewImportedData')}
               </div>
               <ul style={{
                 fontSize: '12px',
@@ -7021,9 +7022,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 paddingLeft: '20px',
                 lineHeight: '1.6'
               }}>
-                <li>Add any missing bench officials (Doctor, Physio, etc.)</li>
-                <li>Verify dates of birth are correct</li>
-                <li>Set captain and libero designations</li>
+                <li>{t('matchSetup.modals.reviewAddBenchOfficials')}</li>
+                <li>{t('matchSetup.modals.reviewVerifyDob')}</li>
+                <li>{t('matchSetup.modals.reviewSetCaptainLibero')}</li>
               </ul>
             </div>
 
@@ -7041,7 +7042,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 cursor: 'pointer'
               }}
             >
-              Got it
+              {t('common.ok')}
             </button>
           </div>
         </Modal>
@@ -7050,7 +7051,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       {/* Match Created Modal - shows Match ID and PIN for recovery */}
       {matchCreatedModal && (
         <Modal
-          title="Match Created"
+          title={t('matchSetup.modals.matchCreated')}
           open={true}
           onClose={() => {
             setMatchCreatedModal(null)
@@ -7069,7 +7070,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }}>
               <div style={{ marginBottom: '16px' }}>
                 <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
-                  Match ID
+                  {t('matchSetup.modals.matchId')}
                 </span>
                 <span style={{
                   fontSize: '28px',
@@ -7083,7 +7084,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
               <div>
                 <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
-                  Game PIN
+                  {t('matchSetup.gamePin')}
                 </span>
                 <span style={{
                   fontSize: '28px',
@@ -7102,7 +7103,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               marginBottom: '24px',
               lineHeight: 1.5
             }}>
-              Please save this information to recover the match if needed.
+              {t('matchSetup.modals.saveInfoToRecover')}
             </p>
             <button
               onClick={() => {
@@ -7120,7 +7121,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 cursor: 'pointer'
               }}
             >
-              Continue to Coin Toss
+              {t('matchSetup.modals.continueToCoinToss')}
             </button>
           </div>
         </Modal>
@@ -7129,7 +7130,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       {/* Edit PIN Modal */}
       {editPinModal && (
         <Modal
-          title={editPinType === 'referee' ? 'Edit Referee PIN' : editPinType === 'benchHome' ? 'Edit Home Bench PIN' : 'Edit Away Bench PIN'}
+          title={editPinType === 'referee' ? t('matchSetup.modals.editRefereePin') : editPinType === 'benchHome' ? t('matchSetup.modals.editHomeBenchPin') : t('matchSetup.modals.editAwayBenchPin')}
           open={true}
           onClose={() => {
             setEditPinModal(false)
@@ -7141,7 +7142,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div style={{ padding: '24px' }}>
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
-                Enter new 6-digit PIN:
+                {t('matchSetup.modals.enterNew6DigitPin')}
               </label>
               <input
                 type="text"

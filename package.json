@@ -1,5 +1,8 @@
 {
   "devDependencies": {
     "terser": "^5.44.1"
+  },
+  "dependencies": {
+    "animejs": "^4.2.2"
   }
 }

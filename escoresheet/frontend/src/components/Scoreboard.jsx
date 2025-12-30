@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import Modal from './Modal'
@@ -16,6 +17,7 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
+  const { t } = useTranslation()
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
@@ -233,6 +235,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
   const syncFunctionRef = useRef(null) // Store sync function for use in action handlers
   const noSleepVideoRef = useRef(null) // Video element for NoSleep fallback
+  const checkAndRequestCaptainOnCourtRef = useRef(null) // Store latest captain check function
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -2229,17 +2232,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
     // Check if manage captain on court is enabled
     if (!localManageCaptainOnCourt) return
-    
+
     const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
     const teamLineupState = getTeamLineupState(teamKey)
     const playersOnCourt = teamLineupState.playersOnCourt || []
-    
+
     // Find team captain
     const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
-    if (!teamCaptain) return
-    
-    // Check if captain is on court
-    const captainOnCourt = playersOnCourt.includes(Number(teamCaptain.number))
+    if (!teamCaptain || !teamCaptain.number) return
+
+    // Check if captain is on court (use string comparison to avoid type mismatch issues)
+    const captainNumberStr = String(teamCaptain.number)
+    const captainOnCourt = playersOnCourt.some(n => String(n) === captainNumberStr)
 
     // Get current captain on court from match
     const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
@@ -2249,22 +2253,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Team captain has precedence over everyone
     if (captainOnCourt) {
       // Set team captain as court captain (or clear if already set to them)
-      if (currentCourtCaptain !== teamCaptain.number) {
+      if (String(currentCourtCaptain) !== captainNumberStr) {
         await db.matches.update(matchId, { [captainOnCourtField]: teamCaptain.number })
       }
       return
     }
-    
+
     // Captain is not on court - check if we need to show modal
     // If there's already a court captain and they're still on court, no need to ask
     if (currentCourtCaptain) {
-      const courtCaptainOnCourt = playersOnCourt.includes(Number(currentCourtCaptain))
+      const courtCaptainStr = String(currentCourtCaptain)
+      const courtCaptainOnCourt = playersOnCourt.some(n => String(n) === courtCaptainStr)
       if (courtCaptainOnCourt) return // Court captain is still on court, no need to ask
     }
-    
+
     // Show modal to select new captain on court
+    console.log(`[CaptainOnCourt] Showing modal for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`)
     setCaptainOnCourtModal({ team: teamKey })
   }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState])
+
+  // Keep ref updated with latest function to avoid stale closures in setTimeout
+  useEffect(() => {
+    checkAndRequestCaptainOnCourtRef.current = checkAndRequestCaptainOnCourt
+  }, [checkAndRequestCaptainOnCourt])
 
   const buildOnCourt = useCallback((players, isLeft, teamKey) => {
     const { currentLineup, positionLiberoMap } = getTeamLineupState(teamKey)
@@ -3566,10 +3577,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 // Check if the libero leaving is the court captain
                 const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
                 const currentCourtCaptain = data?.match?.[captainOnCourtField]
-                if (currentCourtCaptain === liberoNumber) {
+                if (String(currentCourtCaptain) === String(liberoNumber)) {
                   setTimeout(() => {
-                    checkAndRequestCaptainOnCourt(teamKey)
-                  }, 100)
+                    checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+                  }, 300)
                 }
               } else {
                 // Fallback: if we can't find the original player, remove the libero anyway - they can't be in front row
@@ -3666,7 +3677,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               }))
 
               // Find which libero was last on court (default selection)
-              const defaultLiberoIndex = availableLiberos.findIndex(l => l.number === Number(liberoNumber) && l.type === liberoType)
+              const defaultLiberoIndex = availableLiberos.findIndex(l => String(l.number) === String(liberoNumber) && l.type === liberoType)
 
               // Ask if they want to put a libero back in at position I (if option enabled)
               if (liberoEntrySuggestion) {
@@ -3875,15 +3886,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     const { side, type } = sanctionConfirm
     const teamKey = mapSideToTeamKey(side)
-    const sideKey = side === 'left' ? 'Left' : 'Right'
-    
+    const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
+
     // Update match sanctions for improper request and delay warning
+    // Store by team key (Home/Away) so sanctions follow the team when sides switch
     if (type === 'improper_request' || type === 'delay_warning') {
       const currentSanctions = data.match.sanctions || {}
       await db.matches.update(matchId, {
         sanctions: {
           ...currentSanctions,
-          [`${type === 'improper_request' ? 'improperRequest' : 'delayWarning'}${sideKey}`]: true
+          [`${type === 'improper_request' ? 'improperRequest' : 'delayWarning'}${teamKeyCapitalized}`]: true
         }
       })
     }
@@ -4728,6 +4740,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         continue // Skip other sub-events
       }
 
+      // Skip coin_toss events - they cannot be undone (would break match flow)
+      if (event.type === 'coin_toss') {
+        console.log('[UNDO] Skipping coin_toss event - cannot be undone')
+        continue
+      }
+
       // This is a main event (integer sequence) - it's undoable
       console.log('[UNDO] Selected main event:', event.seq, event.type)
       lastUndoableEvent = event
@@ -4807,6 +4825,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         if (parentPoint) return true
         continue
       }
+
+      // Skip coin_toss events - they cannot be undone
+      if (event.type === 'coin_toss') continue
 
       // Main events (integer sequence) are undoable
       return true
@@ -5418,16 +5439,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (lastEvent.type === 'sanction' && lastEvent.payload?.team && lastEvent.payload?.type) {
       const teamKey = lastEvent.payload.team
       const sanctionType = lastEvent.payload.type
-      const side = (teamKey === 'home' && leftIsHome) || (teamKey === 'away' && !leftIsHome) ? 'left' : 'right'
-      const sideKey = side === 'left' ? 'Left' : 'Right'
-      
+      const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
+
       // Clear the sanction flag for improper_request and delay_warning
+      // Use team key (Home/Away) to match how sanctions are stored
       if (sanctionType === 'improper_request' || sanctionType === 'delay_warning') {
         const currentSanctions = data.match?.sanctions || {}
         const updatedSanctions = { ...currentSanctions }
-        const flagKey = `${sanctionType === 'improper_request' ? 'improperRequest' : 'delayWarning'}${sideKey}`
+        const flagKey = `${sanctionType === 'improper_request' ? 'improperRequest' : 'delayWarning'}${teamKeyCapitalized}`
         delete updatedSanctions[flagKey]
-        
+
         await db.matches.update(matchId, {
           sanctions: updatedSanctions
         })
@@ -6798,7 +6819,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Find libero type
       const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-      const liberoPlayer = teamPlayers?.find(p => p.number === benchPlayerNumber)
+      const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(benchPlayerNumber))
       const liberoType = liberoPlayer?.libero || 'libero1'
 
       setLiberoConfirm({
@@ -7452,22 +7473,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Check if captain is on court after substitution
     // Check if the player leaving is the captain or court captain
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
     const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
     const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
-    
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+
     if (isLeavingCaptain || isLeavingCourtCaptain) {
       setTimeout(() => {
-        checkAndRequestCaptainOnCourt(team)
-      }, 100)
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300)
     }
-    
+
     // Check if this is an injury substitution for a libero - if so, log libero_unable and check for re-designation
     if (isInjury && playerOut) {
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const outPlayer = teamPlayers?.find(p => p.number === playerOut)
+      const outPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
       if (outPlayer && outPlayer.libero) {
         // Log libero_unable event with reason='injury'
         await logEvent('libero_unable', {
@@ -7812,7 +7833,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Check if this is a libero on court - if so, handle specially
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const player = teamPlayers?.find(p => p.number === playerNumber)
+      const player = teamPlayers?.find(p => String(p.number) === String(playerNumber))
       const isLiberoOnCourt = player && player.libero
 
       if (isLiberoOnCourt) {
@@ -7881,11 +7902,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setSanctionConfirmModal(null)
 
       // Check if the player being expelled/disqualified is the captain or court captain
-      const sanctionedPlayer = teamPlayers?.find(p => p.number === playerNumber)
+      const sanctionedPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
       const isSanctionedCaptain = sanctionedPlayer && (sanctionedPlayer.isCaptain || sanctionedPlayer.captain)
       const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
       const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isSanctionedCourtCaptain = currentCourtCaptain === playerNumber
+      const isSanctionedCourtCaptain = String(currentCourtCaptain) === String(playerNumber)
 
       // First, check if a legal substitution is possible (not exceptional)
       const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
@@ -7942,8 +7963,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Check if captain is on court after substitution (if substitution happened) or forfait
       if (isSanctionedCaptain || isSanctionedCourtCaptain) {
         setTimeout(() => {
-          checkAndRequestCaptainOnCourt(team)
-        }, 100)
+          checkAndRequestCaptainOnCourtRef.current?.(team)
+        }, 300)
       }
     } else if (sanctionType === 'expulsion' || sanctionType === 'disqualification') {
       // Expulsion/disqualification for bench players or officials - just log the sanction
@@ -7961,7 +7982,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Check if this is a libero - if so, log libero_unable and check for re-designation
       if (type === 'libero' && playerNumber) {
         const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-        const liberoPlayer = teamPlayers?.find(p => p.number === playerNumber)
+        const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
         if (liberoPlayer && liberoPlayer.libero) {
           // Log libero_unable event with reason based on sanction type
           await logEvent('libero_unable', {
@@ -8021,7 +8042,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         setSanctionConfirmModal(null)
       }
     }
-  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, handleForfait, checkAndRequestCaptainOnCourt])
+  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, handleForfait])
 
   // Execute libero substitution directly (no confirmation modal needed)
   const showLiberoConfirm = useCallback(async (liberoType) => {
@@ -8115,21 +8136,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
 
     // Check if captain is on court after libero entry
-    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
     const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
     const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
 
     if (isLeavingCaptain || isLeavingCourtCaptain) {
       setTimeout(() => {
-        checkAndRequestCaptainOnCourt(team)
-      }, 100)
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300)
     }
 
     setLiberoDropdown(null)
     setSubstitutionDropdown(null)
-  }, [liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable, checkAndRequestCaptainOnCourt])
+  }, [liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Handle libero in player selection - directly execute substitution
   const handleLiberoInPlayerSelect = useCallback(async (position, playerNumber) => {
@@ -8215,20 +8236,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     })
 
     // Check if captain is on court after libero entry
-    const leavingPlayer = teamPlayers?.find(p => p.number === playerNumber)
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
     const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
     const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    const isLeavingCourtCaptain = currentCourtCaptain === playerNumber
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerNumber)
 
     if (isLeavingCaptain || isLeavingCourtCaptain) {
       setTimeout(() => {
-        checkAndRequestCaptainOnCourt(team)
-      }, 100)
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300)
     }
 
     setLiberoInDropdown(null)
-  }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable, checkAndRequestCaptainOnCourt])
+  }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Confirm libero entry
   const confirmLibero = useCallback(async () => {
@@ -8337,16 +8358,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Check if captain is on court after libero entry
     // The playerOut is leaving, check if they're captain
     // Reuse teamPlayers variable already declared above
-    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
     const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
     const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
-    
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+
     if (isLeavingCaptain || isLeavingCourtCaptain) {
       setTimeout(() => {
-        checkAndRequestCaptainOnCourt(team)
-      }, 100)
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300)
     }
     setSubstitutionDropdown(null) // Close substitution dropdown if open
     setLiberoDropdown(null) // Close libero dropdown if open
@@ -8457,18 +8478,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Check if captain is on court after libero reentry (playerOut is leaving)
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-    const leavingPlayer = teamPlayers?.find(p => p.number === playerOut)
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
     const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
     const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    const isLeavingCourtCaptain = currentCourtCaptain === playerOut
-    
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+
     if (isLeavingCaptain || isLeavingCourtCaptain) {
       setTimeout(() => {
-        checkAndRequestCaptainOnCourt(team)
-      }, 100)
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300)
     }
-  }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable, checkAndRequestCaptainOnCourt])
+  }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   const cancelLiberoReentry = useCallback(() => {
     setLiberoReentryModal(null)
@@ -8594,12 +8615,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Check if the libero leaving is the court captain
     const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    if (currentCourtCaptain === liberoOnCourt.liberoNumber) {
+    if (String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)) {
       setTimeout(() => {
-        checkAndRequestCaptainOnCourt(teamKey)
-      }, 100)
+        checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+      }, 300)
     }
-  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers, checkAndRequestCaptainOnCourt])
+  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
   // Handle libero re-designation
   const confirmLiberoRedesignation = useCallback(async (newLiberoNumber) => {
@@ -9955,7 +9976,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  <span style={{ opacity: 0.7 }}>Last: </span>
+                  <span style={{ opacity: 0.7 }}>{t('scoreboard.labels.last')}: </span>
                   <span>{simpleAction}</span>
                 </div>
                 {rallyStatusExpanded && (
@@ -10302,7 +10323,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Scoresheet Error Modal */}
       {scoresheetErrorModal && (
         <Modal
-          title="Scoresheet Error"
+          title={t('scoreboard.modals.scoresheetError')}
           open={!!scoresheetErrorModal}
           onClose={() => setScoresheetErrorModal(null)}
         >
@@ -10355,7 +10376,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Rosters Modal */}
       {showRosters && (
         <Modal
-          title="Rosters"
+          title={t('scoreboard.rosters')}
           open={showRosters}
           onClose={() => setShowRosters(false)}
           width={1200}
@@ -10405,13 +10426,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {/* Players Section */}
             <div className="roster-tables">
               <div className="roster-table-wrapper">
-                <h3>{data.homeTeam?.name || 'Home'} Players</h3>
+                <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.players')}</h3>
                 <table className="roster-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Name</th>
-                      <th>DOB</th>
+                      <th>{t('roster.number')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th>{t('roster.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -10439,13 +10460,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </table>
               </div>
               <div className="roster-table-wrapper">
-                <h3>{data.awayTeam?.name || 'Away'} Players</h3>
+                <h3>{data.awayTeam?.name || t('common.away')} {t('scoreboard.players')}</h3>
                 <table className="roster-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Name</th>
-                      <th>DOB</th>
+                      <th>{t('roster.number')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th>{t('roster.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -10478,13 +10499,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             {(maxLiberos > 0) && (
               <div className="roster-tables" style={{ marginTop: '24px' }}>
                 <div className="roster-table-wrapper">
-                  <h3>{data.homeTeam?.name || 'Home'} Liberos</h3>
+                  <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.liberos')}</h3>
                   <table className="roster-table">
                     <thead>
                       <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th>DOB</th>
+                        <th>{t('roster.number')}</th>
+                        <th>{t('roster.name')}</th>
+                        <th>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -10514,13 +10535,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   </table>
                 </div>
                 <div className="roster-table-wrapper">
-                  <h3>{data.awayTeam?.name || 'Away'} Liberos</h3>
+                  <h3>{data.awayTeam?.name || t('common.away')} {t('scoreboard.liberos')}</h3>
                   <table className="roster-table">
                     <thead>
                       <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th>DOB</th>
+                        <th>{t('roster.number')}</th>
+                        <th>{t('roster.name')}</th>
+                        <th>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -10555,13 +10576,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <div className="bench-officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
               <div className="roster-tables">
                 <div className="roster-table-wrapper">
-                  <h3>{data.homeTeam?.name || 'Home'} Bench Officials</h3>
+                  <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.benchOfficials')}</h3>
                   <table className="roster-table">
                     <thead>
                       <tr>
-                        <th>Role</th>
-                        <th>Name</th>
-                        <th>DOB</th>
+                        <th>{t('roster.role')}</th>
+                        <th>{t('roster.name')}</th>
+                        <th>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -10580,20 +10601,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       ))}
                       {maxBench === 0 && (
                         <tr>
-                          <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No bench officials</td>
+                          <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
                 <div className="roster-table-wrapper">
-                  <h3>{data.awayTeam?.name || 'Away'} Bench Officials</h3>
+                  <h3>{data.awayTeam?.name || t('common.away')} {t('scoreboard.benchOfficials')}</h3>
                   <table className="roster-table">
                     <thead>
                       <tr>
-                        <th>Role</th>
-                        <th>Name</th>
-                        <th>DOB</th>
+                        <th>{t('roster.role')}</th>
+                        <th>{t('roster.name')}</th>
+                        <th>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -10612,7 +10633,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       ))}
                       {maxBench === 0 && (
                         <tr>
-                          <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No bench officials</td>
+                          <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
                         </tr>
                       )}
                     </tbody>
@@ -10803,7 +10824,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               <span style={{ color: leftTeam?.color || '#ef4444' }}>
                 {setScore.left}
               </span>
-              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>SETS</span>
+              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t('scoreboard.labels.sets')}</span>
               <span style={{ color: rightTeam?.color || '#3b82f6' }}>
                 {setScore.right}
               </span>
@@ -10882,7 +10903,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   textAlign: 'center',
                   fontSize: '12px'
                 }}>
-                  <div style={{ fontWeight: 600 }}>TO</div>
+                  <div style={{ fontWeight: 600 }}>{t('scoreboard.labels.to')}</div>
                   <div style={{ fontSize: '17px', fontWeight: 700 }}>{leftTimeouts}</div>
                 </div>
                 <div style={{
@@ -10893,7 +10914,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   textAlign: 'center',
                   fontSize: '12px'
                 }}>
-                  <div style={{ fontWeight: 600 }}>SUB</div>
+                  <div style={{ fontWeight: 600 }}>{t('scoreboard.labels.sub')}</div>
                   <div style={{ fontSize: '17px', fontWeight: 700 }}>{leftSubstitutions}</div>
                 </div>
               </div>
@@ -10914,7 +10935,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   marginBottom: '4px'
                 }}
               >
-                Team Sanctions {leftTeamSanctionsExpanded ? '▲' : '▼'}
+                {t('scoreboard.sanctions.teamSanctions')} {leftTeamSanctionsExpanded ? '▲' : '▼'}
               </button>
 
               {leftTeamSanctionsExpanded && (
@@ -10939,7 +10960,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Improper Request
+                    {t('scoreboard.sanctions.improperRequest')}
                   </button>
                   <button
                     className="sanction-team-btn"
@@ -10955,7 +10976,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Delay Warning
+                    {t('scoreboard.sanctions.delayWarning')}
                   </button>
                   <button
                     className="sanction-team-btn"
@@ -10970,7 +10991,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Delay Penalty
+                    {t('scoreboard.sanctions.delayPenalty')}
                   </button>
                 </div>
               )}
@@ -10990,7 +11011,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Show Bench {leftTeamBenchExpanded ? '▲' : '▼'}
+                {t('scoreboard.roster.showBench')} {leftTeamBenchExpanded ? '▲' : '▼'}
               </button>
 
               {leftTeamBenchExpanded && (
@@ -11001,7 +11022,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   marginTop: '4px',
                   fontSize: '11px'
                 }}>
-                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>Bench Players:</div>
+                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>{t('scoreboard.roster.benchPlayers')}:</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {leftBenchPlayers.filter(p => p.role !== 'libero').map(p => (
                       <span
@@ -11029,7 +11050,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   </div>
                   {leftBenchPlayers.filter(p => p.role === 'libero').length > 0 && (
                     <>
-                      <div style={{ fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: '#22c55e' }}>Libero:</div>
+                      <div style={{ fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: '#22c55e' }}>{t('scoreboard.roster.liberoLabel')}:</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                         {leftBenchPlayers.filter(p => p.role === 'libero').map(p => (
                           <span
@@ -11471,7 +11492,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   textAlign: 'center',
                   fontSize: '12px'
                 }}>
-                  <div style={{ fontWeight: 600 }}>TO</div>
+                  <div style={{ fontWeight: 600 }}>{t('scoreboard.labels.to')}</div>
                   <div style={{ fontSize: '17px', fontWeight: 700 }}>{rightTimeouts}</div>
                 </div>
                 <div style={{
@@ -11482,7 +11503,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   textAlign: 'center',
                   fontSize: '12px'
                 }}>
-                  <div style={{ fontWeight: 600 }}>SUB</div>
+                  <div style={{ fontWeight: 600 }}>{t('scoreboard.labels.sub')}</div>
                   <div style={{ fontSize: '17px', fontWeight: 700 }}>{rightSubstitutions}</div>
                 </div>
               </div>
@@ -11503,7 +11524,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   marginBottom: '4px'
                 }}
               >
-                Team Sanctions {rightTeamSanctionsExpanded ? '▲' : '▼'}
+                {t('scoreboard.sanctions.teamSanctions')} {rightTeamSanctionsExpanded ? '▲' : '▼'}
               </button>
 
               {rightTeamSanctionsExpanded && (
@@ -11528,7 +11549,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Improper Request
+                    {t('scoreboard.sanctions.improperRequest')}
                   </button>
                   <button
                     className="sanction-team-btn"
@@ -11544,7 +11565,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Delay Warning
+                    {t('scoreboard.sanctions.delayWarning')}
                   </button>
                   <button
                     className="sanction-team-btn"
@@ -11559,7 +11580,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       cursor: 'pointer'
                     }}
                   >
-                    Delay Penalty
+                    {t('scoreboard.sanctions.delayPenalty')}
                   </button>
                 </div>
               )}
@@ -11579,7 +11600,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Show Bench {rightTeamBenchExpanded ? '▲' : '▼'}
+                {t('scoreboard.roster.showBench')} {rightTeamBenchExpanded ? '▲' : '▼'}
               </button>
 
               {rightTeamBenchExpanded && (
@@ -11590,7 +11611,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   marginTop: '4px',
                   fontSize: '11px'
                 }}>
-                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>Bench Players:</div>
+                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>{t('scoreboard.roster.benchPlayers')}:</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {rightBenchPlayers.filter(p => p.role !== 'libero').map(p => (
                       <span
@@ -11617,7 +11638,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   </div>
                   {rightBenchPlayers.filter(p => p.role === 'libero').length > 0 && (
                     <>
-                      <div style={{ fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: '#22c55e' }}>Libero:</div>
+                      <div style={{ fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: '#22c55e' }}>{t('scoreboard.roster.liberoLabel')}:</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                         {rightBenchPlayers.filter(p => p.role === 'libero').map(p => (
                           <span
@@ -11696,7 +11717,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>TO</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.to')}</div>
               <div className="to-sub-value" style={{
                 fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
@@ -11729,7 +11750,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>SUB</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.sub')}</div>
               <div className="to-sub-value" style={{
                 fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
@@ -11795,26 +11816,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 onClick={() => setLeftDelaysDropdownOpen(!leftDelaysDropdownOpen)}
                 style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                IR & Delays {leftDelaysDropdownOpen ? '▲' : '▼'}
+                {t('scoreboard.sanctions.irAndDelays')} {leftDelaysDropdownOpen ? '▲' : '▼'}
               </button>
               {leftDelaysDropdownOpen && (
                 <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {!data?.match?.sanctions?.improperRequestLeft && (
+                  {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
                     <button
                       onClick={() => { handleImproperRequest('left'); setLeftDelaysDropdownOpen(false) }}
                       disabled={rallyStatus === 'in_play'}
                       style={sanctionButtonStyles.improper}
                     >
-                      Improper Request
+                      {t('scoreboard.sanctions.improperRequest')}
                     </button>
                   )}
-                  {!data?.match?.sanctions?.delayWarningLeft ? (
+                  {!data?.match?.sanctions?.[leftIsHome ? 'delayWarningHome' : 'delayWarningAway'] ? (
                     <button
                       onClick={() => { handleDelayWarning('left'); setLeftDelaysDropdownOpen(false) }}
                       disabled={rallyStatus === 'in_play'}
                       style={sanctionButtonStyles.delayWarning}
                     >
-                      Delay Warning
+                      {t('scoreboard.sanctions.delayWarning')}
                     </button>
                   ) : (
                     <button
@@ -11822,7 +11843,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       disabled={rallyStatus === 'in_play'}
                       style={sanctionButtonStyles.delayPenalty}
                     >
-                      Delay Penalty
+                      {t('scoreboard.sanctions.delayPenalty')}
                     </button>
                   )}
                 </div>
@@ -11830,22 +11851,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           ) : (
             <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-              {!data?.match?.sanctions?.improperRequestLeft && (
+              {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
                 <button
                   onClick={() => handleImproperRequest('left')}
                   disabled={rallyStatus === 'in_play'}
                   style={sanctionButtonStyles.improper}
                 >
-                  Improper Request
+                  {t('scoreboard.sanctions.improperRequest')}
                 </button>
               )}
-              {!data?.match?.sanctions?.delayWarningLeft ? (
+              {!data?.match?.sanctions?.[leftIsHome ? 'delayWarningHome' : 'delayWarningAway'] ? (
                 <button
                   onClick={() => handleDelayWarning('left')}
                   disabled={rallyStatus === 'in_play'}
                   style={sanctionButtonStyles.delayWarning}
                 >
-                  Delay Warning
+                  {t('scoreboard.sanctions.delayWarning')}
                 </button>
               ) : (
                 <button
@@ -11853,36 +11874,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   disabled={rallyStatus === 'in_play'}
                   style={sanctionButtonStyles.delayPenalty}
                 >
-                  Delay Penalty
+                  {t('scoreboard.sanctions.delayPenalty')}
                 </button>
               )}
             </div>
           )}
-          
+
           {/* Status boxes for team sanctions */}
           <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {data?.match?.sanctions?.improperRequestLeft && (
-              <div style={{ 
-                padding: '4px 8px', 
-                fontSize: '12px', 
-                background: 'rgba(156, 163, 175, 0.15)', 
+            {data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
+              <div style={{
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'rgba(156, 163, 175, 0.15)',
                 border: '1px solid rgba(156, 163, 175, 0.3)',
                 borderRadius: '4px',
                 color: '#d1d5db'
               }}>
-                Sanctioned with an improper request
+                {t('scoreboard.sanctions.sanctionedImproperRequest')}
               </div>
             )}
-            {data?.match?.sanctions?.delayWarningLeft && (
-              <div style={{ 
-                padding: '4px 8px', 
-                fontSize: '12px', 
-                background: 'rgba(234, 179, 8, 0.15)', 
+            {data?.match?.sanctions?.[leftIsHome ? 'delayWarningHome' : 'delayWarningAway'] && (
+              <div style={{
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'rgba(234, 179, 8, 0.15)',
                 border: '1px solid rgba(234, 179, 8, 0.3)',
                 borderRadius: '4px',
                 color: '#facc15'
               }}>
-                Sanctioned with a delay warning ⏰
+                {t('scoreboard.sanctions.sanctionedDelayWarning')}
               </div>
             )}
             {teamHasFormalWarning(leftIsHome ? 'home' : 'away') && (
@@ -11894,12 +11915,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 borderRadius: '4px',
                 color: '#fde047'
               }}>
-                Sanctioned with a formal warning 🟨
+                {t('scoreboard.sanctions.sanctionedFormalWarning')} 🟨
               </div>
             )}
           </div>
-          
-          
+
+
           {/* Bench Players, Liberos, and Bench Officials */}
           <div style={{ marginTop: isCompactMode ? '12px' : '24px', paddingTop: isCompactMode ? '12px' : '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
             {/* Bench Players */}
@@ -11918,7 +11939,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     justifyContent: 'space-between'
                   }}
                 >
-                  <span>Bench</span>
+                  <span>{t('scoreboard.roster.bench')}</span>
                   {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainBenchExpanded ? '▲' : '▼'}</span>}
                 </h4>
                 {(!isCompactMode || leftMainBenchExpanded) && (
@@ -12216,7 +12237,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     justifyContent: 'space-between'
                   }}
                 >
-                  <span>Liberos</span>
+                  <span>{t('scoreboard.roster.liberos')}</span>
                   {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainLiberosExpanded ? '▲' : '▼'}</span>}
                 </h4>
                 {(!isCompactMode || leftMainLiberosExpanded) && (
@@ -12419,7 +12440,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     justifyContent: 'space-between'
                   }}
                 >
-                  <span>Bench Officials</span>
+                  <span>{t('scoreboard.roster.benchOfficials')}</span>
                   {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainOfficialsExpanded ? '▲' : '▼'}</span>}
                 </h4>
                 {(!isCompactMode || leftMainOfficialsExpanded) && (
@@ -14104,7 +14125,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     onClick={stopTimeout}
                     style={{ width: 'auto' }}
                   >
-                    Stop timeout
+                    {t('scoreboard.buttons.stopTimeout')}
                   </button>
                 </>
               ) : betweenSetsCountdown ? (
@@ -14221,7 +14242,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }}
                         >
                           <span style={{ fontSize: '22px' }}>🔄</span>
-                          Switch Sides
+                          {t('scoreboard.buttons.switchSides')}
                         </button>
                         <button
                           onClick={async () => {
@@ -14245,7 +14266,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           }}
                         >
                           <img src={mikasaVolleyball} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-                          Switch Serve
+                          {t('scoreboard.buttons.switchServe')}
                         </button>
                         <button
                           onClick={() => {
@@ -14264,7 +14285,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             marginTop: '8px'
                           }}
                         >
-                          Confirm Set 5 Setup
+                          {t('scoreboard.buttons.confirmSet5Setup')}
                         </button>
                       </div>
                     </>
@@ -14285,7 +14306,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         onClick={endSetInterval}
                         style={{ width: 'auto' }}
                       >
-                        End set interval
+                        {t('scoreboard.buttons.endSetInterval')}
                       </button>
                     </>
                   )}
@@ -14298,16 +14319,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       onClick={handleStartRally}
                       disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
                     >
-                      {isFirstRally ? 'Start set' : 'Start rally'}
+                      {isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
                     </button>
                   ) : (
                     <>
                       <div className="rally-controls-row" style={{ gap: '5px' }}>
                         <button className="rally-point-button" onClick={() => handlePoint('left')}>
-                          Point {teamALabel}
+                          {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                         </button>
                         <button className="rally-point-button" onClick={() => handlePoint('right')}>
-                          Point {teamBLabel}
+                          {t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
                         </button>
                       </div>
                     </>
@@ -14319,7 +14340,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         onClick={handleReplay}
                         style={{ flex: 1 }}
                       >
-                        Replay
+                        {t('scoreboard.buttons.replay')}
                       </button>
                     )}
                     {rallyStatus === 'idle' && canReplayRally && (
@@ -14337,7 +14358,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           cursor: 'pointer'
                         }}
                       >
-                        Decision change
+                        {t('scoreboard.buttons.decisionChange')}
                       </button>
                     )}
                     <button
@@ -14350,7 +14371,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         fontSize: '13px'
                       }}
                     >
-                      Undo
+                      {t('scoreboard.buttons.undo')}
                     </button>
                   </div>
                   {/* Rally status and last action - only show beneath rally controls in full desktop mode (compact and laptop show in header) */}
@@ -14362,9 +14383,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     }}
                   >
                     <div style={{ fontSize: '12px' }}>
-                      <span className="summary-label">Rally status: </span>
+                      <span className="summary-label">{t('scoreboard.labels.rallyStatus')}: </span>
                       <span className="summary-value" style={{ color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c' }}>
-                        {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
+                        {rallyStatus === 'in_play' ? t('scoreboard.labels.inPlay') : t('scoreboard.labels.notInPlay')}
                       </span>
                     </div>
                     {/* Last action - filtered to current set */}
@@ -14587,7 +14608,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>TO</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.to')}</div>
               <div className="to-sub-value" style={{
                 fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
@@ -14620,7 +14641,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
               }}
             >
-              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>SUB</div>
+              <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.sub')}</div>
               <div className="to-sub-value" style={{
                 fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
                 fontWeight: 700,
@@ -14686,26 +14707,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 onClick={() => setRightDelaysDropdownOpen(!rightDelaysDropdownOpen)}
                 style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                IR & Delays {rightDelaysDropdownOpen ? '▲' : '▼'}
+                {t('scoreboard.sanctions.irAndDelays')} {rightDelaysDropdownOpen ? '▲' : '▼'}
               </button>
               {rightDelaysDropdownOpen && (
                 <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {!data?.match?.sanctions?.improperRequestRight && (
+                  {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
                     <button
                       onClick={() => { handleImproperRequest('right'); setRightDelaysDropdownOpen(false) }}
                       disabled={rallyStatus === 'in_play'}
                       style={sanctionButtonStyles.improper}
                     >
-                      Improper Request
+                      {t('scoreboard.sanctions.improperRequest')}
                     </button>
                   )}
-                  {!data?.match?.sanctions?.delayWarningRight ? (
+                  {!data?.match?.sanctions?.[leftIsHome ? 'delayWarningAway' : 'delayWarningHome'] ? (
                     <button
                       onClick={() => { handleDelayWarning('right'); setRightDelaysDropdownOpen(false) }}
                       disabled={rallyStatus === 'in_play'}
                       style={sanctionButtonStyles.delayWarning}
                     >
-                      Delay Warning
+                      {t('scoreboard.sanctions.delayWarning')}
                     </button>
                   ) : (
                     <button
@@ -14713,7 +14734,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       disabled={rallyStatus === 'in_play'}
                       style={sanctionButtonStyles.delayPenalty}
                     >
-                      Delay Penalty
+                      {t('scoreboard.sanctions.delayPenalty')}
                     </button>
                   )}
                 </div>
@@ -14721,22 +14742,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             </div>
           ) : (
             <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-              {!data?.match?.sanctions?.improperRequestRight && (
+              {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
                 <button
                   onClick={() => handleImproperRequest('right')}
                   disabled={rallyStatus === 'in_play'}
                   style={sanctionButtonStyles.improper}
                 >
-                  Improper Request
+                  {t('scoreboard.sanctions.improperRequest')}
                 </button>
               )}
-              {!data?.match?.sanctions?.delayWarningRight ? (
+              {!data?.match?.sanctions?.[leftIsHome ? 'delayWarningAway' : 'delayWarningHome'] ? (
                 <button
                   onClick={() => handleDelayWarning('right')}
                   disabled={rallyStatus === 'in_play'}
                   style={sanctionButtonStyles.delayWarning}
                 >
-                  Delay Warning
+                  {t('scoreboard.sanctions.delayWarning')}
                 </button>
               ) : (
                 <button
@@ -14744,7 +14765,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   disabled={rallyStatus === 'in_play'}
                   style={sanctionButtonStyles.delayPenalty}
                 >
-                  Delay Penalty
+                  {t('scoreboard.sanctions.delayPenalty')}
                 </button>
               )}
             </div>
@@ -14752,40 +14773,40 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
           {/* Status boxes for team sanctions */}
           <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {data?.match?.sanctions?.improperRequestRight && (
-              <div style={{ 
-                padding: '4px 8px', 
-                fontSize: '12px', 
-                background: 'rgba(156, 163, 175, 0.15)', 
+            {data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
+              <div style={{
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'rgba(156, 163, 175, 0.15)',
                 border: '1px solid rgba(156, 163, 175, 0.3)',
                 borderRadius: '4px',
                 color: '#d1d5db'
               }}>
-                Sanctioned with an improper request
+                {t('scoreboard.sanctions.sanctionedImproperRequest')}
               </div>
             )}
-            {data?.match?.sanctions?.delayWarningRight && (
-              <div style={{ 
-                padding: '4px 8px', 
-                fontSize: '12px', 
-                background: 'rgba(234, 179, 8, 0.15)', 
+            {data?.match?.sanctions?.[leftIsHome ? 'delayWarningAway' : 'delayWarningHome'] && (
+              <div style={{
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'rgba(234, 179, 8, 0.15)',
                 border: '1px solid rgba(234, 179, 8, 0.3)',
                 borderRadius: '4px',
                 color: '#facc15'
               }}>
-                Sanctioned with a delay warning ⏰
+                {t('scoreboard.sanctions.sanctionedDelayWarning')}
               </div>
             )}
             {teamHasFormalWarning(leftIsHome ? 'away' : 'home') && (
-              <div style={{ 
-                padding: '4px 8px', 
-                fontSize: '12px', 
-                background: 'rgba(250, 204, 21, 0.15)', 
+              <div style={{
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'rgba(250, 204, 21, 0.15)',
                 border: '1px solid rgba(250, 204, 21, 0.3)',
                 borderRadius: '4px',
                 color: '#fde047'
               }}>
-                Sanctioned with a formal warning 🟨
+                {t('scoreboard.sanctions.sanctionedFormalWarning')} 🟨
               </div>
             )}
           </div>
@@ -14809,7 +14830,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     justifyContent: 'space-between'
                   }}
                 >
-                  <span>Bench</span>
+                  <span>{t('scoreboard.roster.bench')}</span>
                   {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainBenchExpanded ? '▲' : '▼'}</span>}
                 </h4>
                 {(!isCompactMode || rightMainBenchExpanded) && (
@@ -15107,7 +15128,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     justifyContent: 'space-between'
                   }}
                 >
-                  <span>Liberos</span>
+                  <span>{t('scoreboard.roster.liberos')}</span>
                   {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainLiberosExpanded ? '▲' : '▼'}</span>}
                 </h4>
                 {(!isCompactMode || rightMainLiberosExpanded) && (
@@ -15310,7 +15331,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     justifyContent: 'space-between'
                   }}
                 >
-                  <span>Bench Officials</span>
+                  <span>{t('scoreboard.roster.benchOfficials')}</span>
                   {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainOfficialsExpanded ? '▲' : '▼'}</span>}
                 </h4>
                 {(!isCompactMode || rightMainOfficialsExpanded) && (
@@ -15494,7 +15515,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Menu Modal - Keep for Options submenu */}
       {menuModal && (
         <Modal
-          title="Menu"
+          title={t('scoreboard.menu.menu')}
           open={true}
           onClose={() => setMenuModal(false)}
           width={400}
@@ -15609,7 +15630,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 setShowRosters(true)
                 setMenuModal(false)
               }}>
-                Show Rosters
+                {t('scoreboard.showRosters')}
               </div>
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -15740,7 +15761,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               onClick={() => {
                 setShowOptionsInMenu(true)
               }}>
-                ⚙️ Options
+                ⚙️ {t('scoreboard.options')}
               </div>
             </div>
           </div>
@@ -15750,7 +15771,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Show PINs Modal */}
       {showPinsModal && (
         <Modal
-          title="Game PINs"
+          title={t('scoreboard.menu.gamePins')}
           open={true}
           onClose={() => setShowPinsModal(false)}
           width={500}
@@ -15917,26 +15938,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     onClick={() => handleSelectCaptainOnCourt(player.number)}
                     style={{
                       padding: '16px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '2px solid rgba(255, 255, 255, 0.2)',
+                      background: 'rgba(234, 179, 8, 0.15)',
+                      border: '2px solid rgba(234, 179, 8, 0.5)',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                       textAlign: 'center'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                      e.currentTarget.style.background = 'rgba(234, 179, 8, 0.25)'
+                      e.currentTarget.style.borderColor = 'rgba(234, 179, 8, 0.7)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                      e.currentTarget.style.background = 'rgba(234, 179, 8, 0.15)'
+                      e.currentTarget.style.borderColor = 'rgba(234, 179, 8, 0.5)'
                     }}
                   >
-                    <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px', color: '#eab308' }}>
                       #{player.number}
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text)', marginBottom: '4px' }}>
                       {player.name || 'Player'}
                     </div>
                     <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
@@ -16041,7 +16062,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Help & Video Guides Modal */}
       {showHelpModal && (
         <Modal
-          title="Help & Video Guides"
+          title={t('scoreboard.menu.helpVideoGuides')}
           open={true}
           onClose={() => {
             setShowHelpModal(false)
@@ -16127,7 +16148,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Action Log Modal */}
       {showLogs && (
         <Modal
-          title="Action Log"
+          title={t('scoreboard.menu.actionLog')}
           open={true}
           onClose={() => setShowLogs(false)}
           width={1200}
@@ -16465,14 +16486,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Manual Changes Modal */}
       {showManualPanel && (
         <Modal
-          title="Manual Changes"
+          title={t('scoreboard.menu.manualChanges')}
           open={true}
           onClose={() => setShowManualPanel(false)}
           width={600}
         >
           <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
             <section className="panel">
-              <h3>Manual changes</h3>
+              <h3>{t('scoreboard.edit.manualChanges')}</h3>
               <div className="manual-list">
                 <div
                   className="manual-item"
@@ -16486,9 +16507,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
-                      <div style={{ fontWeight: 600 }}>Change current lineup</div>
+                      <div style={{ fontWeight: 600 }}>{t('scoreboard.edit.changeCurrentLineup')}</div>
                       <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        Override the on-court lineup if a mistake was recorded.
+                        {t('scoreboard.edit.overrideLineupDesc')}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -16501,7 +16522,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff'
                         }}
                       >
-                        Edit Team {leftTeam.isTeamA ? 'A' : 'B'} (Left)
+                        {t('scoreboard.edit.editTeamLeft', { team: leftTeam.isTeamA ? 'A' : 'B' })}
                       </button>
                       <button
                         className="secondary"
@@ -16512,7 +16533,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff'
                         }}
                       >
-                        Edit Team {rightTeam.isTeamA ? 'A' : 'B'} (Right)
+                        {t('scoreboard.edit.editTeamRight', { team: rightTeam.isTeamA ? 'A' : 'B' })}
                       </button>
                     </div>
                   </div>
@@ -16537,9 +16558,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         paddingTop: '16px'
                       }}
                     >
-                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Reopen completed sets</div>
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.reopenCompletedSets')}</div>
                       <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                        Reopen a completed set to make corrections.
+                        {t('scoreboard.edit.reopenCompletedSetsDesc')}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {completedSets.map(set => (
@@ -16549,7 +16570,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             onClick={() => setReopenSetConfirm({ setId: set.id, setIndex: set.index })}
                             style={{ textAlign: 'left', padding: '10px 16px' }}
                           >
-                            Reopen Set {set.index} ({set.homePoints} - {set.awayPoints})
+                            {t('scoreboard.edit.reopenSetWithScore', { setIndex: set.index, homePoints: set.homePoints, awayPoints: set.awayPoints })}
                           </button>
                         ))}
                       </div>
@@ -16569,14 +16590,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       borderTop: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Current Set Score</div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editCurrentSetScore')}</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually adjust the score for the current set.
+                      {t('scoreboard.edit.editCurrentSetScoreDesc')}
                     </div>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <label style={{ fontSize: '12px', minWidth: '60px' }}>
-                          {leftIsHome ? 'Home' : 'Away'}:
+                          {leftIsHome ? t('common.home') : t('common.away')}:
                         </label>
                         <input
                           type="number"
@@ -16600,7 +16621,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <label style={{ fontSize: '12px', minWidth: '60px' }}>
-                          {leftIsHome ? 'Away' : 'Home'}:
+                          {leftIsHome ? t('common.away') : t('common.home')}:
                         </label>
                         <input
                           type="number"
@@ -16638,9 +16659,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       borderTop: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit All Sets</div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editAllSets')}</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually adjust scores for any set.
+                      {t('scoreboard.edit.editAllSetsDesc')}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {data.sets.sort((a, b) => a.index - b.index).map(set => (
@@ -16732,18 +16753,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   >
                     <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Coin Toss</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually adjust coin toss results (Team A, Team B, and first serve).
+                      Manually adjust coin toss results.
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '120px' }}>Team A:</label>
+                        <label style={{ fontSize: '12px', minWidth: '80px' }}>Team A:</label>
                         <select
                           value={data.match.coinTossTeamA || 'home'}
                           onChange={async (e) => {
-                            await db.matches.update(matchId, { coinTossTeamA: e.target.value })
+                            const teamA = e.target.value
+                            const teamB = teamA === 'home' ? 'away' : 'home'
+                            await db.matches.update(matchId, { coinTossTeamA: teamA, coinTossTeamB: teamB })
                           }}
                           style={{
-                            flex: 1,
+                            width: '80px',
                             padding: '6px 8px',
                             fontSize: '12px',
                             background: '#1e293b',
@@ -16755,37 +16778,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
                           <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
                         </select>
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                          (B: {(data.match.coinTossTeamA || 'home') === 'home' ? 'Away' : 'Home'})
+                        </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '120px' }}>Team B:</label>
-                        <select
-                          value={data.match.coinTossTeamB || 'away'}
-                          onChange={async (e) => {
-                            await db.matches.update(matchId, { coinTossTeamB: e.target.value })
-                          }}
-                          style={{
-                            flex: 1,
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            background: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            borderRadius: '4px',
-                            color: 'var(--text)'
-                          }}
-                        >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '120px' }}>First Serve:</label>
+                        <label style={{ fontSize: '12px', minWidth: '80px' }}>First Serve:</label>
                         <select
                           value={data.match.firstServe || 'home'}
                           onChange={async (e) => {
-                            await db.matches.update(matchId, { firstServe: e.target.value })
+                            const firstServe = e.target.value
+                            // Also update coinTossServeA for PDF rendering
+                            // coinTossServeA = true means Team A serves first
+                            const coinTossTeamA = data.match.coinTossTeamA || 'home'
+                            const coinTossServeA = firstServe === coinTossTeamA
+                            await db.matches.update(matchId, { firstServe, coinTossServeA })
                           }}
                           style={{
-                            flex: 1,
+                            width: '80px',
                             padding: '6px 8px',
                             fontSize: '12px',
                             background: '#1e293b',
@@ -16880,13 +16890,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       borderTop: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Switch Sides and Serve</div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.switchSidesAndServe')}</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually switch which team is on which side or which team serves.
+                      {t('scoreboard.edit.switchSidesDesc')}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>Switch Sides:</div>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>{t('scoreboard.edit.switchSides')}</div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           {data.set.index === 5 ? (
                             <>
@@ -16902,13 +16912,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   fontSize: '12px'
                                 }}
                               >
-                                Switch Sides (Set 5)
+                                {t('scoreboard.edit.switchSidesSet5')}
                               </button>
                               <button
                                 className="secondary"
                                 onClick={async () => {
-                                  await db.matches.update(matchId, { 
-                                    set5CourtSwitched: !data.match.set5CourtSwitched 
+                                  await db.matches.update(matchId, {
+                                    set5CourtSwitched: !data.match.set5CourtSwitched
                                   })
                                 }}
                                 style={{
@@ -16916,7 +16926,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   fontSize: '12px'
                                 }}
                               >
-                                Toggle Court Switch Flag
+                                {t('scoreboard.edit.toggleCourtSwitchFlag')}
                               </button>
                             </>
                           ) : (
@@ -18430,7 +18440,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Remarks Modal */}
       {showRemarks && (
         <Modal
-          title="Remarks Recording"
+          title={t('scoreboard.modals.remarksRecording')}
           open={true}
           onClose={() => {
             setShowRemarks(false)
@@ -18507,7 +18517,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Sanctions and Results Modal */}
       {showSanctions && (
         <Modal
-          title="Sanctions and Results"
+          title={t('scoreboard.modals.sanctionsAndResults')}
           open={true}
           onClose={() => setShowSanctions(false)}
           width={1000}
@@ -18524,9 +18534,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     <div style={{ display: 'flex', gap: '8px' }}>
                       {['A', 'B'].map(team => {
                         const teamKey = team === 'A' ? teamAKey : teamBKey
-                        const sideKey = (team === 'A' && teamAKey === 'home' && leftIsHome) || (team === 'A' && teamAKey === 'away' && !leftIsHome) || (team === 'B' && teamBKey === 'home' && leftIsHome) || (team === 'B' && teamBKey === 'away' && !leftIsHome) ? 'Left' : 'Right'
-                        const hasImproperRequest = data?.match?.sanctions?.[`improperRequest${sideKey}`]
-                        
+                        const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
+                        const hasImproperRequest = data?.match?.sanctions?.[`improperRequest${teamKeyCapitalized}`]
+
                         return (
                           <div key={team} style={{
                             width: '28px',
@@ -19126,9 +19136,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const teamKey = lineupModal.team
           setLineupModal(null)
           // Check if captain is on court after lineup is saved
+          // Use timeout to allow data to update from database (increased to 300ms for reliability)
           setTimeout(() => {
-            checkAndRequestCaptainOnCourt(teamKey)
-          }, 100)
+            checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+          }, 300)
         }}
         onLineupSaved={syncToReferee}
       />}
@@ -21025,7 +21036,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Keyboard Shortcuts Configuration Modal */}
       {keybindingsModalOpen && (
         <Modal
-          title="Keyboard Shortcuts"
+          title={t('scoreboard.menu.keyboardShortcuts')}
           open={true}
           onClose={() => {
             setKeybindingsModalOpen(false)
@@ -21160,7 +21171,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Accidental Rally Start Confirmation Modal */}
       {accidentalRallyConfirmModal && (
         <Modal
-          title="Confirm Rally Start"
+          title={t('scoreboard.modals.confirmRallyStart')}
           open={true}
           onClose={() => setAccidentalRallyConfirmModal(null)}
           width={320}
@@ -21169,10 +21180,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{ padding: '24px', textAlign: 'center' }}>
             <div style={{ marginBottom: '16px', fontSize: '48px' }}>⚠️</div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
-              Rally started very quickly
+              {t('scoreboard.confirm.rallyStartedQuickly')}
             </p>
             <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-              Are you sure the rally has actually started?
+              {t('scoreboard.confirm.areYouSureRallyStarted')}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
@@ -21188,7 +21199,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Yes, Start Rally
+                {t('scoreboard.confirm.yesStartRally')}
               </button>
               <button
                 onClick={() => setAccidentalRallyConfirmModal(null)}
@@ -21203,7 +21214,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -21213,7 +21224,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Accidental Point Award Confirmation Modal */}
       {accidentalPointConfirmModal && (
         <Modal
-          title="Confirm Point"
+          title={t('scoreboard.modals.confirmPoint')}
           open={true}
           onClose={() => setAccidentalPointConfirmModal(null)}
           width={320}
@@ -21222,10 +21233,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           <div style={{ padding: '24px', textAlign: 'center' }}>
             <div style={{ marginBottom: '16px', fontSize: '48px' }}>⚠️</div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
-              Point awarded very quickly
+              {t('scoreboard.confirm.pointAwardedQuickly')}
             </p>
             <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-              Are you sure the point should be awarded to {accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}?
+              {t('scoreboard.confirm.areYouSureAwardPoint', { team: accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away') })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
@@ -21241,7 +21252,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Yes, Award Point
+                {t('scoreboard.confirm.yesAwardPoint')}
               </button>
               <button
                 onClick={() => setAccidentalPointConfirmModal(null)}
@@ -21256,7 +21267,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   cursor: 'pointer'
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -21953,7 +21964,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
         return (
           <Modal
-            title="Libero Re-designation"
+            title={t('scoreboard.modals.liberoRedesignation')}
             open={true}
             onClose={() => setLiberoRedesignationModal(null)}
             width={480}
@@ -22026,7 +22037,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {reopenSetConfirm && (
         <Modal
-          title="Reopen Set"
+          title={t('scoreboard.modals.reopenSet')}
           open={true}
           onClose={() => setReopenSetConfirm(null)}
           width={400}
@@ -22598,7 +22609,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {liberoReminder && (
         <Modal
-          title="Libero Reminder"
+          title={t('scoreboard.modals.liberoReminder')}
           open={true}
           onClose={() => {
             setLiberoReminder(null)
@@ -22732,7 +22743,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {sanctionConfirm && (
         <Modal
-          title="Confirm Sanction"
+          title={t('scoreboard.modals.confirmSanction')}
           open={true}
           onClose={() => setSanctionConfirm(null)}
           width={400}
@@ -23069,7 +23080,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Court Switch Modal (5th Set at 8 points) */}
       {courtSwitchModal && (
         <Modal
-          title="Court Switch Required"
+          title={t('scoreboard.modals.courtSwitchRequired')}
           open={true}
           onClose={() => {}}
           width={450}
@@ -23130,7 +23141,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         
         return (
           <Modal
-            title="No Legal Substitution Available"
+            title={t('scoreboard.modals.noLegalSubstitution')}
             open={true}
             onClose={() => {}}
             width={500}
@@ -23246,7 +23257,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         
         return (
           <Modal
-            title="Set 5 - Choose Side and Service"
+            title={t('scoreboard.modals.set5ChooseSideService')}
             open={true}
             onClose={() => {}}
             width={500}
@@ -23567,7 +23578,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       {undoConfirm && (
         <Modal
-          title="Confirm Undo"
+          title={t('scoreboard.modals.confirmUndo')}
           open={true}
           onClose={cancelUndo}
           width={400}
@@ -23647,7 +23658,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         return (
           <Modal
-            title="Decision Change"
+            title={t('scoreboard.modals.decisionChange')}
             open={true}
             onClose={cancelReplayRally}
             width={450}
@@ -23887,7 +23898,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     // Automatically validate the number as it's entered
     if (numValue && numValue.trim() !== '') {
       const num = Number(numValue)
-      const player = players?.find(p => p.number === num)
+      const player = players?.find(p => String(p.number) === String(num))
       const newErrors = { ...errors }
 
       // Check if not on roster
@@ -24102,7 +24113,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         // Don't return, so we can flag all duplicates
       }
 
-      const player = players?.find(p => p.number === num)
+      const player = players?.find(p => String(p.number) === String(num))
 
       // 3. Not on roster
       if (!player) {
@@ -24857,17 +24868,21 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
   const [time, setTime] = useState(() => {
     const date = new Date(defaultTime)
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
+    // Use UTC methods since times are stored as UTC (with Z suffix)
+    const hours = String(date.getUTCHours()).padStart(2, '0')
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0')
     return `${hours}:${minutes}`
   })
 
   const handleConfirm = () => {
-    // Convert time string to ISO string
-    const now = new Date()
+    // Convert time string to ISO string (store as UTC)
+    const base = new Date(defaultTime)
     const [hours, minutes] = time.split(':')
-    now.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-    onConfirm(now.toISOString())
+    // Create ISO string with the entered time as UTC
+    const year = base.getUTCFullYear()
+    const month = String(base.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(base.getUTCDate()).padStart(2, '0')
+    onConfirm(`${year}-${month}-${day}T${hours}:${minutes}:00Z`)
   }
 
   return (
@@ -25027,8 +25042,9 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
 function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, leftIsHome, isMatchEnd, homeTeamName, awayTeamName, onConfirm, onUndoLastPoint }) {
   const [time, setTime] = useState(() => {
     const date = new Date(defaultTime)
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
+    // Use UTC methods since times are stored as UTC (with Z suffix)
+    const hours = String(date.getUTCHours()).padStart(2, '0')
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0')
     return `${hours}:${minutes}`
   })
 
@@ -25042,11 +25058,14 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
   const rightScore = leftIsHome ? awayPoints : homePoints
 
   const handleConfirm = () => {
-    // Convert time string to ISO string
-    const now = new Date()
+    // Convert time string to ISO string (store as UTC)
+    const base = new Date(defaultTime)
     const [hours, minutes] = time.split(':')
-    now.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-    onConfirm(now.toISOString())
+    // Create ISO string with the entered time as UTC
+    const year = base.getUTCFullYear()
+    const month = String(base.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(base.getUTCDate()).padStart(2, '0')
+    onConfirm(`${year}-${month}-${day}T${hours}:${minutes}:00Z`)
   }
 
   return (

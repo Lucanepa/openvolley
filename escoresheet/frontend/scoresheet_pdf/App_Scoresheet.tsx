@@ -25,7 +25,17 @@ interface AppScoresheetProps {
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, sanctions = [] } = matchData;
-  
+
+  // Helper function to format time in UTC (times are stored as UTC with Z suffix)
+  const formatTimeUTC = (timeStr: string | undefined): string => {
+    if (!timeStr) return '';
+    const date = new Date(timeStr);
+    if (isNaN(date.getTime())) return '';
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
   // Helper function to format players for scoresheet
   const formatPlayers = (players: any[]): Player[] => {
     return players.map(p => ({
@@ -1006,8 +1016,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     // Determine start time - only show confirmed set start time from modal
     let startTimeStr = '';
     if (hasBeenPlayed && setInfo?.startTime) {
-      // Use confirmed start time from "Confirm start time for Set X" modal
-      startTimeStr = new Date(setInfo.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+      // Use confirmed start time from "Confirm start time for Set X" modal (UTC)
+      startTimeStr = formatTimeUTC(setInfo.startTime);
     }
     // Note: Don't fallback to scheduledAt - only show time if explicitly confirmed
 
@@ -1065,7 +1075,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
     return {
       startTime: startTimeStr,
-      endTime: hasBeenPlayed && setInfo?.endTime ? new Date(setInfo.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : '',
+      endTime: hasBeenPlayed && setInfo?.endTime ? formatTimeUTC(setInfo.endTime) : '',
       leftLineup,
       rightLineup,
       leftPoints,
@@ -1402,9 +1412,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   // This ensures postponed matches show the actual start time from "Confirm start time for Set 1" modal
   const set1 = sets?.find(s => s.index === 1);
   const matchStart = set1?.startTime
-    ? new Date(set1.startTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    ? formatTimeUTC(set1.startTime)
     : match?.scheduledAt
-    ? new Date(match.scheduledAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    ? formatTimeUTC(match.scheduledAt)
     : '';
   
   // Calculate winner and result - only if match is finished (a team won 3 sets)
@@ -1450,7 +1460,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   // Calculate match end and duration - only if match is finished
   const lastSet = sets?.filter(s => s.endTime).sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())[0];
   const matchEndFinal = isMatchFinished && lastSet?.endTime
-    ? new Date(lastSet.endTime).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    ? formatTimeUTC(lastSet.endTime)
     : '';
   // Use Set 1's confirmed start time for match duration calculation
   const matchDuration = isMatchFinished && set1?.startTime && lastSet?.endTime

@@ -1131,7 +1131,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 className={`sign ${teamACoachSig && teamACaptainSig ? 'signed' : ''}`}
                 style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%' }}
               >
-                Sign A {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
+                {t('coinToss.signA')} {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
               </button>
               {signatureMenuA && (
                 <div style={{
@@ -1145,14 +1145,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     className={`sign ${teamACoachSig ? 'signed' : ''}`}
                     style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
                   >
-                    Coach {teamACoachSig ? '✓' : ''}
+                    {t('coinToss.coach')} {teamACoachSig ? '✓' : ''}
                   </button>
                   <button
                     onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
                     className={`sign ${teamACaptainSig ? 'signed' : ''}`}
                     style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
                   >
-                    Captain {teamACaptainSig ? '✓' : ''}
+                    {t('coinToss.captain')} {teamACaptainSig ? '✓' : ''}
                   </button>
                 </div>
               )}
@@ -1164,12 +1164,12 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 12 : 35, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
           <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '52px' }}>
             <button className="secondary" onClick={switchTeams} style={{ padding: sizes.switchButtonPadding, fontSize: '20px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-              ⇄ Teams
+              ⇄ {t('coinToss.switchTeams')}
             </button>
           </div>
           <div style={{ height: sizes.volleyballSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <button className="secondary" onClick={switchServe} style={{ padding: sizes.switchButtonPadding, fontSize: '20px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-              ⇄ Serve
+              ⇄ {t('coinToss.switchServe')}
             </button>
           </div>
         </div>
@@ -1217,7 +1217,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 className={`sign ${teamBCoachSig && teamBCaptainSig ? 'signed' : ''}`}
                 style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%' }}
               >
-                Sign B {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
+                {t('coinToss.signB')} {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
               </button>
               {signatureMenuB && (
                 <div style={{
@@ -1231,14 +1231,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     className={`sign ${teamBCoachSig ? 'signed' : ''}`}
                     style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
                   >
-                    Coach {teamBCoachSig ? '✓' : ''}
+                    {t('coinToss.coach')} {teamBCoachSig ? '✓' : ''}
                   </button>
                   <button
                     onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
                     className={`sign ${teamBCaptainSig ? 'signed' : ''}`}
                     style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
                   >
-                    Captain {teamBCaptainSig ? '✓' : ''}
+                    {t('coinToss.captain')} {teamBCaptainSig ? '✓' : ''}
                   </button>
                 </div>
               )}
@@ -1365,7 +1365,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
         return (
           <Modal
-            title={`${teamInfo.name} - Roster`}
+            title={t('roster.titleWithTeam', { team: teamInfo.name })}
             open={true}
             onClose={handleCloseOrModify}
             width={800}
@@ -1375,23 +1375,23 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Players ({roster.length})</h4>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('roster.playersCount', { count: roster.length })}</h4>
                   <button
                     type="button"
                     className="secondary"
                     onClick={() => setAddPlayerModal(rosterModal)}
                     style={{ padding: '4px 8px', fontSize: '12px' }}
                   >
-                    + Add Player
+                    {t('roster.addPlayer')}
                   </button>
                 </div>
                 <table className="roster-table" style={{ width: '100%' }}>
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Name</th>
-                      <th style={{ width: '90px' }}>DOB</th>
-                      <th>Role</th>
+                      <th>{t('roster.number')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th style={{ width: '90px' }}>{t('roster.dob')}</th>
+                      <th>{t('roster.role')}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -1417,7 +1417,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                                 updated[originalIdx] = { ...updated[originalIdx], number: val }
                                 setRoster(updated)
                               }}
-                              title={isDuplicate ? 'Duplicate jersey number!' : ''}
+                              title={isDuplicate ? t('roster.duplicateNumber') : ''}
                               style={{
                                 width: p.isCaptain ? '24px' : '28px',
                                 height: p.isCaptain ? '24px' : 'auto',
@@ -1531,22 +1531,22 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               {/* Bench Officials Section */}
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Bench Officials ({bench.length})</h4>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('roster.benchOfficialsCount', { count: bench.length })}</h4>
                   <button
                     type="button"
                     className="secondary"
                     onClick={() => setBench([...bench, initBench('Coach')])}
                     style={{ padding: '4px 8px', fontSize: '12px' }}
                   >
-                    + Add
+                    {t('roster.addBench')}
                   </button>
                 </div>
                 <table className="roster-table" style={{ width: '100%' }}>
                   <thead>
                     <tr>
-                      <th>Role</th>
-                      <th>Name</th>
-                      <th style={{ width: '90px' }}>DOB</th>
+                      <th>{t('roster.role')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th style={{ width: '90px' }}>{t('roster.dob')}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -1621,7 +1621,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
               {/* Signatures Section */}
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16, marginTop: 16 }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>Signatures</h4>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>{t('roster.signatures')}</h4>
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <button
                     type="button"
@@ -1629,7 +1629,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     onClick={() => setRosterModalSignature('coach')}
                     style={{ padding: '8px 16px', fontSize: '13px', flex: 1, minWidth: '120px' }}
                   >
-                    Coach {coachSig ? '✓' : ''}
+                    {t('coinToss.coach')} {coachSig ? '✓' : ''}
                   </button>
                   <button
                     type="button"
@@ -1637,7 +1637,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     onClick={() => setRosterModalSignature('captain')}
                     style={{ padding: '8px 16px', fontSize: '13px', flex: 1, minWidth: '120px' }}
                   >
-                    Captain {captainSig ? '✓' : ''}
+                    {t('coinToss.captain')} {captainSig ? '✓' : ''}
                   </button>
                 </div>
               </div>
@@ -1653,7 +1653,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     border: '1px solid rgba(255,255,255,0.1)', maxWidth: '90vw'
                   }}>
                     <h3 style={{ margin: '0 0 12px 0' }}>
-                      {rosterModalSignature === 'coach' ? 'Coach' : 'Captain'} Signature - {teamInfo.name}
+                      {t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })}
                     </h3>
                     <SignaturePad
                       onSave={(sig) => {
@@ -1665,7 +1665,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                         setRosterModalSignature(null)
                       }}
                       onCancel={() => setRosterModalSignature(null)}
-                      title={`${rosterModalSignature === 'coach' ? 'Coach' : 'Captain'} Signature`}
+                      title={t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: '' }).replace(' - ', '')}
                     />
                   </div>
                 </div>
@@ -1690,7 +1690,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   }}
                   style={{ padding: '8px 20px', fontSize: '14px' }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               )}
               <button
@@ -1699,7 +1699,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 onClick={handleCloseOrModify}
                 style={{ padding: '8px 20px', fontSize: '14px' }}
               >
-                {hasChanges ? 'Modify' : 'Close'}
+                {hasChanges ? t('roster.modify') : t('common.close')}
               </button>
             </div>
           </Modal>
@@ -1720,14 +1720,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
         return (
           <Modal
-            title={`Add Player - ${isTeamA ? 'Team A' : 'Team B'}`}
+            title={t('roster.addPlayerTitle', { team: t(isTeamA ? 'coinToss.teamA' : 'coinToss.teamB') })}
             open={true}
             onClose={() => setAddPlayerModal(null)}
             width={500}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>Number</label>
+                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.numberLabel')}</label>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -1737,7 +1737,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>Last Name</label>
+                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.lastName')}</label>
                 <input
                   type="text"
                   className="capitalize"
@@ -1747,7 +1747,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>First Name</label>
+                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.firstName')}</label>
                 <input
                   type="text"
                   className="capitalize"
@@ -1757,7 +1757,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>Date of Birth</label>
+                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.dateOfBirth')}</label>
                 <input
                   type="date"
                   value={dob ? formatDateToISO(dob) : ''}
@@ -1769,7 +1769,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>Libero</label>
+                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.libero')}</label>
                 <select
                   value={libero}
                   onChange={e => {
@@ -1782,9 +1782,9 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   }}
                   style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
                 >
-                  <option value="">none</option>
-                  {!roster.some(p => p.libero === 'libero1') && <option value="libero1">Libero 1</option>}
-                  {!roster.some(p => p.libero === 'libero2') && <option value="libero2">Libero 2</option>}
+                  <option value="">{t('roster.none')}</option>
+                  {!roster.some(p => p.libero === 'libero1') && <option value="libero1">{t('roster.liberoFull1')}</option>}
+                  {!roster.some(p => p.libero === 'libero2') && <option value="libero2">{t('roster.liberoFull2')}</option>}
                 </select>
               </div>
               <div>
@@ -1794,14 +1794,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     checked={captain}
                     onChange={e => currentTeam === 'home' ? setHomeCaptain(e.target.checked) : setAwayCaptain(e.target.checked)}
                   />
-                  <span>Captain</span>
+                  <span>{t('coinToss.captain')}</span>
                 </label>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                <button className="secondary" onClick={() => setAddPlayerModal(null)}>Cancel</button>
+                <button className="secondary" onClick={() => setAddPlayerModal(null)}>{t('common.cancel')}</button>
                 <button onClick={() => {
                   if (!last || !first) {
-                    alert('Please enter last name and first name')
+                    alert(t('roster.enterNames'))
                     return
                   }
                   const newPlayer = { number: num ? Number(num) : null, lastName: last, firstName: first, dob, libero, isCaptain: captain }
@@ -1820,7 +1820,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                     setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
                   }
                   setAddPlayerModal(null)
-                }}>Add Player</button>
+                }}>{t('roster.addPlayerButton')}</button>
               </div>
             </div>
           </Modal>

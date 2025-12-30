@@ -30,7 +30,6 @@ function InfoDot({ title }) {
           fontWeight: 600,
           cursor: 'pointer'
         }}
-        title={title}
       >
         i
       </div>
