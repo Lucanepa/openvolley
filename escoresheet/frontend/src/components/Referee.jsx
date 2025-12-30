@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import mikasaVolleyball from '../mikasa_v200w.png'
-import favicon from '../favicon.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
 import WsDebugOverlay from './WsDebugOverlay'
@@ -22,7 +21,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Modal states (from Scoreboard actions)
-  const [substitutionModal, setSubstitutionModal] = useState(null) // { team, teamName, position, playerIn, playerOut, isExceptional, timestamp }
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
 
   // Flashing substitution state (like Scoreboard)
@@ -305,30 +303,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         started: true
       })
     } else if (action === 'substitution') {
-      setSubstitutionModal({
-        team: actionData.team,
-        teamName: actionData.teamName,
-        position: actionData.position,
-        playerOut: actionData.playerOut,
-        playerIn: actionData.playerIn,
-        isExceptional: actionData.isExceptional,
-        timestamp: Date.now()
-      })
-      // Auto-close substitution modal after 5 seconds
-      setTimeout(() => {
-        setSubstitutionModal(null)
-      }, 5000)
-
-      // Add player to recently substituted list for flashing effect
+      // Add player to recently substituted list for flashing effect (no modal, just flash)
       setRecentlySubstitutedPlayers(prev => [...prev, { team: actionData.team, playerNumber: actionData.playerIn, timestamp: Date.now() }])
 
-      // Clear the flash after 3 seconds
+      // Clear the flash after 5 seconds
       if (recentSubFlashTimeoutRef.current) {
         clearTimeout(recentSubFlashTimeoutRef.current)
       }
       recentSubFlashTimeoutRef.current = setTimeout(() => {
         setRecentlySubstitutedPlayers([])
-      }, 3000)
+      }, 5000)
     } else if (action === 'set_end') {
       setBetweenSetsCountdown({
         countdown: actionData.countdown || 180,
@@ -379,32 +363,69 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Track last processed event to avoid duplicates from Supabase realtime
   const lastProcessedEventRef = useRef(null)
 
+  // Store Supabase UUID for realtime subscription (match_live_state.match_id is UUID, not seed_key)
+  const [supabaseMatchUuid, setSupabaseMatchUuid] = useState(null)
+
+  // Look up Supabase UUID from seed_key when matchId changes
+  useEffect(() => {
+    if (!supabase || !matchId) return
+
+    const lookupUuid = async () => {
+      const { data, error } = await supabase
+        .from('matches')
+        .select('id')
+        .eq('external_id', matchId)
+        .maybeSingle()
+
+      if (!error && data?.id) {
+        console.log('[Referee] Found Supabase UUID:', data.id, 'for matchId:', matchId)
+        setSupabaseMatchUuid(data.id)
+      } else {
+        console.warn('[Referee] Could not find Supabase UUID for matchId:', matchId, error)
+      }
+    }
+
+    lookupUuid()
+  }, [matchId])
+
   // Supabase realtime subscription for live state updates (backup/alternative to WebSocket)
   useEffect(() => {
-    if (!supabase || !matchId || isMasterMode) return
+    if (!supabase || !supabaseMatchUuid || isMasterMode) return
+
+    console.log('[Referee] Setting up realtime subscription for UUID:', supabaseMatchUuid)
 
     const channel = supabase
-      .channel(`match_live_state:${matchId}`)
+      .channel(`match_live_state:${supabaseMatchUuid}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'match_live_state',
-          filter: `match_id=eq.${matchId}`
+          filter: `match_id=eq.${supabaseMatchUuid}`
         },
         (payload) => {
           const state = payload.new
-          if (!state || !state.last_event_type) return
+          if (!state) return
 
-          // Deduplicate based on last_event_ts
-          const eventKey = `${state.last_event_type}_${state.last_event_ts}`
-          if (lastProcessedEventRef.current === eventKey) return
-          lastProcessedEventRef.current = eventKey
+          // Simple deduplication - only skip if exact same updated_at within 50ms
+          const now = Date.now()
+          const lastProcessed = lastProcessedEventRef.current
+          if (lastProcessed && state.updated_at === lastProcessed.updatedAt && (now - lastProcessed.time) < 50) {
+            console.log('[Referee] 📡 Skipping duplicate (same updated_at within 50ms)')
+            return
+          }
+          lastProcessedEventRef.current = { time: now, updatedAt: state.updated_at }
 
-          console.log(`[Referee] 📡 Supabase realtime: ${state.last_event_type}`, state)
+          console.log(`[Referee] 📡 Supabase realtime: ${state.last_event_type || 'update'}`, {
+            event: state.last_event_type,
+            points: `${state.points_a || 0}-${state.points_b || 0}`,
+            set: state.current_set,
+            lineup_a: !!state.lineup_a,
+            lineup_b: !!state.lineup_b
+          })
 
-          // A/B Model: Convert left/right to home/away using side_a
+          // A/B Model: Convert left/right to home/away using side_a (for modal handling)
           // side_a = 'left' or 'right' indicates which side Team A is on
           const localTeamAKey = data?.match?.coinTossTeamA || 'home'
           const sideA = state.side_a || 'left'
@@ -424,24 +445,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             })
           }
 
-          // Handle substitution
+          // Handle substitution - flash effect only (no modal)
           if (state.last_event_type === 'substitution') {
             const team = getTeamFromSide(state.last_event_team)
-            setSubstitutionModal({
-              team,
-              playerOut: state.last_event_data?.playerOut,
-              playerIn: state.last_event_data?.playerIn,
-              timestamp: Date.now()
-            })
-            setTimeout(() => setSubstitutionModal(null), 5000)
-
-            // Flash effect
             setRecentlySubstitutedPlayers(prev => [
               ...prev,
               { team, playerNumber: state.last_event_data?.playerIn, timestamp: Date.now() }
             ])
             if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
-            recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 3000)
+            recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 5000)
           }
 
           // Handle libero entry/exit/exchange
@@ -454,7 +466,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 { team, playerNumber, timestamp: Date.now() }
               ])
               if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
-              recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 3000)
+              recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 5000)
             }
           }
 
@@ -467,6 +479,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               winner: state.last_event_data?.winner
             })
           }
+
+          // ALWAYS refetch data on ANY change - handles points, lineups, subs, libero, sanctions, undoes, replays, etc.
+          console.log('[Referee] 📡 Realtime change detected, refetching data...')
+          fetchFreshData()
         }
       )
       .subscribe()
@@ -474,7 +490,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [matchId, isMasterMode, data?.match?.coinTossTeamA])
+  }, [supabaseMatchUuid, isMasterMode, data?.match?.coinTossTeamA, fetchFreshData])
 
   // Handle timeout countdown timer
   useEffect(() => {
@@ -606,6 +622,31 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Calculate statistics
   const stats = useMemo(() => {
+    // First, try to get stats from liveState (most accurate for Supabase-sourced data)
+    if (data?.liveState) {
+      const liveState = data.liveState
+      const teamAIsHome = data.match?.coinTossTeamA === 'home'
+
+      // Helper to get count from either array (new format) or number (old format)
+      const getCount = (value) => {
+        if (Array.isArray(value)) return value.length
+        if (typeof value === 'number') return value
+        return 0
+      }
+
+      return {
+        home: {
+          timeouts: teamAIsHome ? getCount(liveState.timeouts_a) : getCount(liveState.timeouts_b),
+          substitutions: teamAIsHome ? getCount(liveState.subs_a) : getCount(liveState.subs_b)
+        },
+        away: {
+          timeouts: teamAIsHome ? getCount(liveState.timeouts_b) : getCount(liveState.timeouts_a),
+          substitutions: teamAIsHome ? getCount(liveState.subs_b) : getCount(liveState.subs_a)
+        }
+      }
+    }
+
+    // Fallback: count from events (when data comes from local IndexedDB or WebSocket)
     if (!data || !data.events || !data.currentSet) {
       return {
         home: { timeouts: 0, substitutions: 0 },
@@ -630,9 +671,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }, [data])
 
   // Get lineup for current set - returns null for team if no lineup exists
+  // Rich format: lineup positions contain { number, isServing, isLibero, replacedNumber, isSubstituted, substitutedFor, hasSanction, sanctions, isCaptain, isCourtCaptain }
+  // Legacy format: lineup positions just contain player number
   const lineup = useMemo(() => {
     if (!data || !data.events || !data.currentSet) {
-      return { home: null, away: null }
+      return { home: null, away: null, isRichFormat: false }
     }
 
     const currentSetEvents = data.events.filter(
@@ -645,9 +688,18 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const latestHomeLineup = homeLineupEvents[homeLineupEvents.length - 1]
     const latestAwayLineup = awayLineupEvents[awayLineupEvents.length - 1]
 
+    // Check if using rich format (position I has isServing field)
+    const homeLineupData = latestHomeLineup?.payload?.lineup || null
+    const awayLineupData = latestAwayLineup?.payload?.lineup || null
+    const isRichFormat = latestHomeLineup?.payload?.isRichFormat ||
+                         latestAwayLineup?.payload?.isRichFormat ||
+                         homeLineupData?.I?.isServing !== undefined ||
+                         awayLineupData?.I?.isServing !== undefined
+
     return {
-      home: latestHomeLineup?.payload?.lineup || null,
-      away: latestAwayLineup?.payload?.lineup || null
+      home: homeLineupData,
+      away: awayLineupData,
+      isRichFormat
     }
   }, [data])
 
@@ -664,6 +716,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Determine who has serve
   const getCurrentServe = useMemo(() => {
+    // First priority: use servingTeam from Supabase live state (most accurate)
+    if (data?.currentSet?.servingTeam) {
+      return data.currentSet.servingTeam
+    }
+
     if (!data?.currentSet || !data?.match) {
       return data?.match?.firstServe || 'home'
     }
@@ -735,35 +792,120 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightServing = getCurrentServe === rightTeam
   const leftColor = leftTeamData?.color || (leftTeam === 'home' ? '#ef4444' : '#3b82f6')
   const rightColor = rightTeamData?.color || (rightTeam === 'home' ? '#ef4444' : '#3b82f6')
-  
+
+  // Get team-level sanctions (formal warning, improper request, delay warning, bench sanctions)
+  // Also returns player-level sanctions (warnings, penalties, expulsions, disqualifications)
+  const getTeamSanctions = useCallback((teamKey) => {
+    if (!data?.events) return {
+      formalWarning: false, improperRequest: false, delayWarning: false, delayPenalty: false,
+      benchSanctions: [], playerWarnings: [], playerPenalties: [], expulsions: [], disqualifications: []
+    }
+
+    const teamSanctions = data.events.filter(e =>
+      e.type === 'sanction' && e.payload?.team === teamKey
+    )
+
+    // Player sanctions (on-court players with numbers)
+    const playerWarnings = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      const playerNum = s.payload?.playerNumber || s.payload?.player
+      const playerType = s.payload?.playerType
+      // Warning on a player (not team, not delay, not bench/official)
+      return type === 'warning' &&
+        playerNum && String(playerNum) !== 'D' &&
+        playerType !== 'team' && playerType !== 'bench' && playerType !== 'official' &&
+        !s.payload?.isTeamWarning
+    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+
+    const playerPenalties = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      const playerNum = s.payload?.playerNumber || s.payload?.player
+      const playerType = s.payload?.playerType
+      // Penalty on a player (not delay)
+      return type === 'penalty' &&
+        playerNum && String(playerNum) !== 'D' &&
+        playerType !== 'bench' && playerType !== 'official'
+    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+
+    const expulsions = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      return type === 'expulsion'
+    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+
+    const disqualifications = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      return type === 'disqualification'
+    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+
+    return {
+      formalWarning: teamSanctions.some(s =>
+        (s.payload?.type === 'warning' || s.payload?.sanctionType === 'warning') &&
+        (s.payload?.playerType === 'team' || s.payload?.isTeamWarning)
+      ),
+      improperRequest: teamSanctions.some(s =>
+        s.payload?.type === 'improper_request' || s.payload?.sanctionType === 'improper_request'
+      ),
+      delayWarning: teamSanctions.some(s =>
+        (s.payload?.type === 'delay_warning' || s.payload?.sanctionType === 'delay_warning') ||
+        ((s.payload?.type === 'warning' || s.payload?.sanctionType === 'warning') &&
+         (String(s.payload?.playerNumber) === 'D' || String(s.payload?.player) === 'D'))
+      ),
+      delayPenalty: teamSanctions.some(s =>
+        (s.payload?.type === 'delay_penalty' || s.payload?.sanctionType === 'delay_penalty') ||
+        ((s.payload?.type === 'penalty' || s.payload?.sanctionType === 'penalty') &&
+         (String(s.payload?.playerNumber) === 'D' || String(s.payload?.player) === 'D'))
+      ),
+      benchSanctions: teamSanctions.filter(s =>
+        s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+      ),
+      playerWarnings,
+      playerPenalties,
+      expulsions,
+      disqualifications
+    }
+  }, [data?.events])
+
+  const leftTeamSanctions = getTeamSanctions(leftTeam)
+  const rightTeamSanctions = getTeamSanctions(rightTeam)
+
   // Get libero on court for a team - returns { position, liberoNumber, liberoType, playerNumber } or null
   const getLiberoOnCourt = useCallback((teamKey) => {
     if (!data?.events || !data?.currentSet) return null
-    
+
     const currentSetEvents = data.events.filter(e => e.setIndex === data.currentSet.index)
-    const lineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === teamKey)
-    
+    const lineupEvents = currentSetEvents
+      .filter(e => e.type === 'lineup' && e.payload?.team === teamKey)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
     if (lineupEvents.length === 0) return null
-    
+
     const latestLineup = lineupEvents[lineupEvents.length - 1]
     const currentLineup = latestLineup?.payload?.lineup || {}
     const liberoSub = latestLineup?.payload?.liberoSubstitution
-    
+
+    // Get initial lineup (marked with isInitial: true)
+    const initialLineupEvent = lineupEvents.find(e => e.payload?.isInitial === true)
+    const initialLineup = initialLineupEvent?.payload?.lineup || {}
+
     const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-    
+
     // Check each position to find if a libero is there
-    for (const [position, playerNum] of Object.entries(currentLineup)) {
+    for (const [position, posData] of Object.entries(currentLineup)) {
+      // Handle both rich format (posData is object with number) and legacy format (posData is number)
+      const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
       const player = teamPlayers?.find(p => String(p.number) === String(playerNum))
       if (player && (player.libero === 'libero1' || player.libero === 'libero2')) {
         // Found a libero on court - try to find which player they replaced
         let replacedPlayer = liberoSub?.playerNumber
-        
+
         if (!replacedPlayer) {
           // Look through lineup history to find the original player at this position
           for (let i = lineupEvents.length - 2; i >= 0; i--) {
             const prevLineup = lineupEvents[i]?.payload?.lineup
             if (prevLineup && prevLineup[position]) {
-              const prevPlayer = teamPlayers?.find(p => String(p.number) === String(prevLineup[position]))
+              const prevPosData = prevLineup[position]
+              const prevNum = typeof prevPosData === 'object' && prevPosData?.number !== undefined ? prevPosData.number : prevPosData
+              const prevPlayer = teamPlayers?.find(p => String(p.number) === String(prevNum))
               if (prevPlayer && prevPlayer.libero !== 'libero1' && prevPlayer.libero !== 'libero2') {
                 replacedPlayer = prevPlayer.number
                 break
@@ -771,7 +913,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             }
           }
         }
-        
+
+        // Fallback: Check initial lineup for who was at this position
+        if (!replacedPlayer && initialLineup[position]) {
+          const initPosData = initialLineup[position]
+          const initNum = typeof initPosData === 'object' && initPosData?.number !== undefined ? initPosData.number : initPosData
+          const initialPlayer = teamPlayers?.find(p => String(p.number) === String(initNum))
+          if (initialPlayer && initialPlayer.libero !== 'libero1' && initialPlayer.libero !== 'libero2') {
+            replacedPlayer = initialPlayer.number
+          }
+        }
+
         return {
           position,
           liberoNumber: player.number,
@@ -780,7 +932,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }
       }
     }
-    
+
     return null
   }, [data?.events, data?.currentSet, data?.homePlayers, data?.awayPlayers])
 
@@ -808,7 +960,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      String(e.payload?.player) === String(playerNumber)
+      (String(e.payload?.player) === String(playerNumber) || String(e.payload?.playerNumber) === String(playerNumber))
     )
   }, [data?.events])
 
@@ -826,7 +978,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Get setter position (P1-P6) based on current lineup
   const getSetterPosition = useCallback((lineup, setterNum) => {
     if (!lineup || !setterNum) return null
-    for (const [position, playerNum] of Object.entries(lineup)) {
+    for (const [position, posData] of Object.entries(lineup)) {
+      // Handle both rich format (posData is object with number) and legacy format (posData is number)
+      const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
       if (String(playerNum) === String(setterNum)) {
         // Convert position (I, II, III, IV, V, VI) to P number (1-6)
         const posMap = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6 }
@@ -1155,7 +1309,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Check if match is waiting for coin toss (status is 'setup' or no data yet)
   // This must be checked BEFORE the !data return to show awaiting screen
-  const isAwaitingCoinToss = !data || data?.match?.status === 'setup' || (!data?.match?.firstServe && !isMasterMode && !data?.currentSet)
+  // A match is awaiting coin toss if: no data, status is 'setup', OR (no firstServe AND no coinTossTeamA AND not master mode AND no currentSet)
+  const coinTossConfirmed = data?.match?.firstServe || data?.match?.coinTossTeamA || data?.match?.coin_toss_confirmed
+  const isAwaitingCoinToss = !data || data?.match?.status === 'setup' || (!coinTossConfirmed && !isMasterMode && !data?.currentSet)
 
   // Show awaiting coin toss screen when connected but no match data yet
   if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
@@ -1231,6 +1387,29 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               position="right"
               size="small"
             />
+          </div>
+
+          {/* Center - Refresh Button */}
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <button
+              onClick={fetchFreshData}
+              style={{
+                padding: '6px 16px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#3b82f6',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title={t('refereeDashboard.refresh')}
+            >
+              🔄 {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
+            </button>
           </div>
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -1311,6 +1490,32 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             borderRadius: '50%',
             animation: 'awaiting-spin 1s linear infinite'
           }} />
+
+          {/* Debug State Info */}
+          <div style={{
+            marginTop: '24px',
+            padding: '12px',
+            background: 'rgba(0, 0, 0, 0.4)',
+            borderRadius: '8px',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: 'rgba(255, 255, 255, 0.6)',
+            textAlign: 'left',
+            maxWidth: '400px',
+            width: '100%'
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#fbbf24' }}>Debug State:</div>
+            <div>data: {data ? 'exists' : 'null'}</div>
+            <div>match.status: {data?.match?.status || 'N/A'}</div>
+            <div>match.firstServe: {data?.match?.firstServe || 'N/A'}</div>
+            <div>match.coinTossTeamA: {data?.match?.coinTossTeamA || 'N/A'}</div>
+            <div>match.coin_toss_confirmed: {String(data?.match?.coin_toss_confirmed)}</div>
+            <div>coinTossConfirmed: {String(!!coinTossConfirmed)} (value: {JSON.stringify(coinTossConfirmed)})</div>
+            <div>currentSet: {data?.currentSet?.index || 'N/A'}</div>
+            <div>isMasterMode: {String(isMasterMode)}</div>
+            <div>realtimeStatus: {realtimeStatus}</div>
+            <div>activeConnection: {activeConnection || 'none'}</div>
+          </div>
         </div>
 
         <style>{`
@@ -1325,35 +1530,92 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   if (!data) return null
 
   // Player circle component - BIG responsive sizing with all indicators
-  const PlayerCircle = ({ number, position, team, isServing }) => {
+  // positionData: for rich format this is { number, isServing, isLibero, replacedNumber, isSubstituted, substitutedFor, hasSanction, sanctions, isCaptain, isCourtCaptain }
+  //               for legacy format this is just a number
+  const PlayerCircle = ({ number: legacyNumber, positionData, position, team, isServing: legacyIsServing }) => {
+    // Support both rich format (positionData) and legacy format (number)
+    // Rich format: positionData is { number, isServing, isLibero, ... }
+    // Legacy format: positionData is just a number (or undefined, using legacyNumber)
+    let isRichFormat = positionData && typeof positionData === 'object' && positionData.number !== undefined
+
+    // Extract number - ensure it's always a primitive, never an object
+    let number = isRichFormat ? positionData.number : (positionData || legacyNumber)
+
+    // Extra safety: if positionData was passed as a number but we're in legacy mode,
+    // but that "number" is actually an object (edge case from malformed data), handle it
+    if (number && typeof number === 'object' && number.number !== undefined) {
+      // The "number" is actually rich format data that wasn't detected
+      isRichFormat = true
+      positionData = number
+      number = number.number
+    }
+
     if (!number) return null
 
     const teamPlayers = team === 'home' ? data.homePlayers : data.awayPlayers
     const player = teamPlayers?.find(p => String(p.number) === String(number))
-    const isLibero = player?.libero === 'libero1' || player?.libero === 'libero2'
-    const shouldShowBall = position === 'I' && isServing
+
+    // For rich format, use embedded data; for legacy, compute from player lookup and functions
+    let isLibero, shouldShowBall, liberoReplacedPlayer, isSubstituted, substitutedFor
+    let hasWarning, hasPenalty, hasExpulsion, hasDisqualification
+    let isCaptain, isCourtCaptain
+
+    if (isRichFormat) {
+      // Rich format - all data is embedded in positionData
+      isLibero = positionData.isLibero || false
+      shouldShowBall = position === 'I' && positionData.isServing
+      liberoReplacedPlayer = isLibero ? positionData.replacedNumber : null
+      isSubstituted = positionData.isSubstituted || false
+      substitutedFor = positionData.substitutedFor || null
+      isCaptain = positionData.isCaptain || false
+      isCourtCaptain = positionData.isCourtCaptain || false
+
+      // Sanctions from rich format
+      const sanctions = positionData.sanctions || []
+      hasWarning = sanctions.some(s => s.type === 'warning')
+      hasPenalty = sanctions.some(s => s.type === 'penalty')
+      hasExpulsion = sanctions.some(s => s.type === 'expulsion')
+      hasDisqualification = sanctions.some(s => s.type === 'disqualification')
+    } else {
+      // Legacy format - compute from player data and helper functions
+      isLibero = player?.libero === 'libero1' || player?.libero === 'libero2'
+      shouldShowBall = position === 'I' && legacyIsServing
+
+      // Get libero info - if this is a libero, show which player they replaced
+      const liberoOnCourt = getLiberoOnCourt(team)
+      liberoReplacedPlayer = isLibero && liberoOnCourt?.playerNumber ? liberoOnCourt.playerNumber : null
+
+      // Get substitution info - if this player came in as a substitute
+      const subInfo = !isLibero ? getSubstitutionInfo(team, number) : null
+      isSubstituted = !!subInfo
+      substitutedFor = subInfo?.replacedNumber || null
+
+      // Get sanctions for this player
+      const sanctions = getPlayerSanctions(team, number)
+      hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+      hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+      hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+      hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+      // Check if this player is captain or court captain
+      const teamCaptain = team === 'home' ? data.match?.homeCaptain : data.match?.awayCaptain
+      const teamCourtCaptain = team === 'home' ? data.match?.homeCourtCaptain : data.match?.awayCourtCaptain
+      isCaptain = player?.isCaptain || player?.captain || (teamCaptain && String(teamCaptain) === String(number))
+      isCourtCaptain = !isCaptain && teamCourtCaptain && String(teamCourtCaptain) === String(number)
+    }
 
     // Check if this player was recently substituted in (for flashing effect)
     const isRecentlySub = recentlySubstitutedPlayers.some(
       sub => sub.team === team && String(sub.playerNumber) === String(number)
     )
 
-    // Get libero info - if this is a libero, show which player they replaced
-    const liberoOnCourt = getLiberoOnCourt(team)
-    const liberoReplacedPlayer = isLibero && liberoOnCourt?.playerNumber ? liberoOnCourt.playerNumber : null
-
-    // Get substitution info - if this player came in as a substitute
-    const subInfo = !isLibero ? getSubstitutionInfo(team, number) : null
-
-    // Get sanctions for this player
-    const sanctions = getPlayerSanctions(team, number)
-    const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-    const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-    const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-    const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-
     // Determine what to show in top-right badge
-    const topRightBadge = liberoReplacedPlayer || (subInfo?.replacedNumber) || null
+    // Ensure badge values are primitives (not objects)
+    const safeBadgeValue = (val) => {
+      if (val && typeof val === 'object' && val.number !== undefined) return val.number
+      return val
+    }
+    const topRightBadge = safeBadgeValue(liberoReplacedPlayer) || safeBadgeValue(substitutedFor) || null
     const isLiberoReplacementBadge = !!liberoReplacedPlayer
 
     // Get libero label for bottom-left
@@ -1361,11 +1623,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
     const displayLiberoLabel = isLibero ? (liberoCount === 1 ? 'L' : liberoLabel) : null
 
-    // Check if this player is captain or court captain (liberos CAN be captains)
-    const teamCaptain = team === 'home' ? data.match?.homeCaptain : data.match?.awayCaptain
-    const teamCourtCaptain = team === 'home' ? data.match?.homeCourtCaptain : data.match?.awayCourtCaptain
-    const isCaptain = player?.isCaptain || player?.captain || (teamCaptain && String(teamCaptain) === String(number))
-    const isCourtCaptain = !isCaptain && teamCourtCaptain && String(teamCourtCaptain) === String(number)
     const showCaptainBadge = isCaptain || isCourtCaptain // Liberos can be captains too
     const isLiberoCaptain = isLibero && isCaptain // Special styling for libero who is also captain
 
@@ -1483,22 +1740,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             minWidth: 'clamp(16px, 4vw, 22px)',
             height: 'clamp(16px, 4vw, 22px)',
             padding: '0 3px',
-            // Libero-captain: green C on white bg; Regular captain: green bg; Court captain: purple bg
-            background: isLiberoCaptain ? '#ffffff' : (isCaptain ? '#10b981' : '#6366f1'),
-            border: isLiberoCaptain ? '2px solid #10b981' : '2px solid rgba(255, 255, 255, 0.3)',
+            // Libero-captain: green C on white bg; Regular captain: black bg with green border/text; Court captain: amber
+            background: isLiberoCaptain ? '#ffffff' : 'rgba(15, 23, 42, 0.95)',
+            border: isLiberoCaptain ? '2px solid #22c55e' : (isCaptain ? '2px solid #22c55e' : '2px solid #fbbf24'),
             borderRadius: '4px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: 'clamp(9px, 2vw, 12px)',
             fontWeight: 700,
-            color: isLiberoCaptain ? '#10b981' : '#fff' // Green text on white for libero-captain
+            // Libero-captain: green on white; Regular captain: green on black; Court captain: amber
+            color: isLiberoCaptain ? '#22c55e' : (isCaptain ? '#22c55e' : '#fbbf24')
           }}>
             C
           </span>
         )}
 
-        {/* Bottom-right: Sanction indicators */}
+        {/* Bottom-right: Sanction indicators - same height as corner badges */}
         {(hasWarning || hasPenalty || hasExpulsion || hasDisqualification) && (
           <div style={{
             position: 'absolute',
@@ -1508,18 +1766,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             gap: '2px',
             background: 'rgba(0, 0, 0, 0.6)',
             padding: '2px 4px',
-            borderRadius: '4px'
+            borderRadius: '4px',
+            height: 'clamp(16px, 4vw, 22px)',
+            alignItems: 'center'
           }}>
             {hasWarning && (
-              <div style={{ width: '8px', height: '11px', background: '#fde047', borderRadius: '1px' }} />
-                )}
-                {(hasPenalty || hasDisqualification) && (
-              <div style={{ width: '8px', height: '11px', background: '#ef4444', borderRadius: '1px' }} />
+              <div style={{ width: 'clamp(10px, 2.5vw, 14px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#fde047', borderRadius: '2px' }} />
+            )}
+            {(hasPenalty || hasDisqualification) && (
+              <div style={{ width: 'clamp(10px, 2.5vw, 14px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#ef4444', borderRadius: '2px' }} />
             )}
             {hasExpulsion && (
               <div style={{ display: 'flex', gap: '1px' }}>
-                <div style={{ width: '6px', height: '11px', background: '#fde047', borderRadius: '1px' }} />
-                <div style={{ width: '6px', height: '11px', background: '#ef4444', borderRadius: '1px' }} />
+                <div style={{ width: 'clamp(8px, 2vw, 11px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#fde047', borderRadius: '2px' }} />
+                <div style={{ width: 'clamp(8px, 2vw, 11px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#ef4444', borderRadius: '2px' }} />
               </div>
             )}
           </div>
@@ -1545,15 +1805,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ? `3:${Math.min(setScore.home, setScore.away)}`
     : ''
 
+  // Team A/B short names for Results table (always available)
+  const teamAShortName = data?.match?.coinTossTeamA === 'home'
+    ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+    : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+  const teamBShortName = data?.match?.coinTossTeamA === 'home'
+    ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+    : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+
   // Show results when match is finished
   if (isMatchFinished) {
-    const teamAShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
-    const teamBShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
-      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-
     return (
       <div style={{
         height: '100vh',
@@ -1613,6 +1874,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             setResults={calculateSetResults}
             winner={matchWinner}
             result={matchResult}
+            coinTossConfirmed={!!data?.match?.coinTossTeamA}
           />
         </div>
 
@@ -1772,88 +2034,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
       )}
 
-      {/* Substitution Modal (from Scoreboard action) */}
-      {substitutionModal && (
-        <div
-          onClick={() => setSubstitutionModal(null)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.85)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            zIndex: 9997,
-            cursor: 'pointer'
-          }}
-        >
-          <div style={{
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            borderRadius: '24px',
-            padding: '32px 48px',
-            textAlign: 'center',
-            border: '2px solid rgba(59, 130, 246, 0.5)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            minWidth: '300px'
-            }}>
-            <div style={{
-              fontSize: '18px',
-                fontWeight: 600,
-                textTransform: 'uppercase',
-              letterSpacing: '2px',
-              color: '#3b82f6',
-              marginBottom: '16px'
-              }}>
-              🔄 Substitution
-            </div>
-            <div style={{
-              fontSize: '14px',
-              color: 'rgba(255, 255, 255, 0.7)',
-              marginBottom: '24px'
-            }}>
-              {substitutionModal.teamName || (substitutionModal.team === 'home' ? 'Home' : 'Away')}
-              {substitutionModal.isExceptional && <span style={{ color: '#f59e0b', marginLeft: '8px' }}>(Exceptional)</span>}
-            </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-              gap: '24px',
-              fontSize: '48px',
-              fontWeight: 700
-          }}>
-            <div style={{
-              display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-              }}>
-                <div style={{ color: '#ef4444' }}>#{substitutionModal.playerOut}</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)' }}>OUT</div>
-              </div>
-              <div style={{ fontSize: '32px', color: 'rgba(255, 255, 255, 0.3)' }}>→</div>
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                alignItems: 'center'
-                }}>
-                <div style={{ color: '#22c55e' }}>#{substitutionModal.playerIn}</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)' }}>IN</div>
-              </div>
-                  </div>
-                  <div style={{
-              marginTop: '16px',
-              fontSize: '12px',
-              color: 'rgba(255, 255, 255, 0.4)'
-            }}>
-              Position {substitutionModal.position} • Auto-closes in 5s
-            </div>
-                  </div>
-                </div>
-              )}
-
       {/* Setter Selection Modal for Advanced Mode */}
       {setterSelectionModal && (
         <div
@@ -1915,7 +2095,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
                 if (!teamLineup) return <div style={{ gridColumn: '1/-1', color: 'rgba(255,255,255,0.5)' }}>No lineup available</div>
 
-                return Object.entries(teamLineup).map(([position, playerNum]) => (
+                return Object.entries(teamLineup).map(([position, posData]) => {
+                  // Handle both rich format (posData is object with number) and legacy format (posData is number)
+                  const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
+                  return (
                   <button
                     key={position}
                     onClick={() => {
@@ -1947,7 +2130,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>{position}</span>
                     <span>#{playerNum}</span>
                   </button>
-                ))
+                )})
               })()}
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -2071,30 +2254,36 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           )}
             </div>
 
+        {/* Center - Refresh Button */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {!isMasterMode && (
+            <button
+              onClick={fetchFreshData}
+              style={{
+                padding: '6px 16px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#3b82f6',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title={t('refereeDashboard.refresh')}
+            >
+              🔄 {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
+            </button>
+          )}
+        </div>
+
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           {/* Version */}
           <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
             v{currentVersion}
           </span>
-          {/* Refresh Button */}
-          {!isMasterMode && (
-            <button
-              onClick={fetchFreshData}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: 'rgba(59, 130, 246, 0.2)',
-                color: '#3b82f6',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              title={t('refereeDashboard.refresh')}
-            >
-              🔄
-            </button>
-          )}
           {/* Connection Type Dropdown */}
           <div style={{ position: 'relative' }}>
             <button
@@ -2377,7 +2566,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 width: 'clamp(40px, 12vw, 90px)'
               }}>
                 <span style={{ fontSize: 'clamp(24px, 8vw, 70px)', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
-                  {leftLineup?.I || ''}
+                  {typeof leftLineup?.I === 'object' ? leftLineup?.I?.number : leftLineup?.I || ''}
                 </span>
                   </div>
                 </div>
@@ -2529,7 +2718,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 width: 'clamp(40px, 12vw, 90px)'
               }}>
                 <span style={{ fontSize: 'clamp(24px, 8vw, 70px)', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
-                  {rightLineup?.I || ''}
+                  {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
                 </span>
                 </div>
                 </div>
@@ -2730,9 +2919,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   justifyContent: 'space-around',
                   alignItems: 'center'
                 }}>
-                  <PlayerCircle number={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} />
-                  <PlayerCircle number={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} />
-                  <PlayerCircle number={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle positionData={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle positionData={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle positionData={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} />
                 </div>
                 {/* Front row (IV, III, II) - right side of left court (near net) */}
                 <div style={{
@@ -2741,9 +2930,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   justifyContent: 'space-around',
                   alignItems: 'center'
                 }}>
-                  <PlayerCircle number={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} />
-                  <PlayerCircle number={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} />
-                  <PlayerCircle number={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle positionData={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle positionData={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} />
+                  <PlayerCircle positionData={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} />
                 </div>
               </div>
             ) : (
@@ -2780,7 +2969,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                           touchAction: 'none'
                         }}
                       >
-                        <PlayerCircle number={leftLineup?.[pos]} position={pos} team={leftTeam} isServing={leftServing} />
+                        <PlayerCircle positionData={leftLineup?.[pos]} position={pos} team={leftTeam} isServing={leftServing} />
                       </div>
                     )
                   })
@@ -2894,9 +3083,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   justifyContent: 'space-around',
                   alignItems: 'center'
                 }}>
-                  <PlayerCircle number={rightLineup?.II} position="II" team={rightTeam} isServing={rightServing} />
-                  <PlayerCircle number={rightLineup?.III} position="III" team={rightTeam} isServing={rightServing} />
-                  <PlayerCircle number={rightLineup?.IV} position="IV" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle positionData={rightLineup?.II} position="II" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle positionData={rightLineup?.III} position="III" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle positionData={rightLineup?.IV} position="IV" team={rightTeam} isServing={rightServing} />
                 </div>
                 {/* Back row (I, VI, V) - right side of right court */}
                 <div style={{
@@ -2905,9 +3094,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   justifyContent: 'space-around',
                   alignItems: 'center'
                 }}>
-                  <PlayerCircle number={rightLineup?.I} position="I" team={rightTeam} isServing={rightServing} />
-                  <PlayerCircle number={rightLineup?.VI} position="VI" team={rightTeam} isServing={rightServing} />
-                  <PlayerCircle number={rightLineup?.V} position="V" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle positionData={rightLineup?.I} position="I" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle positionData={rightLineup?.VI} position="VI" team={rightTeam} isServing={rightServing} />
+                  <PlayerCircle positionData={rightLineup?.V} position="V" team={rightTeam} isServing={rightServing} />
                 </div>
               </div>
             ) : (
@@ -2943,7 +3132,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                           touchAction: 'none'
                         }}
                       >
-                        <PlayerCircle number={rightLineup?.[pos]} position={pos} team={rightTeam} isServing={rightServing} />
+                        <PlayerCircle positionData={rightLineup?.[pos]} position={pos} team={rightTeam} isServing={rightServing} />
                       </div>
                     )
                   })
@@ -3096,7 +3285,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Column 4: Right team name (fills space, text centered) */}
         <div style={{
           display: 'flex',
-          padding: '3px',
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden'
@@ -3155,119 +3343,268 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
       </div>
 
-      {/* SECTION 5: Actions Area - 20% */}
+      {/* SECTION 5: Team Sanctions Bar - fills remaining space */}
+      <div style={{
+        flex: '1 1 auto',
+        display: 'grid',
+        gridTemplateColumns: '20% 60% 20%',
+        alignItems: 'center',
+        alignContent: 'center',
+        padding: '2px 12px',
+        background: 'rgba(0, 0, 0, 0.1)',
+        minHeight: 0,
+        height: '100%',
+        overflow: 'hidden'
+      }}>
+        {/* Left team sanctions */}
         <div style={{
-          flex: '0 0 20%',
-          padding: '6px 12px',
-          background: 'rgba(0, 0, 0, 0.2)',
           display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
+          gap: '4px',
           alignItems: 'center',
-          overflow: 'hidden',
-          minHeight: 0
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          height: '100%'
         }}>
-          {/* Show timeout countdown if active */}
-          {timeoutModal && (
-            <div style={{
-              textAlign: 'center',
-              padding: 'clamp(8px, 2vw, 16px)',
-              background: 'rgba(251, 191, 36, 0.2)',
-              borderRadius: '8px',
-              border: '2px solid var(--accent)',
-              width: '100%',
-              maxWidth: '400px'
-            }}>
-              <div style={{ fontSize: 'clamp(12px, 3vw, 16px)', color: 'var(--muted)', marginBottom: 'clamp(4px, 1vw, 8px)' }}>TIMEOUT</div>
-              <div style={{ fontSize: 'clamp(14px, 3.5vw, 18px)', fontWeight: 600 }}>
-                {timeoutModal.team === 'home' ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home') : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')}
-              </div>
-              <div style={{ fontSize: 'clamp(32px, 8vw, 48px)', fontWeight: 800, color: 'var(--accent)' }}>
+          {leftTeamSanctions.formalWarning && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#fde047',
+              color: '#000',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>FW</span>
+          )}
+          {leftTeamSanctions.improperRequest && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#f97316',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>IR</span>
+          )}
+          {leftTeamSanctions.delayWarning && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#fde047',
+              color: '#000',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>DW</span>
+          )}
+          {leftTeamSanctions.delayPenalty && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#ef4444',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>DP</span>
+          )}
+          {leftTeamSanctions.benchSanctions.length > 0 && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#a855f7',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>B×{leftTeamSanctions.benchSanctions.length}</span>
+          )}
+          {/* Player sanctions: warnings (yellow card) */}
+          {leftTeamSanctions.playerWarnings.map((w, i) => (
+            <span key={`w${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#fde047',
+              color: '#000',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>W#{w.player}</span>
+          ))}
+          {/* Player sanctions: penalties (red card) */}
+          {leftTeamSanctions.playerPenalties.map((p, i) => (
+            <span key={`p${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#ef4444',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>P#{p.player}</span>
+          ))}
+          {/* Player sanctions: expulsions (red+yellow) */}
+          {leftTeamSanctions.expulsions.map((e, i) => (
+            <span key={`e${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              textShadow: '0 0 2px #000'
+            }}>E#{e.player}</span>
+          ))}
+          {/* Player sanctions: disqualifications */}
+          {leftTeamSanctions.disqualifications.map((d, i) => (
+            <span key={`d${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#7f1d1d',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>DQ#{d.player}</span>
+          ))}
+        </div>
+
+        {/* Center: Countdown when active, otherwise Favicon */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column'
+        }}>
+          {timeoutModal ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>TIMEOUT</div>
+              <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontWeight: 800, color: 'var(--accent)' }}>
                 {timeoutModal.countdown}"
               </div>
             </div>
-          )}
-
-          {/* Show between-sets countdown if active */}
-          {betweenSetsCountdown && betweenSetsCountdown.countdown > 0 && (
-            <div style={{
-              textAlign: 'center',
-              padding: 'clamp(8px, 2vw, 16px)',
-              background: 'rgba(34, 197, 94, 0.2)',
-              borderRadius: '8px',
-              border: '2px solid #22c55e',
-              width: '100%',
-              maxWidth: '400px'
-            }}>
-              <div style={{ fontSize: 'clamp(12px, 3vw, 16px)', color: 'var(--muted)', marginBottom: 'clamp(4px, 1vw, 8px)' }}>INTERVAL</div>
-              <div style={{ fontSize: 'clamp(32px, 8vw, 48px)', fontWeight: 800, color: '#22c55e' }}>
+          ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>INTERVAL</div>
+              <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontWeight: 800, color: '#22c55e' }}>
                 {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
               </div>
             </div>
-          )}
-
-          {/* Show substitution modal info if active */}
-          {substitutionModal && (
-            <div style={{
-              textAlign: 'center',
-              padding: 'clamp(8px, 2vw, 16px)',
-              background: 'rgba(59, 130, 246, 0.2)',
-              borderRadius: '8px',
-              border: '2px solid #3b82f6',
-              width: '100%',
-              maxWidth: '400px'
-            }}>
-              <div style={{ fontSize: 'clamp(12px, 3vw, 16px)', color: 'var(--muted)', marginBottom: 'clamp(4px, 1vw, 8px)' }}>
-                {substitutionModal.isExceptional ? 'EXCEPTIONAL SUB' : 'SUBSTITUTION'}
-              </div>
-              <div style={{ fontSize: 'clamp(14px, 3.5vw, 18px)', fontWeight: 600, marginBottom: 'clamp(4px, 1vw, 8px)' }}>
-                {substitutionModal.teamName}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(12px, 4vw, 24px)' }}>
-                <span style={{ color: '#ef4444', fontWeight: 700, fontSize: 'clamp(24px, 6vw, 36px)' }}>#{substitutionModal.playerOut}</span>
-                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 'clamp(20px, 5vw, 28px)' }}>→</span>
-                <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 'clamp(24px, 6vw, 36px)' }}>#{substitutionModal.playerIn}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Default: Show favicon when no action */}
-          {!timeoutModal && !substitutionModal && (!betweenSetsCountdown || betweenSetsCountdown.countdown <= 0) && (
-            <div style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              minHeight: 0,
-              overflow: 'hidden'
-            }}>
-              {data?.rallyStatus === 'in_play' ? (
-                <div style={{
-                  color: '#22c55e',
-                  fontWeight: 600,
-                  fontSize: 'clamp(18px, 5vw, 28px)',
-                  textAlign: 'center'
-                }}>
-                  Rally in progress...
-                </div>
-              ) : (
-                <img
-                  src={favicon}
-                  alt=""
-                  style={{
-                    maxHeight: '100%',
-                    maxWidth: '100%',
-                    width: 'auto',
-                    height: 'auto',
-                    objectFit: 'contain'
-                  }}
-                />
-              )}
-            </div>
+          ) : (
+            <img
+              src="/favicon.png"
+              alt="OpenVolley"
+              style={{
+                width: '100%',
+                height: '100%',
+                maxWidth: '120px',
+                maxHeight: '120px',
+                objectFit: 'contain',
+                opacity: 0.7
+              }}
+            />
           )}
         </div>
+
+        {/* Right team sanctions */}
+        <div style={{
+          display: 'flex',
+          gap: '4px',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexWrap: 'wrap'
+        }}>
+          {rightTeamSanctions.formalWarning && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#fde047',
+              color: '#000',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>FW</span>
+          )}
+          {rightTeamSanctions.improperRequest && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#f97316',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>IR</span>
+          )}
+          {rightTeamSanctions.delayWarning && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#fde047',
+              color: '#000',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>DW</span>
+          )}
+          {rightTeamSanctions.delayPenalty && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#ef4444',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>DP</span>
+          )}
+          {rightTeamSanctions.benchSanctions.length > 0 && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#a855f7',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>B×{rightTeamSanctions.benchSanctions.length}</span>
+          )}
+          {/* Player sanctions: warnings (yellow card) */}
+          {rightTeamSanctions.playerWarnings.map((w, i) => (
+            <span key={`w${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#fde047',
+              color: '#000',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>W#{w.player}</span>
+          ))}
+          {/* Player sanctions: penalties (red card) */}
+          {rightTeamSanctions.playerPenalties.map((p, i) => (
+            <span key={`p${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#ef4444',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>P#{p.player}</span>
+          ))}
+          {/* Player sanctions: expulsions (red+yellow) */}
+          {rightTeamSanctions.expulsions.map((e, i) => (
+            <span key={`e${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              textShadow: '0 0 2px #000'
+            }}>E#{e.player}</span>
+          ))}
+          {/* Player sanctions: disqualifications */}
+          {rightTeamSanctions.disqualifications.map((d, i) => (
+            <span key={`d${i}`} style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              background: '#7f1d1d',
+              color: '#fff',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>DQ#{d.player}</span>
+          ))}
+        </div>
+      </div>
+
       </div>{/* End main content wrapper */}
 
       {/* Test Mode Controls - only shown in test mode */}
