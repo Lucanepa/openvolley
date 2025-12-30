@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from '../Modal'
 import {
   getLocalIP,
@@ -21,6 +22,7 @@ export default function ConnectionSetupModal({
   awayTeamPin,
   gameNumber
 }) {
+  const { t } = useTranslation()
   const [connectionMode, setConnectionMode] = useState('lan') // 'lan' | 'internet'
   const [step, setStep] = useState(1)
   const [localIP, setLocalIP] = useState(null)
@@ -92,7 +94,7 @@ export default function ConnectionSetupModal({
   const renderModeSelector = () => (
     <div style={{ marginBottom: 24 }}>
       <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', marginBottom: 16, textAlign: 'center' }}>
-        Choose how devices will connect:
+        {t('connection.chooseConnection')}
       </p>
       <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
         <button
@@ -111,7 +113,7 @@ export default function ConnectionSetupModal({
         >
           <div style={{ fontSize: 32, marginBottom: 8 }}>📶</div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>LAN</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Same WiFi Network</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>{t('connection.sameWifi')}</div>
         </button>
 
         <button
@@ -133,7 +135,7 @@ export default function ConnectionSetupModal({
           <div style={{ fontSize: 32, marginBottom: 8 }}>🌐</div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>Internet</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-            {cloudBackendUrl ? 'Cloud Relay' : 'Not Configured'}
+            {cloudBackendUrl ? t('connection.cloudRelay') : t('connection.notConfigured')}
           </div>
         </button>
       </div>
@@ -150,14 +152,14 @@ export default function ConnectionSetupModal({
         marginBottom: 20
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-          Local Network Address
+          {t('connection.localNetworkAddress')}
         </h4>
         {loading ? (
-          <p style={{ color: 'rgba(255,255,255,0.5)' }}>Detecting network...</p>
+          <p style={{ color: 'rgba(255,255,255,0.5)' }}>{t('connection.detectingNetwork')}</p>
         ) : localIP ? (
           <div style={{ fontFamily: 'monospace', fontSize: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span>IP Address:</span>
+              <span>{t('connection.ipAddress')}:</span>
               <span style={{ color: 'var(--accent)' }}>{localIP}:{port}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -165,7 +167,7 @@ export default function ConnectionSetupModal({
               <span style={{ color: 'var(--accent)' }}>{wsUrl}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Status:</span>
+              <span>{t('connection.status')}:</span>
               <span style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -178,13 +180,13 @@ export default function ConnectionSetupModal({
                   borderRadius: '50%',
                   background: serverStatus.running ? '#22c55e' : '#ef4444'
                 }} />
-                {serverStatus.running ? 'Running' : 'Not Running'}
+                {serverStatus.running ? t('options.running') : t('options.notRunning')}
               </span>
             </div>
           </div>
         ) : (
           <p style={{ color: '#ef4444' }}>
-            Could not detect local IP. Make sure you're connected to a WiFi network.
+            {t('connection.couldNotDetectIP')}
           </p>
         )}
       </div>
@@ -198,12 +200,12 @@ export default function ConnectionSetupModal({
           marginBottom: 20
         }}>
           <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-            Connect Referee Device
+            {t('connection.connectRefereeDevice')}
           </h4>
           <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8 }}>
-            <li>Open browser on Referee Dashboard/phone</li>
+            <li>{t('connection.openBrowserReferee')}</li>
             <li>
-              Go to: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
+              {t('connection.goTo')}: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
                 {refereeUrl}
               </code>
               <button
@@ -219,11 +221,11 @@ export default function ConnectionSetupModal({
                   cursor: 'pointer'
                 }}
               >
-                {copyFeedback === 'Referee URL' ? 'Copied!' : 'Copy'}
+                {copyFeedback === 'Referee URL' ? t('options.copied') : t('options.copy')}
               </button>
             </li>
             <li>
-              Enter PIN: <code style={{
+              {t('connection.enterPin')}: <code style={{
                 background: 'rgba(var(--accent-rgb),0.2)',
                 padding: '2px 8px',
                 borderRadius: 4,
@@ -247,7 +249,7 @@ export default function ConnectionSetupModal({
                     cursor: 'pointer'
                   }}
                 >
-                  {copyFeedback === 'Referee PIN' ? 'Copied!' : 'Copy'}
+                  {copyFeedback === 'Referee PIN' ? t('options.copied') : t('options.copy')}
                 </button>
               )}
             </li>
@@ -261,7 +263,7 @@ export default function ConnectionSetupModal({
               style={{ background: '#fff', padding: 8, borderRadius: 8 }}
             />
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>
-              Scan to open referee page
+              {t('connection.scanToOpenReferee')}
             </p>
           </div>
         </div>
@@ -276,12 +278,12 @@ export default function ConnectionSetupModal({
           marginBottom: 20
         }}>
           <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-            Connect Bench Devices
+            {t('connection.connectBenchDevices')}
           </h4>
           <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8 }}>
-            <li>Open browser on bench tablet/phone</li>
+            <li>{t('connection.openBrowserBench')}</li>
             <li>
-              Go to: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
+              {t('connection.goTo')}: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
                 {benchUrl}
               </code>
               <button
@@ -297,16 +299,16 @@ export default function ConnectionSetupModal({
                   cursor: 'pointer'
                 }}
               >
-                {copyFeedback === 'Bench URL' ? 'Copied!' : 'Copy'}
+                {copyFeedback === 'Bench URL' ? t('options.copied') : t('options.copy')}
               </button>
             </li>
-            <li>Select team and enter PIN:</li>
+            <li>{t('connection.selectTeamEnterPin')}</li>
           </ol>
 
           <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
             {homeTeamPin && (
               <div style={{ flex: 1, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Home Team PIN</div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>{t('connection.homeTeamPin')}</div>
                 <code style={{
                   display: 'block',
                   background: 'rgba(59, 130, 246, 0.2)',
@@ -331,13 +333,13 @@ export default function ConnectionSetupModal({
                     cursor: 'pointer'
                   }}
                 >
-                  {copyFeedback === 'Home PIN' ? 'Copied!' : 'Copy'}
+                  {copyFeedback === 'Home PIN' ? t('options.copied') : t('options.copy')}
                 </button>
               </div>
             )}
             {awayTeamPin && (
               <div style={{ flex: 1, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Away Team PIN</div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>{t('connection.awayTeamPin')}</div>
                 <code style={{
                   display: 'block',
                   background: 'rgba(239, 68, 68, 0.2)',
@@ -362,7 +364,7 @@ export default function ConnectionSetupModal({
                     cursor: 'pointer'
                   }}
                 >
-                  {copyFeedback === 'Away PIN' ? 'Copied!' : 'Copy'}
+                  {copyFeedback === 'Away PIN' ? t('options.copied') : t('options.copy')}
                 </button>
               </div>
             )}
@@ -377,7 +379,7 @@ export default function ConnectionSetupModal({
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-          Connected Devices
+          {t('connection.connectedDevices')}
         </h4>
         <div style={{
           display: 'flex',
@@ -396,12 +398,12 @@ export default function ConnectionSetupModal({
             {connectionCount.totalClients}
           </span>
           <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>
-            {connectionCount.totalClients === 1 ? 'device' : 'devices'} connected
+            {connectionCount.totalClients === 1 ? t('connection.deviceConnected') : t('connection.devicesConnected')}
           </span>
         </div>
         {matchId && connectionCount.matchSubscriptions && (
           <div style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
-            {connectionCount.matchSubscriptions[matchId] || 0} watching this match
+            {t('connection.watchingThisMatch', { count: connectionCount.matchSubscriptions[matchId] || 0 })}
           </div>
         )}
       </div>
@@ -418,7 +420,7 @@ export default function ConnectionSetupModal({
         marginBottom: 20
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-          Cloud Backend
+          {t('connection.cloudBackend')}
         </h4>
         {cloudBackendUrl ? (
           <div style={{ fontFamily: 'monospace', fontSize: 14 }}>
@@ -427,16 +429,16 @@ export default function ConnectionSetupModal({
               <span style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{cloudBackendUrl}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Status:</span>
+              <span>{t('connection.status')}:</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
-                Configured
+                {t('connection.configured')}
               </span>
             </div>
           </div>
         ) : (
           <p style={{ color: '#ef4444' }}>
-            No cloud backend configured. Set VITE_BACKEND_URL environment variable.
+            {t('connection.noCloudBackend')}
           </p>
         )}
       </div>
@@ -451,11 +453,11 @@ export default function ConnectionSetupModal({
             marginBottom: 20
           }}>
             <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-              Share with Remote Devices
+              {t('connection.shareWithRemote')}
             </h4>
 
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Referee URL:</div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>{t('connection.refereeUrl')}:</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <code style={{
                   flex: 1,
@@ -480,14 +482,14 @@ export default function ConnectionSetupModal({
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  {copyFeedback === 'Cloud Referee URL' ? 'Copied!' : 'Copy'}
+                  {copyFeedback === 'Cloud Referee URL' ? t('options.copied') : t('options.copy')}
                 </button>
               </div>
             </div>
 
             {refereePin && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 14 }}>Game PIN:</span>
+                <span style={{ fontSize: 14 }}>{t('connection.gamePin')}:</span>
                 <code style={{
                   background: 'rgba(var(--accent-rgb),0.2)',
                   padding: '8px 16px',
@@ -510,7 +512,7 @@ export default function ConnectionSetupModal({
                     cursor: 'pointer'
                   }}
                 >
-                  {copyFeedback === 'Cloud PIN' ? 'Copied!' : 'Copy'}
+                  {copyFeedback === 'Cloud PIN' ? t('options.copied') : t('options.copy')}
                 </button>
               </div>
             )}
@@ -523,7 +525,7 @@ export default function ConnectionSetupModal({
                 style={{ background: '#fff', padding: 8, borderRadius: 8 }}
               />
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>
-                Scan to open referee page
+                {t('connection.scanToOpenReferee')}
               </p>
             </div>
           </div>
@@ -535,7 +537,7 @@ export default function ConnectionSetupModal({
             padding: 16
           }}>
             <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
-              Connected Devices
+              {t('connection.connectedDevices')}
             </h4>
             <div style={{
               display: 'flex',
@@ -554,7 +556,7 @@ export default function ConnectionSetupModal({
                 {connectionCount.totalClients}
               </span>
               <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>
-                {connectionCount.totalClients === 1 ? 'device' : 'devices'} connected
+                {connectionCount.totalClients === 1 ? t('connection.deviceConnected') : t('connection.devicesConnected')}
               </span>
             </div>
           </div>
@@ -565,7 +567,7 @@ export default function ConnectionSetupModal({
 
   return (
     <Modal
-      title="Connection Setup"
+      title={t('connection.title')}
       open={open}
       onClose={onClose}
       width={500}

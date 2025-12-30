@@ -736,8 +736,8 @@ export default function RefereeApp() {
               </div>
             )}
 
-            {/* Only show PIN input when offline OR when there are games */}
-            {(!serverConnected || availableMatches.length > 0) && (
+            {/* Only show PIN input when offline OR when a game has been selected */}
+            {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
             <div style={{ width: '80%', maxWidth: '280px' }}>
               <label style={{
                 display: 'block',
@@ -788,7 +788,7 @@ export default function RefereeApp() {
               </div>
             )}
 
-            {(!serverConnected || availableMatches.length > 0) && (
+            {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
             <button
               type="submit"
               disabled={isLoading}

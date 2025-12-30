@@ -682,7 +682,7 @@ export default function HomeOptionsModal({
                       cursor: 'pointer'
                     }}
                   >
-                    Exit {displayMode} mode
+                    {t('options.exitMode', { mode: displayMode })}
                   </button>
                 </div>
               )}
@@ -702,8 +702,8 @@ export default function HomeOptionsModal({
           <Section title={t('options.dashboardServer')}>
             <Row style={{ marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable Dashboards</div>
-                <InfoDot title="Allow referee and bench tablets to connect via local network (LAN). No internet required." />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableDashboards')}</div>
+                <InfoDot title={t('options.enableDashboardsInfo')} />
               </div>
               <ToggleSwitch
                 value={dashboardServer.enabled}
@@ -721,7 +721,7 @@ export default function HomeOptionsModal({
                   marginBottom: '12px'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>Server Status</span>
+                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{t('options.serverStatus')}</span>
                     <span style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -735,7 +735,7 @@ export default function HomeOptionsModal({
                         borderRadius: '50%',
                         background: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
                       }} />
-                      {dashboardServer.serverRunning ? 'Running' : 'Not Running'}
+                      {dashboardServer.serverRunning ? t('options.running') : t('options.notRunning')}
                     </span>
                   </div>
 
@@ -743,7 +743,7 @@ export default function HomeOptionsModal({
                     <>
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
-                          Connect dashboards to:
+                          {t('options.connectDashboardsTo')}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <code style={{
@@ -772,7 +772,7 @@ export default function HomeOptionsModal({
                               whiteSpace: 'nowrap'
                             }}
                           >
-                            {copyFeedback === 'URL' ? 'Copied!' : 'Copy'}
+                            {copyFeedback === 'URL' ? t('options.copied') : t('options.copy')}
                           </button>
                         </div>
                       </div>
@@ -780,7 +780,7 @@ export default function HomeOptionsModal({
                       {dashboardServer.refereePin && (
                         <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
-                            Referee PIN:
+                            {t('options.refereePin')}:
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <code style={{
@@ -809,7 +809,7 @@ export default function HomeOptionsModal({
                                 whiteSpace: 'nowrap'
                               }}
                             >
-                              {copyFeedback === 'PIN' ? 'Copied!' : 'Copy'}
+                              {copyFeedback === 'PIN' ? t('options.copied') : t('options.copy')}
                             </button>
                           </div>
                         </div>
@@ -823,7 +823,7 @@ export default function HomeOptionsModal({
                           style={{ background: '#fff', padding: 6, borderRadius: 6 }}
                         />
                         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
-                          Scan to open Referee Dashboard
+                          {t('options.scanToOpen')}
                         </div>
                       </div>
                     </>
@@ -838,9 +838,9 @@ export default function HomeOptionsModal({
                       fontSize: '12px',
                       color: 'rgba(255,255,255,0.8)'
                     }}>
-                      <strong style={{ color: '#ef4444' }}>Server not detected.</strong>
+                      <strong style={{ color: '#ef4444' }}>{t('options.serverNotDetected')}</strong>
                       <br />
-                      Start the backend server with: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
+                      {t('options.startBackendServer')} <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
                     </div>
                   )}
                 </div>
@@ -852,7 +852,7 @@ export default function HomeOptionsModal({
                   padding: '16px'
                 }}>
                   <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
-                    Connected Dashboards
+                    {t('options.connectedDashboards')}
                   </div>
                   <div style={{
                     display: 'flex',
@@ -872,11 +872,13 @@ export default function HomeOptionsModal({
                     </span>
                     <div style={{ textAlign: 'left' }}>
                       <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>
-                        {dashboardServer.dashboardCount === 1 ? 'dashboard' : 'dashboards'} connected
+                        {dashboardServer.dashboardCount === 1
+                          ? t('options.dashboardConnected', { count: dashboardServer.dashboardCount || 0 })
+                          : t('options.dashboardsConnected', { count: dashboardServer.dashboardCount || 0 })}
                       </div>
                       {dashboardServer.dashboardCount > 0 && (
                         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                          {dashboardServer.refereeCount || 0} referee, {dashboardServer.benchCount || 0} bench
+                          {t('options.refereeBenchCount', { refereeCount: dashboardServer.refereeCount || 0, benchCount: dashboardServer.benchCount || 0 })}
                         </div>
                       )}
                     </div>
@@ -952,7 +954,7 @@ export default function HomeOptionsModal({
             }}
           >
             <span style={{ fontSize: '20px' }}>📡</span>
-            <span>Setup Connections</span>
+            <span>{t('options.setupConnections')}</span>
           </button>
           <button
             onClick={() => {
@@ -982,7 +984,7 @@ export default function HomeOptionsModal({
             }}
           >
             <span style={{ fontSize: '20px' }}>?</span>
-            <span>Show Guide</span>
+            <span>{t('options.showGuide')}</span>
           </button>
         </div>
 
@@ -1014,7 +1016,7 @@ export default function HomeOptionsModal({
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
               }}
             >
-              <span>View Releases & Downloads</span>
+              <span>{t('options.viewReleasesDownloads')}</span>
               <span style={{ fontSize: '14px', opacity: 0.7 }}>↗</span>
             </a>
           </Section>
@@ -1022,15 +1024,15 @@ export default function HomeOptionsModal({
 
         <Section title={t('options.environment')}>
           <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
-            Quick links to all app pages. Open in new tabs for multi-device setup.
+            {t('options.environmentDesc')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[
-              { path: '/', name: 'Scoreboard', desc: 'Main scoring interface' },
-              { path: '/referee/index.html', name: 'Referee', desc: 'Referee Dashboard' },
-              { path: '/bench/index.html', name: 'Bench', desc: 'Team Dashboard' },
-              { path: '/livescore/index.html', name: 'Livescore', desc: 'Public display' },
-              { path: '/upload_roster/index.html', name: 'Upload Roster', desc: 'Import team rosters from PDF/CSV' }
+              { path: '/', name: t('options.scoreboard'), desc: t('options.scoreboardDesc') },
+              { path: '/referee/index.html', name: t('header.referee'), desc: t('options.refereeDesc') },
+              { path: '/bench/index.html', name: t('header.bench'), desc: t('options.benchDesc') },
+              { path: '/livescore/index.html', name: t('options.livescore'), desc: t('options.livescoreDesc') },
+              { path: '/upload_roster/index.html', name: t('options.uploadRoster'), desc: t('options.uploadRosterDesc') }
             ].map(page => (
               <a
                 key={page.path}
@@ -1090,7 +1092,7 @@ export default function HomeOptionsModal({
             fontSize: '11px',
             color: 'rgba(255,255,255,0.7)'
           }}>
-            <strong style={{ color: '#3b82f6' }}>Tip:</strong> For local network setup, use your device's IP address instead of app.openvolley.app (e.g., http://192.168.1.100:5173/referee)
+            <strong style={{ color: '#3b82f6' }}>Tip:</strong> {t('options.environmentTip')}
           </div>
         </Section>
 
@@ -1099,10 +1101,10 @@ export default function HomeOptionsModal({
             <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px' }}>Auto Backup</div>
+                  <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.autoBackup')}</div>
                   <InfoDot title={backup.hasFileSystemAccess
-                    ? "Automatically save match data to selected folder on every change"
-                    : "Automatically download backup every few minutes during active match"
+                    ? t('options.autoBackupFolderInfo')
+                    : t('options.autoBackupDownloadInfo')
                   } />
                 </div>
                 <ToggleSwitch
@@ -1115,7 +1117,7 @@ export default function HomeOptionsModal({
                 // Chrome/Edge: Folder selection
                 <div style={{ marginTop: '8px' }}>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
-                    Backup Location: {backup.backupDirName || 'Not set'}
+                    {t('options.backupLocation')}: {backup.backupDirName || t('common.notSet')}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button
@@ -1131,7 +1133,7 @@ export default function HomeOptionsModal({
                         cursor: 'pointer'
                       }}
                     >
-                      {backup.backupDirName ? 'Change Folder' : 'Select Backup Folder'}
+                      {backup.backupDirName ? t('options.changeFolder') : t('options.selectBackupFolder')}
                     </button>
                     {backup.backupDirName && (
                       <button
@@ -1147,7 +1149,7 @@ export default function HomeOptionsModal({
                           cursor: 'pointer'
                         }}
                       >
-                        Clear
+                        {t('options.clear')}
                       </button>
                     )}
                   </div>
@@ -1163,14 +1165,14 @@ export default function HomeOptionsModal({
                     marginBottom: '12px'
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#fbbf24', marginBottom: '4px' }}>
-                      Limited Browser Support
+                      {t('options.limitedBrowserSupport')}
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', lineHeight: '1.4' }}>
-                      Your browser doesn't support automatic folder backup. For best experience, use <strong style={{ color: '#fff' }}>Chrome</strong> or <strong style={{ color: '#fff' }}>Edge</strong> on desktop.
+                      {t('options.limitedBrowserSupportDesc')}
                     </div>
                   </div>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
-                    Event-based auto-download (when enabled):
+                    {t('options.eventBasedAutoDownload')}:
                   </div>
                   <div style={{
                     display: 'grid',
@@ -1180,27 +1182,27 @@ export default function HomeOptionsModal({
                     color: 'rgba(255,255,255,0.7)'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Set Start
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.setStart')}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Set End
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.setEnd')}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Match End
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.matchEnd')}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Timeout Called
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.timeoutCalled')}
                     </div>
                   </div>
                   <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>
-                    Note: Each download creates a new file in your Downloads folder
+                    {t('options.eventBasedNote')}
                   </div>
                 </div>
               )}
 
               {backup.lastBackup && (
                 <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-                  Last backup: {backup.lastBackup.toLocaleTimeString()}
+                  {t('options.lastBackup')}: {backup.lastBackup.toLocaleTimeString()}
                 </div>
               )}
 
@@ -1232,7 +1234,7 @@ export default function HomeOptionsModal({
                     cursor: backup.isBackingUp ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {backup.isBackingUp ? 'Backing up...' : 'Download Backup Now'}
+                  {backup.isBackingUp ? t('options.backingUp') : t('options.downloadBackupNow')}
                 </button>
               </div>
             </Row>
@@ -1243,7 +1245,7 @@ export default function HomeOptionsModal({
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Current Version</div>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.currentVersion')}</div>
                 <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px' }}>
                   v{currentVersion}
                 </div>
@@ -1262,7 +1264,7 @@ export default function HomeOptionsModal({
                   cursor: updateCheck.checking ? 'not-allowed' : 'pointer'
                 }}
               >
-                {updateCheck.checking ? 'Checking...' : 'Check for Updates'}
+                {updateCheck.checking ? t('options.checking') : t('options.checkForUpdates')}
               </button>
             </div>
 
@@ -1279,7 +1281,7 @@ export default function HomeOptionsModal({
               }}>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: '#22c55e' }}>
-                    Update Available!
+                    {t('options.updateAvailable')}
                   </div>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
                     {currentVersion} → {newVersion}
@@ -1298,7 +1300,7 @@ export default function HomeOptionsModal({
                     cursor: 'pointer'
                   }}
                 >
-                  Refresh to Update
+                  {t('options.refreshToUpdate')}
                 </button>
               </div>
             )}
@@ -1312,7 +1314,7 @@ export default function HomeOptionsModal({
                 fontSize: '13px',
                 color: 'rgba(255,255,255,0.8)'
               }}>
-                You're on the latest version!
+                {t('options.latestVersion')}
               </div>
             )}
 
@@ -1325,7 +1327,7 @@ export default function HomeOptionsModal({
                 fontSize: '13px',
                 color: '#ef4444'
               }}>
-                Could not check for updates. Please try again.
+                {t('options.couldNotCheckUpdates')}
               </div>
             )}
           </Row>
@@ -1334,8 +1336,8 @@ export default function HomeOptionsModal({
         <Section title={t('options.cacheManagement')} borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Clear Application Cache</div>
-              <InfoDot title="Clears service worker caches and optionally localStorage. Use if app behaves unexpectedly." />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.clearApplicationCache')}</div>
+              <InfoDot title={t('options.clearApplicationCacheInfo')} />
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
@@ -1358,7 +1360,7 @@ export default function HomeOptionsModal({
                   e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
                 }}
               >
-                Clear Cache
+                {t('options.clearCache')}
               </button>
               <button
                 onClick={() => setClearCacheModal({ type: 'all' })}
@@ -1380,7 +1382,7 @@ export default function HomeOptionsModal({
                   e.currentTarget.style.background = 'rgba(239, 68, 68, 0.4)'
                 }}
               >
-                Clear All (includes settings)
+                {t('options.clearAll')}
               </button>
             </div>
           </Row>
@@ -1415,17 +1417,17 @@ export default function HomeOptionsModal({
               }}
             >
               <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
-                Confirm Clear Cache
+                {t('options.confirmClearCache')}
               </h3>
               <p style={{ margin: '0 0 16px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
                 {clearCacheModal.type === 'all'
-                  ? 'This will clear all cached data AND your settings. The page will reload after clearing.'
-                  : 'This will clear cached files. Your settings will be preserved. The page will reload after clearing.'
+                  ? t('options.clearAllWarning')
+                  : t('options.clearCacheWarning')
                 }
               </p>
               {clearCacheModal.type === 'all' && (
                 <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
-                  Warning: This will reset all your preferences to defaults.
+                  {t('options.resetPreferencesWarning')}
                 </p>
               )}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -1442,7 +1444,7 @@ export default function HomeOptionsModal({
                     cursor: 'pointer'
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => executeClearCache(clearCacheModal.type === 'all')}
@@ -1457,7 +1459,7 @@ export default function HomeOptionsModal({
                     cursor: 'pointer'
                   }}
                 >
-                  Clear {clearCacheModal.type === 'all' ? 'All' : 'Cache'}
+                  {clearCacheModal.type === 'all' ? t('options.clearAll') : t('options.clearCache')}
                 </button>
               </div>
             </div>

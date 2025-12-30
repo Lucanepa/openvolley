@@ -35,9 +35,9 @@ export default function HomePage({
             <button
               onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
               style={{
-                width: '180px',
+                width: '400px',
                 padding: '16px 24px',
-                fontSize: '16px',
+                fontSize: '20px',
                 fontWeight: 600,
                 background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
                 color: '#fff',
@@ -46,7 +46,8 @@ export default function HomePage({
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
+                gap: '10px',
                 transition: 'transform 0.2s, box-shadow 0.2s'
               }}
               onMouseEnter={(e) => {
@@ -68,7 +69,7 @@ export default function HomePage({
                 position: 'absolute',
                 top: '100%',
                 left: 0,
-                width: '180px',
+                width: '400px',
                 marginTop: '8px',
                 background: 'rgba(30, 30, 40, 0.98)',
                 borderRadius: '12px',
@@ -88,7 +89,7 @@ export default function HomePage({
                   style={{
                     width: '100%',
                     padding: '12px 20px',
-                    fontSize: '14px',
+                    fontSize: '20px',
                     fontWeight: 600,
                     background: 'rgba(59, 130, 246, 0.1)',
                     color: '#3b82f6',
@@ -111,7 +112,7 @@ export default function HomePage({
                   style={{
                     width: '100%',
                     padding: '12px 20px',
-                    fontSize: '14px',
+                    fontSize: '20px',
                     fontWeight: 600,
                     background: testMatchLoading ? 'rgba(168, 85, 247, 0.05)' : 'rgba(168, 85, 247, 0.1)',
                     color: testMatchLoading ? 'rgba(168, 85, 247, 0.5)' : '#a855f7',
@@ -142,9 +143,9 @@ export default function HomePage({
                   }
                 }}
                 style={{
-                  width: '180px',
+                  width: '400px',
                   padding: '16px 24px',
-                  fontSize: '16px',
+                  fontSize: '20px',
                   fontWeight: 600,
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   color: '#fff',
@@ -177,9 +178,9 @@ export default function HomePage({
                   }
                 }}
                 style={{
-                  width: '180px',
+                  width: '400px',
                   padding: '16px 24px',
-                  fontSize: '16px',
+                  fontSize: '20px',
                   fontWeight: 600,
                   background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                   color: '#fff',
@@ -205,9 +206,9 @@ export default function HomePage({
           <button
             onClick={onRestoreMatch}
             style={{
-              width: '180px',
+              width: '400px',
               padding: '16px 24px',
-              fontSize: '16px',
+              fontSize: '20px',
               fontWeight: 600,
               background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
               color: '#fff',
@@ -231,14 +232,14 @@ export default function HomePage({
           {/* Game PIN Display (if exists) */}
           {currentOfficialMatch?.gamePin && (
             <div style={{
-              width: '180px',
+              width: '400px',
               marginTop: '8px',
               padding: '12px 16px',
               background: 'rgba(255, 255, 255, 0.05)',
               borderRadius: '12px',
               textAlign: 'center'
             }}>
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('home.gamePin')}</div>
+              <div style={{ fontSize: '20px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('home.gamePin')}</div>
               <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>
                 {currentOfficialMatch.gamePin}
               </div>
@@ -247,19 +248,19 @@ export default function HomePage({
           </div>
         </div>
 
-        <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+        <div style={{ marginTop: '50px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
           <button
             onClick={onOpenSettings}
             style={{
               padding: '10px 20px',
-              fontSize: '14px',
+              fontSize: '20px',
               fontWeight: 600,
               background: 'rgba(255, 255, 255, 0.1)',
               color: 'var(--text)',
               border: '1px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '8px',
               cursor: 'pointer',
-              width: '180px'
+              width: '400px'
             }}
           >
             {t('home.options')}
@@ -268,14 +269,14 @@ export default function HomePage({
             onClick={() => setSupportFeedbackOpen(true)}
             style={{
               padding: '10px 20px',
-              fontSize: '14px',
+              fontSize: '20px',
               fontWeight: 600,
               background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
               color: '#fff',
-              border: 'none',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '8px',
               cursor: 'pointer',
-              width: '180px',
+              width: '400px',
               transition: 'transform 0.2s, box-shadow 0.2s'
             }}
             onMouseEnter={(e) => {

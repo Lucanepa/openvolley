@@ -4,6 +4,22 @@ import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
 import changelog from '../CHANGELOG'
 
+
+const FlagBox = ({ children }) => (
+  <span
+    style={{
+      width: '20px',
+      height: '14px',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flex: '0 0 20px',
+    }}
+  >
+    {children}
+  </span>
+)
+
 // Small flag SVG components
 const FlagGB = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
@@ -14,7 +30,7 @@ const FlagGB = () => (
     <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7"/>
   </svg>
 )
-
+                                                                                                                                                     
 const FlagIT = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="20" height="42" fill="#009246"/>
@@ -39,11 +55,34 @@ const FlagFR = () => (
   </svg>
 )
 
+const FlagCH = () => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 32 32"
+    style={{
+      borderRadius: '2px',
+      boxShadow: '0 0 1px rgba(0,0,0,0.3)',
+    }}
+  >
+    {/* Red background */}
+    <rect width="32" height="32" fill="#ff0000" />
+
+    {/* Vertical arm */}
+    <rect x="14" y="6" width="4" height="20" fill="#fff" />
+
+    {/* Horizontal arm */}
+    <rect x="6" y="14" width="20" height="4" fill="#fff" />
+  </svg>
+)
+
+
 // Language options with flag components
 const languages = [
   { code: 'en', Flag: FlagGB, label: 'EN' },
   { code: 'it', Flag: FlagIT, label: 'IT' },
   { code: 'de', Flag: FlagDE, label: 'DE' },
+  { code: 'ch', Flag: FlagCH, label: 'DE' },
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 
@@ -1286,7 +1325,7 @@ export default function MainHeader({
                         }
                       }}
                     >
-                      <lang.Flag />
+                      <FlagBox><lang.Flag /></FlagBox>
                       <span>{lang.label}</span>
                     </button>
                   ))}
