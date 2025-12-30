@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../lib/supabaseClient'
 
 /**
@@ -10,6 +11,7 @@ import { supabase } from '../lib/supabaseClient'
  * @param {Object} position - Position config for dropdown placement
  */
 export default function RefereeSelector({ open, onClose, onSelect, position = {} }) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [referees, setReferees] = useState([])
   const [loading, setLoading] = useState(false)
@@ -145,21 +147,11 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
             flexDirection: 'column'
           }}
         >
-          {/* Header */}
-          <div style={{
-            padding: '4px 8px 8px',
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.5)',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-            marginBottom: '8px'
-          }}>
-            {isOnline ? 'Select from history (Supabase)' : 'Offline - no history available'}
-          </div>
 
           {/* Search Input */}
           <input
             type="text"
-            placeholder="Search referees..."
+            placeholder={t('refereeSelector.searchReferees')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -186,15 +178,15 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
           }}>
             {!isOnline ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                Connect to internet to see referee history
+                {t('refereeSelector.connectToInternet')}
               </div>
             ) : loading ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                Loading...
+                {t('common.loading')}
               </div>
             ) : filteredReferees.length === 0 ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                {searchQuery ? 'No referees found' : 'No referee history yet. Enter referees manually and they will be saved for future matches.'}
+                {searchQuery ? t('refereeSelector.noRefereesFound') : t('refereeSelector.noRefereeHistory')}
               </div>
             ) : (
               filteredReferees.map((referee) => (

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.16.21',
+    date: '30.12.25',
+    changes: [
+      'Update package dependencies and enhance App_Scoresheet component for improved time formatting'
+    ]
+  },
+  {
     version: '0.16.20',
     date: '30.12.25',
     changes: [
