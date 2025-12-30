@@ -46,7 +46,6 @@ export const TEST_TEAM_SEED_DATA = [
       { number: 1, firstName: 'Luca', lastName: 'Keller', dob: '05/01/1998', libero: '', isCaptain: true },
       { number: 2, firstName: 'Jonas', lastName: 'Hofmann', dob: '12/03/1997', libero: '', isCaptain: false },
       { number: 3, firstName: 'Noah', lastName: 'Schmid', dob: '23/07/1996', libero: '', isCaptain: false },
-      { number: 13, firstName: 'Simon', lastName: 'Meier', dob: '18/09/1995', libero: 'libero2', isCaptain: false },
       { number: 4, firstName: 'Felix', lastName: 'Graf', dob: '30/11/1999', libero: '', isCaptain: false },
       { number: 6, firstName: 'David', lastName: 'Brunner', dob: '14/01/1998', libero: '', isCaptain: false },
       { number: 7, firstName: 'Erik', lastName: 'Fischer', dob: '09/02/1996', libero: '', isCaptain: false },
@@ -55,6 +54,7 @@ export const TEST_TEAM_SEED_DATA = [
       { number: 10, firstName: 'Alex', lastName: 'Baumann', dob: '16/08/2000', libero: '', isCaptain: false },
       { number: 11, firstName: 'Jonas', lastName: 'Arnold', dob: '02/12/1998', libero: '', isCaptain: false },
       { number: 12, firstName: 'Mauro', lastName: 'Huber', dob: '19/03/1997', libero: 'libero1', isCaptain: false },
+      { number: 13, firstName: 'Simon', lastName: 'Meier', dob: '18/09/1995', libero: 'libero2', isCaptain: false },
     ]
   },
   {

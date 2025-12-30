@@ -432,10 +432,10 @@ export async function fetchMatchByPin(gamePin, gameN) {
   if (matchError) throw matchError
   if (!matchData) throw new Error('Match not found with this ID and PIN')
 
-  // Fetch sets and events (teams/players are now in JSONB columns)
+  // Fetch sets and events using the UUID match id (not external_id which is a string)
   const [setsResult, eventsResult] = await Promise.all([
-    supabase.from('sets').select('*').eq('match_id', matchData.external_id),
-    supabase.from('events').select('*').eq('match_id', matchData.external_id)
+    supabase.from('sets').select('*').eq('match_id', matchData.id),
+    supabase.from('events').select('*').eq('match_id', matchData.id)
   ])
 
   return {
@@ -525,12 +525,14 @@ export async function importMatchFromSupabase(cloudData) {
       refereeConnectionEnabled: match.referee_connection_enabled,
       homeTeamConnectionEnabled: match.home_team_connection_enabled,
       awayTeamConnectionEnabled: match.away_team_connection_enabled,
-      homeTeamPin: match.home_team_pin,
-      awayTeamPin: match.away_team_pin,
+      homeTeamPin: match.bench_home_pin,
+      awayTeamPin: match.bench_away_pin,
       // Import metadata
       importedFrom: 'supabase',
       importedAt: new Date().toISOString(),
-      createdAt: match.created_at || new Date().toISOString()
+      createdAt: match.created_at || new Date().toISOString(),
+      // Mark match info as confirmed since we're restoring an existing match
+      matchInfoConfirmedAt: match.created_at || new Date().toISOString()
     })
 
     importedMatchId = localMatchId

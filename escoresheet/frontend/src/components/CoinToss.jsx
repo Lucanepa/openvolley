@@ -10,6 +10,17 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 
+// Helper to generate short name from team name (e.g., "VBC Zürich" -> "VBC")
+function generateShortName(name) {
+  if (!name) return ''
+  const cleaned = name.trim().toUpperCase()
+  const words = cleaned.split(/\s+/)
+  if (words.length > 1 && words[0].length <= 4) {
+    return words[0]
+  }
+  return cleaned.substring(0, 4)
+}
+
 // Hook to detect if we should use compact sizing
 function useCompactMode() {
   const [isCompact, setIsCompact] = useState(() => window.innerHeight < 700 || window.innerWidth < 600)
@@ -282,7 +293,83 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         await db.matches.update(match.id, { [benchField]: bench })
       })
 
-      console.log(`[CoinToss] Roster synced for ${teamType} team`)
+      console.log(`[CoinToss] Roster synced for ${teamType} team (local)`)
+
+      // Also sync to Supabase if match has seed_key
+      if (supabase && match.seed_key) {
+        try {
+          const isHome = teamType === 'home'
+          const teamKey = isHome ? 'home_team' : 'away_team'
+          const playersKey = isHome ? 'players_home' : 'players_away'
+          const benchKey = isHome ? 'bench_home' : 'bench_away'
+          const teamName = isHome ? home : away
+          const shortName = isHome ? homeShortName : awayShortName
+          const color = isHome ? homeColor : awayColor
+
+          // Update matches table
+          const { data: supabaseMatch } = await supabase
+            .from('matches')
+            .update({
+              [teamKey]: {
+                name: teamName?.trim() || '',
+                short_name: shortName || generateShortName(teamName),
+                color: color
+              },
+              [playersKey]: roster.map(p => ({
+                number: p.number || null,
+                first_name: p.firstName || '',
+                last_name: p.lastName || '',
+                dob: p.dob || null,
+                is_captain: !!p.isCaptain,
+                libero: p.libero || null
+              })),
+              [benchKey]: bench || []
+            })
+            .eq('external_id', match.seed_key)
+            .select('id, coin_toss_team_a')
+            .single()
+
+          console.log(`[CoinToss] Roster synced for ${teamType} team (Supabase)`)
+
+          // Also update match_live_state if it exists
+          if (supabaseMatch?.id) {
+            const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+            const homeIsTeamA = coinTossTeamA === 'home'
+            // Determine if this team is Team A or Team B
+            const isTeamA = (isHome && homeIsTeamA) || (!isHome && !homeIsTeamA)
+            const playersLiveKey = isTeamA ? 'players_a' : 'players_b'
+            const colorLiveKey = isTeamA ? 'team_a_color' : 'team_b_color'
+            const shortLiveKey = isTeamA ? 'team_a_short' : 'team_b_short'
+            const nameLiveKey = isTeamA ? 'team_a_name' : 'team_b_name'
+            const captainLiveKey = isTeamA ? 'captain_a' : 'captain_b'
+
+            const playersForLiveState = roster.map(p => ({
+              number: p.number || null,
+              first_name: p.firstName || '',
+              last_name: p.lastName || '',
+              libero: p.libero || null,
+              is_captain: !!p.isCaptain
+            }))
+            const captain = roster.find(p => p.isCaptain)?.number || null
+
+            await supabase
+              .from('match_live_state')
+              .update({
+                [playersLiveKey]: playersForLiveState.length > 0 ? playersForLiveState : null,
+                [colorLiveKey]: color,
+                [shortLiveKey]: shortName || generateShortName(teamName),
+                [nameLiveKey]: teamName?.trim() || '',
+                [captainLiveKey]: captain,
+                updated_at: new Date().toISOString()
+              })
+              .eq('match_id', supabaseMatch.id)
+
+            console.log(`[CoinToss] Roster synced for ${teamType} team (match_live_state)`)
+          }
+        } catch (supabaseErr) {
+          console.warn('[CoinToss] Failed to sync roster to Supabase:', supabaseErr)
+        }
+      }
     } catch (error) {
       console.error('[CoinToss] Failed to sync roster:', error)
     }
@@ -320,13 +407,21 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
         if (homeTeam) {
           setHome(homeTeam.name || 'Home')
-          setHomeShortName(homeTeam.shortName || '')
+          // Use team shortName, or match-level shortName as fallback
+          setHomeShortName(homeTeam.shortName || match.homeShortName || '')
           setHomeColor(homeTeam.color || '#ef4444')
+        } else if (match.homeShortName) {
+          // No team record but match has short name
+          setHomeShortName(match.homeShortName)
         }
         if (awayTeam) {
           setAway(awayTeam.name || 'Away')
-          setAwayShortName(awayTeam.shortName || '')
+          // Use team shortName, or match-level shortName as fallback
+          setAwayShortName(awayTeam.shortName || match.awayShortName || '')
           setAwayColor(awayTeam.color || '#3b82f6')
+        } else if (match.awayShortName) {
+          // No team record but match has short name
+          setAwayShortName(match.awayShortName)
         }
 
         // Load rosters
@@ -509,12 +604,12 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             coin_toss_team_b: teamB,
             coin_toss_serve_a: serveA,
             first_serve: firstServeTeam,
-            // Short names as separate columns for easy access
-            home_short_name: homeShortName || null,
-            away_short_name: awayShortName || null,
+            // Short names as separate columns for easy access (generate from team name if empty)
+            home_short_name: homeShortName || generateShortName(home),
+            away_short_name: awayShortName || generateShortName(away),
             // JSONB columns
-            home_team: { name: home, short_name: homeShortName, color: homeColor },
-            away_team: { name: away, short_name: awayShortName, color: awayColor },
+            home_team: { name: home, short_name: homeShortName || generateShortName(home), color: homeColor },
+            away_team: { name: away, short_name: awayShortName || generateShortName(away), color: awayColor },
             players_home: homeRoster.map(p => ({
               number: p.number,
               first_name: p.firstName,
@@ -1041,12 +1136,12 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             city: matchData.city || null,
             league: matchData.league || null,
             scheduled_at: matchData.scheduledAt || null,
-            // Short names as separate columns for easy access
-            home_short_name: homeShortName || null,
-            away_short_name: awayShortName || null,
+            // Short names as separate columns for easy access (generate from team name if empty)
+            home_short_name: homeShortName || generateShortName(home),
+            away_short_name: awayShortName || generateShortName(away),
             // JSONB columns
-            home_team: { name: home, short_name: homeShortName, color: homeColor },
-            away_team: { name: away, short_name: awayShortName, color: awayColor },
+            home_team: { name: home, short_name: homeShortName || generateShortName(home), color: homeColor },
+            away_team: { name: away, short_name: awayShortName || generateShortName(away), color: awayColor },
             players_home: homeRoster.map(p => ({
               number: p.number,
               first_name: p.firstName,

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.7',
+    date: '30.12.25',
+    changes: [
+      'Enhance CoinToss, MatchSetup, and Referee components for improved data synchronization and user experience'
+    ]
+  },
+  {
     version: '0.17.5',
     date: '30.12.25',
     changes: [

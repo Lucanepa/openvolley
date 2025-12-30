@@ -157,13 +157,37 @@ export function useSyncQueue() {
           console.warn('[SyncQueue] Sets delete error (continuing):', setsError)
         }
 
-        // Delete match_live_state for this match (foreign key constraint)
-        const { error: liveStateError } = await supabase
+        // Delete match_live_state for this match (foreign key constraint - MUST succeed)
+        // First check if it exists
+        const { data: existingLiveState } = await supabase
           .from('match_live_state')
-          .delete()
+          .select('id')
           .eq('match_id', matchUuid)
-        if (liveStateError) {
-          console.warn('[SyncQueue] match_live_state delete error (continuing):', liveStateError)
+          .maybeSingle()
+
+        if (existingLiveState) {
+          const { error: liveStateError } = await supabase
+            .from('match_live_state')
+            .delete()
+            .eq('match_id', matchUuid)
+          if (liveStateError) {
+            console.error('[SyncQueue] match_live_state delete error (blocking):', liveStateError)
+            return false
+          }
+
+          // Verify it's actually deleted
+          const { data: stillExists } = await supabase
+            .from('match_live_state')
+            .select('id')
+            .eq('match_id', matchUuid)
+            .maybeSingle()
+          if (stillExists) {
+            console.error('[SyncQueue] match_live_state still exists after delete (RLS issue?):', matchUuid)
+            return false
+          }
+          console.log('[SyncQueue] match_live_state deleted for match:', matchUuid)
+        } else {
+          console.log('[SyncQueue] No match_live_state found for match (ok):', matchUuid)
         }
 
         // Delete the match

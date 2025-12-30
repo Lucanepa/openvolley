@@ -11,6 +11,7 @@ import { getWebSocketUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { supabase } from '../lib/supabaseClient'
+import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -200,6 +201,10 @@ function hasRosterChanged(originalRoster, currentRoster, originalBench, currentB
   return !isEqual(originalRoster, currentRoster) || !isEqual(originalBench, currentBench)
 }
 
+// Get test team data from testSeeds.js
+const TEST_HOME_TEAM = TEST_TEAM_SEED_DATA.find(t => t.seedKey === 'test-team-home')
+const TEST_AWAY_TEAM = TEST_TEAM_SEED_DATA.find(t => t.seedKey === 'test-team-away')
+
 // OfficialCard component - defined outside to prevent focus loss on re-render
 const OfficialCard = memo(function OfficialCard({
   title,
@@ -383,7 +388,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const { t } = useTranslation()
   const [home, setHome] = useState('')
   // Match created popup state
-  const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin }
+  const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin, refereePin, homeTeamPin, awayTeamPin }
   const [away, setAway] = useState('')
 
   // Match info fields
@@ -507,6 +512,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
   const [noticeModal, setNoticeModal] = useState(null) // { message: string, type?: 'success' | 'error' } | null
+  const [testRosterConfirm, setTestRosterConfirm] = useState(null) // 'home' | 'away' | null
   
   // Show both rosters in match setup
   const [showBothRosters, setShowBothRosters] = useState(false)
@@ -571,14 +577,51 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [serverLoading, setServerLoading] = useState(false)
   const [instanceId] = useState(() => `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
 
-  // Cities in Kanton Zürich
+  // All 162 municipalities (Gemeinden) of Kanton Zürich
   const citiesZurich = [
-    'Zürich', 'Winterthur', 'Uster', 'Dübendorf', 'Dietikon', 'Wetzikon', 'Horgen', 
-    'Bülach', 'Kloten', 'Meilen', 'Adliswil', 'Thalwil', 'Küsnacht', 'Opfikon', 
-    'Volketswil', 'Schlieren', 'Wallisellen', 'Regensdorf', 'Pfäffikon', 'Illnau-Effretikon',
-    'Stäfa', 'Wädenswil', 'Männedorf', 'Rüti', 'Gossau', 'Bassersdorf', 'Richterswil',
-    'Wald', 'Affoltern am Albis', 'Dielsdorf', 'Embrach', 'Hinwil', 'Küssnacht', 
-    'Oberrieden', 'Uitikon', 'Egg', 'Fällanden', 'Maur', 'Rümlang', 'Zollikon'
+    // Bezirk Affoltern
+    'Aeugst am Albis', 'Affoltern am Albis', 'Bonstetten', 'Hausen am Albis', 'Hedingen',
+    'Kappel am Albis', 'Knonau', 'Maschwanden', 'Mettmenstetten', 'Obfelden', 'Ottenbach',
+    'Rifferswil', 'Stallikon', 'Wettswil am Albis',
+    // Bezirk Andelfingen
+    'Adlikon', 'Andelfingen', 'Benken', 'Berg am Irchel', 'Buch am Irchel', 'Dachsen',
+    'Dorf', 'Feuerthalen', 'Flaach', 'Flurlingen', 'Henggart', 'Humlikon', 'Kleinandelfingen',
+    'Laufen-Uhwiesen', 'Marthalen', 'Oberstammheim', 'Ossingen', 'Rheinau',
+    'Thalheim an der Thur', 'Trüllikon', 'Truttikon', 'Unterstammheim', 'Volken',
+    // Bezirk Bülach
+    'Bachenbülach', 'Bassersdorf', 'Bülach', 'Dietlikon', 'Eglisau', 'Embrach',
+    'Freienstein-Teufen', 'Glattfelden', 'Hochfelden', 'Höri', 'Hüntwangen', 'Kloten',
+    'Lufingen', 'Nürensdorf', 'Oberembrach', 'Opfikon', 'Rafz', 'Rorbas', 'Wallisellen',
+    'Wasterkingen', 'Wil', 'Winkel',
+    // Bezirk Dielsdorf
+    'Bachs', 'Buchs', 'Dällikon', 'Dänikon', 'Dielsdorf', 'Hüttikon', 'Neerach',
+    'Niederglatt', 'Niederhasli', 'Niederweningen', 'Oberglatt', 'Oberweningen',
+    'Otelfingen', 'Regensdorf', 'Rümlang', 'Schleinikon', 'Schöfflisdorf', 'Stadel',
+    'Steinmaur', 'Weiach',
+    // Bezirk Dietikon
+    'Aesch', 'Birmensdorf', 'Dietikon', 'Geroldswil', 'Oberengstringen',
+    'Oetwil an der Limmat', 'Schlieren', 'Uitikon', 'Unterengstringen', 'Urdorf', 'Weiningen',
+    // Bezirk Hinwil
+    'Bäretswil', 'Bubikon', 'Dürnten', 'Fischenthal', 'Gossau', 'Grüningen', 'Hinwil',
+    'Rüti', 'Seegräben', 'Wald', 'Wetzikon',
+    // Bezirk Horgen
+    'Adliswil', 'Hirzel', 'Horgen', 'Hütten', 'Kilchberg', 'Langnau am Albis',
+    'Oberrieden', 'Richterswil', 'Rüschlikon', 'Schönenberg', 'Thalwil', 'Wädenswil',
+    // Bezirk Meilen
+    'Erlenbach', 'Herrliberg', 'Hombrechtikon', 'Küsnacht', 'Männedorf', 'Meilen',
+    'Oetwil am See', 'Stäfa', 'Uetikon am See', 'Zollikon', 'Zumikon',
+    // Bezirk Pfäffikon
+    'Bauma', 'Fehraltorf', 'Hittnau', 'Illnau-Effretikon', 'Kyburg', 'Lindau',
+    'Pfäffikon', 'Russikon', 'Weisslingen', 'Wila', 'Wildberg',
+    // Bezirk Uster
+    'Dübendorf', 'Egg', 'Fällanden', 'Greifensee', 'Maur', 'Mönchaltorf',
+    'Schwerzenbach', 'Uster', 'Volketswil',
+    // Bezirk Winterthur
+    'Altikon', 'Brütten', 'Dättlikon', 'Dinhard', 'Elgg', 'Ellikon an der Thur',
+    'Elsau', 'Hagenbuch', 'Hettlingen', 'Hofstetten', 'Neftenbach', 'Pfungen',
+    'Rickenbach', 'Schlatt', 'Seuzach', 'Turbenthal', 'Wiesendangen', 'Winterthur', 'Zell',
+    // Bezirk Zürich
+    'Zürich'
   ].sort()
 
   // Grouped by color families: whites/grays, reds, oranges, yellows, greens, blues, purples, pinks, teals
@@ -1898,6 +1941,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       return pin
     })()
 
+    // Generate all PINs upfront so we can display them in the modal
+    const generatedRefereePin = generatePinCode([])
+    const generatedHomeTeamPin = generatePinCode([generatedRefereePin])
+    const generatedAwayTeamPin = generatePinCode([generatedRefereePin, generatedHomeTeamPin])
+
     // Generate a unique seed_key for Supabase sync
     // Format: game_{gameN}_{timestamp} if gameN exists, otherwise match_{timestamp}_{random}
     const timestamp = Date.now()
@@ -1931,17 +1979,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       seed_key: seedKey, // Unique key for Supabase sync
       league,
       gamePin: generatedGamePin, // Game PIN for official matches (not test matches)
-      ...(() => {
-        // Generate all three PINs together to ensure uniqueness
-        const refPin = generatePinCode([])
-        const homePin = generatePinCode([refPin])
-        const awayPin = generatePinCode([refPin, homePin])
-        return {
-          refereePin: String(refPin).trim(), // Ensure string
-          homeTeamPin: String(homePin).trim(), // Ensure string
-          awayTeamPin: String(awayPin).trim() // Ensure string
-        }
-      })(),
+      refereePin: String(generatedRefereePin).trim(),
+      homeTeamPin: String(generatedHomeTeamPin).trim(),
+      awayTeamPin: String(generatedAwayTeamPin).trim(),
       matchPin: matchPin.trim(),
       refereeConnectionEnabled: false,
       homeTeamConnectionEnabled: false,
@@ -2010,7 +2050,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
             { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
             true // useSnakeCase for Supabase
-          )
+          ),
+          // PINs for dashboard connections and match recovery
+          game_pin: generatedGamePin,
+          referee_pin: String(generatedRefereePin).trim(),
+          bench_home_pin: String(generatedHomeTeamPin).trim(),
+          bench_away_pin: String(generatedAwayTeamPin).trim(),
+          game_n: gameN ? Number(gameN) : null
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -2064,7 +2110,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     // Show match created popup if online (has gamePin)
     if (!offlineMode && generatedGamePin) {
-      setMatchCreatedModal({ matchId: createdMatchId, gamePin: generatedGamePin })
+      setMatchCreatedModal({
+        matchId: createdMatchId,
+        gamePin: generatedGamePin,
+        refereePin: generatedRefereePin,
+        homeTeamPin: generatedHomeTeamPin,
+        awayTeamPin: generatedAwayTeamPin
+      })
     } else {
       onOpenCoinToss()
     }
@@ -2211,7 +2263,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         action: 'update',
         payload: {
           id: updatedMatch.seed_key,
-          status: updatedMatch.status || null,
+          status: 'live', // Status will be 'live' after match setup is confirmed
           hall: updatedMatch.hall || null,
           city: updatedMatch.city || null,
           league: updatedMatch.league || null,
@@ -3181,7 +3233,46 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{home || t('matchSetup.homeTeam')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <h1 style={{ margin: 0, marginBottom: '12px' }}>{t('roster.title')}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <h1 style={{ margin: 0 }}>{t('roster.title')}</h1>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => {
+                setHomeRoster([])
+                setBenchHome([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
+                setHomeCoachSignature(null)
+                setHomeCaptainSignature(null)
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: '#dc2626',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              {t('roster.deleteRoster')}
+            </button>
+            <button
+              onClick={() => setTestRosterConfirm('home')}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: '#000',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              {t('roster.loadTestRoster')}
+            </button>
+          </div>
+        </div>
         {/* Upload Methods for Home Team + Player Stats */}
         <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
           {/* Left: Upload section */}
@@ -4125,6 +4216,49 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   ts: new Date().toISOString(),
                   status: 'queued'
                 })
+
+                // Also sync to match_live_state if it exists (for Referee app)
+                try {
+                  const { data: supabaseMatch } = await supabase
+                    .from('matches')
+                    .select('id, coin_toss_team_a')
+                    .eq('external_id', match.seed_key)
+                    .single()
+
+                  if (supabaseMatch?.id) {
+                    const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+                    const homeIsTeamA = coinTossTeamA === 'home'
+                    const playersKey = homeIsTeamA ? 'players_a' : 'players_b'
+                    const colorKey = homeIsTeamA ? 'team_a_color' : 'team_b_color'
+                    const shortKey = homeIsTeamA ? 'team_a_short' : 'team_b_short'
+                    const nameKey = homeIsTeamA ? 'team_a_name' : 'team_b_name'
+                    const captainKey = homeIsTeamA ? 'captain_a' : 'captain_b'
+
+                    const playersForLiveState = homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
+                      number: p.number || null,
+                      first_name: p.firstName || '',
+                      last_name: p.lastName || '',
+                      libero: p.libero || null,
+                      is_captain: !!p.isCaptain
+                    }))
+                    const captain = homeRoster.find(p => p.isCaptain)?.number || null
+
+                    await supabase
+                      .from('match_live_state')
+                      .update({
+                        [playersKey]: playersForLiveState.length > 0 ? playersForLiveState : null,
+                        [colorKey]: homeColor,
+                        [shortKey]: homeShortName || generateShortName(home),
+                        [nameKey]: home?.trim() || '',
+                        [captainKey]: captain,
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('match_id', supabaseMatch.id)
+                    console.log('[MatchSetup] Synced home team to match_live_state')
+                  }
+                } catch (err) {
+                  console.warn('[MatchSetup] Failed to sync home team to match_live_state:', err)
+                }
               }
 
               setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
@@ -4344,6 +4478,52 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </Modal>
         )}
 
+        {/* Test Roster Confirmation Modal */}
+        {testRosterConfirm === 'home' && (
+          <Modal
+            title={t('roster.confirmLoadTestRoster')}
+            open={true}
+            onClose={() => setTestRosterConfirm(null)}
+            width={400}
+          >
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+                {t('roster.confirmLoadTestRosterMessage', { team: TEST_HOME_TEAM.name })}
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => {
+                    setHomeRoster([...TEST_HOME_TEAM.players].sort((a, b) => a.number - b.number))
+                    setBenchHome(TEST_HOME_BENCH)
+                    if (!home || home === 'Home') setHome(TEST_HOME_TEAM.name)
+                    if (!homeShortName) setHomeShortName(TEST_HOME_TEAM.shortName)
+                    setTestRosterConfirm(null)
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: '#000',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('roster.loadTestRoster')}
+                </button>
+                <button
+                  onClick={() => setTestRosterConfirm(null)}
+                  className="secondary"
+                  style={{ padding: '12px 24px', fontSize: '14px', fontWeight: 600 }}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
         {/* SignaturePad for home team view */}
         <SignaturePad
           open={openSignature !== null}
@@ -4366,7 +4546,46 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{away || t('matchSetup.awayTeam')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
-        <h1 style={{ margin: 0, marginBottom: '12px' }}>{t('roster.title')}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <h1 style={{ margin: 0 }}>{t('roster.title')}</h1>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => {
+                setAwayRoster([])
+                setBenchAway([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
+                setAwayCoachSignature(null)
+                setAwayCaptainSignature(null)
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: '#dc2626',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              {t('roster.deleteRoster')}
+            </button>
+            <button
+              onClick={() => setTestRosterConfirm('away')}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: '#000',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              {t('roster.loadTestRoster')}
+            </button>
+          </div>
+        </div>
         {/* Upload Methods for Away Team + Player Stats */}
         <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
           {/* Left: Upload section */}
@@ -5319,6 +5538,50 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   ts: new Date().toISOString(),
                   status: 'queued'
                 })
+
+                // Also sync to match_live_state if it exists (for Referee app)
+                try {
+                  const { data: supabaseMatch } = await supabase
+                    .from('matches')
+                    .select('id, coin_toss_team_a')
+                    .eq('external_id', match.seed_key)
+                    .single()
+
+                  if (supabaseMatch?.id) {
+                    const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+                    const homeIsTeamA = coinTossTeamA === 'home'
+                    // Away is Team B if home is Team A, and vice versa
+                    const playersKey = homeIsTeamA ? 'players_b' : 'players_a'
+                    const colorKey = homeIsTeamA ? 'team_b_color' : 'team_a_color'
+                    const shortKey = homeIsTeamA ? 'team_b_short' : 'team_a_short'
+                    const nameKey = homeIsTeamA ? 'team_b_name' : 'team_a_name'
+                    const captainKey = homeIsTeamA ? 'captain_b' : 'captain_a'
+
+                    const playersForLiveState = awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
+                      number: p.number || null,
+                      first_name: p.firstName || '',
+                      last_name: p.lastName || '',
+                      libero: p.libero || null,
+                      is_captain: !!p.isCaptain
+                    }))
+                    const captain = awayRoster.find(p => p.isCaptain)?.number || null
+
+                    await supabase
+                      .from('match_live_state')
+                      .update({
+                        [playersKey]: playersForLiveState.length > 0 ? playersForLiveState : null,
+                        [colorKey]: awayColor,
+                        [shortKey]: awayShortName || generateShortName(away),
+                        [nameKey]: away?.trim() || '',
+                        [captainKey]: captain,
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('match_id', supabaseMatch.id)
+                    console.log('[MatchSetup] Synced away team to match_live_state')
+                  }
+                } catch (err) {
+                  console.warn('[MatchSetup] Failed to sync away team to match_live_state:', err)
+                }
               }
 
               setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
@@ -5532,6 +5795,52 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 >
                   {t('common.close')}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Test Roster Confirmation Modal */}
+        {testRosterConfirm === 'away' && (
+          <Modal
+            title={t('roster.confirmLoadTestRoster')}
+            open={true}
+            onClose={() => setTestRosterConfirm(null)}
+            width={400}
+          >
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+                {t('roster.confirmLoadTestRosterMessage', { team: TEST_AWAY_TEAM.name })}
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => {
+                    setAwayRoster([...TEST_AWAY_TEAM.players].sort((a, b) => a.number - b.number))
+                    setBenchAway(TEST_AWAY_BENCH)
+                    if (!away || away === 'Away') setAway(TEST_AWAY_TEAM.name)
+                    if (!awayShortName) setAwayShortName(TEST_AWAY_TEAM.shortName)
+                    setTestRosterConfirm(null)
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: '#000',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('roster.loadTestRoster')}
+                </button>
+                <button
+                  onClick={() => setTestRosterConfirm(null)}
+                  className="secondary"
+                  style={{ padding: '12px 24px', fontSize: '14px', fontWeight: 600 }}
+                >
+                  {t('common.cancel')}
                 </button>
               </div>
             </div>
@@ -6867,7 +7176,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
-              Choose {colorPickerModal.team === 'home' ? 'Home' : 'Away'} Team Color
+              Choose {colorPickerModal.team === 'home' ? 'Home' : 'Away'} Team Colour
             </div>
             <div
               style={{
@@ -6882,13 +7191,63 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <button
                     key={color}
                     type="button"
-                    onClick={() => {
-                      if (colorPickerModal.team === 'home') {
+                    onClick={async () => {
+                      const isHome = colorPickerModal.team === 'home'
+                      if (isHome) {
                         setHomeColor(color)
                       } else {
                         setAwayColor(color)
                       }
                       setColorPickerModal(null)
+
+                      // Sync color to local DB and Supabase
+                      try {
+                        // Update local team in IndexedDB
+                        const teamId = isHome ? match?.homeTeamId : match?.awayTeamId
+                        if (teamId) {
+                          await db.teams.update(teamId, { color })
+                        }
+
+                        // Sync to Supabase if match exists
+                        if (supabase && match?.seed_key) {
+                          const teamKey = isHome ? 'home_team' : 'away_team'
+                          const teamName = isHome ? home : away
+                          const shortName = isHome ? homeShortName : awayShortName
+
+                          // Update matches table
+                          const { data: supabaseMatch } = await supabase
+                            .from('matches')
+                            .update({
+                              [teamKey]: {
+                                name: teamName?.trim() || '',
+                                short_name: shortName || generateShortName(teamName),
+                                color: color
+                              }
+                            })
+                            .eq('external_id', match.seed_key)
+                            .select('id, coin_toss_team_a')
+                            .single()
+                          console.log(`[MatchSetup] Synced ${teamKey} color to Supabase:`, color)
+
+                          // Also update match_live_state if it exists (for Referee app)
+                          if (supabaseMatch?.id) {
+                            // Team A = coin toss winner, determine if home is Team A
+                            const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+                            const homeIsTeamA = coinTossTeamA === 'home'
+                            // If changing home color and home is Team A -> update team_a_color
+                            // If changing home color and home is Team B -> update team_b_color
+                            const liveStateColorKey = (isHome === homeIsTeamA) ? 'team_a_color' : 'team_b_color'
+
+                            await supabase
+                              .from('match_live_state')
+                              .update({ [liveStateColorKey]: color, updated_at: new Date().toISOString() })
+                              .eq('match_id', supabaseMatch.id)
+                            console.log(`[MatchSetup] Synced ${liveStateColorKey} to match_live_state:`, color)
+                          }
+                        }
+                      } catch (err) {
+                        console.warn('[MatchSetup] Failed to sync team color:', err)
+                      }
                     }}
                     style={{
                       display: 'flex',
@@ -7064,7 +7423,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </Modal>
       )}
 
-      {/* Match Created Modal - shows Match ID and PIN for recovery */}
+      {/* Match Created Modal - shows Match ID and all PINs for recovery */}
       {matchCreatedModal && (
         <Modal
           title={t('matchSetup.modals.matchCreated')}
@@ -7073,23 +7432,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setMatchCreatedModal(null)
             onOpenCoinToss()
           }}
-          width={450}
+          width={500}
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
+            {/* Match ID and Game PIN */}
             <div style={{
               background: 'rgba(34, 197, 94, 0.1)',
               border: '2px solid rgba(34, 197, 94, 0.3)',
               borderRadius: '12px',
               padding: '20px',
-              marginBottom: '20px'
+              marginBottom: '16px'
             }}>
               <div style={{ marginBottom: '16px' }}>
                 <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
                   {t('matchSetup.modals.matchId')}
                 </span>
                 <span style={{
-                  fontSize: '28px',
+                  fontSize: '24px',
                   fontWeight: 700,
                   fontFamily: 'monospace',
                   color: 'var(--accent)',
@@ -7113,10 +7473,68 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </span>
               </div>
             </div>
+
+            {/* Connection PINs */}
+            <div style={{
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'rgba(255,255,255,0.9)' }}>
+                {t('matchSetup.modals.connectionPins')}
+              </div>
+              <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
+                    {t('matchSetup.refereePinLabel')}
+                  </span>
+                  <span style={{
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    color: '#f59e0b',
+                    letterSpacing: '2px'
+                  }}>
+                    {matchCreatedModal.refereePin}
+                  </span>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
+                    {t('matchSetup.homeBenchPinLabel')}
+                  </span>
+                  <span style={{
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    color: '#3b82f6',
+                    letterSpacing: '2px'
+                  }}>
+                    {matchCreatedModal.homeTeamPin}
+                  </span>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
+                    {t('matchSetup.awayBenchPinLabel')}
+                  </span>
+                  <span style={{
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    color: '#ef4444',
+                    letterSpacing: '2px'
+                  }}>
+                    {matchCreatedModal.awayTeamPin}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <p style={{
-              fontSize: '14px',
-              color: 'rgba(255,255,255,0.8)',
-              marginBottom: '24px',
+              fontSize: '13px',
+              color: 'rgba(255,255,255,0.7)',
+              marginBottom: '20px',
               lineHeight: 1.5
             }}>
               {t('matchSetup.modals.saveInfoToRecover')}

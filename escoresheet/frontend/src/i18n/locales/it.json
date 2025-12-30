@@ -71,7 +71,11 @@
     "lastName": "Cognome",
     "firstName": "Nome",
     "dateOfBirth": "Data di nascita",
-    "enterNames": "Inserisci cognome e nome"
+    "enterNames": "Inserisci cognome e nome",
+    "deleteRoster": "Elimina rosa",
+    "loadTestRoster": "Carica rosa TEST",
+    "confirmLoadTestRoster": "Caricare rosa test?",
+    "confirmLoadTestRosterMessage": "Questo sostituirà la rosa attuale con i dati di test ({{team}})."
   },
   "benchRoles": {
     "coach": "Coach",
@@ -222,6 +226,9 @@
     "importPdf": "Importa PDF",
     "regenerate": "Rigenera",
     "generatePin": "Genera PIN",
+    "refereePinLabel": "Arbitro",
+    "homeBenchPinLabel": "Panchina casa",
+    "awayBenchPinLabel": "Panchina ospite",
     "addNewPlayer": "Aggiungi giocatore:",
     "numberPlaceholder": "#",
     "dateOfBirthPlaceholder": "Data di nascita (gg/mm/aaaa)",
@@ -260,6 +267,7 @@
       "notice": "Avviso",
       "matchCreated": "Partita creata",
       "matchId": "ID partita",
+      "connectionPins": "PIN di connessione",
       "saveInfoToRecover": "Salvare queste informazioni per recuperare la partita se necessario.",
       "continueToCoinToss": "Continua al sorteggio",
       "matchCreatedSyncing": "Partita creata! Sincronizzazione...",
@@ -448,6 +456,7 @@
       "editMatchInfo": "Modifica info partita",
       "editMatchInfoDesc": "Regola manualmente lo stato e le impostazioni della partita.",
       "matchStatus": "Stato partita:",
+      "setup": "Configurazione",
       "live": "Live",
       "final": "Finale",
       "paused": "In pausa",

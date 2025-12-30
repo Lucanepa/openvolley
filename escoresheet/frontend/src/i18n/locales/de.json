@@ -71,7 +71,11 @@
     "lastName": "Nachname",
     "firstName": "Vorname",
     "dateOfBirth": "Geburtsdatum",
-    "enterNames": "Bitte Nachname und Vorname eingeben"
+    "enterNames": "Bitte Nachname und Vorname eingeben",
+    "deleteRoster": "Kader löschen",
+    "loadTestRoster": "TEST Kader laden",
+    "confirmLoadTestRoster": "Test Kader laden?",
+    "confirmLoadTestRosterMessage": "Dies ersetzt das aktuelle Kader mit Testdaten ({{team}})."
   },
   "benchRoles": {
     "coach": "Coach",
@@ -222,6 +226,9 @@
     "importPdf": "PDF importieren",
     "regenerate": "Neu generieren",
     "generatePin": "PIN generieren",
+    "refereePinLabel": "Schiedsrichter",
+    "homeBenchPinLabel": "Heim-Bank",
+    "awayBenchPinLabel": "Gast-Bank",
     "addNewPlayer": "Spieler hinzufügen:",
     "numberPlaceholder": "#",
     "dateOfBirthPlaceholder": "Geburtsdatum (tt.mm.jjjj)",
@@ -260,6 +267,7 @@
       "notice": "Hinweis",
       "matchCreated": "Spiel erstellt",
       "matchId": "Spiel-ID",
+      "connectionPins": "Verbindungs-PINs",
       "saveInfoToRecover": "Bitte speichern Sie diese Informationen, um das Spiel bei Bedarf wiederherzustellen.",
       "continueToCoinToss": "Weiter zum Münzwurf",
       "matchCreatedSyncing": "Spiel erstellt! Synchronisierung...",
@@ -448,6 +456,7 @@
       "editMatchInfo": "Spielinfos bearbeiten",
       "editMatchInfoDesc": "Spielstatus und Einstellungen manuell anpassen.",
       "matchStatus": "Spielstatus:",
+      "setup": "Einrichtung",
       "live": "Live",
       "final": "Beendet",
       "paused": "Pausiert",

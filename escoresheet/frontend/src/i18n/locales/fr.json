@@ -71,7 +71,11 @@
     "lastName": "Nom de famille",
     "firstName": "Prénom",
     "dateOfBirth": "Date de naissance",
-    "enterNames": "Veuillez entrer le nom et le prénom"
+    "enterNames": "Veuillez entrer le nom et le prénom",
+    "deleteRoster": "Supprimer effectif",
+    "loadTestRoster": "Charger effectif TEST",
+    "confirmLoadTestRoster": "Charger effectif test?",
+    "confirmLoadTestRosterMessage": "Ceci remplacera l'effectif actuel par des données de test ({{team}})."
   },
   "benchRoles": {
     "coach": "Entraîneur",
@@ -222,6 +226,9 @@
     "importPdf": "Importer PDF",
     "regenerate": "Régénérer",
     "generatePin": "Générer PIN",
+    "refereePinLabel": "Arbitre",
+    "homeBenchPinLabel": "Banc local",
+    "awayBenchPinLabel": "Banc visiteur",
     "addNewPlayer": "Ajouter un joueur :",
     "numberPlaceholder": "#",
     "dateOfBirthPlaceholder": "Date de naissance (jj/mm/aaaa)",
@@ -260,6 +267,7 @@
       "notice": "Avis",
       "matchCreated": "Match créé",
       "matchId": "ID du match",
+      "connectionPins": "PINs de connexion",
       "saveInfoToRecover": "Veuillez sauvegarder ces informations pour récupérer le match si nécessaire.",
       "continueToCoinToss": "Continuer vers le tirage au sort",
       "matchCreatedSyncing": "Match créé ! Synchronisation...",
@@ -448,6 +456,7 @@
       "editMatchInfo": "Modifier les infos du match",
       "editMatchInfoDesc": "Ajuster manuellement le statut et les paramètres du match.",
       "matchStatus": "Statut du match :",
+      "setup": "Configuration",
       "live": "En direct",
       "final": "Final",
       "paused": "En pause",

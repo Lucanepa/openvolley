@@ -71,7 +71,11 @@
     "lastName": "Last Name",
     "firstName": "First Name",
     "dateOfBirth": "Date of Birth",
-    "enterNames": "Please enter last name and first name"
+    "enterNames": "Please enter last name and first name",
+    "deleteRoster": "Delete Roster",
+    "loadTestRoster": "Load TEST Roster",
+    "confirmLoadTestRoster": "Load Test Roster?",
+    "confirmLoadTestRosterMessage": "This will replace the current roster with test data ({{team}})."
   },
   "benchRoles": {
     "coach": "Coach",
@@ -222,6 +226,9 @@
     "importPdf": "Import PDF",
     "regenerate": "Regenerate",
     "generatePin": "Generate PIN",
+    "refereePinLabel": "Referee",
+    "homeBenchPinLabel": "Home Bench",
+    "awayBenchPinLabel": "Away Bench",
     "addNewPlayer": "Add new player:",
     "numberPlaceholder": "#",
     "dateOfBirthPlaceholder": "Date of birth (dd/mm/yyyy)",
@@ -260,6 +267,7 @@
       "notice": "Notice",
       "matchCreated": "Match Created",
       "matchId": "Match ID",
+      "connectionPins": "Connection PINs",
       "saveInfoToRecover": "Please save this information to recover the match if needed.",
       "continueToCoinToss": "Continue to Coin Toss",
       "matchCreatedSyncing": "Match created! Syncing to database...",
@@ -448,6 +456,7 @@
       "editMatchInfo": "Edit Match Information",
       "editMatchInfoDesc": "Manually adjust match status and settings.",
       "matchStatus": "Match Status:",
+      "setup": "Setup",
       "live": "Live",
       "final": "Final",
       "paused": "Paused",
