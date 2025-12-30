@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.3',
+    date: '30.12.25',
+    changes: [
+      'Enhance CoinToss, HomeOptionsModal, and ScoreboardOptionsModal components with improved data handling and localization'
+    ]
+  },
+  {
     version: '0.17.2',
     date: '30.12.25',
     changes: [

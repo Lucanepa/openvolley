@@ -699,6 +699,18 @@
     "keybindings": "Keybindings",
     "pressKey": "Press key...",
     "resetDefaults": "Reset Defaults",
+    "keybindingLabels": {
+      "pointLeft": "Point Left",
+      "pointRight": "Point Right",
+      "timeoutLeft": "Timeout Left",
+      "timeoutRight": "Timeout Right",
+      "exchangeLiberoLeft": "Libero Left",
+      "exchangeLiberoRight": "Libero Right",
+      "undo": "Undo",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "startRally": "Start Rally"
+    },
     "matchOptions": "Match Options",
     "liveServer": "Live Server",
     "serverRunning": "Server Running",
@@ -733,7 +745,15 @@
     "warningStateReplaced": "Warning: Current match state will be replaced.",
     "websocket": "WebSocket",
     "backupSetScore": "Set {{setIndex}}: {{homePoints}} - {{awayPoints}}",
-    "unknownTime": "Unknown time"
+    "unknownTime": "Unknown time",
+    "autoWithMode": "Auto ({{mode}})",
+    "alerts": {
+      "noMatchId": "No match ID available",
+      "failedToLoadBackups": "Failed to load cloud backups",
+      "failedToLoadBackupData": "Failed to load backup data",
+      "failedToRestoreBackup": "Failed to restore backup: {{error}}",
+      "failedToClearCache": "Failed to clear cache: {{error}}"
+    }
   },
   "supportFeedback": {
     "title": "Support & Feedback",

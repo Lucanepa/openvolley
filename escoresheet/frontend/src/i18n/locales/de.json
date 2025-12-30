@@ -697,8 +697,20 @@
     "cancel": "Abbrechen",
     "support": "Support",
     "keybindings": "Tastenbelegung",
-    "pressKey": "Taste drucken...",
-    "resetDefaults": "Zurucksetzen",
+    "pressKey": "Taste drücken...",
+    "resetDefaults": "Zurücksetzen",
+    "keybindingLabels": {
+      "pointLeft": "Punkt Links",
+      "pointRight": "Punkt Rechts",
+      "timeoutLeft": "Auszeit Links",
+      "timeoutRight": "Auszeit Rechts",
+      "exchangeLiberoLeft": "Libero Links",
+      "exchangeLiberoRight": "Libero Rechts",
+      "undo": "Rückgängig",
+      "confirm": "Bestätigen",
+      "cancel": "Abbrechen",
+      "startRally": "Ballwechsel starten"
+    },
     "matchOptions": "Spieloptionen",
     "liveServer": "Live-Server",
     "serverRunning": "Server läuft",
@@ -733,7 +745,15 @@
     "warningStateReplaced": "Warnung: Der aktuelle Spielstand wird ersetzt.",
     "websocket": "WebSocket",
     "backupSetScore": "Satz {{setIndex}}: {{homePoints}} - {{awayPoints}}",
-    "unknownTime": "Unbekannte Zeit"
+    "unknownTime": "Unbekannte Zeit",
+    "autoWithMode": "Auto ({{mode}})",
+    "alerts": {
+      "noMatchId": "Keine Spiel-ID verfügbar",
+      "failedToLoadBackups": "Cloud-Backups konnten nicht geladen werden",
+      "failedToLoadBackupData": "Backup-Daten konnten nicht geladen werden",
+      "failedToRestoreBackup": "Backup konnte nicht wiederhergestellt werden: {{error}}",
+      "failedToClearCache": "Cache konnte nicht geleert werden: {{error}}"
+    }
   },
   "supportFeedback": {
     "title": "Support & Feedback",

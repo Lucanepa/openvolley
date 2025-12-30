@@ -189,7 +189,7 @@ export default function ScoreboardOptionsModal({
   // Load cloud backups
   const loadBackups = async () => {
     if (!matchId) {
-      alert('No match ID available')
+      alert(t('options.alerts.noMatchId'))
       return
     }
     setBackupsLoading(true)
@@ -199,7 +199,7 @@ export default function ScoreboardOptionsModal({
       setShowCloudBackups(true)
     } catch (err) {
       console.error('Failed to load backups:', err)
-      alert('Failed to load cloud backups')
+      alert(t('options.alerts.failedToLoadBackups'))
     } finally {
       setBackupsLoading(false)
     }
@@ -210,7 +210,7 @@ export default function ScoreboardOptionsModal({
     try {
       const backupData = await loadCloudBackup(backup.path)
       if (!backupData) {
-        alert('Failed to load backup data')
+        alert(t('options.alerts.failedToLoadBackupData'))
         return
       }
       // Use the callback or in-place restore
@@ -225,7 +225,7 @@ export default function ScoreboardOptionsModal({
       window.location.reload()
     } catch (err) {
       console.error('Failed to restore backup:', err)
-      alert('Failed to restore backup: ' + err.message)
+      alert(t('options.alerts.failedToRestoreBackup', { error: err.message }))
     }
   }
 
@@ -257,7 +257,7 @@ export default function ScoreboardOptionsModal({
       window.location.reload()
     } catch (error) {
       console.error('Error clearing cache:', error)
-      alert('Failed to clear cache: ' + error.message)
+      alert(t('options.alerts.failedToClearCache', { error: error.message }))
     }
   }
 
@@ -302,9 +302,9 @@ export default function ScoreboardOptionsModal({
   } = displayOptions
 
   const modeDescriptions = {
-    desktop: 'Full layout with court visualization',
-    tablet: 'Scaled-down layout optimized for 768-1024px screens',
-    smartphone: 'Compact 3-column layout without court, optimized for <768px screens'
+    desktop: t('options.desktopDesc'),
+    tablet: t('options.tabletDesc'),
+    smartphone: t('options.smartphoneDesc')
   }
 
   return (
@@ -343,7 +343,7 @@ export default function ScoreboardOptionsModal({
             alignItems: 'center',
             justifyContent: 'center'
           }}
-          title="Close"
+          title={t('options.close')}
         >
           ×
         </button>
@@ -707,7 +707,7 @@ export default function ScoreboardOptionsModal({
                       gap: '6px'
                     }}
                   >
-                    <span>{mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}</span>
+                    <span>{mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode}</span>
                     {modeDescriptions[mode] ? (
                       <span
                         title={modeDescriptions[mode]}
