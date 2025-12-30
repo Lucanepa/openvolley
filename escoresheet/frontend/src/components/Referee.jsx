@@ -404,10 +404,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           console.log(`[Referee] 📡 Supabase realtime: ${state.last_event_type}`, state)
 
-          // Convert left/right to home/away using team_left and local teamAKey
+          // A/B Model: Convert left/right to home/away using side_a
+          // side_a = 'left' or 'right' indicates which side Team A is on
           const localTeamAKey = data?.match?.coinTossTeamA || 'home'
-          const teamLeft = state.team_left || 'A'
-          const homeTeamOnLeft = (teamLeft === 'A') === (localTeamAKey === 'home')
+          const sideA = state.side_a || 'left'
+          const homeTeamOnLeft = (sideA === 'left') === (localTeamAKey === 'home')
           const getTeamFromSide = (side) => {
             if (side === 'left') return homeTeamOnLeft ? 'home' : 'away'
             return homeTeamOnLeft ? 'away' : 'home'

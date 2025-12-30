@@ -38,7 +38,9 @@
     "preview": "Aperçu",
     "print": "Imprimer",
     "savePdf": "Enregistrer PDF",
-    "allowPopups": "Veuillez autoriser les popups pour afficher la feuille de match"
+    "allowPopups": "Veuillez autoriser les popups pour afficher la feuille de match",
+    "noMatchData": "Aucune donnée de match disponible",
+    "failedToOpenScoresheet": "Impossible d'ouvrir la feuille de match : {{error}}"
   },
   "roster": {
     "title": "Effectif",

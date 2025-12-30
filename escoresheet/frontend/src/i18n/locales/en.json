@@ -38,7 +38,9 @@
     "preview": "Preview",
     "print": "Print",
     "savePdf": "Save PDF",
-    "allowPopups": "Please allow popups to view the scoresheet"
+    "allowPopups": "Please allow popups to view the scoresheet",
+    "noMatchData": "No match data available",
+    "failedToOpenScoresheet": "Failed to open scoresheet: {{error}}"
   },
   "roster": {
     "title": "Roster",

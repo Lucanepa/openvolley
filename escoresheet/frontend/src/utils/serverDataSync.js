@@ -142,56 +142,134 @@ export async function getMatchData(matchId) {
         return { success: false, error: matchError?.message || 'Match not found' }
       }
 
-      // Fetch related data in parallel
-      const [teamsResult, setsResult, eventsResult] = await Promise.all([
-        supabase.from('teams').select('*').eq('match_id', match.id),
-        supabase.from('sets').select('*').eq('match_id', match.id).order('index'),
-        supabase.from('events').select('*').eq('match_id', match.id).order('timestamp')
-      ])
+      // Fetch live state if available (for Referee app)
+      const { data: liveState } = await supabase
+        .from('match_live_state')
+        .select('*')
+        .eq('match_id', match.id)
+        .maybeSingle()
 
-      // Find home and away teams
-      const homeTeam = teamsResult.data?.find(t => t.side === 'home') || null
-      const awayTeam = teamsResult.data?.find(t => t.side === 'away') || null
+      // Build team info from matches table
+      const homeTeamName = match.home_team_name || match.home_team?.name || 'Home'
+      const awayTeamName = match.away_team_name || match.away_team?.name || 'Away'
 
-      // Fetch players if teams exist
-      let homePlayers = []
-      let awayPlayers = []
-      if (homeTeam?.id || awayTeam?.id) {
-        const teamIds = [homeTeam?.id, awayTeam?.id].filter(Boolean)
-        const { data: players } = await supabase
-          .from('players')
-          .select('*')
-          .in('team_id', teamIds)
-          .order('number')
+      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+      // Determine coinTossTeamA: is Team A the home or away team?
+      let coinTossTeamA = null
+      let teamAIsHome = true
 
-        if (players) {
-          homePlayers = players.filter(p => p.team_id === homeTeam?.id)
-          awayPlayers = players.filter(p => p.team_id === awayTeam?.id)
+      if (liveState?.team_a_name) {
+        // Compare live state team_a_name with matches table to determine if Team A is home
+        teamAIsHome = liveState.team_a_name === homeTeamName
+        coinTossTeamA = teamAIsHome ? 'home' : 'away'
+      } else {
+        // Fallback to coin_toss_serve_a if live state doesn't have A/B data
+        coinTossTeamA = match.coin_toss_team_a || 'home'
+        teamAIsHome = coinTossTeamA === 'home'
+      }
+
+      // Determine which side is home based on side_a
+      // side_a = 'left' means Team A is on left, side_a = 'right' means Team A is on right
+      const sideA = liveState?.side_a || 'left'
+      const leftIsHome = (sideA === 'left') === teamAIsHome
+
+      // Build team info with live state colors
+      const homeColorFromLive = liveState ? (teamAIsHome ? liveState.team_a_color : liveState.team_b_color) : null
+      const awayColorFromLive = liveState ? (teamAIsHome ? liveState.team_b_color : liveState.team_a_color) : null
+
+      const homeTeam = {
+        name: homeTeamName,
+        shortName: match.home_short_name || match.home_team?.short_name || 'HOM',
+        color: homeColorFromLive || match.home_team?.color || '#ef4444'
+      }
+      const awayTeam = {
+        name: awayTeamName,
+        shortName: match.away_short_name || match.away_team?.short_name || 'AWY',
+        color: awayColorFromLive || match.away_team?.color || '#3b82f6'
+      }
+
+      // Build sets from live state using A/B model
+      let sets = []
+      if (liveState) {
+        // Convert A/B points to home/away
+        const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
+        const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
+
+        // serving_a is boolean: true = Team A serves
+        const servingTeam = liveState.serving_a
+          ? (teamAIsHome ? 'home' : 'away')
+          : (teamAIsHome ? 'away' : 'home')
+
+        const currentSet = {
+          index: liveState.current_set || 1,
+          homePoints: homePoints || 0,
+          awayPoints: awayPoints || 0,
+          finished: false,
+          servingTeam,
+          serverNumber: liveState.server_number
+        }
+        sets = [currentSet]
+
+        // Set scores
+        const homeSetsWon = teamAIsHome ? liveState.set_score_a : liveState.set_score_b
+        const awaySetsWon = teamAIsHome ? liveState.set_score_b : liveState.set_score_a
+        // We only have set counts, not individual set scores - this is a limitation
+      } else {
+        // No live state yet (before first point) - create empty set 1
+        sets = [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
+      }
+
+      // Build events array with lineup info from live state
+      let events = []
+      if (liveState) {
+        // Convert A/B lineups to home/away
+        if (liveState.lineup_a) {
+          events.push({
+            type: 'lineup',
+            setIndex: liveState.current_set || 1,
+            payload: { team: teamAIsHome ? 'home' : 'away', lineup: liveState.lineup_a }
+          })
+        }
+        if (liveState.lineup_b) {
+          events.push({
+            type: 'lineup',
+            setIndex: liveState.current_set || 1,
+            payload: { team: teamAIsHome ? 'away' : 'home', lineup: liveState.lineup_b }
+          })
         }
       }
+
+      // Build players from JSONB (home_players, away_players columns if they exist)
+      const homePlayers = match.home_players || []
+      const awayPlayers = match.away_players || []
 
       return {
         success: true,
         match: {
           ...match,
           id: matchId, // Use external_id as the reference ID
-          coinTossTeamA: match.coin_toss_team_a,
-          coinTossTeamB: match.coin_toss_team_b,
+          coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
+          coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
           coinTossServeA: match.coin_toss_serve_a,
           firstServe: match.first_serve,
           // Get short names from columns, or extract from JSONB if columns are empty
-          homeShortName: match.home_short_name || match.home_team?.short_name || null,
-          awayShortName: match.away_short_name || match.away_team?.short_name || null,
+          homeShortName: match.home_short_name || match.home_team?.short_name || homeTeam.shortName,
+          awayShortName: match.away_short_name || match.away_team?.short_name || awayTeam.shortName,
+          homeName: homeTeam.name,
+          awayName: awayTeam.name,
+          homeColor: homeTeam.color,
+          awayColor: awayTeam.color,
           // Also ensure gameNumber is set
           gameNumber: match.game_n ? String(match.game_n) : null,
           gameN: match.game_n
         },
-        homeTeam: homeTeam ? { ...homeTeam, name: homeTeam.name || match.home_team_name } : null,
-        awayTeam: awayTeam ? { ...awayTeam, name: awayTeam.name || match.away_team_name } : null,
+        homeTeam,
+        awayTeam,
         homePlayers,
         awayPlayers,
-        sets: setsResult.data || [],
-        events: eventsResult.data || []
+        sets,
+        events,
+        liveState // Include raw live state for additional data
       }
     } catch (supabaseError) {
       console.error('[getMatchData] Supabase fallback error:', supabaseError)

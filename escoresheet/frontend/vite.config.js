@@ -182,6 +182,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.png'],
       workbox: {
+        // Disable workbox console logs in production
+        mode: 'production',
         // Don't skip waiting automatically - let user choose when to update
         skipWaiting: false,
         clientsClaim: true,

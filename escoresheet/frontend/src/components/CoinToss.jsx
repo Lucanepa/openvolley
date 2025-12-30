@@ -690,6 +690,67 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       })
     }
 
+    // Create initial match_live_state entry for Referee app (only for official matches with Supabase)
+    // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+    if (!isTest && supabase && match?.seed_key) {
+      try {
+        // First get the Supabase match UUID from external_id
+        const { data: supabaseMatch, error: lookupError } = await supabase
+          .from('matches')
+          .select('id')
+          .eq('external_id', match.seed_key)
+          .maybeSingle()
+
+        if (!lookupError && supabaseMatch?.id) {
+          // Team A = coin toss winner, Team B = other team
+          const teamAName = teamA === 'home' ? home : away
+          const teamBName = teamA === 'home' ? away : home
+          const teamAShort = teamA === 'home' ? homeShortName : awayShortName
+          const teamBShort = teamA === 'home' ? awayShortName : homeShortName
+          const teamAColor = teamA === 'home' ? homeColor : awayColor
+          const teamBColor = teamA === 'home' ? awayColor : homeColor
+
+          const { error: insertError } = await supabase
+            .from('match_live_state')
+            .upsert({
+              match_id: supabaseMatch.id,
+              current_set: 1,
+              // Team info (constant throughout match)
+              team_a_name: teamAName,
+              team_a_short: teamAShort || teamAName?.substring(0, 3).toUpperCase(),
+              team_a_color: teamAColor || '#ef4444',
+              team_b_name: teamBName,
+              team_b_short: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
+              team_b_color: teamBColor || '#3b82f6',
+              // Scores
+              set_score_a: 0,
+              set_score_b: 0,
+              points_a: 0,
+              points_b: 0,
+              // Side (Team A always on left in Set 1)
+              side_a: 'left',
+              // Serving (serveA = true means Team A serves first)
+              serving_a: serveA,
+              // Stats
+              timeouts_a: 0,
+              timeouts_b: 0,
+              subs_a: 0,
+              subs_b: 0,
+              match_status: 'starting',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'match_id' })
+
+          if (insertError) {
+            console.warn('[CoinToss] Failed to create initial match_live_state:', insertError)
+          } else {
+            console.log('[CoinToss] Created initial match_live_state for Referee app')
+          }
+        }
+      } catch (err) {
+        console.warn('[CoinToss] Error creating match_live_state:', err)
+      }
+    }
+
     // Cloud backup at coin toss (non-blocking)
     if (!match?.test) {
       exportMatchData(matchId).then(backupData => {
@@ -1218,7 +1279,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
           {/* Team B Signatures */}
           <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '140px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '200px' }}>
               <button
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 className={`sign ${teamBCoachSig && teamBCaptainSig ? 'signed' : ''}`}
@@ -1258,7 +1319,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       
       <div style={{ display: 'flex', justifyContent: 'center', margin: '1px 0' }}>
         <MenuList
-          buttonLabel={isCompact ? "📄" : "📄 Scoresheet"}
+          buttonLabel={isCompact ? "📄" : `📄 ${t('header.scoresheet')}`}
           buttonClassName="secondary"
           buttonStyle={{
             background: '#22c55e',
@@ -1272,11 +1333,11 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           items={[
             {
               key: 'scoresheet-preview',
-              label: '🔍 Preview',
+              label: `🔍 ${t('header.preview')}`,
               onClick: async () => {
                 try {
                   if (!match) {
-                    alert('No match data available')
+                    alert(t('coinToss.noMatchData'))
                     return
                   }
 
@@ -1303,11 +1364,11 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
                   if (!scoresheetWindow) {
-                    alert('Please allow popups to view the scoresheet')
+                    alert(t('coinToss.allowPopups'))
                   }
                 } catch (error) {
                   console.error('Error opening scoresheet:', error)
-                  alert('Failed to open scoresheet: ' + (error.message || 'Unknown error'))
+                  alert(t('coinToss.failedToOpenScoresheet', { error: error.message || 'Unknown error' }))
                 }
               }
             }

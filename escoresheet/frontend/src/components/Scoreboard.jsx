@@ -1258,40 +1258,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
       const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-      // Determine left/right teams based on set index
+      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on (changes per set)
       const setIndex = currentSet.index
-      const teamAKey = data.match.coinTossTeamA || 'home'
+      const teamAKey = data.match.coinTossTeamA || 'home' // 'home' or 'away'
+      const teamBKey = teamAKey === 'home' ? 'away' : 'home'
       const is5thSet = setIndex === 5
       const set5CourtSwitched = data.match.set5CourtSwitched
       const set5LeftTeam = data.match.set5LeftTeam
 
-      // Check for manual overrides first
+      // Determine which side Team A is on this set
       const setLeftTeamOverrides = data.match.setLeftTeamOverrides || {}
-      let leftIsHome
+      let sideA // 'left' or 'right'
       if (setLeftTeamOverrides[setIndex] !== undefined) {
-        leftIsHome = setLeftTeamOverrides[setIndex] === 'home'
+        // Manual override - check if the left team matches Team A
+        sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
       } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
-        leftIsHome = set5LeftTeam === 'home'
+        sideA = set5LeftTeam === teamAKey ? 'left' : 'right'
       } else {
-        leftIsHome = setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
+        // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
+        sideA = setIndex % 2 === 1 ? 'left' : 'right'
       }
 
-      const leftTeamKey = leftIsHome ? 'home' : 'away'
-      const rightTeamKey = leftIsHome ? 'away' : 'home'
+      // Get Team A info (coin toss winner - constant throughout match)
+      const teamAName = teamAKey === 'home' ? data.match.homeName : data.match.awayName
+      const teamBName = teamAKey === 'home' ? data.match.awayName : data.match.homeName
+      const teamAShort = teamAKey === 'home' ? data.match.homeShortName : data.match.awayShortName
+      const teamBShort = teamAKey === 'home' ? data.match.awayShortName : data.match.homeShortName
+      const teamAColor = teamAKey === 'home' ? data.match.homeColor : data.match.awayColor
+      const teamBColor = teamAKey === 'home' ? data.match.awayColor : data.match.homeColor
 
-      // Get team names
-      const leftName = leftIsHome ? data.match.homeName : data.match.awayName
-      const rightName = leftIsHome ? data.match.awayName : data.match.homeName
-      const leftShort = leftIsHome ? data.match.homeShortName : data.match.awayShortName
-      const rightShort = leftIsHome ? data.match.awayShortName : data.match.homeShortName
+      // Points by team (A/B)
+      const pointsA = teamAKey === 'home' ? currentSet.homePoints : currentSet.awayPoints
+      const pointsB = teamAKey === 'home' ? currentSet.awayPoints : currentSet.homePoints
 
-      // Points
-      const leftPoints = leftIsHome ? currentSet.homePoints : currentSet.awayPoints
-      const rightPoints = leftIsHome ? currentSet.awayPoints : currentSet.homePoints
-
-      // Set score
-      const leftSetsWon = leftIsHome ? homeSetsWon : awaySetsWon
-      const rightSetsWon = leftIsHome ? awaySetsWon : homeSetsWon
+      // Set score by team (A/B)
+      const setScoreA = teamAKey === 'home' ? homeSetsWon : awaySetsWon
+      const setScoreB = teamAKey === 'home' ? awaySetsWon : homeSetsWon
 
       // Timeouts and subs for current set
       const currentSetEvents = (data.events || []).filter(e => e.setIndex === currentSet.index)
@@ -1306,10 +1308,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return acc
       }, { home: 0, away: 0 })
 
-      const leftTimeouts = leftIsHome ? timeouts.home : timeouts.away
-      const rightTimeouts = leftIsHome ? timeouts.away : timeouts.home
-      const leftSubs = leftIsHome ? subs.home : subs.away
-      const rightSubs = leftIsHome ? subs.away : subs.home
+      const timeoutsA = teamAKey === 'home' ? timeouts.home : timeouts.away
+      const timeoutsB = teamAKey === 'home' ? timeouts.away : timeouts.home
+      const subsA = teamAKey === 'home' ? subs.home : subs.away
+      const subsB = teamAKey === 'home' ? subs.away : subs.home
 
       // Get lineups
       const getLineupForTeam = (teamKey) => {
@@ -1323,18 +1325,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return lastLineup.payload?.lineup || null
       }
 
-      const leftLineup = getLineupForTeam(leftTeamKey)
-      const rightLineup = getLineupForTeam(rightTeamKey)
+      const lineupA = getLineupForTeam(teamAKey)
+      const lineupB = getLineupForTeam(teamBKey)
 
       // Check if libero is on court (simplified check)
-      const leftPlayers = leftIsHome ? data.homePlayers : data.awayPlayers
-      const rightPlayers = leftIsHome ? data.awayPlayers : data.homePlayers
-      const leftLiberos = (leftPlayers || []).filter(p => p.libero)
-      const rightLiberos = (rightPlayers || []).filter(p => p.libero)
+      const playersA = teamAKey === 'home' ? data.homePlayers : data.awayPlayers
+      const playersB = teamAKey === 'home' ? data.awayPlayers : data.homePlayers
+      const liberosA = (playersA || []).filter(p => p.libero)
+      const liberosB = (playersB || []).filter(p => p.libero)
 
-      // Determine server
+      // Determine server - serving_a is true if Team A is serving
       const servingTeam = currentSet.servingTeam
-      const servingSide = servingTeam === leftTeamKey ? 'left' : 'right'
+      const servingA = servingTeam === teamAKey
       const serverNumber = currentSet.serverNumber || null
 
       // Get sanctions
@@ -1347,38 +1349,49 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           }))
       }
 
-      const leftSanctions = getSanctionsForTeam(leftTeamKey)
-      const rightSanctions = getSanctionsForTeam(rightTeamKey)
+      const sanctionsA = getSanctionsForTeam(teamAKey)
+      const sanctionsB = getSanctionsForTeam(teamBKey)
 
       // Check if we're in a set interval
       const isSetInterval = eventType === 'set_end'
 
-      // Upsert to Supabase
+      // Upsert to Supabase using A/B model
       const { error } = await supabase
         .from('match_live_state')
         .upsert({
           match_id: supabaseMatchId,
           current_set: currentSet.index,
-          set_score_left: leftSetsWon,
-          set_score_right: rightSetsWon,
-          points_left: leftPoints,
-          points_right: rightPoints,
-          team_left_name: leftName,
-          team_right_name: rightName,
-          team_left_short: leftShort || leftName?.substring(0, 3).toUpperCase(),
-          team_right_short: rightShort || rightName?.substring(0, 3).toUpperCase(),
-          lineup_left: leftLineup,
-          lineup_right: rightLineup,
-          libero_on_left: false, // TODO: Track libero exchanges
-          libero_on_right: false,
-          serving_team: servingSide,
+          // Team A/B info (constant throughout match)
+          team_a_name: teamAName,
+          team_a_short: teamAShort || teamAName?.substring(0, 3).toUpperCase(),
+          team_a_color: teamAColor || '#ef4444',
+          team_b_name: teamBName,
+          team_b_short: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
+          team_b_color: teamBColor || '#3b82f6',
+          // Scores by team
+          set_score_a: setScoreA,
+          set_score_b: setScoreB,
+          points_a: pointsA,
+          points_b: pointsB,
+          // Which side Team A is on (changes per set)
+          side_a: sideA,
+          // Lineups
+          lineup_a: lineupA,
+          lineup_b: lineupB,
+          libero_on_a: false, // TODO: Track libero exchanges
+          libero_on_b: false,
+          // Serving
+          serving_a: servingA,
           server_number: serverNumber,
-          timeouts_left: leftTimeouts,
-          timeouts_right: rightTimeouts,
-          subs_left: leftSubs,
-          subs_right: rightSubs,
-          sanctions_left: leftSanctions.length > 0 ? leftSanctions : null,
-          sanctions_right: rightSanctions.length > 0 ? rightSanctions : null,
+          // Timeouts and subs
+          timeouts_a: timeoutsA,
+          timeouts_b: timeoutsB,
+          subs_a: subsA,
+          subs_b: subsB,
+          // Sanctions
+          sanctions_a: sanctionsA.length > 0 ? sanctionsA : null,
+          sanctions_b: sanctionsB.length > 0 ? sanctionsB : null,
+          // Event info
           last_event_type: eventType || null,
           last_event_team: eventTeam || null,
           last_event_data: eventData || null,
@@ -1386,8 +1399,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           set_interval_active: isSetInterval,
           set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
           match_status: isSetInterval ? 'interval' : 'in_progress',
-          team_left: (leftIsHome === (teamAKey === 'home')) ? 'A' : 'B',
-          team_right: (leftIsHome === (teamAKey === 'home')) ? 'B' : 'A',
           updated_at: new Date().toISOString()
         }, { onConflict: 'match_id' })
 
