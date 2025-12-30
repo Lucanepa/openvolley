@@ -38,7 +38,9 @@
     "preview": "Vorschau",
     "print": "Drucken",
     "savePdf": "PDF speichern",
-    "allowPopups": "Bitte erlauben Sie Popups, um das eMatchblatt anzuzeigen"
+    "allowPopups": "Bitte erlauben Sie Popups, um das eMatchblatt anzuzeigen",
+    "noMatchData": "Keine Spieldaten verfügbar",
+    "failedToOpenScoresheet": "eMatchblatt konnte nicht geöffnet werden: {{error}}"
   },
   "roster": {
     "title": "Roster",
@@ -171,7 +173,7 @@
     "enterCity": "Stadt eingeben",
     "matchType": "Spieltyp",
     "championship": "Meisterschaft",
-    "cup": "Pokal",
+    "cup": "Cup",
     "friendly": "Freundschaftsspiel",
     "tournament": "Turnier",
     "other": "Andere",

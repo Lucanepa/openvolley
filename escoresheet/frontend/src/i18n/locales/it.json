@@ -38,7 +38,9 @@
     "preview": "Anteprima",
     "print": "Stampa",
     "savePdf": "Salva PDF",
-    "allowPopups": "Consenti i popup per visualizzare il referto"
+    "allowPopups": "Consenti i popup per visualizzare il referto",
+    "noMatchData": "Nessun dato partita disponibile",
+    "failedToOpenScoresheet": "Impossibile aprire il referto: {{error}}"
   },
   "roster": {
     "title": "Roster",
