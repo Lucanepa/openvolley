@@ -10042,8 +10042,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           {/* Scoresheet dropdown menu */}
           <MenuList
             buttonLabel="📄"
-            buttonTitle="Scoresheet"
-            menuTitle="Scoresheet"
+            buttonTitle={t('header.scoresheet')}
+            menuTitle={t('header.scoresheet')}
             buttonClassName="secondary"
             buttonStyle={{
               background: '#22c55e',
@@ -10057,7 +10057,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             items={[
               {
                 key: 'scoresheet-preview',
-                label: '🔍 Preview',
+                label: `🔍 ${t('header.preview')}`,
                 onClick: async () => {
                   try {
                     const match = data?.match
@@ -10081,7 +10081,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
-                      alert('Please allow popups to view the scoresheet')
+                      alert(t('header.allowPopups'))
                       return
                     }
 
@@ -10104,7 +10104,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               },
               {
                 key: 'scoresheet-print',
-                label: '🖨️ Print',
+                label: `🖨️ ${t('header.print')}`,
                 onClick: async () => {
                   try {
                     const match = data?.match
@@ -10128,7 +10128,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const scoresheetWindow = window.open('/scoresheet?action=print', '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
-                      alert('Please allow popups to print the scoresheet')
+                      alert(t('header.allowPopups'))
                       return
                     }
 
@@ -10151,7 +10151,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               },
               {
                 key: 'scoresheet-save',
-                label: '💾 Save PDF',
+                label: `💾 ${t('header.savePdf')}`,
                 onClick: async () => {
                   try {
                     const match = data?.match
@@ -10175,7 +10175,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const scoresheetWindow = window.open('/scoresheet?action=save', '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
-                      alert('Please allow popups to save the scoresheet')
+                      alert(t('header.allowPopups'))
                       return
                     }
 

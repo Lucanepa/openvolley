@@ -35,7 +35,10 @@
     "confirmResult": "Conferma Risultato Coin Toss",
     "returnToMatch": "Torna alla partita",
     "scoresheet": "Referto",
-    "preview": "Anteprima"
+    "preview": "Anteprima",
+    "print": "Stampa",
+    "savePdf": "Salva PDF",
+    "allowPopups": "Consenti i popup per visualizzare il referto"
   },
   "roster": {
     "title": "Roster",
@@ -313,7 +316,8 @@
       "toLeft": "TO Sinistra",
       "toRight": "TO Destra",
       "confirmTimeout": "Conferma timeout",
-      "substitute": "Sostituisci"
+      "substitute": "Sostituisci",
+      "undo": "Annulla"
     },
     "modals": {
       "confirmRallyStart": "Conferma inizio scambio",
@@ -552,7 +556,12 @@
     "current": "Attuale",
     "exitFullscreen": "Esci da schermo intero",
     "fullscreen": "Schermo intero",
-    "exit": "Esci"
+    "exit": "Esci",
+    "scoresheet": "Referto",
+    "preview": "Anteprima",
+    "print": "Stampa",
+    "savePdf": "Salva PDF",
+    "allowPopups": "Consenti i popup per visualizzare il referto"
   },
   "home": {
     "title": "Openvolley eScoresheet",

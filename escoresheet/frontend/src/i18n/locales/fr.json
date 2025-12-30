@@ -35,7 +35,10 @@
     "confirmResult": "Confirmer le tirage au sort",
     "returnToMatch": "Retour au match",
     "scoresheet": "Feuille de match",
-    "preview": "Aperçu"
+    "preview": "Aperçu",
+    "print": "Imprimer",
+    "savePdf": "Enregistrer PDF",
+    "allowPopups": "Veuillez autoriser les popups pour afficher la feuille de match"
   },
   "roster": {
     "title": "Effectif",
@@ -313,7 +316,8 @@
       "toLeft": "TM Gauche",
       "toRight": "TM Droite",
       "confirmTimeout": "Confirmer temps mort",
-      "substitute": "Remplacer"
+      "substitute": "Remplacer",
+      "undo": "Annuler"
     },
     "modals": {
       "confirmRallyStart": "Confirmer le début de l'échange",
@@ -552,7 +556,12 @@
     "current": "Actuelle",
     "exitFullscreen": "Quitter le plein écran",
     "fullscreen": "Plein écran",
-    "exit": "Quitter"
+    "exit": "Quitter",
+    "scoresheet": "Feuille de match",
+    "preview": "Aperçu",
+    "print": "Imprimer",
+    "savePdf": "Enregistrer PDF",
+    "allowPopups": "Veuillez autoriser les popups pour afficher la feuille de match"
   },
   "home": {
     "title": "Openvolley e-Feuille",
