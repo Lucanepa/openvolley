@@ -1686,6 +1686,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           game_n: gameN ? parseInt(gameN, 10) : null,
           game_pin: match?.gamePin || null,
           test: false,
+          // Text columns for team names (used for listing matches)
+          home_team_name: home.trim(),
+          away_team_name: away.trim(),
           // JSONB columns for all team/player/official data
           home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
           away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
@@ -1968,6 +1971,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           scheduled_at: scheduledAt || null,
           test: false,
           created_at: new Date().toISOString(),
+          // Text columns for team names (used for listing matches)
+          home_team_name: home.trim(),
+          away_team_name: away.trim(),
           // JSONB columns for all team/player/official data
           home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
           away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
@@ -2716,7 +2722,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="field">
               <label>{t('matchSetup.date')}</label>
               <input
-                className="w-dob"
+                className="w-100"
                 type="date"
                 value={date}
                 onChange={e => handleDateChange(e.target.value)}
@@ -2727,7 +2733,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="field">
               <label>{t('matchSetup.time')}</label>
               <input
-                className="w-90"
+                className="w-100"
                 type="time"
                 value={time}
                 onChange={e => handleTimeChange(e.target.value)}
@@ -2742,7 +2748,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="field">
               <label>{t('matchSetup.city')}</label>
               <input
-                className="w-120 capitalize"
+                className="w-160 capitalize"
                 value={city}
                 onChange={e=>setCity(e.target.value)}
                 list="cities-zurich"
@@ -2759,7 +2765,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <h3 style={{ marginTop: 0 }}>{t('matchSetup.matchType')}</h3>
             <div className="field">
               <label>{t('matchSetup.matchType')}</label>
-              <select className="w-120" value={type1} onChange={e=>setType1(e.target.value)}>
+              <select className="w-160 capitalize" value={type1} onChange={e=>setType1(e.target.value)}>
                 <option value="championship">{t('matchSetup.championship')}</option>
                 <option value="cup">{t('matchSetup.cup')}</option>
                 <option value="friendly">{t('matchSetup.friendly')}</option>
@@ -4093,6 +4099,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   action: 'update',
                   payload: {
                     id: match.seed_key,
+                    home_team_name: home?.trim() || '',
                     home_team: { name: home?.trim() || '', short_name: homeShortName || generateShortName(home), color: homeColor },
                     players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
@@ -5286,6 +5293,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   action: 'update',
                   payload: {
                     id: match.seed_key,
+                    away_team_name: away?.trim() || '',
                     away_team: { name: away?.trim() || '', short_name: awayShortName || generateShortName(away), color: awayColor },
                     players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,

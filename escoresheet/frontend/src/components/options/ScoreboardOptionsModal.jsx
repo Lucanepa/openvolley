@@ -393,7 +393,7 @@ export default function ScoreboardOptionsModal({
                       {serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket: </span>
+                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>{t('options.websocket')}: </span>
                       {serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}
                     </div>
                   </div>
@@ -968,13 +968,13 @@ export default function ScoreboardOptionsModal({
                       <div>
                         <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>
                           {backup.homePoints !== undefined ? (
-                            <>Set {backup.setIndex}: {backup.homePoints} - {backup.awayPoints}</>
+                            t('options.backupSetScore', { setIndex: backup.setIndex, homePoints: backup.homePoints, awayPoints: backup.awayPoints })
                           ) : (
                             backup.name
                           )}
                         </div>
                         <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                          #{backup.sequence || index + 1} • {backup.timestamp || backup.created_at || 'Unknown time'}
+                          #{backup.sequence || index + 1} • {backup.timestamp || backup.created_at || t('options.unknownTime')}
                         </div>
                       </div>
                       <div style={{
@@ -1055,7 +1055,7 @@ export default function ScoreboardOptionsModal({
               }}>
                 <div style={{ fontWeight: 600, fontSize: '16px' }}>
                   {restoreConfirm.homePoints !== undefined ? (
-                    <>Set {restoreConfirm.setIndex}: {restoreConfirm.homePoints} - {restoreConfirm.awayPoints}</>
+                    t('options.backupSetScore', { setIndex: restoreConfirm.setIndex, homePoints: restoreConfirm.homePoints, awayPoints: restoreConfirm.awayPoints })
                   ) : (
                     restoreConfirm.name
                   )}

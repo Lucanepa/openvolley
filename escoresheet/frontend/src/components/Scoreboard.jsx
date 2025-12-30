@@ -16673,9 +16673,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           background: 'rgba(255,255,255,0.03)',
                           borderRadius: '6px'
                         }}>
-                          <div style={{ fontWeight: 600, minWidth: '60px' }}>Set {set.index}:</div>
+                          <div style={{ fontWeight: 600, minWidth: '60px' }}>{t('scoreboard.edit.setNumber', { number: set.index })}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <label style={{ fontSize: '11px' }}>Home:</label>
+                            <label style={{ fontSize: '11px' }}>{t('common.home')}:</label>
                             <input
                               type="number"
                               min="0"
@@ -16697,7 +16697,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             />
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <label style={{ fontSize: '11px' }}>Away:</label>
+                            <label style={{ fontSize: '11px' }}>{t('common.away')}:</label>
                             <input
                               type="number"
                               min="0"
@@ -16719,7 +16719,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             />
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
-                            <label style={{ fontSize: '11px' }}>Finished:</label>
+                            <label style={{ fontSize: '11px' }}>{t('scoreboard.edit.finished')}</label>
                             <input
                               type="checkbox"
                               checked={set.finished || false}
@@ -16751,13 +16751,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       borderTop: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Coin Toss</div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editCoinToss')}</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually adjust coin toss results.
+                      {t('scoreboard.edit.editCoinTossDesc')}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '80px' }}>Team A:</label>
+                        <label style={{ fontSize: '12px', minWidth: '80px' }}>{t('scoreboard.edit.teamALabel')}</label>
                         <select
                           value={data.match.coinTossTeamA || 'home'}
                           onChange={async (e) => {
@@ -16775,15 +16775,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             color: 'var(--text)'
                           }}
                         >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
+                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
                         </select>
                         <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                          (B: {(data.match.coinTossTeamA || 'home') === 'home' ? 'Away' : 'Home'})
+                          {t('scoreboard.edit.teamBColon', { team: (data.match.coinTossTeamA || 'home') === 'home' ? t('common.away') : t('common.home') })}
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '80px' }}>First Serve:</label>
+                        <label style={{ fontSize: '12px', minWidth: '80px' }}>{t('scoreboard.edit.firstServe')}</label>
                         <select
                           value={data.match.firstServe || 'home'}
                           onChange={async (e) => {
@@ -16804,14 +16804,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             color: 'var(--text)'
                           }}
                         >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
+                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
                         </select>
                       </div>
                     </div>
                   </div>
                 )}
-                
+
                 {/* Edit Match Information */}
                 {data?.match && (
                   <div
@@ -16824,13 +16824,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       borderTop: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Match Information</div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editMatchInfo')}</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually adjust match status and settings.
+                      {t('scoreboard.edit.editMatchInfoDesc')}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '120px' }}>Match Status:</label>
+                        <label style={{ fontSize: '12px', minWidth: '120px' }}>{t('scoreboard.edit.matchStatus')}</label>
                         <select
                           value={data.match.status || 'live'}
                           onChange={async (e) => {
@@ -16846,14 +16846,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             color: 'var(--text)'
                           }}
                         >
-                          <option value="live" style={{ background: '#1e293b', color: 'var(--text)' }}>Live</option>
-                          <option value="final" style={{ background: '#1e293b', color: 'var(--text)' }}>Final</option>
-                          <option value="paused" style={{ background: '#1e293b', color: 'var(--text)' }}>Paused</option>
+                          <option value="live" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.live')}</option>
+                          <option value="final" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.final')}</option>
+                          <option value="paused" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.paused')}</option>
                         </select>
                       </div>
                       {data?.set?.index === 5 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <label style={{ fontSize: '12px', minWidth: '120px' }}>Set 5 First Serve:</label>
+                          <label style={{ fontSize: '12px', minWidth: '120px' }}>{t('scoreboard.edit.set5FirstServe')}</label>
                           <select
                             value={data.match.set5FirstServe || 'A'}
                             onChange={async (e) => {
@@ -16869,8 +16869,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               color: 'var(--text)'
                             }}
                           >
-                            <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>Team A</option>
-                            <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>Team B</option>
+                            <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.teamA')}</option>
+                            <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.teamB')}</option>
                           </select>
                         </div>
                       )}
@@ -16932,7 +16932,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
                               <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                                Override automatic side switching for Sets 1-4:
+                                {t('scoreboard.edit.overrideSwitchingSets14')}
                               </div>
                               {[1, 2, 3, 4].map(setNum => {
                                 const overrides = data.match?.setLeftTeamOverrides || {}
@@ -16943,23 +16943,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 
                                 return (
                                   <div key={setNum} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <label style={{ fontSize: '11px', minWidth: '60px' }}>Set {setNum}:</label>
+                                    <label style={{ fontSize: '11px', minWidth: '60px' }}>{t('scoreboard.edit.setNumber', { number: setNum })}</label>
                                     <select
                                       value={currentValue}
                                       onChange={async (e) => {
                                         const newValue = e.target.value
                                         const currentOverrides = data.match?.setLeftTeamOverrides || {}
-                                        
+
                                         if (newValue === automatic) {
                                           // Remove override if set back to automatic
                                           const newOverrides = { ...currentOverrides }
                                           delete newOverrides[setNum]
-                                          await db.matches.update(matchId, { 
+                                          await db.matches.update(matchId, {
                                             setLeftTeamOverrides: Object.keys(newOverrides).length > 0 ? newOverrides : null
                                           })
                                         } else {
                                           // Set manual override
-                                          await db.matches.update(matchId, { 
+                                          await db.matches.update(matchId, {
                                             setLeftTeamOverrides: { ...currentOverrides, [setNum]: newValue }
                                           })
                                         }
@@ -16975,14 +16975,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                         maxWidth: '120px'
                                       }}
                                     >
-                                      <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>Team A (Left)</option>
-                                      <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>Team B (Left)</option>
+                                      <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.teamALeft')}</option>
+                                      <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.teamBLeft')}</option>
                                     </select>
                                     {currentOverride && (
-                                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>(Override)</span>
+                                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{t('scoreboard.edit.override')}</span>
                                     )}
                                     {!currentOverride && (
-                                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>(Auto)</span>
+                                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{t('scoreboard.edit.auto')}</span>
                                     )}
                                   </div>
                                 )
@@ -16999,7 +16999,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                     marginTop: '4px'
                                   }}
                                 >
-                                  Clear All Overrides (Use Automatic)
+                                  {t('scoreboard.edit.clearAllOverrides')}
                                 </button>
                               )}
                             </div>
@@ -17007,7 +17007,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>Switch Serve:</div>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>{t('scoreboard.edit.switchServe')}</div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <button
                             className="secondary"
@@ -17016,7 +17016,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 ? (data.match.set5FirstServe === 'A' ? teamAKey : teamBKey)
                                 : (data.match.firstServe || 'home')
                               const newServe = currentServe === 'home' ? 'away' : 'home'
-                              
+
                               if (data.set.index === 5) {
                                 const newSet5FirstServe = newServe === teamAKey ? 'A' : 'B'
                                 await db.matches.update(matchId, { set5FirstServe: newSet5FirstServe })
@@ -17029,7 +17029,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               fontSize: '12px'
                             }}
                           >
-                            Switch Current Serve
+                            {t('scoreboard.edit.switchCurrentServe')}
                           </button>
                           {data.set.index === 5 && (
                             <button
@@ -17044,18 +17044,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 fontSize: '12px'
                               }}
                             >
-                              Switch Set 5 First Serve (A/B)
+                              {t('scoreboard.edit.switchSet5Serve')}
                             </button>
                           )}
-                        </div>
-                        <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
-                          Current serve: {(() => {
-                            if (data.set.index === 5 && data.match.set5FirstServe) {
-                              return `Set 5: Team ${data.match.set5FirstServe}`
-                            }
-                            const serveTeam = data.match.firstServe || 'home'
-                            return `Sets 1-4: ${serveTeam === 'home' ? 'Home' : 'Away'}`
-                          })()}
                         </div>
                       </div>
                     </div>
