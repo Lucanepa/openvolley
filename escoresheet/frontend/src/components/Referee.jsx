@@ -1528,32 +1528,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             borderRadius: '50%',
             animation: 'awaiting-spin 1s linear infinite'
           }} />
-
-          {/* Debug State Info */}
-          <div style={{
-            marginTop: '24px',
-            padding: '12px',
-            background: 'rgba(0, 0, 0, 0.4)',
-            borderRadius: '8px',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            color: 'rgba(255, 255, 255, 0.6)',
-            textAlign: 'left',
-            maxWidth: '400px',
-            width: '100%'
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#fbbf24' }}>Debug State:</div>
-            <div>data: {data ? 'exists' : 'null'}</div>
-            <div>match.status: {data?.match?.status || 'N/A'}</div>
-            <div>match.firstServe: {data?.match?.firstServe || 'N/A'}</div>
-            <div>match.coinTossTeamA: {data?.match?.coinTossTeamA || 'N/A'}</div>
-            <div>match.coin_toss_confirmed: {String(data?.match?.coin_toss_confirmed)}</div>
-            <div>coinTossConfirmed: {String(!!coinTossConfirmed)} (value: {JSON.stringify(coinTossConfirmed)})</div>
-            <div>currentSet: {data?.currentSet?.index || 'N/A'}</div>
-            <div>isMasterMode: {String(isMasterMode)}</div>
-            <div>realtimeStatus: {realtimeStatus}</div>
-            <div>activeConnection: {activeConnection || 'none'}</div>
-          </div>
         </div>
 
         <style>{`
