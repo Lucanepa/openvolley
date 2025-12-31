@@ -571,7 +571,12 @@ export default function RefereeApp() {
               gap: '4px'
             }}
           >
-            {loadingMatches ? '...' : '🔄'} {t('refereeDashboard.loadGames', 'Load Games')}
+            {(window.innerWidth < 500)
+              ? (loadingMatches ? '...' : '🔄')
+              : <>
+                  {loadingMatches ? '...' : '🔄'} {t('refereeDashboard.loadGames', 'Load Games')}
+                </>
+            }
           </button>
 
           {availableMatches.length > 0 && (
@@ -591,8 +596,8 @@ export default function RefereeApp() {
           <button
             onClick={toggleFullscreen}
             style={{
-              padding: '4px 10px',
-              fontSize: '12px',
+              padding: '6px 6px',
+              fontSize: '10px',
               fontWeight: 600,
               background: 'rgba(255, 255, 255, 0.1)',
               color: '#fff',
