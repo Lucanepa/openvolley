@@ -132,8 +132,10 @@ export function downloadLogs(matchId = null) {
 
 /**
  * Upload logs to Supabase storage
+ * @param {string|null} matchId - Match ID for organizing logs
+ * @param {string|number|null} gameNumber - Game number for human-readable folder names
  */
-export async function uploadLogsToCloud(matchId = null) {
+export async function uploadLogsToCloud(matchId = null, gameNumber = null) {
   if (!supabase) {
     console.warn('[Logger] Supabase not configured - cannot upload logs')
     return null
@@ -141,9 +143,9 @@ export async function uploadLogsToCloud(matchId = null) {
 
   const text = exportLogsAsText()
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const filename = matchId
-    ? `logs/match_${matchId}/${timestamp}.txt`
-    : `logs/general/${timestamp}.txt`
+  // Use gameNumber if available for human-readable paths, fall back to matchId
+  const folderName = gameNumber ? `game_${gameNumber}` : (matchId ? `match_${matchId}` : 'general')
+  const filename = `logs/${folderName}/${timestamp}.txt`
 
   try {
     const { data, error } = await supabase.storage
@@ -307,8 +309,9 @@ export async function loadCloudBackup(path) {
  * Trigger backup on every action (non-blocking, with minimal delay between uploads)
  * @param {number} matchId - Match ID
  * @param {function} getBackupData - Async function that returns backup data
+ * @param {string|number|null} gameNumber - Game number for human-readable paths
  */
-export async function triggerContinuousBackup(matchId, getBackupData) {
+export async function triggerContinuousBackup(matchId, getBackupData, gameNumber = null) {
   // Skip if backup already in progress
   if (isBackupInProgress) {
     return
@@ -329,7 +332,7 @@ export async function triggerContinuousBackup(matchId, getBackupData) {
       // Upload in parallel (non-blocking)
       Promise.all([
         uploadBackupToCloud(matchId, backupData),
-        uploadLogsToCloud(matchId)
+        uploadLogsToCloud(matchId, gameNumber)
       ]).catch(err => {
         // Silent fail - don't block UI
       })

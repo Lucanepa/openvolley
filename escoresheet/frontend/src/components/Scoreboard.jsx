@@ -1333,6 +1333,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return lastLineup.payload?.lineup || null
       }
 
+      // Get libero substitution info from the latest lineup event
+      const getLiberoSubForTeam = (teamKey) => {
+        const lineupEvents = allEvents
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+        return lineupEvents[lineupEvents.length - 1].payload?.liberoSubstitution || null
+      }
+
       // Get initial lineup for a team (before any libero subs)
       const getInitialLineupForTeam = (teamKey) => {
         const initialLineup = allEvents.find(e =>
@@ -1348,6 +1357,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const rawLineupB = getLineupForTeam(teamBKey)
       const initialLineupA = getInitialLineupForTeam(teamAKey)
       const initialLineupB = getInitialLineupForTeam(teamBKey)
+      const liberoSubA = getLiberoSubForTeam(teamAKey)
+      const liberoSubB = getLiberoSubForTeam(teamBKey)
 
       // Get captain and court captain for each team
       const getCaptainInfo = (playersDb) => {
@@ -1418,7 +1429,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const sanctionsB = getSanctionsForTeam(teamBKey)
 
       // Build rich lineup structure with all info for each position
-      const buildRichLineup = (rawLineup, initialLineup, playersDb, subsDetails, sanctions, isServingTeam, captainNum, courtCaptainNum) => {
+      const buildRichLineup = (rawLineup, initialLineup, playersDb, subsDetails, sanctions, isServingTeam, captainNum, courtCaptainNum, liberoSubstitution) => {
         if (!rawLineup) return null
 
         const backRowPositions = ['I', 'V', 'VI'] // Only back row can have libero
@@ -1435,21 +1446,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           // Check if this player is a libero
           const isLibero = player && (player.libero === 'libero1' || player.libero === 'libero2')
 
-          // Find who the libero replaced (from initial lineup at this position)
+          // Find who the libero replaced (from liberoSubstitution tracking, not initial lineup)
           let replacedNumber = null
-          if (isLibero && initialLineup && initialLineup[position]) {
-            const initialPlayerNum = initialLineup[position]
-            const initialPlayer = playersDb.find(p => String(p.number) === String(initialPlayerNum))
-            // Only set replacedNumber if initial player was not a libero
-            if (initialPlayer && initialPlayer.libero !== 'libero1' && initialPlayer.libero !== 'libero2') {
-              replacedNumber = Number(initialPlayerNum)
-            }
+          if (isLibero && liberoSubstitution && String(liberoSubstitution.liberoNumber) === playerNumStr) {
+            replacedNumber = liberoSubstitution.playerNumber
           }
 
-          // Check if this player came in as a substitute
+          // Check if this player was in the initial lineup (original player)
+          const isInInitialLineup = initialLineup && Object.values(initialLineup).some(num => String(num) === playerNumStr)
+
+          // Check if this player came in as a substitute (only true if NOT in initial lineup)
+          // Players who return via reverse substitution should NOT be marked as substituted
           const subEvent = subsDetails.find(s => String(s.playerIn) === playerNumStr)
-          const isSubstituted = !!subEvent
-          const substitutedFor = subEvent ? Number(subEvent.playerOut) : null
+          const isSubstituted = !!subEvent && !isInInitialLineup
+          const substitutedFor = isSubstituted ? Number(subEvent.playerOut) : null
 
           // Get sanctions for this player
           const playerSanctions = sanctions.filter(s => String(s.player) === playerNumStr)
@@ -1503,15 +1513,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Build rich lineups for both teams
       const lineupA = buildRichLineup(
         rawLineupA, initialLineupA, teamAPlayersDb, subsA, sanctionsA,
-        servingA, captainA, courtCaptainA
+        servingA, captainA, courtCaptainA, liberoSubA
       )
       const lineupB = buildRichLineup(
         rawLineupB, initialLineupB, teamBPlayersDb, subsB, sanctionsB,
-        !servingA, captainB, courtCaptainB
+        !servingA, captainB, courtCaptainB, liberoSubB
       )
 
-      // Check if we're in a set interval
+      // Check if we're in a set interval or timeout
       const isSetInterval = eventType === 'set_end'
+      const isTimeout = eventType === 'timeout'
+
+      // Determine match status: timeout > interval > in_progress
+      let matchStatus = 'in_progress'
+      if (isTimeout) {
+        matchStatus = 'timeout'
+      } else if (isSetInterval) {
+        matchStatus = 'interval'
+      }
 
       // Upsert to Supabase using A/B model
       // lineup_a/lineup_b now contain rich nested data per position:
@@ -1553,7 +1572,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           last_event_ts: new Date().toISOString(),
           set_interval_active: isSetInterval,
           set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
-          match_status: isSetInterval ? 'interval' : 'in_progress',
+          timeout_active: isTimeout,
+          timeout_started_at: isTimeout ? new Date().toISOString() : null,
+          match_status: matchStatus,
           updated_at: new Date().toISOString()
         }, { onConflict: 'match_id' })
 
@@ -2262,8 +2283,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Clear countdown and mark as dismissed so it doesn't restart
     setBetweenSetsCountdown(null)
     countdownDismissedRef.current = true
+    // Notify referee to also close their countdown
+    sendActionToReferee('end_interval', {})
+    // Sync match_status back to 'in_progress' in Supabase
+    syncLiveStateToSupabase('end_interval', null, null)
     // The set will start when user clicks "Start set" button
-  }, [])
+  }, [sendActionToReferee, syncLiveStateToSupabase])
 
   const getTeamLineupState = useCallback((teamKey) => {
     if (!data?.events || !data?.set) {
@@ -3081,6 +3106,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     async (type, payload = {}, options = {}) => {
       if (!data?.set) return null
 
+      // CRITICAL: Use setIndexOverride if provided, otherwise query fresh from IndexedDB
+      let actualSetIndex = options.setIndexOverride
+      if (actualSetIndex === undefined) {
+        // Query fresh current set to avoid stale data after set transitions
+        const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+        const freshCurrentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
+        actualSetIndex = freshCurrentSet?.index || data.set.index
+      }
+
       // Get all existing events to validate sequence ordering
       const allEvents = await db.events.where('matchId').equals(matchId).toArray()
       const maxExistingSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
@@ -3114,7 +3148,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       const eventId = await db.events.add({
         matchId,
-        setIndex: data.set.index,
+        setIndex: actualSetIndex,
         type,
         payload,
         ts: timestamp.toISOString(), // Store as ISO string for reference
@@ -3128,7 +3162,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         type,
         payload,
         seq: nextSeq,
-        setIndex: data.set.index
+        setIndex: actualSetIndex
       }, stateBefore)
       
       // Get match to check if it's a test match
@@ -3139,7 +3173,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (!isTest) {
         // Query fresh events from IndexedDB to get current lineups (avoid stale closure)
         const allEventsForSync = await db.events.where({ matchId }).toArray()
-        const setIndex = data.set.index
+        const setIndex = actualSetIndex // Use the fresh set index, not stale data.set.index
 
         // Get rich lineup for a team from fresh event data (same format as match_live_state)
         const getRichLineupForTeamFresh = (teamKey, isServingTeam) => {
@@ -3268,6 +3302,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const servingTeamLineup = getLineupForTeamFresh(servingTeam)
         const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
 
+        // Get fresh score from the current set for this event
+        const allSetsForScore = await db.sets.where('matchId').equals(matchId).toArray()
+        const currentSetForScore = allSetsForScore.find(s => s.index === setIndex)
+        // teamAKey already defined above at line 3265
+        const scoreA = teamAKey === 'home' ? (currentSetForScore?.homePoints || 0) : (currentSetForScore?.awayPoints || 0)
+        const scoreB = teamAKey === 'home' ? (currentSetForScore?.awayPoints || 0) : (currentSetForScore?.homePoints || 0)
+
         await db.sync_queue.add({
           resource: 'event',
           action: 'insert',
@@ -3284,7 +3325,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             lineup_left: getRichLineupForTeamFresh(leftTeamKey, servingTeam === leftTeamKey),
             lineup_right: getRichLineupForTeamFresh(rightTeamKey, servingTeam === rightTeamKey),
             serve_team: servingTeam,
-            serve_player: serverNumber
+            serve_player: serverNumber,
+            // Score AFTER this event (Team A/B model)
+            score_a: scoreA,
+            score_b: scoreB
           },
           ts: Date.now(),
           status: 'queued'
@@ -3315,7 +3359,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Continuous cloud backup after every event (non-blocking, throttled)
       if (!isTest) {
-        triggerContinuousBackup(matchId, () => exportMatchData(matchId))
+        const gameNum = data?.match?.gameNumber || data?.match?.game_n || null
+        triggerContinuousBackup(matchId, () => exportMatchData(matchId), gameNum)
       }
 
       // Return the sequence number so it can be used for related events
@@ -3555,10 +3600,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           return
         }
       }
+
+      // CRITICAL: Query fresh current set from IndexedDB to avoid stale data after set transitions
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const freshCurrentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
+      if (!freshCurrentSet) return
+
       const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
-      const newPoints = data.set[field] + 1
-      const homePoints = teamKey === 'home' ? newPoints : data.set.homePoints
-      const awayPoints = teamKey === 'away' ? newPoints : data.set.awayPoints
+      const newPoints = (freshCurrentSet[field] || 0) + 1
+      const homePoints = teamKey === 'home' ? newPoints : (freshCurrentSet.homePoints || 0)
+      const awayPoints = teamKey === 'away' ? newPoints : (freshCurrentSet.awayPoints || 0)
 
       // Check who has serve BEFORE this point by querying database directly
       // The team that scored the last point has serve, so check the last point in DB
@@ -3567,16 +3618,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         .equals(matchId)
         .toArray()
       const pointEventsBefore = allEventsBeforePoint
-        .filter(e => e.type === 'point' && e.setIndex === data.set.index)
+        .filter(e => e.type === 'point' && e.setIndex === freshCurrentSet.index)
         .sort((a, b) => {
           const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
           const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
           return bTime - aTime // Most recent first
         })
-      
+
       // Calculate first serve for current set based on alternation pattern
       // Set 1: firstServe, Set 2: opposite, Set 3: same as Set 1, etc.
-      const setIndex = data.set.index
+      const setIndex = freshCurrentSet.index
       const set1FirstServe = data?.match?.firstServe || 'home'
       let currentSetFirstServe
 
@@ -3600,11 +3651,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       const scoringTeamHadServe = serveBeforePoint === teamKey
 
-      // Update score and log point FIRST
-      await db.sets.update(data.set.id, {
+      // Update score and log point FIRST (using fresh set ID)
+      await db.sets.update(freshCurrentSet.id, {
         [field]: newPoints
       })
-      const pointSeq = await logEvent('point', { team: teamKey })
+      const pointSeq = await logEvent('point', { team: teamKey, score: { home: homePoints, away: awayPoints } }, { setIndexOverride: setIndex })
 
       // Debug log: point awarded
       debugLogger.log('POINT_AWARDED', {
@@ -3613,7 +3664,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         newScore: { home: homePoints, away: awayPoints },
         serveBeforePoint,
         scoringTeamHadServe,
-        setIndex: data.set.index,
+        setIndex: setIndex,
         pointSeq
       }, getStateSnapshot())
 
@@ -3630,7 +3681,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           .equals(matchId)
           .toArray()
         const teamLineupEvents = allLineupEvents
-          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data.set.index)
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
           .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
         
         let currentLineup = null
@@ -3695,11 +3746,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 .where('matchId')
                 .equals(matchId)
                 .toArray()
-              const allLineupEvents = allLineupEventsForLibero
-                .filter(e => 
-                  e.type === 'lineup' && 
-                  e.payload?.team === teamKey && 
-                  e.setIndex === data.set.index
+              const allLineupEventsFiltered = allLineupEventsForLibero
+                .filter(e =>
+                  e.type === 'lineup' &&
+                  e.payload?.team === teamKey &&
+                  e.setIndex === setIndex
                 )
                 .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
               
@@ -3723,15 +3774,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               } else {
                 // If rotatedLiberoSubstitution doesn't match, search for the original libero substitution
                 // We need to find the libero substitution BEFORE rotation to get the original player
-                for (const event of allLineupEvents) {
-                  if (event.payload?.liberoSubstitution && 
+                for (const event of allLineupEventsFiltered) {
+                  if (event.payload?.liberoSubstitution &&
                       String(event.payload.liberoSubstitution.liberoNumber) === String(liberoNumber)) {
                     // Found the libero substitution - use the original player
                     originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
                     break
                   }
                 }
-                
+
                 // If still not found, we need to find who was in the PRE-ROTATION position
                 // The current position is AFTER rotation, so we need to reverse the rotation
                 // to find who was there before rotation
@@ -3749,9 +3800,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     'VI': 'I'
                   }
                   const preRotationPosition = reversePositionMap[position]
-                  
+
                   // Now find who was in the pre-rotation position before the libero entered
-                for (const event of allLineupEvents) {
+                for (const event of allLineupEventsFiltered) {
                   const lineup = event.payload?.lineup
                     if (lineup && lineup[preRotationPosition]) {
                       const playerNum = lineup[preRotationPosition]
@@ -3908,6 +3959,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             // Don't add to sync_queue for rotation lineups
             // But sync to referee so they see the updated lineup after rotation
             syncToReferee()
+            // Also sync to Supabase so live state has the rotated lineup
+            syncLiveStateToSupabase('rotation', teamKey, { lineup: cleanedRotatedLineup })
           }
         }
       }
@@ -3997,7 +4050,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       }
       
-      const setEnded = checkSetEnd(data.set, homePoints, awayPoints)
+      const setEnded = checkSetEnd(freshCurrentSet, homePoints, awayPoints)
       // If set didn't end, we're done. If it did, checkSetEnd will show the confirmation modal
     },
     [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId, syncToReferee]
@@ -4421,9 +4474,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Cloud backup at match end (non-blocking)
       if (matchRecord?.test !== true) {
+        const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
         exportMatchData(matchId).then(backupData => {
           uploadBackupToCloud(matchId, backupData)
-          uploadLogsToCloud(matchId)
+          uploadLogsToCloud(matchId, gameNum)
         }).catch(() => {})
       }
 
@@ -4436,9 +4490,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Cloud backup at set end (non-blocking)
       if (matchRecord?.test !== true) {
+        const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
         exportMatchData(matchId).then(backupData => {
           uploadBackupToCloud(matchId, backupData)
-          uploadLogsToCloud(matchId)
+          uploadLogsToCloud(matchId, gameNum)
         }).catch(() => {})
       }
 
@@ -4579,9 +4634,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Use separate queries since compound index may not exist
       const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
       const existingSet = allSetsForMatch.find(s => s.index === newSetIndex)
-      if (existingSet) {
-        return existingSet.id
-      }
+      
 
       const newSetId = await db.sets.add({
         matchId,
@@ -5250,6 +5303,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (lineupEvents.length > 1) {
         // Remove the most recent lineup (the one with the substitution)
         const mostRecentLineup = lineupEvents[0]
+        // Preserve liberoSubstitution from the lineup we're deleting (if libero is on court)
+        const existingLiberoSub = mostRecentLineup.payload?.liberoSubstitution || null
         await db.events.delete(mostRecentLineup.id)
 
         // Get the previous lineup and restore it
@@ -5259,11 +5314,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         // Save the restored lineup
         const restoredSubSeq = getNextSeqInUndo()
+        const restoredPayload = { team, lineup: restoredLineup, fromSubstitution: true }
+        if (existingLiberoSub) {
+          restoredPayload.liberoSubstitution = existingLiberoSub
+        }
         await db.events.add({
           matchId,
           setIndex: data.set.index,
           type: 'lineup',
-          payload: { team, lineup: restoredLineup, fromSubstitution: true },
+          payload: restoredPayload,
           ts: new Date().toISOString(),
           seq: restoredSubSeq
         })
@@ -6028,7 +6087,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const stopTimeout = useCallback(() => {
     // Stop the countdown (close modal) but keep the timeout logged
     setTimeoutModal(null)
-  }, [])
+    // Notify referee to also close their countdown
+    sendActionToReferee('end_timeout', {})
+    // Sync match_status back to 'in_progress' in Supabase
+    syncLiveStateToSupabase('end_timeout', null, null)
+  }, [sendActionToReferee, syncLiveStateToSupabase])
 
   useEffect(() => {
     if (!timeoutModal || !timeoutModal.started) return
@@ -7664,14 +7727,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
+    // Preserve liberoSubstitution from the previous lineup event (if libero is on court)
+    const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution || null
+
     // Save the updated lineup (mark as from substitution)
     const subSeq = await getNextSeq()
     const subStateBefore = getStateSnapshot()
+    const lineupPayload = { team, lineup: finalLineup, fromSubstitution: true }
+    if (existingLiberoSub) {
+      lineupPayload.liberoSubstitution = existingLiberoSub
+    }
     const subEventId = await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
-      payload: { team, lineup: finalLineup, fromSubstitution: true },
+      payload: lineupPayload,
       ts: new Date().toISOString(),
       seq: subSeq,
       stateBefore: subStateBefore
@@ -14309,7 +14379,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                marginTop: '1px'
+                marginTop: '1px',
+                marginBottom: '5px'
               }}>
                 <span style={{
                   fontSize: isLaptopMode ? '13px' : '16px',
@@ -17830,6 +17901,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                       if (lineupEvents.length > 1) {
                                         // Delete the most recent lineup (created by the substitution)
                                         const mostRecentLineup = lineupEvents[0]
+                                        // Preserve liberoSubstitution from the lineup we're deleting
+                                        const existingLiberoSub = mostRecentLineup.payload?.liberoSubstitution || null
                                         await db.events.delete(mostRecentLineup.id)
 
                                         // Get the previous lineup and restore it with the original player
@@ -17842,11 +17915,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                         const nextSeq = Math.floor(maxSeq) + 1
 
                                         // Create restored lineup event
+                                        const restoredPayload = { team: subTeam, lineup: restoredLineup, fromSubstitution: true }
+                                        if (existingLiberoSub) {
+                                          restoredPayload.liberoSubstitution = existingLiberoSub
+                                        }
                                         await db.events.add({
                                           matchId,
                                           setIndex: subSetIndex,
                                           type: 'lineup',
-                                          payload: { team: subTeam, lineup: restoredLineup, fromSubstitution: true },
+                                          payload: restoredPayload,
                                           ts: new Date().toISOString(),
                                           seq: nextSeq
                                         })

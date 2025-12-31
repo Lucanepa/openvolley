@@ -151,8 +151,9 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   const [away, setAway] = useState('Away')
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
-  const [homeColor, setHomeColor] = useState('#ef4444')
-  const [awayColor, setAwayColor] = useState('#3b82f6')
+  // Colors are derived from match - no local state (can't change in CoinToss)
+  const homeColor = match?.homeColor || '#ef4444'
+  const awayColor = match?.awayColor || '#3b82f6'
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -331,40 +332,27 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
           console.log(`[CoinToss] Roster synced for ${teamType} team (Supabase)`)
 
-          // Also update match_live_state if it exists
+          // Also update match_live_state if it exists (just team info, not deprecated columns)
           if (supabaseMatch?.id) {
             const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
             const homeIsTeamA = coinTossTeamA === 'home'
             // Determine if this team is Team A or Team B
             const isTeamA = (isHome && homeIsTeamA) || (!isHome && !homeIsTeamA)
-            const playersLiveKey = isTeamA ? 'players_a' : 'players_b'
             const colorLiveKey = isTeamA ? 'team_a_color' : 'team_b_color'
             const shortLiveKey = isTeamA ? 'team_a_short' : 'team_b_short'
             const nameLiveKey = isTeamA ? 'team_a_name' : 'team_b_name'
-            const captainLiveKey = isTeamA ? 'captain_a' : 'captain_b'
-
-            const playersForLiveState = roster.map(p => ({
-              number: p.number || null,
-              first_name: p.firstName || '',
-              last_name: p.lastName || '',
-              libero: p.libero || null,
-              is_captain: !!p.isCaptain
-            }))
-            const captain = roster.find(p => p.isCaptain)?.number || null
 
             await supabase
               .from('match_live_state')
               .update({
-                [playersLiveKey]: playersForLiveState.length > 0 ? playersForLiveState : null,
                 [colorLiveKey]: color,
                 [shortLiveKey]: shortName || generateShortName(teamName),
                 [nameLiveKey]: teamName?.trim() || '',
-                [captainLiveKey]: captain,
                 updated_at: new Date().toISOString()
               })
               .eq('match_id', supabaseMatch.id)
 
-            console.log(`[CoinToss] Roster synced for ${teamType} team (match_live_state)`)
+            console.log(`[CoinToss] Team info synced for ${teamType} team (match_live_state)`)
           }
         } catch (supabaseErr) {
           console.warn('[CoinToss] Failed to sync roster to Supabase:', supabaseErr)
@@ -409,18 +397,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           setHome(homeTeam.name || 'Home')
           // Use team shortName, or match-level shortName as fallback
           setHomeShortName(homeTeam.shortName || match.homeShortName || '')
-          setHomeColor(homeTeam.color || '#ef4444')
         } else if (match.homeShortName) {
-          // No team record but match has short name
           setHomeShortName(match.homeShortName)
         }
         if (awayTeam) {
           setAway(awayTeam.name || 'Away')
           // Use team shortName, or match-level shortName as fallback
           setAwayShortName(awayTeam.shortName || match.awayShortName || '')
-          setAwayColor(awayTeam.color || '#3b82f6')
         } else if (match.awayShortName) {
-          // No team record but match has short name
           setAwayShortName(match.awayShortName)
         }
 
@@ -824,8 +808,6 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               points_b: 0,
               // Side (Team A always on left in Set 1)
               side_a: 'left',
-              // Serving (serveA = true means Team A serves first)
-              serving_a: serveA,
               // Stats
               timeouts_a: 0,
               timeouts_b: 0,
@@ -848,9 +830,10 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
     // Cloud backup at coin toss (non-blocking)
     if (!match?.test) {
+      const gameNum = match?.gameN || match?.game_n || null
       exportMatchData(matchId).then(backupData => {
         uploadBackupToCloud(matchId, backupData)
-        uploadLogsToCloud(matchId)
+        uploadLogsToCloud(matchId, gameNum)
       }).catch(err => console.warn('[CoinToss] Cloud backup failed:', err))
     }
 

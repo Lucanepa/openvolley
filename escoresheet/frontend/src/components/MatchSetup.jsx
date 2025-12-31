@@ -1753,7 +1753,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // Cloud backup at match setup (non-blocking)
       exportMatchData(matchId).then(backupData => {
         uploadBackupToCloud(matchId, backupData)
-        uploadLogsToCloud(matchId)
+        uploadLogsToCloud(matchId, gameN || null)
       }).catch(err => console.warn('[MatchSetup] Cloud backup failed:', err))
 
       // Poll to check when sync completes
@@ -4228,29 +4228,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   if (supabaseMatch?.id) {
                     const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
                     const homeIsTeamA = coinTossTeamA === 'home'
-                    const playersKey = homeIsTeamA ? 'players_a' : 'players_b'
                     const colorKey = homeIsTeamA ? 'team_a_color' : 'team_b_color'
                     const shortKey = homeIsTeamA ? 'team_a_short' : 'team_b_short'
                     const nameKey = homeIsTeamA ? 'team_a_name' : 'team_b_name'
-                    const captainKey = homeIsTeamA ? 'captain_a' : 'captain_b'
-
-                    const playersForLiveState = homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
-                      number: p.number || null,
-                      first_name: p.firstName || '',
-                      last_name: p.lastName || '',
-                      libero: p.libero || null,
-                      is_captain: !!p.isCaptain
-                    }))
-                    const captain = homeRoster.find(p => p.isCaptain)?.number || null
 
                     await supabase
                       .from('match_live_state')
                       .update({
-                        [playersKey]: playersForLiveState.length > 0 ? playersForLiveState : null,
                         [colorKey]: homeColor,
                         [shortKey]: homeShortName || generateShortName(home),
                         [nameKey]: home?.trim() || '',
-                        [captainKey]: captain,
                         updated_at: new Date().toISOString()
                       })
                       .eq('match_id', supabaseMatch.id)
@@ -5551,29 +5538,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
                     const homeIsTeamA = coinTossTeamA === 'home'
                     // Away is Team B if home is Team A, and vice versa
-                    const playersKey = homeIsTeamA ? 'players_b' : 'players_a'
                     const colorKey = homeIsTeamA ? 'team_b_color' : 'team_a_color'
                     const shortKey = homeIsTeamA ? 'team_b_short' : 'team_a_short'
                     const nameKey = homeIsTeamA ? 'team_b_name' : 'team_a_name'
-                    const captainKey = homeIsTeamA ? 'captain_b' : 'captain_a'
-
-                    const playersForLiveState = awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
-                      number: p.number || null,
-                      first_name: p.firstName || '',
-                      last_name: p.lastName || '',
-                      libero: p.libero || null,
-                      is_captain: !!p.isCaptain
-                    }))
-                    const captain = awayRoster.find(p => p.isCaptain)?.number || null
 
                     await supabase
                       .from('match_live_state')
                       .update({
-                        [playersKey]: playersForLiveState.length > 0 ? playersForLiveState : null,
                         [colorKey]: awayColor,
                         [shortKey]: awayShortName || generateShortName(away),
                         [nameKey]: away?.trim() || '',
-                        [captainKey]: captain,
                         updated_at: new Date().toISOString()
                       })
                       .eq('match_id', supabaseMatch.id)
@@ -7206,6 +7180,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         const teamId = isHome ? match?.homeTeamId : match?.awayTeamId
                         if (teamId) {
                           await db.teams.update(teamId, { color })
+                        }
+
+                        // Update local match record in IndexedDB
+                        if (match?.id) {
+                          const colorField = isHome ? 'homeColor' : 'awayColor'
+                          await db.matches.update(match.id, { [colorField]: color })
+                          console.log(`[MatchSetup] Updated local match ${colorField}:`, color)
                         }
 
                         // Sync to Supabase if match exists
