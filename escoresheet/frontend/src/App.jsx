@@ -35,7 +35,7 @@ import {
 } from './constants/testSeeds'
 import { supabase } from './lib/supabaseClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile } from './utils/backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 
 function parseDateTime(dateTime) {
@@ -62,12 +62,20 @@ export default function App() {
   const [showCoinToss, setShowCoinToss] = useState(false)
   const [showMatchEnd, setShowMatchEnd] = useState(false)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
+  const [deletePinInput, setDeletePinInput] = useState('')
+  const [deletePinError, setDeletePinError] = useState('')
   const [newMatchModal, setNewMatchModal] = useState(null)
   const [restoreMatchModal, setRestoreMatchModal] = useState(false)
   const [restoreMatchIdInput, setRestoreMatchIdInput] = useState('')
   const [restorePin, setRestorePin] = useState('')
   const [restoreError, setRestoreError] = useState('')
   const [restoreLoading, setRestoreLoading] = useState(false)
+  const [cloudBackups, setCloudBackups] = useState([])
+  const [cloudBackupPin, setCloudBackupPin] = useState('')
+  const [cloudBackupGameN, setCloudBackupGameN] = useState('')
+  const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
+  const [cloudBackupError, setCloudBackupError] = useState('')
+  const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
   const [testMatchLoading, setTestMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
@@ -2058,15 +2066,30 @@ export default function App() {
       matchToDelete.awayTeamId ? db.teams.get(matchToDelete.awayTeamId) : null
     ])
     const matchName = `${homeTeam?.name || 'Home'} vs ${awayTeam?.name || 'Away'}`
-    
+
+    setDeletePinInput('')
+    setDeletePinError('')
     setDeleteMatchModal({
       matchName,
-      matchId: matchToDelete.id
+      matchId: matchToDelete.id,
+      gamePin: matchToDelete.gamePin || null
     })
   }
 
   async function confirmDeleteMatch() {
     if (!deleteMatchModal) return
+
+    // Require PIN confirmation if match has a gamePin
+    if (deleteMatchModal.gamePin) {
+      if (!deletePinInput.trim()) {
+        setDeletePinError('Please enter the Game PIN to confirm deletion')
+        return
+      }
+      if (deletePinInput.trim() !== deleteMatchModal.gamePin) {
+        setDeletePinError('Incorrect PIN. Please enter the correct Game PIN.')
+        return
+      }
+    }
 
     const matchIdToDelete = deleteMatchModal.matchId
 
@@ -2075,26 +2098,32 @@ export default function App() {
     const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key
 
     await db.transaction('rw', db.matches, db.sets, db.events, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+      console.log('[Delete Match] Starting deletion of match:', matchIdToDelete)
+
       // Delete sets
       const sets = await db.sets.where('matchId').equals(matchIdToDelete).toArray()
+      console.log('[Delete Match] Found', sets.length, 'sets to delete')
       if (sets.length > 0) {
         await db.sets.bulkDelete(sets.map(s => s.id))
       }
 
-      // Delete events
-      const events = await db.events.where('matchId').equals(matchIdToDelete).toArray()
-      if (events.length > 0) {
-        await db.events.bulkDelete(events.map(e => e.id))
-      }
+      // Delete events - use direct delete instead of bulkDelete for better reliability
+      const eventsCount = await db.events.where('matchId').equals(matchIdToDelete).count()
+      console.log('[Delete Match] Found', eventsCount, 'events to delete')
+      await db.events.where('matchId').equals(matchIdToDelete).delete()
 
       // Get match to find team IDs
       const match = await db.matches.get(matchIdToDelete)
 
       // Delete players
       if (match?.homeTeamId) {
+        const homePlayersCount = await db.players.where('teamId').equals(match.homeTeamId).count()
+        console.log('[Delete Match] Deleting', homePlayersCount, 'home players')
         await db.players.where('teamId').equals(match.homeTeamId).delete()
       }
       if (match?.awayTeamId) {
+        const awayPlayersCount = await db.players.where('teamId').equals(match.awayTeamId).count()
+        console.log('[Delete Match] Deleting', awayPlayersCount, 'away players')
         await db.players.where('teamId').equals(match.awayTeamId).delete()
       }
 
@@ -2107,6 +2136,8 @@ export default function App() {
       }
 
       // Delete all sync queue items (since we can't filter by matchId easily)
+      const syncQueueCount = await db.sync_queue.count()
+      console.log('[Delete Match] Clearing', syncQueueCount, 'sync queue items')
       await db.sync_queue.clear()
 
       // Delete match setup draft
@@ -2114,6 +2145,7 @@ export default function App() {
 
       // Delete match
       await db.matches.delete(matchIdToDelete)
+      console.log('[Delete Match] Match deleted successfully')
     })
 
     // Notify server to delete match from matchDataStore
@@ -2154,6 +2186,8 @@ export default function App() {
 
   function cancelDeleteMatch() {
     setDeleteMatchModal(null)
+    setDeletePinInput('')
+    setDeletePinError('')
   }
 
   async function createNewOfficialMatch() {
@@ -2190,18 +2224,14 @@ export default function App() {
     // Delete current match first
     if (currentMatch) {
       await db.transaction('rw', db.matches, db.sets, db.events, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+        console.log('[New Match] Deleting existing match:', currentMatch.id)
+
         // Delete sets
-        const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
-        if (sets.length > 0) {
-          await db.sets.bulkDelete(sets.map(s => s.id))
-        }
-        
-        // Delete events
-        const events = await db.events.where('matchId').equals(currentMatch.id).toArray()
-        if (events.length > 0) {
-          await db.events.bulkDelete(events.map(e => e.id))
-        }
-        
+        await db.sets.where('matchId').equals(currentMatch.id).delete()
+
+        // Delete events - use direct delete for reliability
+        await db.events.where('matchId').equals(currentMatch.id).delete()
+
         // Delete players
         if (currentMatch.homeTeamId) {
           await db.players.where('teamId').equals(currentMatch.homeTeamId).delete()
@@ -2209,7 +2239,7 @@ export default function App() {
         if (currentMatch.awayTeamId) {
           await db.players.where('teamId').equals(currentMatch.awayTeamId).delete()
         }
-        
+
         // Delete teams
         if (currentMatch.homeTeamId) {
           await db.teams.delete(currentMatch.homeTeamId)
@@ -2217,15 +2247,16 @@ export default function App() {
         if (currentMatch.awayTeamId) {
           await db.teams.delete(currentMatch.awayTeamId)
         }
-        
+
         // Delete all sync queue items
         await db.sync_queue.clear()
-        
+
         // Delete match setup draft
         await db.match_setup.clear()
-        
+
         // Delete match
         await db.matches.delete(currentMatch.id)
+        console.log('[New Match] Existing match deleted')
       })
     }
 
@@ -3023,15 +3054,52 @@ export default function App() {
           title="Delete Match"
           open={true}
           onClose={cancelDeleteMatch}
-          width={400}
+          width={420}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
               Are you sure you want to delete all data for: <strong>{deleteMatchModal.matchName}</strong>?
             </p>
-            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-              This will delete all sets, events, players, and team data for this match.
+            <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--muted)' }}>
+              This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.
             </p>
+
+            {/* PIN confirmation for matches with gamePin */}
+            {deleteMatchModal.gamePin && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#ef4444' }}>
+                  Enter Game PIN to confirm deletion:
+                </label>
+                <input
+                  type="text"
+                  value={deletePinInput}
+                  onChange={(e) => {
+                    setDeletePinInput(e.target.value)
+                    setDeletePinError('')
+                  }}
+                  placeholder="Game PIN"
+                  style={{
+                    width: '100%',
+                    maxWidth: '200px',
+                    padding: '12px',
+                    fontSize: '18px',
+                    fontWeight: 600,
+                    textAlign: 'center',
+                    letterSpacing: '4px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: deletePinError ? '2px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    color: 'var(--text)'
+                  }}
+                />
+                {deletePinError && (
+                  <p style={{ marginTop: '8px', fontSize: '13px', color: '#ef4444' }}>
+                    {deletePinError}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
                 onClick={confirmDeleteMatch}
@@ -3078,6 +3146,10 @@ export default function App() {
             setRestoreMatchIdInput('')
             setRestorePin('')
             setRestoreError('')
+            setCloudBackups([])
+            setCloudBackupPin('')
+            setCloudBackupGameN('')
+            setCloudBackupError('')
           }}
           width={450}
         >
@@ -3172,34 +3244,8 @@ export default function App() {
                         setRestoreLoading(false)
                         return
                       }
-                      const newMatchId = await importMatchFromSupabase(cloudData)
-                      setRestoreMatchModal(false)
-                      setRestoreMatchIdInput('')
-                      setRestorePin('')
-                      setMatchId(newMatchId)
-
-                      // Check match state to determine where to go
-                      const matchStatus = cloudData.match?.status
-                      const hasEvents = cloudData.events && cloudData.events.length > 0
-                      const hasSets = cloudData.sets && cloudData.sets.length > 0
-
-                      // Check if match is finished (one team has won 3 sets)
-                      const finishedSets = (cloudData.sets || []).filter(s => s.finished)
-                      const homeSetsWon = finishedSets.filter(s => s.home_points > s.away_points).length
-                      const awaySetsWon = finishedSets.filter(s => s.away_points > s.home_points).length
-                      const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
-
-                      if (matchStatus === 'live' && isMatchFinished) {
-                        // Match finished but not yet approved - go to MatchEnd
-                        setShowMatchSetup(false)
-                        setShowMatchEnd(true)
-                      } else if (matchStatus === 'live' && (hasEvents || hasSets)) {
-                        // Live match in progress - go directly to scoreboard
-                        setShowMatchSetup(false)
-                      } else {
-                        // New or scheduled match - go to match setup
-                        setShowMatchSetup(true)
-                      }
+                      // Show preview instead of immediately restoring
+                      setRestorePreviewData({ data: cloudData, source: 'database' })
                     } catch (err) {
                       setRestoreError(err.message || t('home.modals.failedToRestoreMatch'))
                     } finally {
@@ -3219,12 +3265,12 @@ export default function App() {
                     cursor: restoreLoading || restorePin.length !== 6 ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {restoreLoading ? 'Restoring...' : 'Restore from Database'}
+                  {restoreLoading ? 'Loading...' : 'Preview from Database'}
                 </button>
               </div>
             )}
 
-            {/* Divider if online */}
+            {/* Divider between database and cloud */}
             {!offlineMode && (
               <div style={{
                 display: 'flex',
@@ -3237,6 +3283,185 @@ export default function App() {
                 <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
               </div>
             )}
+
+            {/* Restore from Cloud Backup */}
+            {!offlineMode && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                  Restore from Cloud Backup
+                </h3>
+                <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
+                  Restore from a specific backup point in time
+                </p>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                      Game N:
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={cloudBackupGameN}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '')
+                        setCloudBackupGameN(value)
+                      }}
+                      placeholder="123"
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        fontSize: '20px',
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        fontFamily: 'monospace',
+                        background: 'var(--bg)',
+                        border: '2px solid rgba(255,255,255,0.2)',
+                        borderRadius: '8px',
+                        color: 'var(--text)',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1.5 }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                      Game PIN:
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={cloudBackupPin}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '')
+                        if (value.length <= 6) {
+                          setCloudBackupPin(value)
+                        }
+                      }}
+                      placeholder="000000"
+                      maxLength={6}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        fontSize: '20px',
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        letterSpacing: '4px',
+                        fontFamily: 'monospace',
+                        background: 'var(--bg)',
+                        border: '2px solid rgba(255,255,255,0.2)',
+                        borderRadius: '8px',
+                        color: 'var(--text)',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (cloudBackupPin.length !== 6) {
+                      setCloudBackupError('Please enter a 6-digit PIN')
+                      return
+                    }
+                    setCloudBackupLoading(true)
+                    setCloudBackupError('')
+                    try {
+                      const backups = await listCloudBackups(cloudBackupPin, parseInt(cloudBackupGameN) || 1)
+                      setCloudBackups(backups)
+                      if (backups.length === 0) {
+                        setCloudBackupError('No cloud backups found for this PIN')
+                      }
+                    } catch (err) {
+                      setCloudBackupError(err.message || 'Failed to list backups')
+                    } finally {
+                      setCloudBackupLoading(false)
+                    }
+                  }}
+                  disabled={cloudBackupLoading || cloudBackupPin.length !== 6}
+                  style={{
+                    width: '100%',
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'rgba(139, 92, 246, 0.3)' : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {cloudBackupLoading ? 'Searching...' : 'Search Cloud Backups'}
+                </button>
+                {cloudBackupError && (
+                  <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '8px', marginBottom: '0' }}>{cloudBackupError}</p>
+                )}
+                {cloudBackups.length > 0 && (
+                  <div style={{
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '8px',
+                    marginTop: '8px'
+                  }}>
+                    {cloudBackups.map((backup, index) => (
+                      <button
+                        key={backup.name}
+                        onClick={async () => {
+                          setRestoreLoading(true)
+                          setRestoreError('')
+                          try {
+                            const cloudData = await fetchCloudBackup(backup.path)
+                            if (!cloudData) {
+                              setRestoreError('Failed to fetch backup data')
+                              setRestoreLoading(false)
+                              return
+                            }
+                            // Show preview instead of immediately restoring
+                            setRestorePreviewData({ data: cloudData, source: 'cloud', backupName: backup.name })
+                          } catch (err) {
+                            setRestoreError(err.message || 'Failed to load cloud backup')
+                          } finally {
+                            setRestoreLoading(false)
+                          }
+                        }}
+                        disabled={restoreLoading}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          fontSize: '13px',
+                          background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
+                          color: 'var(--text)',
+                          border: 'none',
+                          borderBottom: index < cloudBackups.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                          cursor: restoreLoading ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <span style={{ fontFamily: 'monospace' }}>{backup.name.replace('.json', '')}</span>
+                        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                          {backup.created_at ? new Date(backup.created_at).toLocaleString() : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Divider before local backup */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              marginBottom: '24px'
+            }}>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+              <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>or</span>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+            </div>
 
             {/* Offline/File restore */}
             <div>
@@ -3253,11 +3478,8 @@ export default function App() {
                       setRestoreLoading(false)
                       return // User cancelled
                     }
-                    const newMatchId = await restoreMatchFromJson(jsonData)
-                    setRestoreMatchModal(false)
-                    setRestorePin('')
-                    setMatchId(newMatchId)
-                    setShowMatchSetup(true)
+                    // Show preview instead of immediately restoring
+                    setRestorePreviewData({ data: jsonData, source: 'local' })
                   } catch (err) {
                     setRestoreError(err.message || t('home.modals.failedToRestoreFromFile'))
                   } finally {
@@ -3277,9 +3499,430 @@ export default function App() {
                   cursor: restoreLoading ? 'not-allowed' : 'pointer'
                 }}
               >
-                {restoreLoading ? 'Restoring...' : 'Select Backup File'}
+                {restoreLoading ? 'Loading...' : 'Select Backup File'}
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Restore Preview Modal */}
+      {restorePreviewData && (
+        <Modal
+          title="Restore Preview"
+          open={true}
+          onClose={() => setRestorePreviewData(null)}
+          width={700}
+        >
+          <div style={{ padding: '24px', maxHeight: '80vh', overflowY: 'auto' }}>
+            {(() => {
+              // Normalize data from different sources
+              const d = restorePreviewData.data
+              const isDbFormat = d.match?.home_team || d.liveState
+
+              const homeTeamName = isDbFormat
+                ? (d.match?.home_team?.name || d.match?.homeTeamName || 'Home')
+                : (d.homeTeam?.name || d.match?.homeTeamName || 'Home')
+              const awayTeamName = isDbFormat
+                ? (d.match?.away_team?.name || d.match?.awayTeamName || 'Away')
+                : (d.awayTeam?.name || d.match?.awayTeamName || 'Away')
+
+              const events = d.events || []
+              const sets = d.sets || []
+
+              // Get latest set
+              const latestSet = [...sets].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+              const currentSetIndex = latestSet?.index || d.liveState?.current_set || 1
+              const homePoints = latestSet?.homePoints ?? latestSet?.home_points ?? d.liveState?.points_a ?? 0
+              const awayPoints = latestSet?.awayPoints ?? latestSet?.away_points ?? d.liveState?.points_b ?? 0
+
+              // Get lineups (from events or liveState)
+              const lineupEvents = events.filter(e => e.type === 'lineup')
+              const homeLineup = lineupEvents.find(e => e.payload?.team === 'home')?.payload?.lineup ||
+                                 (isDbFormat ? d.liveState?.lineup_a : null)
+              const awayLineup = lineupEvents.find(e => e.payload?.team === 'away')?.payload?.lineup ||
+                                 (isDbFormat ? d.liveState?.lineup_b : null)
+
+              // Get timeouts for current set
+              const timeoutEvents = events.filter(e => e.type === 'timeout' && e.setIndex === currentSetIndex)
+              const homeTimeouts = timeoutEvents.filter(e => e.payload?.team === 'home').length
+              const awayTimeouts = timeoutEvents.filter(e => e.payload?.team === 'away').length
+
+              // Get substitutions for current set
+              const subEvents = events.filter(e => e.type === 'substitution' && e.setIndex === currentSetIndex)
+              const homeSubs = subEvents.filter(e => e.payload?.team === 'home')
+              const awaySubs = subEvents.filter(e => e.payload?.team === 'away')
+
+              // Get sanctions
+              const sanctionEvents = events.filter(e => e.type === 'sanction')
+
+              // Get serving team
+              const pointEvents = events.filter(e => e.type === 'point').sort((a, b) => (b.seq || 0) - (a.seq || 0))
+              const lastPoint = pointEvents[0]
+              const servingTeam = lastPoint?.payload?.scoringTeam || d.liveState?.serving_team || 'home'
+
+              // Helper to render lineup
+              const renderLineup = (lineup, teamName) => {
+                if (!lineup) return <span style={{ color: 'rgba(255,255,255,0.4)' }}>No lineup data</span>
+                const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                    {positions.map(pos => {
+                      const posData = lineup[pos]
+                      const num = typeof posData === 'object' ? posData?.number : posData
+                      const isServing = typeof posData === 'object' && posData?.isServing
+                      const isLibero = typeof posData === 'object' && posData?.isLibero
+                      return (
+                        <div key={pos} style={{
+                          padding: '6px 8px',
+                          background: isServing ? 'rgba(34, 197, 94, 0.2)' : isLibero ? 'rgba(249, 115, 22, 0.2)' : 'rgba(255,255,255,0.05)',
+                          borderRadius: '4px',
+                          textAlign: 'center',
+                          fontSize: '13px'
+                        }}>
+                          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>{pos}</span>
+                          <br />
+                          <span style={{ fontWeight: 600 }}>{num || '-'}</span>
+                          {isServing && <span style={{ color: '#22c55e', marginLeft: '4px' }}>●</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              }
+
+              return (
+                <>
+                  {/* Source indicator */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    marginBottom: '16px',
+                    gap: '8px'
+                  }}>
+                    <span style={{
+                      padding: '4px 12px',
+                      background: restorePreviewData.source === 'database' ? '#3b82f6' :
+                                  restorePreviewData.source === 'cloud' ? '#8b5cf6' : '#f97316',
+                      borderRadius: '12px',
+                      fontSize: '12px',
+                      fontWeight: 600
+                    }}>
+                      {restorePreviewData.source === 'database' ? 'From Database' :
+                       restorePreviewData.source === 'cloud' ? 'From Cloud Backup' : 'From Local File'}
+                    </span>
+                    {restorePreviewData.backupName && (
+                      <span style={{
+                        padding: '4px 12px',
+                        background: 'rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontFamily: 'monospace'
+                      }}>
+                        {restorePreviewData.backupName.replace('.json', '')}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Teams header */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px',
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: '8px',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
+                      <div style={{ fontSize: '18px', fontWeight: 700 }}>{homeTeamName}</div>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Home</div>
+                    </div>
+                    <div style={{ textAlign: 'center', padding: '0 16px' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 700 }}>{homePoints} - {awayPoints}</div>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Set {currentSetIndex}</div>
+                    </div>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
+                      <div style={{ fontSize: '18px', fontWeight: 700 }}>{awayTeamName}</div>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Away</div>
+                    </div>
+                  </div>
+
+                  {/* Serving indicator */}
+                  <div style={{
+                    textAlign: 'center',
+                    marginBottom: '16px',
+                    fontSize: '14px'
+                  }}>
+                    <span style={{ color: '#22c55e' }}>● </span>
+                    Serving: <strong>{servingTeam === 'home' ? homeTeamName : awayTeamName}</strong>
+                  </div>
+
+                  {/* Lineups */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '16px',
+                    marginBottom: '16px'
+                  }}>
+                    <div>
+                      <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
+                        {homeTeamName} Lineup
+                      </h4>
+                      {renderLineup(homeLineup)}
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
+                        {awayTeamName} Lineup
+                      </h4>
+                      {renderLineup(awayLineup)}
+                    </div>
+                  </div>
+
+                  {/* Timeouts */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '16px',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{
+                      padding: '12px',
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: '8px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>Timeouts</div>
+                      <div style={{ fontSize: '20px', fontWeight: 700 }}>{homeTimeouts}/2</div>
+                    </div>
+                    <div style={{
+                      padding: '12px',
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: '8px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>Timeouts</div>
+                      <div style={{ fontSize: '20px', fontWeight: 700 }}>{awayTimeouts}/2</div>
+                    </div>
+                  </div>
+
+                  {/* Substitutions */}
+                  {(homeSubs.length > 0 || awaySubs.length > 0) && (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '16px',
+                      marginBottom: '16px'
+                    }}>
+                      <div>
+                        <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                          Substitutions ({homeSubs.length})
+                        </h4>
+                        {homeSubs.length === 0 ? (
+                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>None</span>
+                        ) : (
+                          homeSubs.map((sub, i) => (
+                            <div key={i} style={{
+                              fontSize: '12px',
+                              padding: '4px 8px',
+                              background: 'rgba(255,255,255,0.05)',
+                              borderRadius: '4px',
+                              marginBottom: '4px'
+                            }}>
+                              #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
+                              <span style={{ color: 'rgba(255,255,255,0.4)', marginLeft: '8px' }}>
+                                @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <div>
+                        <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                          Substitutions ({awaySubs.length})
+                        </h4>
+                        {awaySubs.length === 0 ? (
+                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>None</span>
+                        ) : (
+                          awaySubs.map((sub, i) => (
+                            <div key={i} style={{
+                              fontSize: '12px',
+                              padding: '4px 8px',
+                              background: 'rgba(255,255,255,0.05)',
+                              borderRadius: '4px',
+                              marginBottom: '4px'
+                            }}>
+                              #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
+                              <span style={{ color: 'rgba(255,255,255,0.4)', marginLeft: '8px' }}>
+                                @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sanctions */}
+                  {sanctionEvents.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                        Sanctions ({sanctionEvents.length})
+                      </h4>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {sanctionEvents.map((s, i) => (
+                          <div key={i} style={{
+                            padding: '4px 8px',
+                            background: s.payload?.type === 'red' ? 'rgba(239, 68, 68, 0.2)' :
+                                        s.payload?.type === 'yellow' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.1)',
+                            borderRadius: '4px',
+                            fontSize: '12px'
+                          }}>
+                            {s.payload?.team === 'home' ? homeTeamName : awayTeamName}{s.payload?.playerNumber ? ` #${s.payload.playerNumber}` : ''} - {s.payload?.type || 'sanction'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Set scores summary */}
+                  {sets.length > 0 && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                        Set Scores
+                      </h4>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {[...sets].sort((a, b) => (a.index || 0) - (b.index || 0)).map(s => (
+                          <div key={s.index} style={{
+                            padding: '8px 12px',
+                            background: s.finished ? 'rgba(255,255,255,0.1)' : 'rgba(59, 130, 246, 0.2)',
+                            borderRadius: '6px',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>Set {s.index}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 600 }}>
+                              {s.homePoints ?? s.home_points ?? 0} - {s.awayPoints ?? s.away_points ?? 0}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div style={{
+                    display: 'flex',
+                    gap: '12px',
+                    justifyContent: 'center',
+                    paddingTop: '16px',
+                    borderTop: '1px solid rgba(255,255,255,0.1)'
+                  }}>
+                    <button
+                      onClick={async () => {
+                        setRestoreLoading(true)
+                        try {
+                          const cloudData = restorePreviewData.data
+                          let newMatchId
+
+                          if (restorePreviewData.source === 'database') {
+                            newMatchId = await importMatchFromSupabase(cloudData)
+                          } else {
+                            newMatchId = await restoreMatchFromJson(cloudData)
+                          }
+
+                          // Close modals
+                          setRestorePreviewData(null)
+                          setRestoreMatchModal(false)
+                          setRestoreMatchIdInput('')
+                          setRestorePin('')
+                          setCloudBackups([])
+                          setCloudBackupPin('')
+                          setCloudBackupGameN('')
+                          setCloudBackupError('')
+                          setMatchId(newMatchId)
+
+                          // Determine where to go based on match state
+                          const matchStatus = cloudData.match?.status
+                          const hasEvents = cloudData.events && cloudData.events.length > 0
+                          const hasSets = cloudData.sets && cloudData.sets.length > 0
+                          const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+                          const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+                          const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+                          const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+
+                          if (matchStatus === 'live' && isMatchFinished) {
+                            setShowMatchSetup(false)
+                            setShowMatchEnd(true)
+                          } else if (matchStatus === 'live' && (hasEvents || hasSets)) {
+                            setShowMatchSetup(false)
+                          } else {
+                            setShowMatchSetup(true)
+                          }
+                        } catch (err) {
+                          setRestoreError(err.message || 'Failed to restore match')
+                        } finally {
+                          setRestoreLoading(false)
+                        }
+                      }}
+                      disabled={restoreLoading}
+                      style={{
+                        padding: '12px 32px',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        background: restoreLoading ? 'rgba(34, 197, 94, 0.3)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {restoreLoading ? 'Restoring...' : 'Confirm Restore'}
+                    </button>
+                    <button
+                      onClick={() => setRestorePreviewData(null)}
+                      disabled={restoreLoading}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'rgba(255,255,255,0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '8px',
+                        cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Select Another
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRestorePreviewData(null)
+                        setRestoreMatchModal(false)
+                        setRestoreMatchIdInput('')
+                        setRestorePin('')
+                        setCloudBackups([])
+                        setCloudBackupPin('')
+                        setCloudBackupGameN('')
+                        setCloudBackupError('')
+                      }}
+                      disabled={restoreLoading}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '8px',
+                        cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </Modal>
       )}

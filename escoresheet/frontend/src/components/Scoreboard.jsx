@@ -3141,7 +3141,83 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const allEventsForSync = await db.events.where({ matchId }).toArray()
         const setIndex = data.set.index
 
-        // Get lineup for a team from fresh event data
+        // Get rich lineup for a team from fresh event data (same format as match_live_state)
+        const getRichLineupForTeamFresh = (teamKey, isServingTeam) => {
+          const lineupEvents = allEventsForSync
+            .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
+            .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+          if (lineupEvents.length === 0) return null
+
+          const lastLineupEvent = lineupEvents[lineupEvents.length - 1]
+          const rawLineup = lastLineupEvent.payload?.lineup || {}
+          const liberoSubstitution = lastLineupEvent.payload?.liberoSubstitution
+
+          // Get initial lineup (first lineup event)
+          const initialLineup = lineupEvents[0]?.payload?.lineup || {}
+
+          // Get players for this team
+          const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+
+          // Get substitution events for this team in this set
+          const substitutionEvents = allEventsForSync
+            .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === setIndex)
+
+          // Get captain info
+          const captainNum = teamKey === 'home' ? match?.homeCaptain : match?.awayCaptain
+          const courtCaptainNum = teamKey === 'home' ? match?.homeCourtCaptain : match?.awayCourtCaptain
+
+          const backRowPositions = ['I', 'V', 'VI']
+          const richLineup = {}
+
+          for (const position of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+            const playerNum = rawLineup[position]
+            if (!playerNum && playerNum !== 0) continue
+
+            const playerNumStr = String(playerNum)
+            const player = teamPlayers?.find(p => String(p.number) === playerNumStr)
+            const isBackRow = backRowPositions.includes(position)
+
+            const positionData = {
+              number: Number(playerNum) || playerNum
+            }
+
+            // Add serving info for position I
+            if (position === 'I' && isServingTeam) {
+              positionData.isServing = true
+            }
+
+            // Add libero info
+            if (player?.libero && player.libero !== '') {
+              positionData.isLibero = true
+              positionData.liberoType = player.libero
+              // Find who the libero replaced
+              if (liberoSubstitution && String(liberoSubstitution.liberoNumber) === playerNumStr) {
+                positionData.replacedNumber = liberoSubstitution.playerNumber
+              }
+            }
+
+            // Add substitution info
+            const subEvent = substitutionEvents.find(e => String(e.payload?.playerIn) === playerNumStr)
+            if (subEvent) {
+              positionData.isSubstituted = true
+              positionData.substitutedFor = subEvent.payload?.playerOut
+            }
+
+            // Add captain info
+            if (String(captainNum) === playerNumStr) {
+              positionData.isCaptain = true
+            }
+            if (String(courtCaptainNum) === playerNumStr) {
+              positionData.isCourtCaptain = true
+            }
+
+            richLineup[position] = positionData
+          }
+
+          return Object.keys(richLineup).length > 0 ? richLineup : null
+        }
+
+        // Simple lineup getter for server number lookup
         const getLineupForTeamFresh = (teamKey) => {
           const lineupEvents = allEventsForSync
             .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
@@ -3204,8 +3280,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             seq: nextSeq,
             test: false,
             created_at: new Date().toISOString(),
-            lineup_left: getLineupForTeamFresh(leftTeamKey),
-            lineup_right: getLineupForTeamFresh(rightTeamKey),
+            // Rich lineup format (same as match_live_state) with libero, sub, captain info
+            lineup_left: getRichLineupForTeamFresh(leftTeamKey, servingTeam === leftTeamKey),
+            lineup_right: getRichLineupForTeamFresh(rightTeamKey, servingTeam === rightTeamKey),
             serve_team: servingTeam,
             serve_player: serverNumber
           },
@@ -3627,14 +3704,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
               
               let originalPlayerNumber = null
-              
+
+              console.log('[Rotation] Libero in front row detected:', {
+                position,
+                liberoNumber,
+                rotatedLiberoSubstitution,
+                rotatedLineup
+              })
+
               // First, try to use the rotated libero substitution if the libero matches
               // The position in rotatedLiberoSubstitution is the NEW position after rotation
               // But we need to check if this libero is the one in the front row position
-              if (rotatedLiberoSubstitution && 
+              if (rotatedLiberoSubstitution &&
                   String(rotatedLiberoSubstitution.liberoNumber) === String(liberoNumber)) {
                 // Check if this is the same libero (regardless of position match, since position was rotated)
                 originalPlayerNumber = rotatedLiberoSubstitution.playerNumber
+                console.log('[Rotation] Found original player from rotatedLiberoSubstitution:', originalPlayerNumber)
               } else {
                 // If rotatedLiberoSubstitution doesn't match, search for the original libero substitution
                 // We need to find the libero substitution BEFORE rotation to get the original player
@@ -3708,11 +3793,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 
                 if (originalPlayerAlreadyOnCourt) {
                   // The original player is already on court in another position
-                  // Just remove the libero and leave the position empty (or find who should be there)
-                  // Actually, if the original player rotated to another position, we need to find
-                  // who should be in this position after rotation
-                  // For now, just remove the libero - the position will be empty
-                  rotatedLineup[position] = ''
+                  // This indicates a bug in libero tracking - the recorded "original player" is wrong
+                  // BUG: This should NEVER happen - the player replaced by libero should be on bench
+                  console.error('[Rotation] BUG: Original player', originalPlayerNumber,
+                    'found in rotatedLineup at another position. This is a libero tracking bug!',
+                    { rotatedLineup, liberoNumber, position, liberoSubstitution })
+                  // NEVER leave position empty - restore the original player anyway
+                  // The duplicate will need to be fixed manually
+                  rotatedLineup[position] = String(originalPlayerNumber)
                   rotatedLiberoSubstitution = null
                 } else {
                   // Original player is not on court, safe to restore them
@@ -3759,8 +3847,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   }, 300)
                 }
               } else {
-                // Fallback: if we can't find the original player, remove the libero anyway - they can't be in front row
-                rotatedLineup[position] = ''
+                // Fallback: if we can't find the original player, keep libero there
+                // NEVER leave position empty - libero in front row is wrong but 5 players is worse
+                console.warn('[Rotation] Cannot find original player for libero at position', position,
+                  '. Keeping libero in front row. Libero:', liberoNumber)
+                // Don't set to empty - keep libero there (will need manual fix)
                 rotatedLiberoSubstitution = null
               }
             }
@@ -3769,8 +3860,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
             const cleanedRotatedLineup = {}
             for (const pos of validPositions) {
-              if (rotatedLineup[pos] !== undefined) {
+              if (rotatedLineup[pos] !== undefined && rotatedLineup[pos] !== '' && rotatedLineup[pos] !== null) {
                 cleanedRotatedLineup[pos] = rotatedLineup[pos]
+              }
+            }
+
+            // CRITICAL: Validate all 6 positions have players - never allow empty positions
+            const missingPositions = validPositions.filter(pos => !cleanedRotatedLineup[pos])
+            if (missingPositions.length > 0) {
+              console.error('[Rotation] CRITICAL BUG: Missing players at positions:', missingPositions,
+                { rotatedLineup, cleanedRotatedLineup, currentLineup, liberoSubstitution })
+              // Try to recover from current lineup (pre-rotation)
+              for (const pos of missingPositions) {
+                if (currentLineup[pos]) {
+                  cleanedRotatedLineup[pos] = currentLineup[pos]
+                  console.log('[Rotation] Recovered position', pos, 'with player', currentLineup[pos], 'from pre-rotation lineup')
+                }
               }
             }
             
@@ -8446,21 +8551,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     // Get current lineup for this team in the current set
-    const lineupEvents = data.events?.filter(e => 
-      e.type === 'lineup' && 
-      e.payload?.team === team && 
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
       e.setIndex === data.set.index
     ) || []
     const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
     const currentLineup = lineupEvent?.payload?.lineup || {}
-    
+
     // Get libero player number
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
     const liberoPlayer = teamPlayers?.find(p => p.libero === liberoIn)
     if (!liberoPlayer) {
       return
     }
-    
+
     // Check if libero is unable to play
     if (isLiberoUnable(team, liberoPlayer.number)) {
       alert('This libero is unable to play (injured, expelled, disqualified, or declared unable)')
@@ -8468,6 +8573,45 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setLiberoDropdown(null)
       return
     }
+
+    // VALIDATION: Ensure playerOut is actually at the specified position
+    const playerAtPosition = currentLineup[position]
+    if (String(playerAtPosition) !== String(playerOut)) {
+      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
+        'is not at position', position, '- found', playerAtPosition, 'instead')
+      alert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`)
+      setLiberoConfirm(null)
+      setLiberoDropdown(null)
+      return
+    }
+
+    // VALIDATION: Ensure playerOut is not already a libero
+    const playerOutInfo = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
+      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
+      alert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`)
+      setLiberoConfirm(null)
+      setLiberoDropdown(null)
+      return
+    }
+
+    // VALIDATION: Check if there's already a libero substitution for this team
+    // and if so, ensure we're not creating conflicting tracking
+    const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution
+    if (existingLiberoSub) {
+      // There's already a libero on court - this libero entry should be a libero exchange
+      // or the existing libero should have exited first
+      console.warn('[Libero Entry] Another libero is already on court:',
+        existingLiberoSub, '- this may cause tracking issues')
+    }
+
+    console.log('[Libero Entry] Validation passed:', {
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      currentLineup,
+      existingLiberoSub
+    })
     
     // Create new lineup with libero entry
     // First, clean currentLineup to ensure only valid positions
@@ -22339,7 +22483,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const latestLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
 
         const eligiblePlayers = eligiblePositions.map(pos => {
-          const playerNum = latestLineup[pos]
+          const posData = latestLineup[pos]
+          // Handle both rich format (object with number) and legacy format (just number)
+          const playerNum = posData && typeof posData === 'object' && posData.number !== undefined
+            ? posData.number
+            : posData
           const player = teamPlayers?.find(p => String(p.number) === String(playerNum))
           return { position: pos, number: playerNum, player }
         }).filter(p => p.number && !teamPlayers?.find(tp => String(tp.number) === String(p.number))?.libero)

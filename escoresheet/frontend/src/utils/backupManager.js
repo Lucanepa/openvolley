@@ -432,17 +432,195 @@ export async function fetchMatchByPin(gamePin, gameN) {
   if (matchError) throw matchError
   if (!matchData) throw new Error('Match not found with this ID and PIN')
 
-  // Fetch sets and events using the UUID match id (not external_id which is a string)
-  const [setsResult, eventsResult] = await Promise.all([
+  // Fetch sets, events, and live state using the UUID match id
+  const [setsResult, eventsResult, liveStateResult] = await Promise.all([
     supabase.from('sets').select('*').eq('match_id', matchData.id),
-    supabase.from('events').select('*').eq('match_id', matchData.id)
+    supabase.from('events').select('*').eq('match_id', matchData.id),
+    supabase.from('match_live_state').select('*').eq('match_id', matchData.id).maybeSingle()
   ])
+
+  let events = eventsResult.data || []
+  const liveState = liveStateResult.data
+
+  console.log('[Restore] Fetched from Supabase:', {
+    matchId: matchData.id,
+    matchStatus: matchData.status,
+    setsCount: setsResult.data?.length || 0,
+    eventsCount: events.length,
+    hasLiveState: !!liveState,
+    liveStatePoints: liveState ? `${liveState.points_a}-${liveState.points_b}` : 'N/A',
+    liveStateSet: liveState?.current_set,
+    hasLineupA: !!liveState?.lineup_a,
+    hasLineupB: !!liveState?.lineup_b
+  })
+
+  // Helper: Extract player numbers from rich format lineup
+  const extractLineupNumbers = (lineup) => {
+    if (!lineup) return null
+    const result = {}
+    for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+      if (lineup[pos]) {
+        // Rich format has { number, isServing, ... }, legacy format is just a number
+        result[pos] = typeof lineup[pos] === 'object' && lineup[pos].number !== undefined
+          ? lineup[pos].number
+          : lineup[pos]
+      }
+    }
+    return Object.keys(result).length > 0 ? result : null
+  }
+
+  // Helper: Extract libero substitution info from rich format lineup
+  const extractLiberoSubstitution = (lineup) => {
+    if (!lineup) return null
+    for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+      const posData = lineup[pos]
+      if (posData && typeof posData === 'object' && posData.isLibero && posData.replacedNumber) {
+        return {
+          position: pos,
+          liberoNumber: posData.number,
+          playerNumber: posData.replacedNumber,
+          liberoType: posData.liberoType
+        }
+      }
+    }
+    return null
+  }
+
+  // Check if events already have lineup type events
+  const hasLineupTypeEvents = events.some(e => e.type === 'lineup')
+
+  // If no lineup type events, create them from event lineup_left/lineup_right columns
+  // or from match_live_state
+  if (!hasLineupTypeEvents) {
+    const teamAIsHome = matchData.coin_toss_team_a === 'home'
+
+    // First try: get lineup from the latest event that has lineup_left/lineup_right
+    const eventWithLineup = [...events]
+      .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+      .find(e => e.lineup_left || e.lineup_right)
+
+    if (eventWithLineup) {
+      const setIndex = eventWithLineup.set_index || 1
+      // Determine left/right to home/away mapping from the event
+      // lineup_left/lineup_right are stored by court position, need to map to team
+      // For now, use coin_toss_team_a to determine
+      const leftIsHome = (setIndex % 2 === 1) ? (teamAIsHome) : (!teamAIsHome)
+
+      const homeRawLineup = leftIsHome ? eventWithLineup.lineup_left : eventWithLineup.lineup_right
+      const awayRawLineup = leftIsHome ? eventWithLineup.lineup_right : eventWithLineup.lineup_left
+      const homeLineup = extractLineupNumbers(homeRawLineup)
+      const awayLineup = extractLineupNumbers(awayRawLineup)
+      const homeLiberoSub = extractLiberoSubstitution(homeRawLineup)
+      const awayLiberoSub = extractLiberoSubstitution(awayRawLineup)
+
+      console.log('[Restore] Creating lineup from event lineup_left/lineup_right:', {
+        eventSeq: eventWithLineup.seq,
+        setIndex,
+        leftIsHome,
+        homeLineup,
+        awayLineup,
+        homeLiberoSub,
+        awayLiberoSub,
+        rawLineupLeft: eventWithLineup.lineup_left,
+        rawLineupRight: eventWithLineup.lineup_right
+      })
+
+      if (homeLineup) {
+        const payload = { team: 'home', lineup: homeLineup, isInitial: true }
+        if (homeLiberoSub) payload.liberoSubstitution = homeLiberoSub
+        events.push({
+          type: 'lineup',
+          set_index: setIndex,
+          seq: 0.5,
+          payload,
+          ts: eventWithLineup.ts || new Date().toISOString()
+        })
+      }
+      if (awayLineup) {
+        const payload = { team: 'away', lineup: awayLineup, isInitial: true }
+        if (awayLiberoSub) payload.liberoSubstitution = awayLiberoSub
+        events.push({
+          type: 'lineup',
+          set_index: setIndex,
+          seq: 0.6,
+          payload,
+          ts: eventWithLineup.ts || new Date().toISOString()
+        })
+      }
+    } else if (liveState) {
+      // Fallback: get lineup from match_live_state
+      const currentSet = liveState.current_set || 1
+      const lineupANumbers = extractLineupNumbers(liveState.lineup_a)
+      const lineupBNumbers = extractLineupNumbers(liveState.lineup_b)
+      const liberoSubA = extractLiberoSubstitution(liveState.lineup_a)
+      const liberoSubB = extractLiberoSubstitution(liveState.lineup_b)
+
+      console.log('[Restore] Creating lineup from match_live_state:', {
+        currentSet,
+        teamAIsHome,
+        lineupANumbers,
+        lineupBNumbers,
+        liberoSubA,
+        liberoSubB,
+        rawLineupA: liveState.lineup_a,
+        rawLineupB: liveState.lineup_b
+      })
+
+      if (lineupANumbers) {
+        const payload = {
+          team: teamAIsHome ? 'home' : 'away',
+          lineup: lineupANumbers,
+          isInitial: true
+        }
+        if (liberoSubA) payload.liberoSubstitution = liberoSubA
+        events.push({
+          type: 'lineup',
+          set_index: currentSet,
+          seq: 0.5,
+          payload,
+          ts: liveState.updated_at || new Date().toISOString()
+        })
+      }
+
+      if (lineupBNumbers) {
+        const payload = {
+          team: teamAIsHome ? 'away' : 'home',
+          lineup: lineupBNumbers,
+          isInitial: true
+        }
+        if (liberoSubB) payload.liberoSubstitution = liberoSubB
+        events.push({
+          type: 'lineup',
+          set_index: currentSet,
+          seq: 0.6,
+          payload,
+          ts: liveState.updated_at || new Date().toISOString()
+        })
+      }
+    }
+  }
+
+  // Log summary of what will be restored
+  const lineupEvents = events.filter(e => e.type === 'lineup')
+  const pointEvents = events.filter(e => e.type === 'point')
+  console.log('[Restore] Summary - will restore:', {
+    match: matchData.external_id,
+    homeTeam: matchData.home_team?.name,
+    awayTeam: matchData.away_team?.name,
+    sets: (setsResult.data || []).map(s => ({ index: s.index, home: s.home_points, away: s.away_points, finished: s.finished })),
+    totalEvents: events.length,
+    lineupEvents: lineupEvents.length,
+    pointEvents: pointEvents.length,
+    lineupTeams: lineupEvents.map(e => e.payload?.team),
+    lineupSetIndices: lineupEvents.map(e => e.set_index)
+  })
 
   return {
     match: matchData,
     // JSONB data is already in matchData: home_team, away_team, players_home, players_away, bench_home, bench_away, officials
     sets: setsResult.data || [],
-    events: eventsResult.data || []
+    events,
+    liveState // Include live state for additional data
   }
 }
 
@@ -584,6 +762,19 @@ export async function importMatchFromSupabase(cloudData) {
       })
     }
 
+    // If no sets exist but match has coin toss confirmed or has events, create Set 1
+    // This handles the case where a match was started but no rallies were played yet
+    if (sets.length === 0 && (match.coin_toss_confirmed || events.length > 0)) {
+      console.log('[Import] No sets found, creating Set 1 for match with coin toss confirmed or events')
+      await db.sets.add({
+        matchId: localMatchId,
+        index: 1,
+        homePoints: 0,
+        awayPoints: 0,
+        finished: false
+      })
+    }
+
     // Create events
     for (const event of events) {
       await db.events.add({
@@ -664,6 +855,68 @@ export async function selectBackupFile() {
 
     input.click()
   })
+}
+
+/**
+ * List cloud backups from Supabase storage for a match
+ * @param {string} gamePin - The 6-digit game PIN
+ * @param {number} gameN - The game number (default 1)
+ * @returns {Array} Array of backup file info
+ */
+export async function listCloudBackups(gamePin, gameN = 1) {
+  if (!supabase) {
+    throw new Error('Supabase not configured')
+  }
+
+  const folderPath = `backups/pin_${gamePin}_g${gameN}`
+
+  const { data, error } = await supabase
+    .storage
+    .from('backup')
+    .list(folderPath, {
+      sortBy: { column: 'name', order: 'desc' }
+    })
+
+  if (error) throw error
+
+  // Parse filenames to extract useful info
+  // Format: 00015_set2_15-12_timestamp.json
+  return (data || [])
+    .filter(f => f.name.endsWith('.json'))
+    .map(f => {
+      const parts = f.name.replace('.json', '').split('_')
+      return {
+        name: f.name,
+        path: `${folderPath}/${f.name}`,
+        seq: parts[0] || '0',
+        set: parts[1] || '',
+        score: parts[2] || '',
+        timestamp: parts.slice(3).join('_') || '',
+        created: f.created_at,
+        size: f.metadata?.size || 0
+      }
+    })
+}
+
+/**
+ * Fetch a cloud backup file content
+ * @param {string} path - Full path to the backup file
+ * @returns {Object} Parsed JSON backup data
+ */
+export async function fetchCloudBackup(path) {
+  if (!supabase) {
+    throw new Error('Supabase not configured')
+  }
+
+  const { data, error } = await supabase
+    .storage
+    .from('backup')
+    .download(path)
+
+  if (error) throw error
+
+  const text = await data.text()
+  return JSON.parse(text)
 }
 
 /**

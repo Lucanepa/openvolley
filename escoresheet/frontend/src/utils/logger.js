@@ -168,10 +168,20 @@ export async function uploadLogsToCloud(matchId = null) {
 
 /**
  * Upload match backup JSON to Supabase storage (sequential, with state summary)
+ * Uses game_pin for folder structure so backups can be found by PIN
  */
 export async function uploadBackupToCloud(matchId, backupData) {
   if (!supabase) {
     console.warn('[Logger] Supabase not configured - cannot upload backup')
+    return null
+  }
+
+  // Get game_pin from backup data
+  const gamePin = backupData?.match?.gamePin || backupData?.match?.game_pin
+  const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1
+
+  if (!gamePin) {
+    console.warn('[Logger] No game PIN in backup data - cannot upload')
     return null
   }
 
@@ -189,7 +199,8 @@ export async function uploadBackupToCloud(matchId, backupData) {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const seqStr = String(backupSequence).padStart(5, '0')
-  const filename = `backups/match_${matchId}/${seqStr}${stateSummary}_${timestamp}.json`
+  // Use PIN and game number in folder: backups/pin_123456_g1/
+  const filename = `backups/pin_${gamePin}_g${gameN}/${seqStr}${stateSummary}_${timestamp}.json`
 
   try {
     const { data, error } = await supabase.storage
