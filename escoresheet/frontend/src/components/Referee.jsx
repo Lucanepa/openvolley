@@ -2292,10 +2292,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
 
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          {/* Version */}
-          <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
-            v{currentVersion}
-          </span>
+          
           {/* Connection Type Dropdown */}
           <div style={{ position: 'relative' }}>
             <button
