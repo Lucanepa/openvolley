@@ -23,6 +23,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Modal states (from Scoreboard actions)
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
   const [showTimeoutModal, setShowTimeoutModal] = useState(false) // Modal visibility (separate from countdown state)
+  const timeoutActiveRef = useRef(false) // Track if timeout is active (for closure-safe checks)
 
   // Flashing substitution state (like Scoreboard)
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }]
@@ -300,6 +301,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     console.log(`[Referee] 📥 Received action '${action}' at ${new Date(receiveTimestamp).toISOString()}:`, actionData)
 
     if (action === 'timeout') {
+      timeoutActiveRef.current = true
       setTimeoutModal({
         team: actionData.team,
         countdown: actionData.countdown || 30,
@@ -327,6 +329,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       setShowIntervalModal(true) // Show the modal overlay
     } else if (action === 'end_timeout') {
       // Scoreboard ended the timeout - clear countdown and modal
+      timeoutActiveRef.current = false
       setTimeoutModal(null)
       setShowTimeoutModal(false)
     } else if (action === 'end_interval') {
@@ -448,15 +451,25 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             return homeTeamOnLeft ? 'away' : 'home'
           }
 
-          // Handle timeout
-          if (state.last_event_type === 'timeout') {
-            const team = getTeamFromSide(state.last_event_team)
-            setTimeoutModal({
-              team,
-              countdown: state.last_event_data?.duration || 30,
-              started: true
-            })
-            setShowTimeoutModal(true) // Show the modal overlay
+          // Handle timeout start/stop based on timeout_active flag
+          if (state.timeout_active) {
+            // Timeout is active - show/update modal
+            if (state.last_event_type === 'timeout') {
+              const team = getTeamFromSide(state.last_event_team)
+              timeoutActiveRef.current = true
+              setTimeoutModal({
+                team,
+                countdown: state.last_event_data?.duration || 30,
+                started: true
+              })
+              setShowTimeoutModal(true) // Show the modal overlay
+            }
+          } else if (timeoutActiveRef.current) {
+            // Timeout was active but is now not active - clear modal
+            console.log('[Referee] 📡 Timeout ended via timeout_active=false, clearing modal')
+            timeoutActiveRef.current = false
+            setTimeoutModal(null)
+            setShowTimeoutModal(false)
           }
 
           // Handle substitution - flash effect only (no modal)
@@ -1641,8 +1654,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return (
       <div style={{
           position: 'relative',
-        width: 'fit-content',
-        aspectRatio: '1/1',
+        width: '1.6em',
+        height: '1.6em',
         padding: '4px',
         border: isRecentlySub ? '3px solid #22c55e' : '1px solid rgba(255, 255, 255, 0.4)',
         borderRadius: '50%',
@@ -2958,9 +2971,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => {
                     const coords = formation[pos]
                     // Transform: formation top -> distance from net (right edge)
-                    // formation left -> vertical position (left=top, right=bottom)
+                    // formation left -> vertical position (mirrored for left side view)
                     const rightPercent = coords.top // Distance from net
-                    const topPercent = 100 - coords.left // Invert: formation left (0) = bottom, left (100) = top
+                    const topPercent = coords.left // Left side: no inversion (mirrored from right side)
                     return (
                       <div
                         key={pos}
