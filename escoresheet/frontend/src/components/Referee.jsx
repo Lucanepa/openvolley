@@ -2534,7 +2534,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
       {/* SECTION 2B: Score & Serve - 20% */}
       <div style={{
-        flex: '0 0 20%',
+        flex: '0 0 15%',
         padding: '4px 0',
         background: 'rgba(0, 0, 0, 0.2)',
         display: 'flex',
@@ -2738,7 +2738,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
       {/* SECTION 3: Court Area - 40% (includes advanced mode buttons) */}
       <div style={{
-        flex: '0 0 40%',
+        flex: '0 0 45%',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -2826,9 +2826,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         minHeight: 0
       }}>
           <div style={{
-          width: '100%',
+          width: '95%',
           maxWidth: '800px',
-          aspectRatio: '2/1',
+          height: '95%',
           position: 'relative',
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
