@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.15',
+    date: '31.12.25',
+    changes: [
+      'Remove debug state information from Referee component to streamline UI and improve performance. This change enhances the overall user experience by eliminating unnecessary visual clutter during live matches.'
+    ]
+  },
+  {
     version: '0.17.14',
     date: '31.12.25',
     changes: [
