@@ -100,55 +100,120 @@ export function useRealtimeConnection({
       setStatus(CONNECTION_STATUS.CONNECTING)
       console.log('[RealtimeConnection] Connecting to Supabase Realtime for match:', matchId)
 
-      // Subscribe to events table for this match
-      const channel = supabase
-        .channel(`match-${matchId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'events',
-            filter: `match_id=eq.${matchId}`
-          },
-          (payload) => {
-            if (!isMountedRef.current) return
-            console.log('[RealtimeConnection] Supabase event received:', payload)
-            setLastUpdate(Date.now())
+      // First, look up the Supabase UUID from external_id (seed_key)
+      // This is needed because events/sets tables use match_id (UUID), not external_id
+      let supabaseMatchUuid = null
+      const { data: matchData, error: lookupError } = await supabase
+        .from('matches')
+        .select('id')
+        .eq('external_id', matchId)
+        .maybeSingle()
 
-            // Fetch fresh data when events change
-            getMatchData(matchId).then(result => {
-              if (result.success && onDataRef.current) {
-                onDataRef.current(result)
-              }
-            }).catch(err => {
-              console.error('[RealtimeConnection] Error fetching data after event:', err)
-            })
+      if (matchData?.id) {
+        supabaseMatchUuid = matchData.id
+        console.log('[RealtimeConnection] Found Supabase UUID:', supabaseMatchUuid)
+      } else {
+        // Fallback: try by game_n if matchId looks like "game_123_timestamp"
+        const gameNMatch = String(matchId).match(/^game_(\d+)_/)
+        if (gameNMatch) {
+          const gameN = parseInt(gameNMatch[1], 10)
+          const { data: matchByGameN } = await supabase
+            .from('matches')
+            .select('id')
+            .eq('game_n', gameN)
+            .in('status', ['setup', 'live'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (matchByGameN?.id) {
+            supabaseMatchUuid = matchByGameN.id
+            console.log('[RealtimeConnection] Found Supabase UUID by game_n fallback:', supabaseMatchUuid)
           }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'sets',
-            filter: `match_id=eq.${matchId}`
-          },
-          (payload) => {
-            if (!isMountedRef.current) return
-            console.log('[RealtimeConnection] Supabase set update:', payload)
-            setLastUpdate(Date.now())
+        }
+      }
 
-            // Fetch fresh data when sets change
-            getMatchData(matchId).then(result => {
-              if (result.success && onDataRef.current) {
-                onDataRef.current(result)
-              }
-            }).catch(err => {
-              console.error('[RealtimeConnection] Error fetching data after set update:', err)
-            })
-          }
-        )
+      // Build channel subscriptions
+      // Note: events/sets use UUID (match_id), matches uses external_id
+      const channel = supabase.channel(`match-${matchId}`)
+
+      // Only subscribe to events/sets/match_live_state if we have the UUID
+      if (supabaseMatchUuid) {
+        channel
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'events',
+              filter: `match_id=eq.${supabaseMatchUuid}`
+            },
+            (payload) => {
+              if (!isMountedRef.current) return
+              console.log('[RealtimeConnection] Supabase event received:', payload)
+              setLastUpdate(Date.now())
+
+              // Fetch fresh data when events change
+              getMatchData(matchId).then(result => {
+                if (result.success && onDataRef.current) {
+                  onDataRef.current(result)
+                }
+              }).catch(err => {
+                console.error('[RealtimeConnection] Error fetching data after event:', err)
+              })
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'sets',
+              filter: `match_id=eq.${supabaseMatchUuid}`
+            },
+            (payload) => {
+              if (!isMountedRef.current) return
+              console.log('[RealtimeConnection] Supabase set update:', payload)
+              setLastUpdate(Date.now())
+
+              // Fetch fresh data when sets change
+              getMatchData(matchId).then(result => {
+                if (result.success && onDataRef.current) {
+                  onDataRef.current(result)
+                }
+              }).catch(err => {
+                console.error('[RealtimeConnection] Error fetching data after set update:', err)
+              })
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'match_live_state',
+              filter: `match_id=eq.${supabaseMatchUuid}`
+            },
+            (payload) => {
+              if (!isMountedRef.current) return
+              console.log('[RealtimeConnection] Supabase match_live_state update:', payload)
+              setLastUpdate(Date.now())
+
+              // Fetch fresh data when live state changes (scores, lineups, etc.)
+              getMatchData(matchId).then(result => {
+                if (result.success && onDataRef.current) {
+                  onDataRef.current(result)
+                }
+              }).catch(err => {
+                console.error('[RealtimeConnection] Error fetching data after live state update:', err)
+              })
+            }
+          )
+      } else {
+        console.warn('[RealtimeConnection] No Supabase UUID found, subscribing to matches only')
+      }
+
+      // Always subscribe to matches table updates (uses external_id)
+      channel
         .on(
           'postgres_changes',
           {

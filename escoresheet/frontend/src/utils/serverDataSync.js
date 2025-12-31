@@ -130,14 +130,63 @@ export async function getMatchData(matchId) {
     try {
       console.log('[getMatchData] Fetching from Supabase for matchId:', matchId)
 
-      // Fetch match by external_id (seed_key)
-      const { data: match, error: matchError } = await supabase
+      let match = null
+      let matchError = null
+
+      // Try 1: Fetch match by external_id (seed_key)
+      const { data: matchByExtId, error: extIdError } = await supabase
         .from('matches')
         .select('*')
         .eq('external_id', matchId)
-        .single()
+        .maybeSingle()
 
-      if (matchError || !match) {
+      if (matchByExtId) {
+        match = matchByExtId
+      } else {
+        // Try 2: If matchId looks like "game_123_timestamp", try by game_n
+        const gameNMatch = String(matchId).match(/^game_(\d+)_/)
+        if (gameNMatch) {
+          const gameN = parseInt(gameNMatch[1], 10)
+          console.log('[getMatchData] Trying fallback lookup by game_n:', gameN)
+
+          const { data: matchByGameN, error: gameNError } = await supabase
+            .from('matches')
+            .select('*')
+            .eq('game_n', gameN)
+            .in('status', ['setup', 'live'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (matchByGameN) {
+            match = matchByGameN
+            console.log('[getMatchData] Found match by game_n fallback:', matchByGameN.external_id)
+          } else {
+            matchError = gameNError || extIdError
+          }
+        } else {
+          // Try 3: If matchId is a UUID, try direct id lookup
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          if (uuidRegex.test(matchId)) {
+            const { data: matchById, error: idError } = await supabase
+              .from('matches')
+              .select('*')
+              .eq('id', matchId)
+              .maybeSingle()
+
+            if (matchById) {
+              match = matchById
+              console.log('[getMatchData] Found match by UUID fallback')
+            } else {
+              matchError = idError || extIdError
+            }
+          } else {
+            matchError = extIdError
+          }
+        }
+      }
+
+      if (!match) {
         console.error('[getMatchData] Supabase match fetch error:', matchError)
         return { success: false, error: matchError?.message || 'Match not found' }
       }
