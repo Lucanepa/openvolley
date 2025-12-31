@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.16',
+    date: '31.12.25',
+    changes: [
+      'Refactor MatchEntry component to enhance sanctions display and UI layout'
+    ]
+  },
+  {
     version: '0.17.15',
     date: '31.12.25',
     changes: [
