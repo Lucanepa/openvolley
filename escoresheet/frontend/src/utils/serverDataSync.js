@@ -5,6 +5,18 @@
 
 import { supabase } from '../lib/supabaseClient'
 
+/**
+ * Generate a unique seed_key for a match
+ * This is the stable identifier used for Supabase sync (stored as external_id)
+ * Format: match_{timestamp}_{random} - never includes modifiable fields like gameN
+ * @returns {string} Unique seed_key
+ */
+export function generateMatchSeedKey() {
+  const timestamp = Date.now()
+  const randomPart = Math.random().toString(36).substring(2, 8)
+  return `match_${timestamp}_${randomPart}`
+}
+
 // Get server URL - checks for configured backend first, then falls back to current location
 function getServerUrl() {
   // Check if we have a configured backend URL (Railway/cloud backend)
@@ -143,46 +155,23 @@ export async function getMatchData(matchId) {
       if (matchByExtId) {
         match = matchByExtId
       } else {
-        // Try 2: If matchId looks like "game_123_timestamp", try by game_n
-        const gameNMatch = String(matchId).match(/^game_(\d+)_/)
-        if (gameNMatch) {
-          const gameN = parseInt(gameNMatch[1], 10)
-          console.log('[getMatchData] Trying fallback lookup by game_n:', gameN)
-
-          const { data: matchByGameN, error: gameNError } = await supabase
+        // Fallback: If matchId is a UUID, try direct id lookup
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        if (uuidRegex.test(matchId)) {
+          const { data: matchById, error: idError } = await supabase
             .from('matches')
             .select('*')
-            .eq('game_n', gameN)
-            .in('status', ['setup', 'live'])
-            .order('created_at', { ascending: false })
-            .limit(1)
+            .eq('id', matchId)
             .maybeSingle()
 
-          if (matchByGameN) {
-            match = matchByGameN
-            console.log('[getMatchData] Found match by game_n fallback:', matchByGameN.external_id)
+          if (matchById) {
+            match = matchById
+            console.log('[getMatchData] Found match by UUID fallback')
           } else {
-            matchError = gameNError || extIdError
+            matchError = idError || extIdError
           }
         } else {
-          // Try 3: If matchId is a UUID, try direct id lookup
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-          if (uuidRegex.test(matchId)) {
-            const { data: matchById, error: idError } = await supabase
-              .from('matches')
-              .select('*')
-              .eq('id', matchId)
-              .maybeSingle()
-
-            if (matchById) {
-              match = matchById
-              console.log('[getMatchData] Found match by UUID fallback')
-            } else {
-              matchError = idError || extIdError
-            }
-          } else {
-            matchError = extIdError
-          }
+          matchError = extIdError
         }
       }
 

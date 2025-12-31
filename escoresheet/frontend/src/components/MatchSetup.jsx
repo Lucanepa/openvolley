@@ -11,6 +11,7 @@ import { getWebSocketUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { supabase } from '../lib/supabaseClient'
+import { generateMatchSeedKey } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 
 // Date formatting helpers (outside component to avoid recreation)
@@ -1921,13 +1922,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
 
       // Generate seed_key if match doesn't have one (for older matches or matches created via other flows)
+      // seed_key is the stable unique identifier used for Supabase sync (stored as external_id)
+      // It never includes modifiable fields like gameN or scheduled_at
       let matchSeedKey = match?.seed_key
       if (!matchSeedKey) {
-        const timestamp = Date.now()
-        const randomPart = Math.random().toString(36).substring(2, 8)
-        matchSeedKey = gameN
-          ? `game_${gameN}_${timestamp}`
-          : `match_${timestamp}_${randomPart}`
+        matchSeedKey = generateMatchSeedKey()
       }
 
       // Update match with team IDs and match info
@@ -2197,13 +2196,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const generatedHomeTeamPin = generatePinCode([generatedRefereePin])
     const generatedAwayTeamPin = generatePinCode([generatedRefereePin, generatedHomeTeamPin])
 
-    // Generate a unique seed_key for Supabase sync
-    // Format: game_{gameN}_{timestamp} if gameN exists, otherwise match_{timestamp}_{random}
-    const timestamp = Date.now()
-    const randomPart = Math.random().toString(36).substring(2, 8)
-    const seedKey = gameN
-      ? `game_${gameN}_${timestamp}`
-      : `match_${timestamp}_${randomPart}`
+    // Generate a unique seed_key for Supabase sync (stored as external_id)
+    // This is the stable unique identifier - never includes modifiable fields like gameN
+    const seedKey = generateMatchSeedKey()
 
     const createdMatchId = await db.matches.add({
       homeTeamId: homeId,

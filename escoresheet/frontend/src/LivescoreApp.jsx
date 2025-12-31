@@ -1,1345 +1,276 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
-import { getServerStatus } from './utils/networkInfo'
-import SimpleHeader from './components/SimpleHeader'
-import DashboardHeader from './components/DashboardHeader'
-import UpdateBanner from './components/UpdateBanner'
-import TestModeControls from './components/TestModeControls'
-import mikasaVolleyball from './mikasa_v200w.png'
-import { Results } from '../scoresheet_pdf/components/FooterSection'
 import { supabase } from './lib/supabaseClient'
+import UpdateBanner from './components/UpdateBanner'
+import mikasaVolleyball from './mikasa_v200w.png'
 
-// Connection modes
-const CONNECTION_MODES = {
-  AUTO: 'auto',
-  SUPABASE: 'supabase',
-  WEBSOCKET: 'websocket'
-}
-
-// Helper function to determine if a color is bright
-const isBrightColor = (color) => {
-  if (!color) return false
-  const hex = color.replace('#', '')
-  const r = parseInt(hex.substr(0, 2), 16)
-  const g = parseInt(hex.substr(2, 2), 16)
-  const b = parseInt(hex.substr(4, 2), 16)
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000
-  return brightness > 155
-}
-
+/**
+ * Simplified Livescore App
+ * - Subscribes to match_live_state table
+ * - Shows all live games with scores
+ * - Select a game to view fullscreen
+ */
 export default function LivescoreApp() {
   const { t } = useTranslation()
-  const [gameId, setGameId] = useState(null)
-  const [gameIdInput, setGameIdInput] = useState('')
-  const [error, setError] = useState('')
-  const [sidesSwitched, setSidesSwitched] = useState(false)
-  const [availableMatches, setAvailableMatches] = useState([])
-  const [loadingMatches, setLoadingMatches] = useState(false)
-  const [connectionStatuses, setConnectionStatuses] = useState({
-    server: 'disconnected',
-    websocket: 'disconnected',
-    supabase: 'disconnected'
-  })
-  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
-  const [connectionMode, setConnectionMode] = useState(() => {
-    try {
-      return localStorage.getItem('livescore_connection_mode') || CONNECTION_MODES.AUTO
-    } catch { return CONNECTION_MODES.AUTO }
-  })
-  const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket'
-  const supabaseChannelRef = useRef(null)
-  const [supabaseLiveState, setSupabaseLiveState] = useState(null) // Data from match_live_state
-  const wakeLockRef = useRef(null)
-  const noSleepVideoRef = useRef(null)
-  const [wakeLockActive, setWakeLockActive] = useState(false)
-  const [testModeClicks, setTestModeClicks] = useState(0)
-  const testModeTimeoutRef = useRef(null)
+  const [liveGames, setLiveGames] = useState([]) // All games from match_live_state
+  const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const channelRef = useRef(null)
 
-  // Preload assets that are used later (e.g., volleyball image)
-  useEffect(() => {
-    const assetsToPreload = [
-      mikasaVolleyball
-    ]
-
-    assetsToPreload.forEach(src => {
-      const img = new Image()
-      img.src = src
-    })
-  }, [])
-
-  // Request wake lock to prevent screen from sleeping
-  useEffect(() => {
-    const createNoSleepVideo = () => {
-      if (noSleepVideoRef.current) return
-      const mp4 = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAA1VtZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1NSByMjkxNyAwYTg0ZDk4IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxOCAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTMgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAbWWIhAAz//727L4FNf2f0JcRLMXaSnA+KqSAgHc0wAAAAwAAAwAAV/8iZ2P/4kTVAAIgAAABHQZ4iRPCv/wAAAwAAAwAAHxQSRJ2C2E0AAAMAAAMAYOLkAADAAAHPgVxpAAKGAAABvBqIAg5LAH4AABLNAAAAHEGeQniFfwAAAwAAAwACNQsIAADAAADABOvIgAAAABoBnmF0Rn8AAAMAAAMAAApFAADAAADAECGAAHUAAAAaAZ5jakZ/AAADAAADAAClYlVkAAADAAADAJdwAAAAVUGaZkmoQWyZTAhv//6qVQAAAwAACjIWAANXJ5AAVKLiPqsAAHG/pAALrZ6AAHUhqAAC8QOAAHo0KAAHqwIAAeNf4AAcfgdSAAGdg+sAAOCnAABH6AAAADdBnoRFESwn/wAAAwAAAwAB7YZ+YfJAAOwAkxZiAgABmtQACVrdYAAbcqMAAPMrOAAH1LsAAJ5gAAAAGgGeo3RGfwAAAwAAAwAAXHMAADAAADAEfmAAdQAAABoBnqVqRn8AAAMAAAMAAKReyQADAAADABYxgAAAAFVBmqpJqEFsmUwIb//+qlUAAAMAAAoWMAANXIYAAUZC4kLQAB8rCgABTxKAADq86AAFHAwAAe3E4AAdTHoAAahnMAAL7zYAAR9BcAAN0SgAASNvQAAAADdBnshFFSwn/wAAAwAAAwAB7YZ+YfJAAOwAkxZiAgABvNIACVqdYAAbcqMAAPcquAAH1LsAAJ5gAAAAGgGe53RGfwAAAwAAAwAAXHUAADAAADAEfmAAdQAAABoBnulqRn8AAAMAAAMAAKRhXQADAAADABVxgAAAAGhBmu5JqEFsmUwIb//+qlUAAAMAAH8yQAB7sgACKrBcSAAIKXS4AAd8MAAG7xwAApriMAASJiQAAXfPOAACmvmAACNqrgAB2OyYAAm0kwABRZvgABCrlAAC7SfAABqJMAAHpZugAAAzQZ8MRRUsJ/8AAAMAAAMA5nIA/VBzAADYASYsxBwAA3mjABLVOsAANuVGAAHuVnAACuYAAAAXAZ8rdEZ/AAADAAADABSsSqyAYAC6zAAAdQAAABkBny1qRn8AAAMAAAMAFGpKrIBgAMDOJKAAdQA='
-      const video = document.createElement('video')
-      video.setAttribute('playsinline', '')
-      video.setAttribute('muted', '')
-      video.setAttribute('loop', '')
-      video.setAttribute('src', mp4)
-      video.style.position = 'fixed'
-      video.style.top = '-9999px'
-      video.style.left = '-9999px'
-      video.style.width = '1px'
-      video.style.height = '1px'
-      document.body.appendChild(video)
-      noSleepVideoRef.current = video
-      return video
-    }
-    
-    const enableNoSleep = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          if (wakeLockRef.current) {
-            try { await wakeLockRef.current.release() } catch (e) {}
-          }
-          wakeLockRef.current = await navigator.wakeLock.request('screen')
-          setWakeLockActive(true)
-          wakeLockRef.current.addEventListener('release', () => {
-            if (!wakeLockRef.current) {
-              setWakeLockActive(false)
-            }
-          })
-        }
-      } catch (err) {
-        // WakeLock failed, ignore
-      }
-
-      try {
-        const video = createNoSleepVideo()
-        if (video) {
-          await video.play()
-        }
-      } catch (err) {
-        // NoSleep video failed, ignore
-      }
-    }
-
-    const handleInteraction = () => {
-      enableNoSleep()
-      document.removeEventListener('click', handleInteraction)
-      document.removeEventListener('touchstart', handleInteraction)
-    }
-    
-    enableNoSleep()
-    document.addEventListener('click', handleInteraction, { once: true })
-    document.addEventListener('touchstart', handleInteraction, { once: true })
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        enableNoSleep()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      document.removeEventListener('click', handleInteraction)
-      document.removeEventListener('touchstart', handleInteraction)
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release()
-        wakeLockRef.current = null
-      }
-      if (noSleepVideoRef.current) {
-        noSleepVideoRef.current.pause()
-        noSleepVideoRef.current.remove()
-        noSleepVideoRef.current = null
-      }
-    }
-  }, [])
-
-  // Toggle wake lock manually
-  const toggleWakeLock = useCallback(async () => {
-    if (wakeLockActive) {
-      // Disable wake lock
-      if (wakeLockRef.current) {
-        try {
-          await wakeLockRef.current.release()
-          wakeLockRef.current = null
-        } catch (e) {}
-      }
-      if (noSleepVideoRef.current) {
-        noSleepVideoRef.current.pause()
-      }
-      setWakeLockActive(false)
-    } else {
-      // Enable wake lock
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLockRef.current = await navigator.wakeLock.request('screen')
-          setWakeLockActive(true)
-        }
-        if (noSleepVideoRef.current) {
-          await noSleepVideoRef.current.play()
-        }
-      } catch (err) {
-        setWakeLockActive(true) // Visual feedback even if API failed
-      }
-    }
-  }, [wakeLockActive])
-
-  // Load available matches function - just fetch all from match_live_state
-  const loadMatches = useCallback(async () => {
-    setLoadingMatches(true)
-    try {
-      // Try Supabase first if in AUTO or SUPABASE mode
-      const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-        (connectionMode === CONNECTION_MODES.AUTO && supabase)
-
-      if (useSupabase && supabase) {
-        // Simply fetch all records from match_live_state - these are the live games
-        const { data, error } = await supabase
-          .from('match_live_state')
-          .select('*')
-          .order('updated_at', { ascending: false })
-
-        if (!error) {
-          setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-          if (data && data.length > 0) {
-            // Format matches for display - match_live_state has all we need
-            const formattedMatches = data.map(m => ({
-              id: m.match_id, // UUID - use directly for subscription
-              gameNumber: m.current_set || 1,
-              homeTeamName: m.team_left_name || 'Team A',
-              awayTeamName: m.team_right_name || 'Team B',
-              status: 'live'
-            }))
-            setAvailableMatches(formattedMatches)
-            setActiveConnection('supabase')
-            setLoadingMatches(false)
-            return
-          } else {
-            // No live games, but Supabase is connected
-            setAvailableMatches([])
-          }
-        } else {
-          // Supabase call failed
-          console.error('[Livescore] Error fetching match_live_state:', error)
-          setConnectionStatuses(prev => ({ ...prev, supabase: 'disconnected' }))
-        }
-      }
-
-      // Fall back to WebSocket/server
-      const result = await listAvailableMatches()
-      if (result.success && result.matches) {
-        setAvailableMatches(result.matches)
-        setActiveConnection('websocket')
-      }
-    } catch (err) {
-      console.error('[Livescore] Error loading matches:', err)
-    } finally {
-      setLoadingMatches(false)
-    }
-  }, [connectionMode])
-
-  // Load available matches on mount and periodically
-  useEffect(() => {
-    loadMatches()
-    const interval = setInterval(loadMatches, 30000)
-
-    return () => clearInterval(interval)
-  }, [loadMatches])
-
-  // Check connection status periodically
-  useEffect(() => {
-    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
-    // Static deployments don't have a backend server - they rely on Supabase only
-    const isStaticDeployment = !import.meta.env.DEV && (
-      window.location.hostname.includes('github.io') ||
-      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
-    )
-    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
-
-    // For static deployments without backend, set server as not_available but check Supabase
-    if (isStaticDeployment && !hasBackendUrl) {
-      const checkSupabaseOnly = async () => {
-        let supabaseConnected = false
-        if (supabase) {
-          try {
-            const { error } = await supabase.from('matches').select('id').limit(1)
-            supabaseConnected = !error
-          } catch {
-            supabaseConnected = false
-          }
-        }
-        setConnectionStatuses(prev => ({
-          ...prev,
-          server: 'not_available',
-          websocket: 'not_available',
-          supabase: supabaseConnected ? 'connected' : 'disconnected'
-        }))
-      }
-      setConnectionDebugInfo({
-        server: {
-          status: 'not_available',
-          message: 'Static deployment - using Supabase only',
-          details: 'Real-time WebSocket updates are not available. Match data is loaded from Supabase database.'
-        }
-      })
-      checkSupabaseOnly()
-      const interval = setInterval(checkSupabaseOnly, 10000)
-      return () => clearInterval(interval)
-    }
-
-    const checkConnections = async () => {
-      try {
-        const serverStatus = await getServerStatus()
-        const wsStatus = gameId ? getWebSocketStatus(gameId) : 'no_match'
-        const serverConnected = serverStatus?.running
-
-        // Check Supabase connectivity with a simple query
-        let supabaseConnected = false
-        if (supabase) {
-          try {
-            const { error } = await supabase.from('matches').select('id').limit(1)
-            supabaseConnected = !error
-          } catch {
-            supabaseConnected = false
-          }
-        }
-
-        setConnectionStatuses(prev => ({
-          ...prev,
-          server: serverConnected ? 'connected' : 'disconnected',
-          websocket: gameId ? wsStatus : 'no_match',
-          supabase: supabaseConnected ? 'connected' : 'disconnected'
-        }))
-
-        // Update debug info
-        const newDebugInfo = {}
-        if (!serverConnected) {
-          newDebugInfo.server = {
-            status: 'disconnected',
-            message: serverStatus?.error || 'Cannot reach backend server',
-            details: `URL: ${import.meta.env.VITE_BACKEND_URL || 'Not configured'}`
-          }
-        }
-        if (gameId && wsStatus !== 'connected') {
-          newDebugInfo.websocket = {
-            status: wsStatus,
-            message: wsStatus === 'connecting' ? 'Attempting to connect...' :
-                     wsStatus === 'disconnected' ? 'WebSocket connection lost' :
-                     wsStatus === 'error' ? 'WebSocket error occurred' : 'Not connected',
-            details: `Game ID: ${gameId}`
-          }
-        }
-        setConnectionDebugInfo(prev => ({ ...prev, ...newDebugInfo }))
-      } catch (err) {
-        setConnectionStatuses(prev => ({
-          ...prev,
-          server: 'disconnected',
-          websocket: 'disconnected'
-        }))
-        setConnectionDebugInfo(prev => ({
-          ...prev,
-          server: { status: 'error', message: err.message || 'Failed to check server status' },
-          websocket: { status: 'disconnected', message: 'Cannot check WebSocket without server' }
-        }))
-      }
-    }
-
-    checkConnections()
-    const interval = setInterval(checkConnections, 5000)
-
-    return () => clearInterval(interval)
-  }, [gameId])
-
-  // Get gameId from URL (optional)
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const gameIdParam = urlParams.get('gameId')
-    if (gameIdParam) {
-      const id = parseInt(gameIdParam)
-      if (!isNaN(id)) {
-        setGameId(id)
-        setGameIdInput(String(id))
-      }
-    }
-  }, [])
-
-  // Handle game number input submission
-  const handleGameIdSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    
-    const gameNum = gameIdInput.trim()
-    if (!gameNum) {
-      setError(t('livescore.errors.enterGameNumber'))
+  // Fetch all live games from match_live_state
+  const fetchLiveGames = useCallback(async () => {
+    if (!supabase) {
+      setError('Supabase not configured')
+      setLoading(false)
       return
     }
-    
+
     try {
-      // Try to find match by game number from server
-      const foundMatch = await findMatchByGameNumber(gameNum)
-      if (foundMatch) {
-        setGameId(foundMatch.id)
-        setGameIdInput(String(foundMatch.id))
+      const { data, error: fetchError } = await supabase
+        .from('match_live_state')
+        .select('*')
+        .order('updated_at', { ascending: false })
+
+      if (fetchError) {
+        console.error('[Livescore] Error fetching games:', fetchError)
+        setError(fetchError.message)
       } else {
-        // Try as direct match ID
-        const id = parseInt(gameNum)
-        if (!isNaN(id) && id > 0) {
-          setGameId(id)
-        } else {
-          setError(t('livescore.errors.matchNotFound'))
-        }
+        setLiveGames(data || [])
+        setError(null)
       }
     } catch (err) {
-      console.error('Error finding match:', err)
-      setError(t('livescore.errors.failedToFindMatch'))
+      console.error('[Livescore] Exception:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [])
 
-  // Load match data from server
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [dataError, setDataError] = useState('')
-
+  // Initial fetch and subscribe to realtime updates
   useEffect(() => {
-    if (!gameId) {
-      setData(null)
-      return
-    }
+    fetchLiveGames()
 
-    setLoading(true)
-    setDataError('')
+    if (!supabase) return
 
-    // Fetch initial match data
-    const fetchData = async () => {
-      try {
-        const result = await getMatchData(gameId)
-        if (result.success) {
-          const matchData = result
-          const currentSet = (matchData.sets || []).find(s => !s.finished) || 
-                           (matchData.sets || []).sort((a, b) => b.index - a.index)[0]
-          
-          setData({
-            match: matchData.match,
-            homeTeam: matchData.homeTeam,
-            awayTeam: matchData.awayTeam,
-            homePlayers: matchData.homePlayers || [],
-            awayPlayers: matchData.awayPlayers || [],
-            sets: matchData.sets || [],
-            events: matchData.events || [],
-            set: currentSet
-          })
-        } else {
-          setDataError(t('livescore.errors.failedToLoadData'))
-        }
-      } catch (err) {
-        console.error('Error fetching match data:', err)
-        setDataError(t('livescore.errors.failedToLoadDataConnection'))
-      } finally {
-        setLoading(false)
-      }
-    }
+    // Subscribe to ALL match_live_state changes (no filter = all games)
+    const channel = supabase
+      .channel('livescore-all-games')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'match_live_state'
+        },
+        (payload) => {
+          console.log('[Livescore] Realtime update:', payload.eventType)
 
-    fetchData()
-
-    // Determine which connection to use
-    const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-      (connectionMode === CONNECTION_MODES.AUTO && supabase)
-    const useWebSocket = connectionMode === CONNECTION_MODES.WEBSOCKET ||
-      (connectionMode === CONNECTION_MODES.AUTO && !supabase)
-
-    let wsUnsubscribe = null
-
-    // Subscribe to Supabase match_live_state if using Supabase
-    if (useSupabase && supabase) {
-      setActiveConnection('supabase')
-
-      // gameId is now the UUID directly from match_live_state (when selected from Supabase list)
-      const setupLiveState = async () => {
-        try {
-          const matchUuid = gameId // Already a UUID from match_live_state.match_id
-
-          // Fetch initial live state using the UUID
-          const { data: liveState, error } = await supabase
-            .from('match_live_state')
-            .select('*')
-            .eq('match_id', matchUuid)
-            .maybeSingle()
-
-          if (!error && liveState) {
-            setSupabaseLiveState(liveState)
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-          } else {
-            console.log('[Livescore] No live state found for match:', matchUuid)
+          if (payload.eventType === 'INSERT') {
+            setLiveGames(prev => [payload.new, ...prev])
+          } else if (payload.eventType === 'UPDATE') {
+            setLiveGames(prev => prev.map(g =>
+              g.match_id === payload.new.match_id ? payload.new : g
+            ))
+          } else if (payload.eventType === 'DELETE') {
+            setLiveGames(prev => prev.filter(g => g.match_id !== payload.old.match_id))
+            // If the deleted game was selected, clear selection to go back to list
+            setSelectedGame(prev => prev === payload.old.match_id ? null : prev)
           }
-
-          // Subscribe to realtime updates using the UUID
-          const channel = supabase
-            .channel(`livescore-${matchUuid}`)
-            .on(
-              'postgres_changes',
-              {
-                event: '*',
-                schema: 'public',
-                table: 'match_live_state',
-                filter: `match_id=eq.${matchUuid}`
-              },
-              (payload) => {
-                setSupabaseLiveState(payload.new)
-              }
-            )
-            .subscribe((status) => {
-              if (status === 'SUBSCRIBED') {
-                setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-              } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                setConnectionStatuses(prev => ({ ...prev, supabase: 'error' }))
-                // Fall back to WebSocket if AUTO mode
-                if (connectionMode === CONNECTION_MODES.AUTO) {
-                  setActiveConnection('websocket')
-                }
-              }
-            })
-
-          supabaseChannelRef.current = channel
-        } catch (err) {
-          console.error('[Livescore] Error setting up live state:', err)
         }
-      }
-      setupLiveState()
-    }
-
-    // Subscribe to WebSocket if using WebSocket
-    if (useWebSocket || (connectionMode === CONNECTION_MODES.AUTO && !supabase)) {
-      wsUnsubscribe = subscribeToMatchData(gameId, (updatedData) => {
-        setActiveConnection('websocket')
-        const currentSet = (updatedData.sets || []).find(s => !s.finished) ||
-                          (updatedData.sets || []).sort((a, b) => b.index - a.index)[0]
-
-        setData({
-          match: updatedData.match,
-          homeTeam: updatedData.homeTeam,
-          awayTeam: updatedData.awayTeam,
-          homePlayers: updatedData.homePlayers || [],
-          awayPlayers: updatedData.awayPlayers || [],
-          sets: updatedData.sets || [],
-          events: updatedData.events || [],
-          set: currentSet
-        })
+      )
+      .subscribe((status) => {
+        console.log('[Livescore] Subscription status:', status)
       })
-    }
 
-    // Refetch data when page becomes visible (handles screen wake from sleep)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchData()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    channelRef.current = channel
 
     return () => {
-      if (wsUnsubscribe) wsUnsubscribe()
-      if (supabaseChannelRef.current) {
-        supabase?.removeChannel(supabaseChannelRef.current)
-        supabaseChannelRef.current = null
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [gameId, connectionMode])
-
-
-  // Determine which team is A and which is B based on coin toss
-  const teamAKey = useMemo(() => {
-    if (!data?.match) return 'home'
-    return data.match.coinTossTeamA || 'home'
-  }, [data?.match])
-  
-  const teamBKey = useMemo(() => {
-    if (!data?.match) return 'away'
-    return data.match.coinTossTeamB || 'away'
-  }, [data?.match])
-
-  // Determine if home team is on left - used for non-Supabase mode
-  const homeTeamOnLeft = useMemo(() => {
-    // If sides are manually switched, override the computed value
-    if (sidesSwitched) {
-      // Get the base homeTeamOnLeft value
-      if (!data?.set) return false
-
-      const setIndex = data.set.index
-
-      // Check for manual override first (for sets 1-4)
-      if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
-        const override = data.match.setLeftTeamOverrides[setIndex]
-        if (override) {
-          const leftTeamKey = override === 'A' ? teamAKey : teamBKey
-          return leftTeamKey !== 'home' // Invert for switch
-        }
-      }
-
-      // Set 1: Team A on left
-      if (setIndex === 1) {
-        return teamAKey !== 'home' // Invert for switch
-      }
-
-      // Set 5: Special case with court switch at 8 points
-      if (setIndex === 5) {
-        if (data.match?.set5LeftTeam) {
-          const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
-          let isHome = leftTeamKey === 'home'
-          if (data.match?.set5CourtSwitched) {
-            isHome = !isHome
-          }
-          return !isHome // Invert for switch
-        }
-        let isHome = teamAKey !== 'home'
-        if (data.match?.set5CourtSwitched) {
-          isHome = !isHome
-        }
-        return !isHome // Invert for switch
-      }
-
-      // Sets 2, 3, 4: Teams alternate sides
-      return setIndex % 2 === 1 ? (teamAKey !== 'home') : (teamAKey === 'home') // Invert for switch
-    }
-
-    // Normal computation (not switched)
-    if (!data?.set) return true
-
-    const setIndex = data.set.index
-
-    // Check for manual override first (for sets 1-4)
-    if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
-      const override = data.match.setLeftTeamOverrides[setIndex]
-      if (override) {
-        const leftTeamKey = override === 'A' ? teamAKey : teamBKey
-        return leftTeamKey === 'home'
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
       }
     }
+  }, [fetchLiveGames])
 
-    // Set 1: Team A on left
-    if (setIndex === 1) {
-      return teamAKey === 'home'
-    }
+  // Get selected game data
+  const selectedGameData = selectedGame
+    ? liveGames.find(g => g.match_id === selectedGame)
+    : null
 
-    // Set 5: Special case with court switch at 8 points
-    if (setIndex === 5) {
-      if (data.match?.set5LeftTeam) {
-        const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
-        let isHome = leftTeamKey === 'home'
-        if (data.match?.set5CourtSwitched) {
-          isHome = !isHome
-        }
-        return isHome
-      }
-      let isHome = teamAKey !== 'home'
-      if (data.match?.set5CourtSwitched) {
-        isHome = !isHome
-      }
-      return isHome
-    }
-
-    // Sets 2, 3, 4: Teams alternate sides
-    return setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey, sidesSwitched])
-
-  // Calculate set score (number of sets won by each team) - prioritize Supabase data
-  const setScore = useMemo(() => {
-    // Use Supabase live state if available - use left/right directly, swap if sidesSwitched
-    if (activeConnection === 'supabase' && supabaseLiveState) {
-      const dataLeft = supabaseLiveState.set_score_left || 0
-      const dataRight = supabaseLiveState.set_score_right || 0
-      return sidesSwitched
-        ? { left: dataRight, right: dataLeft }
-        : { left: dataLeft, right: dataRight }
-    }
-
-    if (!data) return { left: 0, right: 0 }
-
-    const allSets = data.sets || []
-    const finishedSets = allSets.filter(s => s.finished)
-
-    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
-    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-
-    const leftSetsWon = homeTeamOnLeft ? homeSetsWon : awaySetsWon
-    const rightSetsWon = homeTeamOnLeft ? awaySetsWon : homeSetsWon
-
-    return { left: leftSetsWon, right: rightSetsWon }
-  }, [data, homeTeamOnLeft, activeConnection, supabaseLiveState, sidesSwitched])
-
-  // Get current score - prioritize Supabase data
-  const currentScore = useMemo(() => {
-    // Use Supabase live state if available - swap if sidesSwitched
-    if (activeConnection === 'supabase' && supabaseLiveState) {
-      const dataLeft = supabaseLiveState.points_left || 0
-      const dataRight = supabaseLiveState.points_right || 0
-      return sidesSwitched
-        ? { left: dataRight, right: dataLeft }
-        : { left: dataLeft, right: dataRight }
-    }
-
-    if (!data?.set) return { left: 0, right: 0 }
+  // Helper to compute left/right from A/B based on side_a
+  const getLeftRight = (game) => {
+    const sideA = game.side_a || 'left' // default Team A on left
+    const isALeft = sideA === 'left'
     return {
-      left: homeTeamOnLeft ? data.set.homePoints : data.set.awayPoints,
-      right: homeTeamOnLeft ? data.set.awayPoints : data.set.homePoints
+      leftName: isALeft ? (game.team_a_name || 'Team A') : (game.team_b_name || 'Team B'),
+      rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
+      leftScore: isALeft ? (game.points_a || 0) : (game.points_b || 0),
+      rightScore: isALeft ? (game.points_b || 0) : (game.points_a || 0),
+      leftSets: isALeft ? (game.set_score_a || 0) : (game.set_score_b || 0),
+      rightSets: isALeft ? (game.set_score_b || 0) : (game.set_score_a || 0),
+      // Serving: convert team key to side
+      servingTeam: game.serving_team // already 'left' or 'right'
     }
-  }, [data?.set, homeTeamOnLeft, activeConnection, supabaseLiveState, sidesSwitched])
-
-  // Determine who has serve - prioritize Supabase data
-  const currentServe = useMemo(() => {
-    // Use Supabase live state if available
-    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.serving_team) {
-      return supabaseLiveState.serving_team
-    }
-
-    if (!data?.set || !data?.match) {
-      return data?.match?.firstServe || 'home'
-    }
-
-    const setIndex = data.set.index
-    const set1FirstServe = data.match.firstServe || 'home'
-
-    // Calculate first serve for current set based on alternation pattern
-    let currentSetFirstServe
-    if (setIndex === 5 && data.match?.set5FirstServe) {
-      currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-    } else if (setIndex === 5) {
-      currentSetFirstServe = set1FirstServe
-    } else {
-      // Sets 1-4: odd sets (1, 3) same as Set 1, even sets (2, 4) opposite
-      currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-    }
-
-    if (!data?.events || data.events.length === 0) {
-      return currentSetFirstServe
-    }
-
-    const pointEvents = data.events
-      .filter(e => e.type === 'point' && e.setIndex === data.set.index)
-      .sort((a, b) => {
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
-
-    if (pointEvents.length === 0) {
-      return currentSetFirstServe
-    }
-
-    return pointEvents[0].payload?.team || currentSetFirstServe
-  }, [data?.set, data?.match, data?.events, teamAKey, teamBKey, activeConnection, supabaseLiveState])
-
-  // Get current set index - prioritize Supabase data
-  const currentSetIndex = useMemo(() => {
-    if (activeConnection === 'supabase' && supabaseLiveState && supabaseLiveState.current_set) {
-      return supabaseLiveState.current_set
-    }
-    return data?.set?.index || 1
-  }, [data?.set?.index, activeConnection, supabaseLiveState])
-
-  // Handle connection mode change
-  const handleConnectionModeChange = useCallback((mode) => {
-    setConnectionMode(mode)
-    try {
-      localStorage.setItem('livescore_connection_mode', mode)
-    } catch (e) {
-      console.warn('[Livescore] Failed to save connection mode:', e)
-    }
-    // Force reconnection by clearing states
-    if (supabaseChannelRef.current) {
-      supabase?.removeChannel(supabaseChannelRef.current)
-      supabaseChannelRef.current = null
-    }
-    setSupabaseLiveState(null)
-    setActiveConnection(null)
-  }, [])
-
-  // Get team labels
-  const teamALabel = data?.match?.coinTossTeamA === 'home' ? 'A' : 'B'
-  const teamBLabel = data?.match?.coinTossTeamB === 'home' ? 'A' : 'B'
-
-  // Get left and right teams - use Supabase names when available, swap if sidesSwitched
-  const leftTeam = useMemo(() => {
-    // Use Supabase names when available (swap if sidesSwitched)
-    if (activeConnection === 'supabase' && supabaseLiveState) {
-      const name = sidesSwitched ? supabaseLiveState.team_right_name : supabaseLiveState.team_left_name
-      const teamLetter = sidesSwitched ? supabaseLiveState.team_right : supabaseLiveState.team_left
-      return {
-        name: name || 'Left',
-        color: data?.homeTeam?.color || data?.awayTeam?.color || '#ef4444',
-        isTeamA: teamLetter === 'A'
-      }
-    }
-    const team = homeTeamOnLeft ? data?.homeTeam : data?.awayTeam
-    const teamKey = homeTeamOnLeft ? teamAKey : teamBKey
-    return {
-      name: team?.name || (homeTeamOnLeft ? 'Home' : 'Away'),
-      color: team?.color || (homeTeamOnLeft ? '#ef4444' : '#3b82f6'),
-      isTeamA: teamKey === teamAKey
-    }
-  }, [data, homeTeamOnLeft, teamAKey, activeConnection, supabaseLiveState, sidesSwitched])
-
-  const rightTeam = useMemo(() => {
-    // Use Supabase names when available (swap if sidesSwitched)
-    if (activeConnection === 'supabase' && supabaseLiveState) {
-      const name = sidesSwitched ? supabaseLiveState.team_left_name : supabaseLiveState.team_right_name
-      const teamLetter = sidesSwitched ? supabaseLiveState.team_left : supabaseLiveState.team_right
-      return {
-        name: name || 'Right',
-        color: data?.awayTeam?.color || data?.homeTeam?.color || '#3b82f6',
-        isTeamA: teamLetter === 'A'
-      }
-    }
-    const team = homeTeamOnLeft ? data?.awayTeam : data?.homeTeam
-    const teamKey = homeTeamOnLeft ? teamBKey : teamAKey
-    return {
-      name: team?.name || (homeTeamOnLeft ? 'Away' : 'Home'),
-      color: team?.color || (homeTeamOnLeft ? '#3b82f6' : '#ef4444'),
-      isTeamA: teamKey === teamAKey
-    }
-  }, [data, homeTeamOnLeft, teamAKey, teamBKey, activeConnection, supabaseLiveState, sidesSwitched])
-
-  // Determine serving team - Supabase uses 'left'/'right', local uses 'home'/'away'
-  // Swap if sidesSwitched for Supabase mode
-  const leftIsServing = activeConnection === 'supabase'
-    ? (sidesSwitched ? currentServe === 'right' : currentServe === 'left')
-    : currentServe === (homeTeamOnLeft ? 'home' : 'away')
-  const rightIsServing = activeConnection === 'supabase'
-    ? (sidesSwitched ? currentServe === 'left' : currentServe === 'right')
-    : currentServe === (homeTeamOnLeft ? 'away' : 'home')
-
-  // Calculate set results for Results component (when match ends)
-  const calculateSetResults = useMemo(() => {
-    if (!data) return []
-
-    const { match, sets, events } = data
-    const localTeamAKey = match?.coinTossTeamA || 'home'
-    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
-
-    const results = []
-    for (let setNum = 1; setNum <= 5; setNum++) {
-      const setInfo = sets?.find(s => s.index === setNum)
-      const setEvents = events?.filter(e => e.setIndex === setNum) || []
-
-      const isSetFinished = setInfo?.finished === true
-
-      const teamAPoints = isSetFinished
-        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
-        : null
-      const teamBPoints = isSetFinished
-        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
-        : null
-
-      const teamATimeouts = isSetFinished
-        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
-        : null
-      const teamBTimeouts = isSetFinished
-        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
-        : null
-
-      const teamASubstitutions = isSetFinished
-        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
-        : null
-      const teamBSubstitutions = isSetFinished
-        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
-        : null
-
-      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
-        ? (teamAPoints > teamBPoints ? 1 : 0)
-        : null
-      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
-        ? (teamBPoints > teamAPoints ? 1 : 0)
-        : null
-
-      let duration = ''
-      if (isSetFinished && setInfo?.endTime) {
-        let start
-        if (setNum === 1 && match?.scheduledAt) {
-          start = new Date(match.scheduledAt)
-        } else if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime)
-        } else {
-          start = new Date()
-        }
-        const end = new Date(setInfo.endTime)
-        const durationMs = end.getTime() - start.getTime()
-        const minutes = Math.floor(durationMs / 60000)
-        duration = minutes > 0 ? `${minutes}'` : ''
-      }
-
-      results.push({
-        setNumber: setNum,
-        teamATimeouts,
-        teamASubstitutions,
-        teamAWon,
-        teamAPoints,
-        teamBTimeouts,
-        teamBSubstitutions,
-        teamBWon,
-        teamBPoints,
-        duration
-      })
-    }
-    return results
-  }, [data])
-
-  // Match finished info
-  const isMatchFinished = useMemo(() => {
-    if (!data?.match) return false
-    return data.match.status === 'final' || setScore.left === 3 || setScore.right === 3
-  }, [data?.match, setScore])
-
-  const matchWinner = useMemo(() => {
-    if (!isMatchFinished) return ''
-    // Use Supabase names when available (account for sidesSwitched)
-    if (activeConnection === 'supabase' && supabaseLiveState) {
-      // setScore already has left/right swapped if sidesSwitched, so use consistent naming
-      const visualLeftName = sidesSwitched ? supabaseLiveState.team_right_name : supabaseLiveState.team_left_name
-      const visualRightName = sidesSwitched ? supabaseLiveState.team_left_name : supabaseLiveState.team_right_name
-      return setScore.left > setScore.right
-        ? (visualLeftName || 'Left')
-        : (visualRightName || 'Right')
-    }
-    if (!data) return ''
-    return setScore.left > setScore.right
-      ? (homeTeamOnLeft ? data.homeTeam?.name : data.awayTeam?.name) || 'Left'
-      : (homeTeamOnLeft ? data.awayTeam?.name : data.homeTeam?.name) || 'Right'
-  }, [isMatchFinished, data, setScore, activeConnection, supabaseLiveState, homeTeamOnLeft, sidesSwitched])
-
-  const matchResult = useMemo(() => {
-    if (!isMatchFinished) return ''
-    return `3:${Math.min(setScore.left, setScore.right)}`
-  }, [isMatchFinished, setScore])
-
-  // Check if game exists and is in progress (don't set error for finished matches - we show results instead)
-  useEffect(() => {
-    if (gameId && data?.match) {
-      // Don't set error for finished matches - we'll show results
-      setError('')
-    } else if (gameId && dataError) {
-      setError(dataError)
-    } else if (gameId && !data && !loading) {
-      setError(t('livescore.gameNotFound'))
-    }
-  }, [gameId, data, dataError, loading])
-
-  // Handle test mode activation (6 clicks on "No active game found")
-  const handleTestModeClick = useCallback(() => {
-    if (testModeTimeoutRef.current) {
-      clearTimeout(testModeTimeoutRef.current)
-    }
-
-    setTestModeClicks(prev => {
-      const newCount = prev + 1
-      if (newCount >= 6) {
-        // Activate test mode with mock data
-        const testData = {
-          match: {
-            id: -1,
-            gameNumber: 999,
-            status: 'live',
-            firstServe: 'home',
-            coinTossTeamA: 'home',
-            coinTossTeamB: 'away'
-          },
-          homeTeam: { name: 'Test Home', color: '#ef4444' },
-          awayTeam: { name: 'Test Away', color: '#3b82f6' },
-          homePlayers: [],
-          awayPlayers: [],
-          sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
-          events: [{ type: 'point', setIndex: 1, payload: { team: 'home' }, ts: Date.now() }],
-          set: { index: 1, homePoints: 12, awayPoints: 10, finished: false }
-        }
-        setGameId(-1)
-        setData(testData)
-        return 0
-      }
-      return newCount
-    })
-
-    testModeTimeoutRef.current = setTimeout(() => {
-      setTestModeClicks(0)
-    }, 2000)
-  }, [])
-
-  // Show input form if no gameId is set
-  if (!gameId) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <UpdateBanner />
-
-        <DashboardHeader
-          title={t('livescore.title')}
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-          onLoadGames={loadMatches}
-          loadingMatches={loadingMatches}
-          matchCount={availableMatches.length}
-          showWakeLock={true}
-          wakeLockActive={wakeLockActive}
-          onToggleWakeLock={toggleWakeLock}
-          connectionMode={connectionMode}
-          activeConnection={activeConnection}
-          onConnectionModeChange={handleConnectionModeChange}
-        />
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
-        <div style={{
-          textAlign: 'center',
-          maxWidth: '500px',
-          width: '100%'
-        }}>
-           <img
-          src={mikasaVolleyball}
-          alt="Volleyball"
-          style={{ width: '80px', height: '80px', marginBottom: '20px' }}
-        />
-          <h1 style={{
-            fontSize: '32px',
-            fontWeight: 700,
-            marginBottom: '8px'
-          }}>
-            {t('livescore.title')}
-          </h1>
-
-          {loadingMatches ? (
-            <div style={{
-              padding: '20px',
-              color: 'rgba(255, 255, 255, 0.7)',
-              fontSize: '16px'
-            }}>
-              {t('livescore.loadingGames')}
-            </div>
-          ) : availableMatches.length > 0 ? (
-            <>
-            <p style={{
-              fontSize: '16px',
-              color: 'rgba(255, 255, 255, 0.7)',
-              marginBottom: '32px'
-            }}>
-              {t('livescore.selectGame')}
-            </p>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              width: '100%'
-            }}>
-              {availableMatches.map((match) => (
-                <button
-                  key={match.id}
-                  onClick={() => {
-                    setGameId(match.id)
-                    setGameIdInput(String(match.id))
-                  }}
-                  style={{
-                    padding: '16px 20px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: '2px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '12px',
-                    color: '#fff',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    textAlign: 'left'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-                  }}
-                >
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    color: 'var(--accent)',
-                    marginBottom: '4px'
-                  }}>
-                    {t('livescore.game', { number: match.gameNumber || match.id })}
-                  </div>
-                  <div style={{
-                    fontSize: '16px',
-                    fontWeight: 500
-                  }}>
-                    {match.homeTeamName || t('common.home')} {t('livescore.vs')} {match.awayTeamName || t('common.away')}
-                  </div>
-                </button>
-              ))}
-            </div>
-            </>
-          ) : (
-            <div
-              onClick={handleTestModeClick}
-              style={{
-                padding: '24px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '12px',
-                textAlign: 'center',
-                cursor: 'default',
-                userSelect: 'none'
-              }}
-            >
-              <div style={{
-                fontSize: '16px',
-                color: 'var(--muted)',
-                marginBottom: '8px'
-              }}>
-                {t('livescore.noActiveGame')}
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div style={{
-              padding: '12px',
-              marginTop: '16px',
-              background: 'rgba(239, 68, 68, 0.2)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              borderRadius: '6px',
-              color: '#ff6b6b',
-              fontSize: '14px',
-              width: '100%',
-              textAlign: 'center'
-            }}>
-              {error}
-            </div>
-          )}
-        </div>
-        </div>
-      </div>
-    )
   }
 
-  // Show error if game doesn't exist (but not for finished matches)
-  if (error || !data?.match) {
+  // Fullscreen view for selected game
+  if (selectedGameData) {
+    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, servingTeam } = getLeftRight(selectedGameData)
+    const currentSet = selectedGameData.current_set || 1
+    const gameN = selectedGameData.game_n || ''
+    const league = selectedGameData.league || ''
+    const gender = selectedGameData.gender || ''
+
     return (
       <div style={{
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         color: '#fff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
-        flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+        flexDirection: 'column'
       }}>
-        <SimpleHeader
-          title={t('livescore.title')}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-        />
+        {/* Header */}
         <div style={{
-          flex: 1,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)'
         }}>
-        <div style={{
-          textAlign: 'center',
-          maxWidth: '400px',
-          width: '100%'
-        }}>
-          <div style={{
-            fontSize: '24px',
-            fontWeight: 600,
-            marginBottom: '16px'
-          }}>
-            {error || t('livescore.gameNotFound')}
-          </div>
           <button
-            onClick={() => {
-              setGameId(null)
-              setGameIdInput('')
-              setError('')
-            }}
+            onClick={() => setSelectedGame(null)}
             style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              padding: '8px 16px',
+              background: 'rgba(255,255,255,0.1)',
+              border: 'none',
               borderRadius: '6px',
+              color: '#fff',
               cursor: 'pointer',
-              transition: 'background 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              fontSize: '14px',
+              fontWeight: 600
             }}
           >
-            {t('livescore.enterDifferentGame')}
+            ← {t('common.back', 'Back')}
           </button>
+          <div style={{ textAlign: 'center' }}>
+            {gameN && (
+              <div style={{ fontSize: '16px', fontWeight: 600, color: '#fff' }}>
+                Game {gameN}
+              </div>
+            )}
+            {(league || gender) && (
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                {[league, gender].filter(Boolean).join(' • ')}
+              </div>
+            )}
+            {!gameN && !league && !gender && (
+              <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>
+                {t('livescore.title', 'Live Score')}
+              </div>
+            )}
+          </div>
+          <div style={{ width: '80px' }}></div>
         </div>
-        </div>
-      </div>
-    )
-  }
 
-  // Show results when match is finished
-  if (isMatchFinished) {
-    const teamAShortName = data.match?.coinTossTeamA === 'home'
-      ? (data.match?.homeShortName || data.homeTeam?.shortName || data.homeTeam?.name || 'Home')
-      : (data.match?.awayShortName || data.awayTeam?.shortName || data.awayTeam?.name || 'Away')
-    const teamBShortName = data.match?.coinTossTeamA === 'home'
-      ? (data.match?.awayShortName || data.awayTeam?.shortName || data.awayTeam?.name || 'Away')
-      : (data.match?.homeShortName || data.homeTeam?.shortName || data.homeTeam?.name || 'Home')
-
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <SimpleHeader
-          title={t('livescore.matchFinished')}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-          onBack={() => {
-            setGameId(null)
-            setGameIdInput('')
-            setError('')
-          }}
-          backLabel={t('common.back')}
-        />
+        {/* Score Display */}
         <div style={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px',
-          gap: '24px'
-        }}>
-          {/* Match Ended Banner */}
-          <div style={{
-            fontSize: '18px',
-            fontWeight: 500,
-            color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase',
-            letterSpacing: '2px'
-          }}>
-            {t('livescore.matchEnded')}
-          </div>
-
-          {/* Winner and Result */}
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              fontSize: '32px',
-              fontWeight: 700,
-              marginBottom: '8px'
-            }}>
-              {matchWinner}
-            </div>
-            <div style={{
-              fontSize: '48px',
-              fontWeight: 800,
-              color: 'var(--accent)'
-            }}>
-              {matchResult}
-            </div>
-          </div>
-
-          {/* Results Table */}
-          <div style={{
-            width: '100%',
-            maxWidth: '500px',
-            background: 'white',
-            borderRadius: '12px',
-            overflow: 'hidden'
-          }}>
-            <Results
-              teamAShortName={teamAShortName}
-              teamBShortName={teamBShortName}
-              setResults={calculateSetResults}
-              winner={matchWinner}
-              result={matchResult}
-            />
-          </div>
-
-          <button
-            onClick={() => {
-              setGameId(null)
-              setGameIdInput('')
-              setError('')
-            }}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'background 0.2s',
-              marginTop: '16px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            {t('livescore.backToGames')}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (!data) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <SimpleHeader
-          title={t('livescore.title')}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-        />
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           padding: '20px'
         }}>
+          {/* Point Score */}
           <div style={{
-            textAlign: 'center',
-            fontSize: '18px'
+            display: 'grid',
+            gridTemplateColumns: 'auto 1fr auto 1fr auto',
+            alignItems: 'center',
+            gap: '10px',
+            width: '100%',
+            maxWidth: '800px'
           }}>
-            {t('common.loading')}
+            {/* Left Ball */}
+            <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+              {servingTeam === 'left' && (
+                <img src={mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+              )}
+            </div>
+
+            {/* Left Score + Name */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 'clamp(60px, 18vw, 150px)', fontWeight: 700, lineHeight: 1 }}>
+                {leftScore}
+              </div>
+              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'rgba(255,255,255,0.7)', marginTop: '8px' }}>
+                {leftName}
+              </div>
+            </div>
+
+            {/* Colon */}
+            <div style={{ fontSize: 'clamp(40px, 12vw, 100px)', color: 'rgba(255,255,255,0.4)', lineHeight: 1 }}>
+              :
+            </div>
+
+            {/* Right Score + Name */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 'clamp(60px, 18vw, 150px)', fontWeight: 700, lineHeight: 1 }}>
+                {rightScore}
+              </div>
+              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'rgba(255,255,255,0.7)', marginTop: '8px' }}>
+                {rightName}
+              </div>
+            </div>
+
+            {/* Right Ball */}
+            <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+              {servingTeam === 'right' && (
+                <img src={mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+              )}
+            </div>
+          </div>
+
+          {/* Set Score */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '20px',
+            marginTop: '40px'
+          }}>
+            <div style={{
+              fontSize: 'clamp(32px, 10vw, 80px)',
+              fontWeight: 700,
+              padding: '8px 16px',
+              background: 'rgba(255,255,255,0.1)',
+              borderRadius: '8px'
+            }}>
+              {leftSets}
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
+                {t('livescore.set', 'SET')}
+              </div>
+              <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
+                {currentSet}
+              </div>
+            </div>
+            <div style={{
+              fontSize: 'clamp(32px, 10vw, 80px)',
+              fontWeight: 700,
+              padding: '8px 16px',
+              background: 'rgba(255,255,255,0.1)',
+              borderRadius: '8px'
+            }}>
+              {rightSets}
+            </div>
           </div>
         </div>
       </div>
     )
   }
 
+  // List view - show all games
   return (
     <div style={{
       minHeight: '100vh',
@@ -1347,266 +278,153 @@ export default function LivescoreApp() {
       color: '#fff',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
-      <DashboardHeader
-        title={t('livescore.title')}
-        subtitle={t('livescore.game', { number: gameId })}
-        connectionStatuses={connectionStatuses}
-        connectionDebugInfo={connectionDebugInfo}
-        showWakeLock={true}
-        wakeLockActive={wakeLockActive}
-        onToggleWakeLock={toggleWakeLock}
-        connectionMode={connectionMode}
-        activeConnection={activeConnection}
-        onConnectionModeChange={handleConnectionModeChange}
-        onBack={() => {
-          setGameId(null)
-          setGameIdInput('')
-          setError('')
-        }}
-        backLabel={t('livescore.changeGame')}
-        rightContent={
-          <button
-            onClick={() => setSidesSwitched(!sidesSwitched)}
-            style={{
-              padding: '4px 10px',
-              fontSize: 'clamp(10px, 1.2vw, 12px)',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'background 0.2s',
-              whiteSpace: 'nowrap'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            {t('livescore.switchSides')}
-          </button>
-        }
-      />
+      <UpdateBanner />
 
-      {/* Score Counter - 5 columns: ball | score+name | colon | score+name | ball */}
+      {/* Header */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'clamp(50px, 12vw, 100px) 1fr auto 1fr clamp(50px, 12vw, 100px)',
-        alignItems: 'center',
-        justifyItems: 'center',
-        padding: 'clamp(40px, 10vh, 100px) 20px',
-        width: '100%',
-        maxWidth: '1200px',
-        margin: '0 auto'
+        padding: '16px',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        textAlign: 'center'
       }}>
-        {/* Column 1: Left Ball */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%'
-        }}>
-          {leftIsServing && (
-            <img
-              src={mikasaVolleyball}
-              alt={t('livescore.servingTeam')}
-              style={{
-                width: 'clamp(40px, 10vw, 80px)',
-                height: 'clamp(40px, 10vw, 80px)',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-              }}
-            />
-          )}
-        </div>
-
-        {/* Column 2: Left Team Score + Name */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '12px'
-        }}>
-          <div style={{
-            fontSize: 'clamp(60px, 20vw, 180px)',
-            fontWeight: 700,
-            color: '#fff',
-            lineHeight: '1',
-            textAlign: 'center'
-          }}>
-            {currentScore.left}
-          </div>
-          <div style={{
-            fontSize: 'clamp(12px, 3vw, 20px)',
-            fontWeight: 600,
-            color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase',
-            textAlign: 'center'
-          }}>
-            {leftTeam.name}
-          </div>
-        </div>
-
-        {/* Column 3: Colon - Perfectly Centered */}
-        <div style={{
-          fontSize: 'clamp(60px, 20vw, 180px)',
-          fontWeight: 700,
-          color: 'rgba(255, 255, 255, 0.5)',
-          lineHeight: '1',
-          textAlign: 'center',
-          alignSelf: 'start',
-          paddingTop: '0'
-        }}>
-          :
-        </div>
-
-        {/* Column 4: Right Team Score + Name */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '12px'
-        }}>
-          <div style={{
-            fontSize: 'clamp(60px, 20vw, 180px)',
-            fontWeight: 700,
-            color: '#fff',
-            lineHeight: '1',
-            textAlign: 'center'
-          }}>
-            {currentScore.right}
-          </div>
-          <div style={{
-            fontSize: 'clamp(12px, 3vw, 20px)',
-            fontWeight: 600,
-            color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase',
-            textAlign: 'center'
-          }}>
-            {rightTeam.name}
-          </div>
-        </div>
-
-        {/* Column 5: Right Ball */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%'
-        }}>
-          {rightIsServing && (
-            <img
-              src={mikasaVolleyball}
-              alt={t('livescore.servingTeam')}
-              style={{
-                width: 'clamp(40px, 10vw, 80px)',
-                height: 'clamp(40px, 10vw, 80px)',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-              }}
-            />
-          )}
+        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700 }}>
+          {t('livescore.title', 'Live Scores')}
+        </h1>
+        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
+          {liveGames.length} {liveGames.length === 1 ? 'game' : 'games'} live
         </div>
       </div>
 
-      {/* Set Score and Set Number */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'clamp(10px, 3vh, 20px)',
-        gap: 'clamp(12px, 4vw, 24px)'
-      }}>
-        <div style={{
-          padding: 'clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px)',
-          borderRadius: '6px',
-          fontSize: 'clamp(40px, 12vw, 100px)',
-          fontWeight: 700,
-          background: 'rgba(255, 255, 255, 0.1)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          color: 'var(--text)',
-          textAlign: 'center',
-          lineHeight: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          {setScore.left}
-        </div>
-        
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <span style={{
-            fontSize: 'clamp(40px, 12vw, 100px)',
-            fontWeight: 800,
-            color: 'var(--text)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            gap: '10px',
-            lineHeight: '1'
-          }}>
-            {t('livescore.set')}
-          </span>
-          <span style={{
-              fontSize: 'clamp(40px, 12vw, 100px)',
-              fontWeight: 800,
-              color: 'var(--text)',
-              lineHeight: '1'
-            }}>
-              {currentSetIndex}
-            </span>
-        </div>
+      {/* Content */}
+      <div style={{ padding: '16px' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+            {t('common.loading', 'Loading...')}
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <div style={{ color: '#ef4444', marginBottom: '16px' }}>{error}</div>
+            <button
+              onClick={fetchLiveGames}
+              style={{
+                padding: '10px 20px',
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              {t('common.retry', 'Retry')}
+            </button>
+          </div>
+        ) : liveGames.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+            <img src={mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
+            <div>{t('livescore.noActiveGame', 'No live games')}</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {liveGames.map((game) => {
+              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, servingTeam } = getLeftRight(game)
+              const gameN = game.game_n || ''
+              const league = game.league || ''
+              const gender = game.gender || ''
 
-        <div style={{
-          padding: 'clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px)',
-          borderRadius: '6px',
-          fontSize: 'clamp(40px, 12vw, 100px)',
-          fontWeight: 700,
-          background: 'rgba(255, 255, 255, 0.1)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          color: 'var(--text)',
-          textAlign: 'center',
-          lineHeight: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          {setScore.right}
-        </div>
+              return (
+                <button
+                  key={game.match_id}
+                  onClick={() => setSelectedGame(game.match_id)}
+                  style={{
+                    padding: '16px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'background 0.2s'
+                  }}
+                >
+                  {/* Game N, League, Gender */}
+                  {(gameN || league || gender) && (
+                    <div style={{
+                      marginBottom: '8px',
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.5)'
+                    }}>
+                      {gameN && <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Game {gameN}</span>}
+                      {gameN && (league || gender) && ' • '}
+                      {[league, gender].filter(Boolean).join(' • ')}
+                    </div>
+                  )}
+
+                  {/* Teams and Score */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto 1fr',
+                    alignItems: 'center',
+                    gap: '12px'
+                  }}>
+                    {/* Left Team */}
+                    <div>
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        {servingTeam === 'left' && (
+                          <img src={mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
+                        )}
+                        {leftName}
+                      </div>
+                    </div>
+
+                    {/* Score */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <span style={{ fontSize: '28px', fontWeight: 700 }}>{leftScore}</span>
+                      <span style={{ fontSize: '20px', color: 'rgba(255,255,255,0.4)' }}>:</span>
+                      <span style={{ fontSize: '28px', fontWeight: 700 }}>{rightScore}</span>
+                    </div>
+
+                    {/* Right Team */}
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: '6px'
+                      }}>
+                        {rightName}
+                        {servingTeam === 'right' && (
+                          <img src={mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Set Score */}
+                  <div style={{
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: 'rgba(255,255,255,0.5)',
+                    textAlign: 'center'
+                  }}>
+                    Set {game.current_set || 1} • Sets: {leftSets} - {rightSets}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
-
-      {/* Test Mode Controls - only shown in test mode */}
-      {(data?.match?.id === -1 || data?.match?.test === true) && (
-        <TestModeControls
-          matchId={data?.match?.id}
-          onRefresh={() => {
-            // Trigger a data refresh by re-fetching
-            if (gameId) {
-              getMatchData(gameId).then(result => {
-                if (result.success) {
-                  const currentSet = (result.sets || []).find(s => !s.finished) ||
-                                   (result.sets || []).sort((a, b) => b.index - a.index)[0]
-                  setData({
-                    match: result.match,
-                    homeTeam: result.homeTeam,
-                    awayTeam: result.awayTeam,
-                    homePlayers: result.homePlayers || [],
-                    awayPlayers: result.awayPlayers || [],
-                    sets: result.sets || [],
-                    events: result.events || [],
-                    set: currentSet
-                  })
-                }
-              })
-            }
-          }}
-        />
-      )}
     </div>
   )
 }
