@@ -427,7 +427,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     }
     
     const players = positions.map((pos) => {
-      const playerNum = latestLineup[pos]
+      const posData = latestLineup[pos]
+      // Handle both rich format (posData is object with number) and legacy format (posData is number)
+      const playerNum = posData && typeof posData === 'object' && posData.number !== undefined
+        ? posData.number
+        : posData
       if (!playerNum) {
         return {
           number: null,
@@ -438,17 +442,24 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           substitutedPlayerNumber: null
         }
       }
-      
-      const player = teamInfo?.players?.find(p => p.number === playerNum)
-      
-      // Check for libero substitution (substituted player number)
-      const liberoSub = latestLineupEvent?.payload?.liberoSubstitution
-      const substitutedPlayerNumber = liberoSub && 
-        String(liberoSub.liberoNumber) === String(playerNum) && 
-        liberoSub.position === pos
-        ? liberoSub.playerNumber
-        : null
-      
+
+      const player = teamInfo?.players?.find(p => String(p.number) === String(playerNum))
+
+      // Check for libero substitution - first from rich format, then from liberoSubstitution payload
+      let substitutedPlayerNumber = null
+      if (posData && typeof posData === 'object' && posData.isLibero && posData.replacedNumber) {
+        // Rich format has replacedNumber directly
+        substitutedPlayerNumber = posData.replacedNumber
+      } else {
+        // Legacy format - check liberoSubstitution in payload
+        const liberoSub = latestLineupEvent?.payload?.liberoSubstitution
+        substitutedPlayerNumber = liberoSub &&
+          String(liberoSub.liberoNumber) === String(playerNum) &&
+          liberoSub.position === pos
+          ? liberoSub.playerNumber
+          : null
+      }
+
       return {
         number: playerNum,
         position: pos,
@@ -496,12 +507,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     if (lineupEvents.length > 0) {
       const latestLineup = lineupEvents[0].payload?.lineup
       if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(num => {
+        Object.values(latestLineup).forEach(posData => {
+          // Handle both rich format (object with number) and legacy format (just number)
+          const num = posData && typeof posData === 'object' && posData.number !== undefined
+            ? posData.number
+            : posData
           if (num) playersOnCourtSet.add(Number(num))
         })
       }
     }
-    
+
     // Get bench players: all players not on court, excluding liberos
     const benchPlayers = teamInfo.players
       .filter(p => {
@@ -540,22 +555,26 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Get liberos (not currently on court)
   const benchLiberos = useMemo(() => {
     if (!teamInfo?.players || !data?.events || !data?.set) return []
-    
+
     // Get players currently on court
     const lineupEvents = data.events
       .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
       .sort((a, b) => new Date(b.ts) - new Date(a.ts))
-    
+
     const playersOnCourtSet = new Set()
     if (lineupEvents.length > 0) {
       const latestLineup = lineupEvents[0].payload?.lineup
       if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(num => {
+        Object.values(latestLineup).forEach(posData => {
+          // Handle both rich format (object with number) and legacy format (just number)
+          const num = posData && typeof posData === 'object' && posData.number !== undefined
+            ? posData.number
+            : posData
           if (num) playersOnCourtSet.add(Number(num))
         })
       }
     }
-    
+
     // Get liberos not on court
     const liberos = teamInfo.players
       .filter(p => {

@@ -678,8 +678,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       return { home: null, away: null, isRichFormat: false }
     }
 
+    const currentSetIndex = data.currentSet?.index || 1
     const currentSetEvents = data.events.filter(
-      e => (e.setIndex || 1) === (data.currentSet?.index || 1)
+      e => (e.setIndex || 1) === currentSetIndex
     )
 
     const homeLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home')

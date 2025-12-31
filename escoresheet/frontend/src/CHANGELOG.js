@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.8',
+    date: '31.12.25',
+    changes: [
+      'Enhance App component with cloud backup functionality and improved match deletion process'
+    ]
+  },
+  {
     version: '0.17.7',
     date: '30.12.25',
     changes: [
