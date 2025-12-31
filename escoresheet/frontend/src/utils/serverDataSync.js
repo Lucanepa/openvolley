@@ -195,32 +195,20 @@ export async function getMatchData(matchId) {
         const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
         const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
 
-        // Determine serving team - check rich lineup format first (position I.isServing)
-        // or fall back to serving_a field for backward compatibility
+        // Determine serving team from rich lineup format (position I.isServing)
         let servingTeam = 'home'
         let serverNumber = null
 
         const lineupA = liveState.lineup_a
         const lineupB = liveState.lineup_b
 
-        // Check if lineup uses new rich format (position I has isServing field)
-        const isRichFormat = lineupA?.I?.isServing !== undefined || lineupB?.I?.isServing !== undefined
-
-        if (isRichFormat) {
-          // Rich format: serving info is in position I
-          if (lineupA?.I?.isServing) {
-            servingTeam = teamAIsHome ? 'home' : 'away'
-            serverNumber = lineupA.I.number
-          } else if (lineupB?.I?.isServing) {
-            servingTeam = teamAIsHome ? 'away' : 'home'
-            serverNumber = lineupB.I.number
-          }
-        } else if (liveState.serving_a !== undefined) {
-          // Legacy format: use serving_a boolean
-          servingTeam = liveState.serving_a
-            ? (teamAIsHome ? 'home' : 'away')
-            : (teamAIsHome ? 'away' : 'home')
-          serverNumber = liveState.server_number
+        // Rich format: serving info is in position I (isServing field)
+        if (lineupA?.I?.isServing) {
+          servingTeam = teamAIsHome ? 'home' : 'away'
+          serverNumber = lineupA.I.number
+        } else if (lineupB?.I?.isServing) {
+          servingTeam = teamAIsHome ? 'away' : 'home'
+          serverNumber = lineupB.I.number
         }
 
         const currentSet = {
@@ -245,14 +233,8 @@ export async function getMatchData(matchId) {
       // Build events array with lineup info from live state
       let events = []
 
-      // Check if using new rich lineup format
-      const lineupA = liveState?.lineup_a
-      const lineupB = liveState?.lineup_b
-      const isRichFormat = lineupA?.I?.isServing !== undefined || lineupB?.I?.isServing !== undefined
-
       if (liveState) {
-        // For rich format, lineup events contain the rich data directly
-        // For legacy format, lineup is just position -> playerNumber
+        // Lineup events contain rich data (captain, libero, subs, sanctions embedded per position)
         if (liveState.lineup_a) {
           events.push({
             type: 'lineup',
@@ -261,7 +243,7 @@ export async function getMatchData(matchId) {
             payload: {
               team: teamAIsHome ? 'home' : 'away',
               lineup: liveState.lineup_a,
-              isRichFormat
+              isRichFormat: true
             }
           })
         }
@@ -273,42 +255,12 @@ export async function getMatchData(matchId) {
             payload: {
               team: teamAIsHome ? 'away' : 'home',
               lineup: liveState.lineup_b,
-              isRichFormat
+              isRichFormat: true
             }
           })
         }
 
-        // Legacy format: add initial lineups for libero replacement tracking
-        if (!isRichFormat) {
-          if (liveState.initial_lineup_a) {
-            events.push({
-              type: 'lineup',
-              setIndex: liveState.current_set || 1,
-              seq: 0.1,
-              payload: {
-                team: teamAIsHome ? 'home' : 'away',
-                lineup: liveState.initial_lineup_a,
-                isInitial: true
-              }
-            })
-          }
-          if (liveState.initial_lineup_b) {
-            events.push({
-              type: 'lineup',
-              setIndex: liveState.current_set || 1,
-              seq: 0.2,
-              payload: {
-                team: teamAIsHome ? 'away' : 'home',
-                lineup: liveState.initial_lineup_b,
-                isInitial: true
-              }
-            })
-          }
-        }
-
-        // Build sanction events from live state
-        // For rich format: only team-level sanctions (no player number)
-        // For legacy format: all sanctions
+        // Build sanction events from live state (team-level sanctions only)
         if (liveState.sanctions_a) {
           for (const sanction of liveState.sanctions_a) {
             events.push({
@@ -427,49 +379,24 @@ export async function getMatchData(matchId) {
         }
       }
 
-      // Build players from live state if available (has libero status), otherwise from JSONB
-      let homePlayers = []
-      let awayPlayers = []
+      // Build players from matches table JSONB columns
+      const homePlayers = match.players_home || []
+      const awayPlayers = match.players_away || []
 
-      // For rich format, player/libero info is embedded in lineup
-      // For legacy format, use players_a/players_b arrays
-      if (!isRichFormat && (liveState?.players_a || liveState?.players_b)) {
-        // Legacy: Use players from live state (includes libero status)
-        const playersAHome = teamAIsHome ? liveState.players_a : liveState.players_b
-        const playersBHome = teamAIsHome ? liveState.players_b : liveState.players_a
-        homePlayers = playersAHome || []
-        awayPlayers = playersBHome || []
-      } else {
-        // Fallback to JSONB columns from matches table
-        homePlayers = match.home_players || []
-        awayPlayers = match.away_players || []
-      }
-
-      // Extract captain info
-      // For rich format: find player with isCaptain=true in lineup
-      // For legacy format: use captain_a/captain_b fields
+      // Extract captain info from rich lineup format
       let homeCaptain = null
       let awayCaptain = null
       let homeCourtCaptain = null
       let awayCourtCaptain = null
 
-      if (isRichFormat) {
-        // Rich format: extract captain from lineup
-        const homeLineup = teamAIsHome ? liveState?.lineup_a : liveState?.lineup_b
-        const awayLineup = teamAIsHome ? liveState?.lineup_b : liveState?.lineup_a
+      const homeLineup = teamAIsHome ? liveState?.lineup_a : liveState?.lineup_b
+      const awayLineup = teamAIsHome ? liveState?.lineup_b : liveState?.lineup_a
 
-        for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
-          if (homeLineup?.[pos]?.isCaptain) homeCaptain = homeLineup[pos].number
-          if (homeLineup?.[pos]?.isCourtCaptain) homeCourtCaptain = homeLineup[pos].number
-          if (awayLineup?.[pos]?.isCaptain) awayCaptain = awayLineup[pos].number
-          if (awayLineup?.[pos]?.isCourtCaptain) awayCourtCaptain = awayLineup[pos].number
-        }
-      } else {
-        // Legacy format: use separate captain fields
-        homeCaptain = teamAIsHome ? liveState?.captain_a : liveState?.captain_b
-        awayCaptain = teamAIsHome ? liveState?.captain_b : liveState?.captain_a
-        homeCourtCaptain = teamAIsHome ? liveState?.court_captain_a : liveState?.court_captain_b
-        awayCourtCaptain = teamAIsHome ? liveState?.court_captain_b : liveState?.court_captain_a
+      for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+        if (homeLineup?.[pos]?.isCaptain) homeCaptain = homeLineup[pos].number
+        if (homeLineup?.[pos]?.isCourtCaptain) homeCourtCaptain = homeLineup[pos].number
+        if (awayLineup?.[pos]?.isCaptain) awayCaptain = awayLineup[pos].number
+        if (awayLineup?.[pos]?.isCourtCaptain) awayCourtCaptain = awayLineup[pos].number
       }
 
       return {
@@ -503,7 +430,7 @@ export async function getMatchData(matchId) {
         awayPlayers,
         sets,
         events,
-        isRichFormat, // Flag so Referee knows which rendering path to use
+        isRichFormat: true, // Always rich format now
         liveState // Include raw live state for additional data
       }
     } catch (supabaseError) {

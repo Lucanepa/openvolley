@@ -22,6 +22,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Modal states (from Scoreboard actions)
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false) // Modal visibility (separate from countdown state)
 
   // Flashing substitution state (like Scoreboard)
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }]
@@ -66,6 +67,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
   const [wakeLockActive, setWakeLockActive] = useState(false) // Track wake lock status
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown, started }
+  const [showIntervalModal, setShowIntervalModal] = useState(false) // Modal visibility (separate from countdown state)
   const [peekingLineup, setPeekingLineup] = useState({ left: false, right: false }) // Track which team's lineup is being peeked
 
   // Reset peeking state on any mouseup/touchend (since overlay disappears when peeking)
@@ -155,7 +157,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
         sets,
         currentSet,
-        events: result.events || []
+        events: result.events || [],
+        liveState: result.liveState || null
       })
     }
   }, [])
@@ -302,6 +305,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         countdown: actionData.countdown || 30,
         started: true
       })
+      setShowTimeoutModal(true) // Show the modal overlay
     } else if (action === 'substitution') {
       // Add player to recently substituted list for flashing effect (no modal, just flash)
       setRecentlySubstitutedPlayers(prev => [...prev, { team: actionData.team, playerNumber: actionData.playerIn, timestamp: Date.now() }])
@@ -320,6 +324,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         setIndex: actionData.setIndex,
         winner: actionData.winner
       })
+      setShowIntervalModal(true) // Show the modal overlay
+    } else if (action === 'end_timeout') {
+      // Scoreboard ended the timeout - clear countdown and modal
+      setTimeoutModal(null)
+      setShowTimeoutModal(false)
+    } else if (action === 'end_interval') {
+      // Scoreboard ended the set interval - clear countdown and modal
+      setBetweenSetsCountdown(null)
+      setShowIntervalModal(false)
     }
   }, [])
 
@@ -443,6 +456,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               countdown: state.last_event_data?.duration || 30,
               started: true
             })
+            setShowTimeoutModal(true) // Show the modal overlay
           }
 
           // Handle substitution - flash effect only (no modal)
@@ -478,6 +492,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               setIndex: state.last_event_data?.setIndex || state.current_set,
               winner: state.last_event_data?.winner
             })
+            setShowIntervalModal(true) // Show the modal overlay
           }
 
           // ALWAYS refetch data on ANY change - handles points, lineups, subs, libero, sanctions, undoes, replays, etc.
@@ -696,6 +711,26 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                          latestAwayLineup?.payload?.isRichFormat ||
                          homeLineupData?.I?.isServing !== undefined ||
                          awayLineupData?.I?.isServing !== undefined
+
+    // Check if we're between sets (previous set finished, current set not started)
+    // During set interval, only show lineup if we have lineup events for the NEW set
+    const previousSetIndex = currentSetIndex - 1
+    if (previousSetIndex >= 1) {
+      const previousSet = data.sets?.find(s => s.index === previousSetIndex)
+      const currentSetHasPoints = data.events?.some(e => e.type === 'point' && (e.setIndex || 1) === currentSetIndex)
+
+      // If previous set is finished and current set has no points yet (between sets)
+      // Only show lineups if we have lineup events specifically for the new set
+      if (previousSet?.finished && !currentSetHasPoints) {
+        const hasHomeLineupForNewSet = homeLineupEvents.length > 0
+        const hasAwayLineupForNewSet = awayLineupEvents.length > 0
+
+        // If no lineup events exist for the new set, return null for both
+        if (!hasHomeLineupForNewSet && !hasAwayLineupForNewSet) {
+          return { home: null, away: null, isRichFormat: false, isBetweenSets: true }
+        }
+      }
+    }
 
     return {
       home: homeLineupData,
@@ -1205,9 +1240,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
     if (isBetweenSets && betweenSetsCountdown === null) {
       setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
+      setShowIntervalModal(true) // Show the modal overlay
     } else if (!isBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
+      setShowIntervalModal(false) // Hide the modal when set starts
     }
   }, [isBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
 
@@ -1917,9 +1954,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
 
       {/* Between Sets Countdown Modal */}
-      {betweenSetsCountdown && (
+      {showIntervalModal && betweenSetsCountdown && (
         <div
-          onClick={() => setBetweenSetsCountdown(null)}
+          onClick={() => setShowIntervalModal(false)}
           style={{
             position: 'fixed',
             top: 0,
@@ -1973,9 +2010,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       )}
 
       {/* Timeout Modal (from Scoreboard action) */}
-      {timeoutModal && timeoutModal.started && (
+      {showTimeoutModal && timeoutModal && timeoutModal.started && (
         <div
-          onClick={() => setTimeoutModal(null)}
+          onClick={() => setShowTimeoutModal(false)}
             style={{
             position: 'fixed',
             top: 0,
@@ -2492,8 +2529,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: leftColor, color: isBrightColor(leftColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(16px, 4vw, 28px)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{(() => {
                 const fullName = leftTeamData?.name || 'Team';
                 const shortName = leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName;
-                const useShort = shortName && (fullName.length > 10 || window.innerWidth < 600);
-                return useShort ? shortName : fullName;
+                return shortName || fullName;
               })()}</div>
           </div>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: leftColor, color: isBrightColor(leftColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
@@ -2516,8 +2552,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: rightColor, color: isBrightColor(rightColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(16px, 4vw, 28px)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{(() => {
                 const fullName = rightTeamData?.name || 'Team';
                 const shortName = rightTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName;
-                const useShort = shortName && (fullName.length > 10 || window.innerWidth < 600);
-                return useShort ? shortName : fullName;
+                return shortName || fullName;
               })()}</div>
           </div>
         </div>
@@ -3360,7 +3395,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Left team sanctions */}
         <div style={{
           display: 'flex',
-          gap: '4px',
+          gap: '6px',
           alignItems: 'center',
           justifyContent: 'center',
           flexWrap: 'wrap',
@@ -3368,97 +3403,97 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }}>
           {leftTeamSanctions.formalWarning && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#fde047',
               color: '#000',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>FW</span>
           )}
           {leftTeamSanctions.improperRequest && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
-              background: '#f97316',
+              background: '#6b7280',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
-            }}>IR</span>
+              padding: '3px 8px',
+              borderRadius: '4px'
+            }}>Improper Request</span>
           )}
           {leftTeamSanctions.delayWarning && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#fde047',
               color: '#000',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>DW</span>
           )}
           {leftTeamSanctions.delayPenalty && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#ef4444',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>DP</span>
           )}
           {leftTeamSanctions.benchSanctions.length > 0 && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#a855f7',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>B×{leftTeamSanctions.benchSanctions.length}</span>
           )}
           {/* Player sanctions: warnings (yellow card) */}
           {leftTeamSanctions.playerWarnings.map((w, i) => (
             <span key={`w${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#fde047',
               color: '#000',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>W#{w.player}</span>
           ))}
           {/* Player sanctions: penalties (red card) */}
           {leftTeamSanctions.playerPenalties.map((p, i) => (
             <span key={`p${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#ef4444',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>P#{p.player}</span>
           ))}
           {/* Player sanctions: expulsions (red+yellow) */}
           {leftTeamSanctions.expulsions.map((e, i) => (
             <span key={`e${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px',
+              padding: '3px 8px',
+              borderRadius: '4px',
               textShadow: '0 0 2px #000'
             }}>E#{e.player}</span>
           ))}
           {/* Player sanctions: disqualifications */}
           {leftTeamSanctions.disqualifications.map((d, i) => (
             <span key={`d${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#7f1d1d',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>DQ#{d.player}</span>
           ))}
         </div>
@@ -3503,104 +3538,104 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Right team sanctions */}
         <div style={{
           display: 'flex',
-          gap: '4px',
+          gap: '6px',
           alignItems: 'center',
           justifyContent: 'center',
           flexWrap: 'wrap'
         }}>
           {rightTeamSanctions.formalWarning && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#fde047',
               color: '#000',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>FW</span>
           )}
           {rightTeamSanctions.improperRequest && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
-              background: '#f97316',
+              background: '#6b7280',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
-            }}>IR</span>
+              padding: '3px 8px',
+              borderRadius: '4px'
+            }}>Improper Request</span>
           )}
           {rightTeamSanctions.delayWarning && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#fde047',
               color: '#000',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>DW</span>
           )}
           {rightTeamSanctions.delayPenalty && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#ef4444',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>DP</span>
           )}
           {rightTeamSanctions.benchSanctions.length > 0 && (
             <span style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#a855f7',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>B×{rightTeamSanctions.benchSanctions.length}</span>
           )}
           {/* Player sanctions: warnings (yellow card) */}
           {rightTeamSanctions.playerWarnings.map((w, i) => (
             <span key={`w${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#fde047',
               color: '#000',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>W#{w.player}</span>
           ))}
           {/* Player sanctions: penalties (red card) */}
           {rightTeamSanctions.playerPenalties.map((p, i) => (
             <span key={`p${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#ef4444',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>P#{p.player}</span>
           ))}
           {/* Player sanctions: expulsions (red+yellow) */}
           {rightTeamSanctions.expulsions.map((e, i) => (
             <span key={`e${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px',
+              padding: '3px 8px',
+              borderRadius: '4px',
               textShadow: '0 0 2px #000'
             }}>E#{e.player}</span>
           ))}
           {/* Player sanctions: disqualifications */}
           {rightTeamSanctions.disqualifications.map((d, i) => (
             <span key={`d${i}`} style={{
-              fontSize: '9px',
+              fontSize: '14px',
               fontWeight: 700,
               background: '#7f1d1d',
               color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px'
+              padding: '3px 8px',
+              borderRadius: '4px'
             }}>DQ#{d.player}</span>
           ))}
         </div>
