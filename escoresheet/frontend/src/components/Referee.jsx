@@ -339,6 +339,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
   }, [])
 
+  // Handle match deletion - navigate back to home
+  const handleMatchDeleted = useCallback(() => {
+    console.log('[Referee] Match deleted, navigating to home')
+    if (onExit) {
+      onExit()
+    }
+  }, [onExit])
+
   // Use realtime connection hook (handles Supabase + WebSocket with fallback)
   const {
     status: realtimeStatus,
@@ -351,6 +359,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     preferredConnection: connectionType,
     onData: handleRealtimeData,
     onAction: handleRealtimeAction,
+    onDeleted: handleMatchDeleted,
     enabled: !isMasterMode && !!matchId
   })
 
@@ -829,12 +838,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightTeamData = rightTeam === 'home' ? data?.homeTeam : data?.awayTeam
   const leftLabel = leftTeam === 'home' ? homeLabel : awayLabel
   const rightLabel = rightTeam === 'home' ? homeLabel : awayLabel
-  const leftLineup = leftTeam === 'home' ? lineup.home : lineup.away
-  const rightLineup = rightTeam === 'home' ? lineup.home : lineup.away
-  const leftStats = leftTeam === 'home' ? stats.home : stats.away
-  const rightStats = rightTeam === 'home' ? stats.home : stats.away
-  const leftScore = leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0
-  const rightScore = rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0
+
+  // Basic team info (set interval overrides will be computed after isBetweenSets is defined)
   const leftSetScore = leftTeam === 'home' ? setScore.home : setScore.away
   const rightSetScore = rightTeam === 'home' ? setScore.home : setScore.away
   const leftServing = getCurrentServe === leftTeam
@@ -1240,6 +1245,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     
     return !hasSetStarted
   }, [data?.sets, data?.set, data?.events])
+
+  // Check if we're in set interval (from liveState or local detection)
+  const isInSetInterval = data?.liveState?.set_interval_active || isBetweenSets
+  const nextSetIndex = isInSetInterval ? (data?.currentSet?.index || 1) + 1 : null
+
+  // During set interval, show cleared values for the NEW set
+  const leftLineup = isInSetInterval ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
+  const rightLineup = isInSetInterval ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
+  const leftStats = isInSetInterval
+    ? { timeouts: 0, substitutions: 0 }
+    : (leftTeam === 'home' ? stats.home : stats.away)
+  const rightStats = isInSetInterval
+    ? { timeouts: 0, substitutions: 0 }
+    : (rightTeam === 'home' ? stats.home : stats.away)
+  const leftScore = isInSetInterval ? 0 : (leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  const rightScore = isInSetInterval ? 0 : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  // Display set index - during interval show the NEXT set
+  const displaySetIndex = isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1)
 
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
@@ -2524,7 +2547,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{leftSetScore}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <span style={{ fontSize: 'clamp(15px, 4vw, 30px)', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
-            <span style={{ fontSize: 'clamp(22px, 5.5vw, 40px)', fontWeight: 800 }}>{data?.currentSet?.index || 1}</span>
+            <span style={{ fontSize: 'clamp(22px, 5.5vw, 40px)', fontWeight: 800 }}>{displaySetIndex}</span>
           </div>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{rightSetScore}</div>
         </div>

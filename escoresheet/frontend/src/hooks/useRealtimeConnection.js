@@ -31,6 +31,7 @@ export const CONNECTION_STATUS = {
  * @param {string} options.preferredConnection - Preferred connection type (auto|supabase|websocket)
  * @param {function} options.onData - Callback when data is received
  * @param {function} options.onAction - Callback when action is received (timeout, substitution, etc.)
+ * @param {function} options.onDeleted - Callback when match is deleted from server
  * @param {boolean} options.enabled - Whether to enable the connection
  */
 export function useRealtimeConnection({
@@ -38,6 +39,7 @@ export function useRealtimeConnection({
   preferredConnection = CONNECTION_TYPES.AUTO,
   onData,
   onAction,
+  onDeleted,
   enabled = true
 }) {
   const [connectionType, setConnectionType] = useState(preferredConnection)
@@ -54,6 +56,7 @@ export function useRealtimeConnection({
   // Store callbacks in refs to avoid dependency changes
   const onDataRef = useRef(onData)
   const onActionRef = useRef(onAction)
+  const onDeletedRef = useRef(onDeleted)
 
   // Update refs when callbacks change (without triggering re-renders)
   useEffect(() => {
@@ -63,6 +66,10 @@ export function useRealtimeConnection({
   useEffect(() => {
     onActionRef.current = onAction
   }, [onAction])
+
+  useEffect(() => {
+    onDeletedRef.current = onDeleted
+  }, [onDeleted])
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -112,24 +119,6 @@ export function useRealtimeConnection({
       if (matchData?.id) {
         supabaseMatchUuid = matchData.id
         console.log('[RealtimeConnection] Found Supabase UUID:', supabaseMatchUuid)
-      } else {
-        // Fallback: try by game_n if matchId looks like "game_123_timestamp"
-        const gameNMatch = String(matchId).match(/^game_(\d+)_/)
-        if (gameNMatch) {
-          const gameN = parseInt(gameNMatch[1], 10)
-          const { data: matchByGameN } = await supabase
-            .from('matches')
-            .select('id')
-            .eq('game_n', gameN)
-            .in('status', ['setup', 'live'])
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (matchByGameN?.id) {
-            supabaseMatchUuid = matchByGameN.id
-            console.log('[RealtimeConnection] Found Supabase UUID by game_n fallback:', supabaseMatchUuid)
-          }
-        }
       }
 
       // Build channel subscriptions
@@ -212,20 +201,29 @@ export function useRealtimeConnection({
         console.warn('[RealtimeConnection] No Supabase UUID found, subscribing to matches only')
       }
 
-      // Always subscribe to matches table updates (uses external_id)
+      // Always subscribe to matches table changes including deletions (uses external_id)
       channel
         .on(
           'postgres_changes',
           {
-            event: 'UPDATE',
+            event: '*',
             schema: 'public',
             table: 'matches',
             filter: `external_id=eq.${matchId}`
           },
           (payload) => {
             if (!isMountedRef.current) return
-            console.log('[RealtimeConnection] Supabase match update:', payload)
+            console.log('[RealtimeConnection] Supabase match update:', payload.eventType, payload)
             setLastUpdate(Date.now())
+
+            // Handle match deletion
+            if (payload.eventType === 'DELETE') {
+              console.log('[RealtimeConnection] Match deleted, calling onDeleted callback')
+              if (onDeletedRef.current) {
+                onDeletedRef.current()
+              }
+              return
+            }
 
             // Fetch fresh data when match changes
             getMatchData(matchId).then(result => {
@@ -247,8 +245,9 @@ export function useRealtimeConnection({
             setError(null)
             console.log('[RealtimeConnection] Connected to Supabase Realtime')
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setError('Supabase connection failed')
-            return false
+            console.warn('[RealtimeConnection] Supabase channel error/timeout, status:', status)
+            // Don't set error state, just log - the connection may still work
+            // Supabase channels can sometimes report CLOSED/ERROR initially but still function
           }
         })
 

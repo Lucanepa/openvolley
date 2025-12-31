@@ -644,7 +644,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       events,
       sets
     }
-    
+
     return result
   }, [matchId])
 
@@ -687,6 +687,345 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       totalEvents: data.events?.length
     }
   }, [data])
+
+  // Capture FULL state snapshot for snapshot-based undo system
+  // This captures everything needed to restore the match state completely
+  const captureFullStateSnapshot = useCallback(async () => {
+    if (!matchId) return null
+
+    try {
+      // Query fresh data from IndexedDB to avoid stale closure issues
+      const match = await db.matches.get(matchId)
+      if (!match) return null
+
+      // Get current set from database
+      const allSets = await db.sets.where({ matchId }).toArray()
+      const currentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
+      if (!currentSet) return null
+
+      // Get all events from database
+      const allEvents = await db.events.where({ matchId }).toArray()
+
+      // Get players from database
+      const [homePlayersDb, awayPlayersDb] = await Promise.all([
+        match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
+        match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : []
+      ])
+
+      // Compute current state
+      const finishedSets = allSets.filter(s => s.finished)
+      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+
+      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+      const setIndex = currentSet.index
+      const teamAKey = match.coinTossTeamA || 'home'
+      const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+      const is5thSet = setIndex === 5
+      const set5CourtSwitched = match.set5CourtSwitched
+      const set5LeftTeam = match.set5LeftTeam
+
+      // Determine which side Team A is on this set
+      const setLeftTeamOverrides = match.setLeftTeamOverrides || {}
+      let sideA
+      if (setLeftTeamOverrides[setIndex] !== undefined) {
+        sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
+      } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
+        sideA = set5LeftTeam === teamAKey ? 'left' : 'right'
+      } else {
+        sideA = setIndex % 2 === 1 ? 'left' : 'right'
+      }
+
+      // Team names and colors
+      const teamAName = teamAKey === 'home' ? match.homeName : match.awayName
+      const teamBName = teamAKey === 'home' ? match.awayName : match.homeName
+      const teamAShort = teamAKey === 'home' ? match.homeShortName : match.awayShortName
+      const teamBShort = teamAKey === 'home' ? match.awayShortName : match.homeShortName
+      const teamAColor = teamAKey === 'home' ? match.homeColor : match.awayColor
+      const teamBColor = teamAKey === 'home' ? match.awayColor : match.homeColor
+
+      // Points and set scores
+      const pointsA = teamAKey === 'home' ? currentSet.homePoints : currentSet.awayPoints
+      const pointsB = teamAKey === 'home' ? currentSet.awayPoints : currentSet.homePoints
+      const setScoreA = teamAKey === 'home' ? homeSetsWon : awaySetsWon
+      const setScoreB = teamAKey === 'home' ? awaySetsWon : homeSetsWon
+
+      // Current set events
+      const currentSetEvents = allEvents.filter(e => e.setIndex === currentSet.index)
+
+      // Timeouts
+      const timeouts = currentSetEvents.filter(e => e.type === 'timeout').reduce((acc, e) => {
+        const team = e.payload?.team
+        if (team) acc[team] = (acc[team] || 0) + 1
+        return acc
+      }, { home: 0, away: 0 })
+      const timeoutsA = teamAKey === 'home' ? timeouts.home : timeouts.away
+      const timeoutsB = teamAKey === 'home' ? timeouts.away : timeouts.home
+
+      // Substitutions with details
+      const subsDetails = currentSetEvents.filter(e => e.type === 'substitution').reduce((acc, e) => {
+        const team = e.payload?.team
+        if (team) {
+          if (!acc[team]) acc[team] = []
+          acc[team].push({
+            playerIn: e.payload?.playerIn,
+            playerOut: e.payload?.playerOut,
+            position: e.payload?.position,
+            exceptional: e.payload?.exceptional || false,
+            ts: e.ts
+          })
+        }
+        return acc
+      }, { home: [], away: [] })
+      const subsA = teamAKey === 'home' ? subsDetails.home : subsDetails.away
+      const subsB = teamAKey === 'home' ? subsDetails.away : subsDetails.home
+
+      // Get lineups
+      const getLineupForTeam = (teamKey) => {
+        const lineupEvents = allEvents
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+        return lineupEvents[lineupEvents.length - 1].payload?.lineup || null
+      }
+
+      const getLiberoSubForTeam = (teamKey) => {
+        const lineupEvents = allEvents
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+        return lineupEvents[lineupEvents.length - 1].payload?.liberoSubstitution || null
+      }
+
+      const getInitialLineupForTeam = (teamKey) => {
+        const initialLineup = allEvents.find(e =>
+          e.type === 'lineup' &&
+          e.payload?.team === teamKey &&
+          e.setIndex === currentSet.index &&
+          e.payload?.isInitial === true
+        )
+        return initialLineup?.payload?.lineup || null
+      }
+
+      const rawLineupA = getLineupForTeam(teamAKey)
+      const rawLineupB = getLineupForTeam(teamBKey)
+      const initialLineupA = getInitialLineupForTeam(teamAKey)
+      const initialLineupB = getInitialLineupForTeam(teamBKey)
+      const liberoSubA = getLiberoSubForTeam(teamAKey)
+      const liberoSubB = getLiberoSubForTeam(teamBKey)
+
+      // Captain info
+      const getCaptainInfo = (playersDb) => {
+        const captain = playersDb.find(p => p.isCaptain || p.captain)
+        return captain ? captain.number : null
+      }
+      const teamAPlayersDb = teamAKey === 'home' ? homePlayersDb : awayPlayersDb
+      const teamBPlayersDb = teamAKey === 'home' ? awayPlayersDb : homePlayersDb
+      const captainA = getCaptainInfo(teamAPlayersDb)
+      const captainB = getCaptainInfo(teamBPlayersDb)
+      const courtCaptainA = teamAKey === 'home' ? match.homeCourtCaptain : match.awayCourtCaptain
+      const courtCaptainB = teamBKey === 'home' ? match.homeCourtCaptain : match.awayCourtCaptain
+
+      // Serving team calculation
+      const pointEvents = allEvents
+        .filter(e => e.type === 'point' && e.setIndex === currentSet.index)
+        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+      const set1FirstServe = match.firstServe || 'home'
+      let currentSetFirstServe
+      if (setIndex === 5 && match.set5FirstServe) {
+        currentSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
+      } else if (setIndex === 5) {
+        currentSetFirstServe = set1FirstServe
+      } else {
+        currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+      }
+
+      const servingTeam = pointEvents.length > 0 ? (pointEvents[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
+      const servingTeamLineup = getLineupForTeam(servingTeam)
+      const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
+
+      // Sanctions
+      const getSanctionsForTeam = (teamKey) => {
+        return currentSetEvents
+          .filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
+          .map(e => ({
+            player: e.payload?.playerNumber || null,
+            type: e.payload?.type || e.payload?.sanctionType,
+            playerType: e.payload?.playerType || null,
+            position: e.payload?.position || null,
+            role: e.payload?.role || null,
+            ts: e.ts
+          }))
+      }
+      const sanctionsA = getSanctionsForTeam(teamAKey)
+      const sanctionsB = getSanctionsForTeam(teamBKey)
+
+      // Build rich lineup
+      const buildRichLineup = (rawLineup, initialLineup, playersDb, subsDetails, sanctions, isServingTeam, captainNum, courtCaptainNum, liberoSubstitution) => {
+        if (!rawLineup) return null
+
+        const backRowPositions = ['I', 'V', 'VI']
+        const richLineup = {}
+
+        for (const position of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+          const playerNum = rawLineup[position]
+          if (!playerNum) continue
+
+          const playerNumStr = String(playerNum)
+          const player = playersDb.find(p => String(p.number) === playerNumStr)
+          const isBackRow = backRowPositions.includes(position)
+          const isLibero = player && (player.libero === 'libero1' || player.libero === 'libero2')
+
+          let replacedNumber = null
+          if (isLibero && liberoSubstitution && String(liberoSubstitution.liberoNumber) === playerNumStr) {
+            replacedNumber = liberoSubstitution.playerNumber
+          }
+
+          const isInInitialLineup = initialLineup && Object.values(initialLineup).some(num => String(num) === playerNumStr)
+          const subEvent = subsDetails.find(s => String(s.playerIn) === playerNumStr)
+          const isSubstituted = !!subEvent && !isInInitialLineup
+          const substitutedFor = isSubstituted ? Number(subEvent.playerOut) : null
+
+          const playerSanctions = sanctions.filter(s => String(s.player) === playerNumStr)
+          const hasSanction = playerSanctions.length > 0
+
+          const isCaptain = !!(captainNum && String(captainNum) === playerNumStr)
+          const isCourtCaptain = !!(courtCaptainNum && String(courtCaptainNum) === playerNumStr)
+
+          const positionData = {
+            number: Number(playerNum),
+            isSubstituted,
+            hasSanction,
+            isCaptain,
+            isCourtCaptain
+          }
+
+          if (position === 'I') {
+            positionData.isServing = isServingTeam
+          }
+
+          if (isBackRow) {
+            positionData.isLibero = isLibero
+            if (isLibero) {
+              positionData.replacedNumber = replacedNumber
+            }
+          }
+
+          if (isSubstituted) {
+            positionData.substitutedFor = substitutedFor
+          }
+
+          if (hasSanction) {
+            positionData.sanctions = playerSanctions.map(s => ({ type: s.type, ts: s.ts }))
+          }
+
+          richLineup[position] = positionData
+        }
+
+        return Object.keys(richLineup).length > 0 ? richLineup : null
+      }
+
+      const lineupA = buildRichLineup(rawLineupA, initialLineupA, teamAPlayersDb, subsA, sanctionsA, servingTeam === teamAKey, captainA, courtCaptainA, liberoSubA)
+      const lineupB = buildRichLineup(rawLineupB, initialLineupB, teamBPlayersDb, subsB, sanctionsB, servingTeam === teamBKey, captainB, courtCaptainB, liberoSubB)
+
+      // Check rally status
+      const lastRallyStart = currentSetEvents.filter(e => e.type === 'rally_start').sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+      const lastPoint = pointEvents[0]
+      const rallyInProgress = lastRallyStart && (!lastPoint || (lastRallyStart.seq || 0) > (lastPoint.seq || 0))
+
+      // Build set results history
+      const setResults = finishedSets.map(s => ({
+        index: s.index,
+        pointsA: teamAKey === 'home' ? s.homePoints : s.awayPoints,
+        pointsB: teamAKey === 'home' ? s.awayPoints : s.homePoints,
+        winner: s.homePoints > s.awayPoints ? (teamAKey === 'home' ? 'A' : 'B') : (teamAKey === 'home' ? 'B' : 'A')
+      }))
+
+      return {
+        // Match info
+        matchId,
+        matchStatus: match.status || 'live',
+        teamAKey,
+        teamAName,
+        teamAShort: teamAShort || teamAName?.substring(0, 3).toUpperCase(),
+        teamAColor: teamAColor || '#ef4444',
+        teamBName,
+        teamBShort: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
+        teamBColor: teamBColor || '#3b82f6',
+
+        // Current set
+        currentSetIndex: setIndex,
+        sideA,
+        pointsA,
+        pointsB,
+        setScoreA,
+        setScoreB,
+
+        // Lineups (rich format)
+        lineupA,
+        lineupB,
+
+        // Game flow
+        servingTeam,
+        serverNumber,
+        rallyInProgress: !!rallyInProgress,
+
+        // Counts & history
+        timeoutsA,
+        timeoutsB,
+        subsA,
+        subsB,
+        sanctionsA,
+        sanctionsB,
+
+        // Set results history
+        setResults,
+
+        // Match flags
+        set5CourtSwitched: !!set5CourtSwitched,
+        set5LeftTeam: set5LeftTeam || null
+      }
+    } catch (err) {
+      console.error('[captureFullStateSnapshot] Error:', err)
+      return null
+    }
+  }, [matchId])
+
+  // Restore match state from a snapshot (used by undo)
+  const restoreStateFromSnapshot = useCallback(async (snapshot) => {
+    if (!snapshot || !matchId) return
+
+    try {
+      // Get current set
+      const allSets = await db.sets.where({ matchId }).toArray()
+      const currentSet = allSets.find(s => s.index === snapshot.currentSetIndex)
+      if (!currentSet) return
+
+      // Restore set score
+      const teamAKey = snapshot.teamAKey || 'home'
+      await db.sets.update(currentSet.id, {
+        homePoints: teamAKey === 'home' ? snapshot.pointsA : snapshot.pointsB,
+        awayPoints: teamAKey === 'home' ? snapshot.pointsB : snapshot.pointsA,
+        finished: false
+      })
+
+      // Restore match status if needed
+      const match = await db.matches.get(matchId)
+      if (match && match.status !== snapshot.matchStatus) {
+        await db.matches.update(matchId, { status: snapshot.matchStatus })
+      }
+
+      // Restore set5 court switch flag
+      if (snapshot.currentSetIndex === 5 && match) {
+        await db.matches.update(matchId, {
+          set5CourtSwitched: snapshot.set5CourtSwitched || false
+        })
+      }
+    } catch (err) {
+      console.error('[restoreStateFromSnapshot] Error:', err)
+    }
+  }, [matchId])
 
   // Connect to WebSocket server and sync match data
   useEffect(() => {
@@ -1200,371 +1539,83 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [matchId])
 
   // Sync live state to Supabase for referee.openvolley.app
+  // SIMPLIFIED: Uses stateSnapshot from events instead of recomputing everything
   const syncLiveStateToSupabase = useCallback(async (eventType, eventTeam, eventData) => {
     if (!supabase || !matchId) return
 
     try {
-      // Query fresh data from IndexedDB to avoid stale closure issues
+      // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
-      if (!match) return
-
-      // Only sync official matches, not test matches
-      if (match.test) return
-
-      // Get current set from database
-      const allSets = await db.sets.where({ matchId }).toArray()
-      const currentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
-      if (!currentSet) return
-
-      // Get all events from database
-      const allEvents = await db.events.where({ matchId }).toArray()
-
-      // Get players from database (query by teamId - players are indexed by teamId, not matchId)
-      const [homePlayersDb, awayPlayersDb] = await Promise.all([
-        match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
-        match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : []
-      ])
-      const allPlayersDb = [...homePlayersDb, ...awayPlayersDb]
+      if (!match || match.test) return
 
       // Get the Supabase match UUID
       let supabaseMatchId = null
-
-      // First check if we have a valid externalId (UUID from Supabase import)
       const externalId = match.externalId
       if (externalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
         supabaseMatchId = externalId
       } else {
-        // For locally created matches, look up the Supabase UUID using our seed_key
         const seedKey = match.seed_key || String(matchId)
         const { data: matchData, error } = await supabase
           .from('matches')
           .select('id')
           .eq('external_id', seedKey)
           .maybeSingle()
-
-        if (error || !matchData) {
-          // Match not yet synced to Supabase - skip live state sync for now
-          return
-        }
+        if (error || !matchData) return
         supabaseMatchId = matchData.id
       }
-
       if (!supabaseMatchId) return
 
-      // Compute current state from fresh database data
-      const finishedSets = allSets.filter(s => s.finished)
-      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
-      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+      // Try to get the latest event's stateSnapshot
+      const allEvents = await db.events.where({ matchId }).toArray()
+      const sortedEvents = allEvents.sort((a, b) => (b.seq || 0) - (a.seq || 0))
+      let snapshot = sortedEvents[0]?.stateSnapshot
 
-      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on (changes per set)
-      const setIndex = currentSet.index
-      const teamAKey = match.coinTossTeamA || 'home' // 'home' or 'away'
-      const teamBKey = teamAKey === 'home' ? 'away' : 'home'
-      const is5thSet = setIndex === 5
-      const set5CourtSwitched = match.set5CourtSwitched
-      const set5LeftTeam = match.set5LeftTeam
-
-      // Determine which side Team A is on this set
-      const setLeftTeamOverrides = match.setLeftTeamOverrides || {}
-      let sideA // 'left' or 'right'
-      if (setLeftTeamOverrides[setIndex] !== undefined) {
-        // Manual override - check if the left team matches Team A
-        sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
-      } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
-        sideA = set5LeftTeam === teamAKey ? 'left' : 'right'
-      } else {
-        // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
-        sideA = setIndex % 2 === 1 ? 'left' : 'right'
+      // Fallback: capture fresh snapshot if none exists (e.g., before first event)
+      if (!snapshot) {
+        snapshot = await captureFullStateSnapshot()
       }
+      if (!snapshot) return
 
-      // Get Team A info (coin toss winner - constant throughout match)
-      const teamAName = teamAKey === 'home' ? match.homeName : match.awayName
-      const teamBName = teamAKey === 'home' ? match.awayName : match.homeName
-      const teamAShort = teamAKey === 'home' ? match.homeShortName : match.awayShortName
-      const teamBShort = teamAKey === 'home' ? match.awayShortName : match.homeShortName
-      const teamAColor = teamAKey === 'home' ? match.homeColor : match.awayColor
-      const teamBColor = teamAKey === 'home' ? match.awayColor : match.homeColor
-
-      // Points by team (A/B)
-      const pointsA = teamAKey === 'home' ? currentSet.homePoints : currentSet.awayPoints
-      const pointsB = teamAKey === 'home' ? currentSet.awayPoints : currentSet.homePoints
-
-      // Set score by team (A/B)
-      const setScoreA = teamAKey === 'home' ? homeSetsWon : awaySetsWon
-      const setScoreB = teamAKey === 'home' ? awaySetsWon : homeSetsWon
-
-      // Timeouts and subs for current set
-      const currentSetEvents = allEvents.filter(e => e.setIndex === currentSet.index)
-      const timeouts = currentSetEvents.filter(e => e.type === 'timeout').reduce((acc, e) => {
-        const team = e.payload?.team
-        if (team) acc[team] = (acc[team] || 0) + 1
-        return acc
-      }, { home: 0, away: 0 })
-      // Build substitution details as arrays (for tracking who replaced whom)
-      const subsDetails = currentSetEvents.filter(e => e.type === 'substitution').reduce((acc, e) => {
-        const team = e.payload?.team
-        if (team) {
-          if (!acc[team]) acc[team] = []
-          acc[team].push({
-            playerIn: e.payload?.playerIn,
-            playerOut: e.payload?.playerOut,
-            position: e.payload?.position,
-            exceptional: e.payload?.exceptional || false,
-            ts: e.ts
-          })
-        }
-        return acc
-      }, { home: [], away: [] })
-
-      const timeoutsA = teamAKey === 'home' ? timeouts.home : timeouts.away
-      const timeoutsB = teamAKey === 'home' ? timeouts.away : timeouts.home
-      const subsA = teamAKey === 'home' ? subsDetails.home : subsDetails.away
-      const subsB = teamAKey === 'home' ? subsDetails.away : subsDetails.home
-
-      // Get lineups from fresh event data
-      const getLineupForTeam = (teamKey) => {
-        const lineupEvents = allEvents
-          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
-          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
-        if (lineupEvents.length === 0) return null
-
-        // Get the most recent lineup
-        const lastLineup = lineupEvents[lineupEvents.length - 1]
-        return lastLineup.payload?.lineup || null
-      }
-
-      // Get libero substitution info from the latest lineup event
-      const getLiberoSubForTeam = (teamKey) => {
-        const lineupEvents = allEvents
-          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === currentSet.index)
-          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
-        if (lineupEvents.length === 0) return null
-        return lineupEvents[lineupEvents.length - 1].payload?.liberoSubstitution || null
-      }
-
-      // Get initial lineup for a team (before any libero subs)
-      const getInitialLineupForTeam = (teamKey) => {
-        const initialLineup = allEvents.find(e =>
-          e.type === 'lineup' &&
-          e.payload?.team === teamKey &&
-          e.setIndex === currentSet.index &&
-          e.payload?.isInitial === true
-        )
-        return initialLineup?.payload?.lineup || null
-      }
-
-      const rawLineupA = getLineupForTeam(teamAKey)
-      const rawLineupB = getLineupForTeam(teamBKey)
-      const initialLineupA = getInitialLineupForTeam(teamAKey)
-      const initialLineupB = getInitialLineupForTeam(teamBKey)
-      const liberoSubA = getLiberoSubForTeam(teamAKey)
-      const liberoSubB = getLiberoSubForTeam(teamBKey)
-
-      // Get captain and court captain for each team
-      const getCaptainInfo = (playersDb) => {
-        const captain = playersDb.find(p => p.isCaptain || p.captain)
-        return captain ? captain.number : null
-      }
-      // Team A/B maps to home/away based on coin toss
-      const teamAPlayersDb = teamAKey === 'home' ? homePlayersDb : awayPlayersDb
-      const teamBPlayersDb = teamAKey === 'home' ? awayPlayersDb : homePlayersDb
-      const captainA = getCaptainInfo(teamAPlayersDb)
-      const captainB = getCaptainInfo(teamBPlayersDb)
-
-      // Get court captain from match record
-      const courtCaptainA = teamAKey === 'home' ? match.homeCourtCaptain : match.awayCourtCaptain
-      const courtCaptainB = teamBKey === 'home' ? match.homeCourtCaptain : match.awayCourtCaptain
-
-      // Build players list with libero status for each team (so Referee knows who is libero1/libero2)
-      const buildPlayersInfo = (playersDb) => {
-        return playersDb.map(p => ({
-          number: p.number,
-          name: p.name,
-          libero: p.libero || null, // 'libero1', 'libero2', or null
-          isCaptain: p.isCaptain || p.captain || false
-        }))
-      }
-      const playersA = buildPlayersInfo(teamAPlayersDb)
-      const playersB = buildPlayersInfo(teamBPlayersDb)
-
-      // Determine server - calculate from events since DB doesn't store serving state
-      // Find the last point event to determine who has serve
-      const pointEvents = allEvents
-        .filter(e => e.type === 'point' && e.setIndex === currentSet.index)
-        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-      // Calculate first serve for current set
-      const set1FirstServe = match.firstServe || 'home'
-      let currentSetFirstServe
-      if (setIndex === 5 && match.set5FirstServe) {
-        currentSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
-      } else if (setIndex === 5) {
-        currentSetFirstServe = set1FirstServe
-      } else {
-        currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-      }
-
-      const servingTeam = pointEvents.length > 0 ? (pointEvents[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
-      const servingA = servingTeam === teamAKey
-
-      // Get server number from position I of serving team's lineup
-      const servingTeamLineup = getLineupForTeam(servingTeam)
-      const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
-
-      // Get sanctions with full details
-      const getSanctionsForTeam = (teamKey) => {
-        return currentSetEvents
-          .filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
-          .map(e => ({
-            player: e.payload?.playerNumber || null,
-            type: e.payload?.type || e.payload?.sanctionType,
-            playerType: e.payload?.playerType || null, // 'player', 'bench', 'libero', 'official'
-            position: e.payload?.position || null,
-            role: e.payload?.role || null,
-            ts: e.ts
-          }))
-      }
-
-      const sanctionsA = getSanctionsForTeam(teamAKey)
-      const sanctionsB = getSanctionsForTeam(teamBKey)
-
-      // Build rich lineup structure with all info for each position
-      const buildRichLineup = (rawLineup, initialLineup, playersDb, subsDetails, sanctions, isServingTeam, captainNum, courtCaptainNum, liberoSubstitution) => {
-        if (!rawLineup) return null
-
-        const backRowPositions = ['I', 'V', 'VI'] // Only back row can have libero
-        const richLineup = {}
-
-        for (const position of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
-          const playerNum = rawLineup[position]
-          if (!playerNum) continue
-
-          const playerNumStr = String(playerNum)
-          const player = playersDb.find(p => String(p.number) === playerNumStr)
-          const isBackRow = backRowPositions.includes(position)
-
-          // Check if this player is a libero
-          const isLibero = player && (player.libero === 'libero1' || player.libero === 'libero2')
-
-          // Find who the libero replaced (from liberoSubstitution tracking, not initial lineup)
-          let replacedNumber = null
-          if (isLibero && liberoSubstitution && String(liberoSubstitution.liberoNumber) === playerNumStr) {
-            replacedNumber = liberoSubstitution.playerNumber
-          }
-
-          // Check if this player was in the initial lineup (original player)
-          const isInInitialLineup = initialLineup && Object.values(initialLineup).some(num => String(num) === playerNumStr)
-
-          // Check if this player came in as a substitute (only true if NOT in initial lineup)
-          // Players who return via reverse substitution should NOT be marked as substituted
-          const subEvent = subsDetails.find(s => String(s.playerIn) === playerNumStr)
-          const isSubstituted = !!subEvent && !isInInitialLineup
-          const substitutedFor = isSubstituted ? Number(subEvent.playerOut) : null
-
-          // Get sanctions for this player
-          const playerSanctions = sanctions.filter(s => String(s.player) === playerNumStr)
-          const hasSanction = playerSanctions.length > 0
-
-          // Check captain status
-          const isCaptain = !!(captainNum && String(captainNum) === playerNumStr)
-          const isCourtCaptain = !!(courtCaptainNum && String(courtCaptainNum) === playerNumStr)
-
-          // Build position data
-          const positionData = {
-            number: Number(playerNum),
-            isSubstituted,
-            hasSanction,
-            isCaptain,
-            isCourtCaptain
-          }
-
-          // Only position I has isServing
-          if (position === 'I') {
-            positionData.isServing = isServingTeam
-          }
-
-          // Only back row positions can have libero
-          if (isBackRow) {
-            positionData.isLibero = isLibero
-            if (isLibero) {
-              positionData.replacedNumber = replacedNumber
-            }
-          }
-
-          // Only add substitutedFor if substituted
-          if (isSubstituted) {
-            positionData.substitutedFor = substitutedFor
-          }
-
-          // Only add sanctions array if has sanctions
-          if (hasSanction) {
-            positionData.sanctions = playerSanctions.map(s => ({
-              type: s.type,
-              ts: s.ts
-            }))
-          }
-
-          richLineup[position] = positionData
-        }
-
-        return Object.keys(richLineup).length > 0 ? richLineup : null
-      }
-
-      // Build rich lineups for both teams
-      const lineupA = buildRichLineup(
-        rawLineupA, initialLineupA, teamAPlayersDb, subsA, sanctionsA,
-        servingA, captainA, courtCaptainA, liberoSubA
-      )
-      const lineupB = buildRichLineup(
-        rawLineupB, initialLineupB, teamBPlayersDb, subsB, sanctionsB,
-        !servingA, captainB, courtCaptainB, liberoSubB
-      )
-
-      // Check if we're in a set interval or timeout
+      // Determine match status from event type
       const isSetInterval = eventType === 'set_end'
       const isTimeout = eventType === 'timeout'
-
-      // Determine match status: timeout > interval > in_progress
       let matchStatus = 'in_progress'
-      if (isTimeout) {
-        matchStatus = 'timeout'
-      } else if (isSetInterval) {
-        matchStatus = 'interval'
-      }
+      if (isTimeout) matchStatus = 'timeout'
+      else if (isSetInterval) matchStatus = 'interval'
 
-      // Upsert to Supabase using A/B model
-      // lineup_a/lineup_b now contain rich nested data per position:
-      // { I: { number, isServing, isLibero, replacedNumber, isSubstituted, substitutedFor, hasSanction, sanctions, isCaptain, isCourtCaptain }, ... }
+      // Map directly from snapshot to Supabase table
       const { error } = await supabase
         .from('match_live_state')
         .upsert({
           match_id: supabaseMatchId,
-          current_set: currentSet.index,
-          // Team A/B info (constant throughout match)
-          team_a_name: teamAName,
-          team_a_short: teamAShort || teamAName?.substring(0, 3).toUpperCase(),
-          team_a_color: teamAColor || '#ef4444',
-          team_b_name: teamBName,
-          team_b_short: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
-          team_b_color: teamBColor || '#3b82f6',
+          current_set: snapshot.currentSetIndex,
+          // Team A/B info (from snapshot)
+          team_a_name: snapshot.teamAName,
+          team_a_short: snapshot.teamAShort,
+          team_a_color: snapshot.teamAColor,
+          team_b_name: snapshot.teamBName,
+          team_b_short: snapshot.teamBShort,
+          team_b_color: snapshot.teamBColor,
           // Scores by team
-          set_score_a: setScoreA,
-          set_score_b: setScoreB,
-          points_a: pointsA,
-          points_b: pointsB,
-          // Which side Team A is on (changes per set)
-          side_a: sideA,
-          // Rich lineups with all position data (captain, libero, subs, sanctions embedded)
-          lineup_a: lineupA,
-          lineup_b: lineupB,
-          // Timeouts and subs (count/details for stats display)
-          timeouts_a: timeoutsA,
-          timeouts_b: timeoutsB,
-          subs_a: subsA.length,  // Just count for display
-          subs_b: subsB.length,
+          set_score_a: snapshot.setScoreA,
+          set_score_b: snapshot.setScoreB,
+          points_a: snapshot.pointsA,
+          points_b: snapshot.pointsB,
+          // Which side Team A is on
+          side_a: snapshot.sideA,
+          // Rich lineups with all position data
+          lineup_a: snapshot.lineupA,
+          lineup_b: snapshot.lineupB,
+          // Timeouts and subs
+          timeouts_a: snapshot.timeoutsA,
+          timeouts_b: snapshot.timeoutsB,
+          subs_a: snapshot.subsA?.length || 0,
+          subs_b: snapshot.subsB?.length || 0,
           // Team-level sanctions (delay warning, improper request - not player-specific)
-          sanctions_a: sanctionsA.filter(s => !s.player).length > 0 ? sanctionsA.filter(s => !s.player) : null,
-          sanctions_b: sanctionsB.filter(s => !s.player).length > 0 ? sanctionsB.filter(s => !s.player) : null,
+          sanctions_a: snapshot.sanctionsA?.filter(s => !s.player).length > 0 ? snapshot.sanctionsA.filter(s => !s.player) : null,
+          sanctions_b: snapshot.sanctionsB?.filter(s => !s.player).length > 0 ? snapshot.sanctionsB.filter(s => !s.player) : null,
+          // Serving team (convert to left/right)
+          serving_team: snapshot.servingTeam === snapshot.teamAKey ? snapshot.sideA : (snapshot.sideA === 'left' ? 'right' : 'left'),
           // Event info
           last_event_type: eventType || null,
           last_event_team: eventTeam || null,
@@ -1578,27 +1629,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           updated_at: new Date().toISOString()
         }, { onConflict: 'match_id' })
 
-      // Debug: log what we're sending
-      console.log('[LiveState] Sending to Supabase:', {
-        points: `${pointsA}-${pointsB}`,
-        set: currentSet.index,
-        lineupA: lineupA,
-        lineupB: lineupB,
-        sanctionsA: sanctionsA.filter(s => !s.player),
-        sanctionsB: sanctionsB.filter(s => !s.player),
-        subsA: subsA.length,
-        subsB: subsB.length
-      })
-
       if (error) {
         console.error('[LiveState] Sync error:', error)
       } else {
-        console.log('[LiveState] Synced successfully - points:', pointsA, '-', pointsB, 'set:', setIndex)
+        console.log('[LiveState] Synced successfully - points:', snapshot.pointsA, '-', snapshot.pointsB, 'set:', snapshot.currentSetIndex)
       }
     } catch (err) {
       console.error('[LiveState] Exception:', err)
     }
-  }, [matchId]) // No data dependency - we query fresh from IndexedDB
+  }, [matchId, captureFullStateSnapshot])
 
   // Check connection statuses
   const checkConnectionStatuses = useCallback(async () => {
@@ -1812,7 +1851,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         action: 'insert',
         payload: {
           external_id: String(setId),
-          match_id: match?.externalId || String(matchId),
+          match_id: match?.seed_key || String(matchId),
           index: nextIndex,
           home_points: 0,
           away_points: 0,
@@ -3143,18 +3182,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Simple timestamp for reference (not used for ordering)
       const timestamp = options.timestamp ? new Date(options.timestamp) : new Date()
 
-      // Capture state BEFORE the event (for undo purposes)
-      const stateBefore = getStateSnapshot()
-
+      // Add event first (without snapshot - we need the event to exist to capture state)
       const eventId = await db.events.add({
         matchId,
         setIndex: actualSetIndex,
         type,
         payload,
         ts: timestamp.toISOString(), // Store as ISO string for reference
-        seq: nextSeq, // Use sequence for ordering
-        stateBefore // Save state before this event for easy undo
+        seq: nextSeq // Use sequence for ordering
       })
+
+      // Capture FULL state snapshot AFTER the event is applied
+      // This is the key to the snapshot-based undo system
+      const stateSnapshot = await captureFullStateSnapshot()
+
+      // Update the event with the snapshot
+      if (stateSnapshot) {
+        await db.events.update(eventId, { stateSnapshot })
+      }
 
       // Log the event with state snapshots
       debugLogger.log('EVENT_CREATED', {
@@ -3162,8 +3207,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         type,
         payload,
         seq: nextSeq,
-        setIndex: actualSetIndex
-      }, stateBefore)
+        setIndex: actualSetIndex,
+        hasSnapshot: !!stateSnapshot
+      })
       
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
@@ -3328,7 +3374,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             serve_player: serverNumber,
             // Score AFTER this event (Team A/B model)
             score_a: scoreA,
-            score_b: scoreB
+            score_b: scoreB,
+            // Full state snapshot for snapshot-based undo/restore
+            state_snapshot: stateSnapshot
           },
           ts: Date.now(),
           status: 'queued'
@@ -3366,7 +3414,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Return the sequence number so it can be used for related events
       return nextSeq
     },
-    [data?.set, matchId, getNextSeq, getNextSubSeq, getStateSnapshot, syncToReferee, syncLiveStateToSupabase]
+    [data?.set, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
 
   const checkSetEnd = useCallback(async (set, homePoints, awayPoints) => {
@@ -3602,8 +3650,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
 
       // CRITICAL: Query fresh current set from IndexedDB to avoid stale data after set transitions
+      // Use same deduplication logic as useLiveQuery: prefer highest ID for duplicate indices
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-      const freshCurrentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
+      const setsByIndex = new Map()
+      for (const set of allSets) {
+        const existing = setsByIndex.get(set.index)
+        if (!existing || set.id > existing.id) {
+          setsByIndex.set(set.index, set)
+        }
+      }
+      const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+      const freshCurrentSet = dedupedSets.find(s => !s.finished) || dedupedSets[dedupedSets.length - 1]
       if (!freshCurrentSet) return
 
       const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
@@ -4634,15 +4691,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Use separate queries since compound index may not exist
       const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
       const existingSet = allSetsForMatch.find(s => s.index === newSetIndex)
-      
 
-      const newSetId = await db.sets.add({
-        matchId,
-        index: newSetIndex,
-        homePoints: 0,
-        awayPoints: 0,
-        finished: false
-      })
+      let newSetId
+      if (existingSet) {
+        // Reset existing set instead of creating duplicate
+        await db.sets.update(existingSet.id, { finished: false, homePoints: 0, awayPoints: 0 })
+        newSetId = existingSet.id
+      } else {
+        newSetId = await db.sets.add({
+          matchId,
+          index: newSetIndex,
+          homePoints: 0,
+          awayPoints: 0,
+          finished: false
+        })
+      }
 
       // Get match data
       const match = await db.matches.get(matchId)
@@ -4662,7 +4725,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           action: 'insert',
           payload: {
             external_id: String(newSetId),
-            match_id: match?.externalId || String(matchId),
+            match_id: match?.seed_key || String(matchId),
             index: setIndex + 1,
             home_points: 0,
             away_points: 0,
@@ -4730,7 +4793,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           action: 'insert',
           payload: {
             external_id: String(newSetId),
-            match_id: match?.externalId || String(matchId),
+            match_id: match?.seed_key || String(matchId),
             index: setIndex,
             home_points: 0,
             away_points: 0,
@@ -5170,653 +5233,83 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return false
   }, [data?.events, data?.set, getActionDescription])
 
+  // NEW SNAPSHOT-BASED UNDO SYSTEM
+  // Instead of complex per-event-type logic, we simply:
+  // 1. Delete all events with the same base seq
+  // 2. Restore state from the previous event's snapshot
   const handleUndo = useCallback(async () => {
     if (!undoConfirm || !data?.set) {
       setUndoConfirm(null)
       return
     }
 
-    // Debug log: undo started
-    debugLogger.log('UNDO_STARTED', {
-      eventType: undoConfirm.event?.type,
-      eventPayload: undoConfirm.event?.payload,
-      eventSeq: undoConfirm.event?.seq
-    }, getStateSnapshot())
-
     const lastEvent = undoConfirm.event
     const lastEventSeq = lastEvent.seq || 0
-    const baseSeq = Math.floor(lastEventSeq) // Get integer part (e.g., 1 from 1.1 or 1.2)
-    // Get the next sequence number ONCE at the start, before any deletions
-    // This ensures consistent sequential IDs even when multiple events are added during undo
-    let nextSeqCounter = await getNextSeq()
-    const getNextSeqInUndo = () => nextSeqCounter++
+    const baseSeq = Math.floor(lastEventSeq)
 
-    // Find and delete ALL events with the same base ID (1, 1.1, 1.2, etc.)
-    const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-    const eventsToDelete = allEvents.filter(e => {
-      const eSeq = e.seq || 0
-      return Math.floor(eSeq) === baseSeq
-    })
-
-    // Delete all related events
-    for (const eventToDelete of eventsToDelete) {
-      await db.events.delete(eventToDelete.id)
-    }
-    
-    // Mark that we've already deleted the main event
-    let eventAlreadyDeleted = true
+    console.log('[handleUndo] Starting snapshot-based undo for event:', lastEvent.type, 'seq:', lastEventSeq)
 
     try {
-    // Skip rotation lineups (they don't have isInitial, fromSubstitution, or liberoSubstitution)
-    if (lastEvent.type === 'lineup') {
-      const hasInitial = lastEvent.payload?.isInitial === true
-      const hasSubstitution = lastEvent.payload?.fromSubstitution === true
-      const hasLiberoSub = lastEvent.payload?.liberoSubstitution !== null && lastEvent.payload?.liberoSubstitution !== undefined
-      // Only skip if it's a pure rotation lineup
-      if (!hasInitial && !hasSubstitution && !hasLiberoSub) {
-        // Find the next non-rotation event to undo
-        const allEvents = data.events.sort((a, b) => new Date(b.ts) - new Date(a.ts))
-        const nextEvent = allEvents.find(e => {
-          if (e.id === lastEvent.id) return false
-          if (e.type === 'lineup') {
-            const eHasInitial = e.payload?.isInitial === true
-            const eHasSubstitution = e.payload?.fromSubstitution === true
-            // Skip libero substitution lineups and rotation lineups
-            if (!eHasInitial && !eHasSubstitution) return false
-          }
-          return true
-        })
-        
-        if (nextEvent) {
-          const description = getActionDescription(nextEvent)
-          if (description && description !== 'Unknown action' && description.trim() !== '') {
-            setUndoConfirm({ event: nextEvent, description })
-            return
-          }
-        }
-        // No other events to undo
-        setUndoConfirm(null)
-        return
-      }
-    }
-    
-    // If it's a point, decrease the score and handle rotation if needed
-    if (lastEvent.type === 'point' && lastEvent.payload?.team) {
-      const teamKey = lastEvent.payload.team
-      const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
-      const currentPoints = data.set[field]
-        
-        // Check if this is set 5 and we're undoing a point that triggered court switch at 8 points
-        const is5thSet = data.set.index === 5
-        const wasAt8Points = currentPoints === 8
-        if (is5thSet && wasAt8Points && data.match?.set5CourtSwitched) {
-          // Undo the court switch
-          await db.matches.update(matchId, { set5CourtSwitched: false })
-        }
-        
-      if (currentPoints > 0) {
-        await db.sets.update(data.set.id, {
-          [field]: currentPoints - 1
-        })
-      }
+      // 1. Find and delete ALL events with the same base seq (main + sub-events)
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const eventsToDelete = allEvents.filter(e => Math.floor(e.seq || 0) === baseSeq)
 
-      // Note: Rotation lineup and libero_exit events are already deleted above
-      // (they have the same base ID as the point, so they were deleted with all related events)
-      // Point event is already deleted above (with all related events)
-
-      // Also delete the rally_start event that preceded this point
-      // The rally_start has a different sequence ID but should be undone with the point
-      // Find the most recent rally_start before this point
-      const pointSeq = lastEvent.seq || 0
-      const rallyStartEvent = data.events
-        .filter(e =>
-          e.type === 'rally_start' &&
-          e.setIndex === data.set.index &&
-          (e.seq || 0) < pointSeq
-        )
-        .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0] // Most recent rally_start before the point
-
-      if (rallyStartEvent) {
-        await db.events.delete(rallyStartEvent.id)
-      }
-    }
-    
-    // If it's an initial lineup, delete it (players go back to bench)
-    if (lastEvent.type === 'lineup' && lastEvent.payload?.isInitial === true) {
-      // Simply delete the initial lineup event
-      // This will cause players to go back to the bench
-      await db.events.delete(lastEvent.id)
-      eventAlreadyDeleted = true
-    }
-    
-    // If it's a substitution, revert the lineup change
-    if (lastEvent.type === 'substitution' && lastEvent.payload?.team && lastEvent.payload?.position) {
-      const team = lastEvent.payload.team
-      const position = lastEvent.payload.position
-      const playerOut = lastEvent.payload.playerOut
-      
-      // Find the lineup event that was created with this substitution
-      const lineupEvents = data.events
-        .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
-        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-      
-      if (lineupEvents.length > 1) {
-        // Remove the most recent lineup (the one with the substitution)
-        const mostRecentLineup = lineupEvents[0]
-        // Preserve liberoSubstitution from the lineup we're deleting (if libero is on court)
-        const existingLiberoSub = mostRecentLineup.payload?.liberoSubstitution || null
-        await db.events.delete(mostRecentLineup.id)
-
-        // Get the previous lineup and restore it
-        const previousLineup = lineupEvents[1]?.payload?.lineup || {}
-        const restoredLineup = { ...previousLineup }
-        restoredLineup[position] = String(playerOut)
-
-        // Save the restored lineup
-        const restoredSubSeq = getNextSeqInUndo()
-        const restoredPayload = { team, lineup: restoredLineup, fromSubstitution: true }
-        if (existingLiberoSub) {
-          restoredPayload.liberoSubstitution = existingLiberoSub
-        }
-        await db.events.add({
-          matchId,
-          setIndex: data.set.index,
-          type: 'lineup',
-          payload: restoredPayload,
-          ts: new Date().toISOString(),
-          seq: restoredSubSeq
-        })
-      }
-    }
-    
-    // If it's a libero entry, revert the lineup change
-    if (lastEvent.type === 'libero_entry' && lastEvent.payload?.team && lastEvent.payload?.position) {
-      const team = lastEvent.payload.team
-      const position = lastEvent.payload.position
-      const playerOut = lastEvent.payload.playerOut
-      const liberoEntryTimestamp = new Date(lastEvent.ts)
-
-      // Find the lineup event that was created with this libero entry
-      // Look for lineup events with liberoSubstitution that matches this libero entry
-      const liberoNumber = lastEvent.payload?.liberoIn
-
-      // Debug: log what we're looking for
-      debugLogger.log('UNDO_LIBERO_ENTRY_SEARCH', {
-        team,
-        position,
-        playerOut,
-        liberoNumber,
-        liberoEntryTimestamp: liberoEntryTimestamp.toISOString(),
-        totalEvents: data.events.length
-      })
-
-      const liberoLineupEvents = data.events
-        .filter(e => {
-          const matches = e.type === 'lineup' &&
-            e.payload?.team === team &&
-            e.setIndex === data.set.index &&
-            e.payload?.liberoSubstitution &&
-            String(e.payload.liberoSubstitution.liberoNumber) === String(liberoNumber) &&
-            e.payload.liberoSubstitution.position === position
-          // Debug: log each lineup event being checked
-          if (e.type === 'lineup' && e.payload?.team === team) {
-            console.log('[UNDO] Checking lineup event:', {
-              id: e.id,
-              seq: e.seq,
-              hasLiberoSub: !!e.payload?.liberoSubstitution,
-              liberoNumber: e.payload?.liberoSubstitution?.liberoNumber,
-              position: e.payload?.liberoSubstitution?.position,
-              matches
-            })
-          }
-          return matches
-        })
-        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-
-      debugLogger.log('UNDO_LIBERO_ENTRY_FOUND', {
-        foundCount: liberoLineupEvents.length,
-        foundEvents: liberoLineupEvents.map(e => ({ id: e.id, seq: e.seq }))
-      })
-
-      if (liberoLineupEvents.length > 0) {
-        // Remove the lineup with the libero entry
-        const liberoLineupEvent = liberoLineupEvents[0]
-        console.log('[UNDO] Deleting libero lineup event:', liberoLineupEvent.id, 'seq:', liberoLineupEvent.seq)
-        await db.events.delete(liberoLineupEvent.id)
-        
-        // Find the most recent complete lineup event BEFORE the libero entry
-        // Get all lineup events for this team in this set, sorted by time (oldest first)
-        const allLineupEvents = data.events
-          .filter(e => 
-            e.type === 'lineup' && 
-            e.payload?.team === team && 
-            e.setIndex === data.set.index &&
-            e.id !== liberoLineupEvent.id // Exclude the one we just deleted
-          )
-          .sort((a, b) => new Date(a.ts) - new Date(b.ts)) // Oldest first
-        
-        // Find the lineup event that was created before the libero entry event timestamp
-        // Get the most recent one before libero entry
-        const previousLineupEvents = allLineupEvents.filter(e => new Date(e.ts) < liberoEntryTimestamp)
-        const previousLineupEvent = previousLineupEvents.length > 0 
-          ? previousLineupEvents[previousLineupEvents.length - 1] // Most recent before libero entry
-          : null
-        
-        if (previousLineupEvent && previousLineupEvent.payload?.lineup) {
-          // Restore the complete previous lineup
-          const previousLineup = previousLineupEvent.payload.lineup
-          // Ensure we have all 6 positions
-          const restoredLineup = {
-            I: previousLineup.I || '',
-            II: previousLineup.II || '',
-            III: previousLineup.III || '',
-            IV: previousLineup.IV || '',
-            V: previousLineup.V || '',
-            VI: previousLineup.VI || ''
-          }
-          // Restore the player at the position where libero was
-          restoredLineup[position] = String(playerOut)
-          
-          // Save the restored complete lineup
-          const restoredLiberoEntrySeq = getNextSeqInUndo()
-          await db.events.add({
-            matchId,
-            setIndex: data.set.index,
-            type: 'lineup',
-            payload: {
-              team,
-              lineup: restoredLineup,
-              fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-              liberoSubstitution: null // Explicitly clear libero substitution
-            },
-            ts: new Date().toISOString(),
-            seq: restoredLiberoEntrySeq
-          })
-        } else {
-          // No previous lineup found, get the current most recent lineup (after deletion) and restore
-          const currentLineupEvents = data.events
-            .filter(e => 
-              e.type === 'lineup' && 
-              e.payload?.team === team && 
-              e.setIndex === data.set.index &&
-              e.id !== liberoLineupEvent.id // Exclude the one we just deleted
-            )
-            .sort((a, b) => new Date(b.ts) - new Date(a.ts))
-          
-          if (currentLineupEvents.length > 0 && currentLineupEvents[0].payload?.lineup) {
-            const currentLineup = currentLineupEvents[0].payload.lineup
-            // Ensure we have all 6 positions
-            const restoredLineup = {
-              I: currentLineup.I || '',
-              II: currentLineup.II || '',
-              III: currentLineup.III || '',
-              IV: currentLineup.IV || '',
-              V: currentLineup.V || '',
-              VI: currentLineup.VI || ''
-            }
-            // Restore the player at the position where libero was
-            restoredLineup[position] = String(playerOut)
-            
-            // Save the restored complete lineup
-            const restoredLiberoEntrySeq2 = getNextSeqInUndo()
-            await db.events.add({
-              matchId,
-              setIndex: data.set.index,
-              type: 'lineup',
-              payload: {
-                team,
-                lineup: restoredLineup,
-                fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-                liberoSubstitution: null // Explicitly clear libero substitution
-              },
-              ts: new Date().toISOString(),
-              seq: restoredLiberoEntrySeq2
-            })
-          }
+      // For point events, also delete the preceding rally_start
+      if (lastEvent.type === 'point') {
+        const rallyStartEvent = allEvents
+          .filter(e => e.type === 'rally_start' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
+          .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+        if (rallyStartEvent && !eventsToDelete.some(e => e.id === rallyStartEvent.id)) {
+          eventsToDelete.push(rallyStartEvent)
         }
       }
-    }
-    
-    // Track if we've already deleted the event (to avoid double deletion)
-    let eventAlreadyDeleted = false
-    
-    // If it's a rally_start, delete it and all subsequent rally_start events (duplicates)
-    if (lastEvent.type === 'rally_start') {
-      const rallyStartTimestamp = new Date(lastEvent.ts)
 
-      // Delete this rally_start
-      await db.events.delete(lastEvent.id)
-      eventAlreadyDeleted = true
-
-      // Delete all other rally_start events that came after this one (duplicates)
-      const allRallyStarts = data.events.filter(e =>
-        e.type === 'rally_start' &&
-        e.setIndex === data.set.index &&
-        e.id !== lastEvent.id &&
-        new Date(e.ts) >= rallyStartTimestamp
-      )
-      for (const duplicateRallyStart of allRallyStarts) {
-        await db.events.delete(duplicateRallyStart.id)
-      }
-
-      // If this was the first rally_start (oldest), also undo set_start
-      const allRallyStartsSorted = data.events
-        .filter(e => e.type === 'rally_start' && e.setIndex === data.set.index && e.id !== lastEvent.id)
-        .sort((a, b) => new Date(a.ts) - new Date(b.ts)) // Oldest first
-
-      // If there are no other rally_start events, this was the first one
-      if (allRallyStartsSorted.length === 0 ||
-          (allRallyStartsSorted.length > 0 && new Date(allRallyStartsSorted[0].ts) > rallyStartTimestamp)) {
-        // Find the set_start event for this set
-        const setStartEvent = data.events.find(e =>
-          e.type === 'set_start' &&
-          e.setIndex === data.set.index
-        )
-        if (setStartEvent) {
-          await db.events.delete(setStartEvent.id)
+      console.log('[handleUndo] Deleting', eventsToDelete.length, 'events')
+      for (const e of eventsToDelete) {
+        await db.events.delete(e.id)
+        // Also remove from sync_queue if pending
+        const syncItems = await db.sync_queue.where('status').equals('queued').toArray()
+        const matchingSyncItem = syncItems.find(s => s.payload?.external_id === String(e.id))
+        if (matchingSyncItem) {
+          await db.sync_queue.delete(matchingSyncItem.id)
         }
       }
-    }
 
-    // If it's a set_start, delete it
-    if (lastEvent.type === 'set_start') {
-      await db.events.delete(lastEvent.id)
-      eventAlreadyDeleted = true
-    }
-    
-    // If it's a replay, delete it
-    if (lastEvent.type === 'replay') {
-      await db.events.delete(lastEvent.id)
-      eventAlreadyDeleted = true
-    }
-    
-    // If it's a set_end, undo the set completion
-    if (lastEvent.type === 'set_end') {
-      // Mark the set as not finished
-      await db.sets.update(data.set.id, { finished: false })
-      
-      // Delete the next set if it was created
-      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-      const nextSet = allSets.find(s => s.index === data.set.index + 1)
-      if (nextSet) {
-        // Delete all events for the next set
-        await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).delete()
-        // Delete the next set
-        await db.sets.delete(nextSet.id)
-      }
-      
-      // Update match status back to 'live' if it was set to 'final'
-      if (data.match?.status === 'final') {
+      // 2. Find the previous event's snapshot
+      const remainingEvents = allEvents
+        .filter(e => Math.floor(e.seq || 0) < baseSeq)
+        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+      const previousEvent = remainingEvents[0]
+
+      // 3. Restore state from the previous event's snapshot
+      if (previousEvent?.stateSnapshot) {
+        console.log('[handleUndo] Restoring from snapshot, points:', previousEvent.stateSnapshot.pointsA, '-', previousEvent.stateSnapshot.pointsB)
+        await restoreStateFromSnapshot(previousEvent.stateSnapshot)
+      } else {
+        // No previous event with snapshot - restore to initial state (score 0-0)
+        console.log('[handleUndo] No previous snapshot, restoring to initial state')
+        const currentSet = await db.sets.where({ matchId }).and(s => s.index === data.set.index).first()
+        if (currentSet) {
+          await db.sets.update(currentSet.id, { homePoints: 0, awayPoints: 0, finished: false })
+        }
+        // Reset match status to live
         await db.matches.update(matchId, { status: 'live' })
       }
-      
-      await db.events.delete(lastEvent.id)
-      eventAlreadyDeleted = true
-    }
-    
-    // If it's a libero exit, revert the lineup change
-    if (lastEvent.type === 'libero_exit' && lastEvent.payload?.team && lastEvent.payload?.position) {
-      const team = lastEvent.payload.team
-      const position = lastEvent.payload.position
-      const liberoOut = lastEvent.payload.liberoOut
-      const playerIn = lastEvent.payload.playerIn
-      const liberoExitTimestamp = new Date(lastEvent.ts)
-      
-      // Find the lineup event that was created with this libero exit (the one without libero substitution)
-      const exitLineupEvents = data.events
-        .filter(e => 
-          e.type === 'lineup' && 
-          e.payload?.team === team && 
-          e.setIndex === data.set.index &&
-          (!e.payload?.liberoSubstitution || e.payload.liberoSubstitution === null) &&
-          new Date(e.ts) <= liberoExitTimestamp &&
-          new Date(e.ts) > new Date(liberoExitTimestamp.getTime() - 5000) // Within 5 seconds of exit
-        )
-        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-      
-      if (exitLineupEvents.length > 0) {
-        // Remove the lineup with the libero exit
-        const exitLineupEvent = exitLineupEvents[0]
-        await db.events.delete(exitLineupEvent.id)
-        
-        // Find the most recent lineup event BEFORE the libero exit that had the libero
-        const allLineupEvents = data.events
-          .filter(e => 
-            e.type === 'lineup' && 
-            e.payload?.team === team && 
-            e.setIndex === data.set.index &&
-            e.id !== exitLineupEvent.id
-          )
-          .sort((a, b) => new Date(a.ts) - new Date(b.ts))
-        
-        const previousLineupEvents = allLineupEvents.filter(e => new Date(e.ts) < liberoExitTimestamp)
-        const previousLineupEvent = previousLineupEvents.length > 0 
-          ? previousLineupEvents[previousLineupEvents.length - 1]
-          : null
-        
-        if (previousLineupEvent && previousLineupEvent.payload?.lineup) {
-          // Restore the complete previous lineup (which had the libero)
-          const previousLineup = previousLineupEvent.payload.lineup
-          const restoredLineup = {
-            I: previousLineup.I || '',
-            II: previousLineup.II || '',
-            III: previousLineup.III || '',
-            IV: previousLineup.IV || '',
-            V: previousLineup.V || '',
-            VI: previousLineup.VI || ''
-          }
-          // Restore the libero at the position
-          restoredLineup[position] = String(liberoOut)
-          
-          // Restore the libero substitution info from the previous lineup
-          const previousLiberoSub = previousLineupEvent.payload?.liberoSubstitution
-          
-          // Save the restored complete lineup
-          const restoredLiberoExitSeq = getNextSeqInUndo()
-          await db.events.add({
-            matchId,
-            setIndex: data.set.index,
-            type: 'lineup',
-            payload: {
-              team,
-              lineup: restoredLineup,
-              fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-              liberoSubstitution: previousLiberoSub || null
-            },
-            ts: new Date().toISOString(),
-            seq: restoredLiberoExitSeq
-          })
+
+      // Handle special cases for set_end undo
+      if (lastEvent.type === 'set_end') {
+        // Delete the next set if it was created
+        const allSets = await db.sets.where({ matchId }).toArray()
+        const nextSet = allSets.find(s => s.index === data.set.index + 1)
+        if (nextSet) {
+          await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).delete()
+          await db.sets.delete(nextSet.id)
         }
       }
-    }
-    
-    // If it's a libero exchange, revert the lineup change
-    if (lastEvent.type === 'libero_exchange' && lastEvent.payload?.team && lastEvent.payload?.position) {
-      const team = lastEvent.payload.team
-      const position = lastEvent.payload.position
-      const liberoOut = lastEvent.payload.liberoOut
-      const liberoIn = lastEvent.payload.liberoIn
-      const liberoExchangeTimestamp = new Date(lastEvent.ts)
-      
-      // Find the lineup event that was created with this libero exchange
-      const exchangeLineupEvents = data.events
-        .filter(e => 
-          e.type === 'lineup' && 
-          e.payload?.team === team && 
-          e.setIndex === data.set.index &&
-          e.payload?.liberoSubstitution &&
-          String(e.payload.liberoSubstitution.liberoNumber) === String(liberoIn) &&
-          e.payload.liberoSubstitution.position === position &&
-          new Date(e.ts) <= liberoExchangeTimestamp &&
-          new Date(e.ts) > new Date(liberoExchangeTimestamp.getTime() - 5000) // Within 5 seconds
-        )
-        .sort((a, b) => new Date(b.ts) - new Date(a.ts))
-      
-      if (exchangeLineupEvents.length > 0) {
-        // Remove the lineup with the libero exchange
-        const exchangeLineupEvent = exchangeLineupEvents[0]
-        await db.events.delete(exchangeLineupEvent.id)
-        
-        // Find the most recent lineup event BEFORE the libero exchange
-        const allLineupEvents = data.events
-          .filter(e => 
-            e.type === 'lineup' && 
-            e.payload?.team === team && 
-            e.setIndex === data.set.index &&
-            e.id !== exchangeLineupEvent.id
-          )
-          .sort((a, b) => new Date(a.ts) - new Date(b.ts))
-        
-        const previousLineupEvents = allLineupEvents.filter(e => new Date(e.ts) < liberoExchangeTimestamp)
-        const previousLineupEvent = previousLineupEvents.length > 0 
-          ? previousLineupEvents[previousLineupEvents.length - 1]
-          : null
-        
-        if (previousLineupEvent && previousLineupEvent.payload?.lineup) {
-          // Restore the complete previous lineup (which had the previous libero)
-          const previousLineup = previousLineupEvent.payload.lineup
-          const restoredLineup = {
-            I: previousLineup.I || '',
-            II: previousLineup.II || '',
-            III: previousLineup.III || '',
-            IV: previousLineup.IV || '',
-            V: previousLineup.V || '',
-            VI: previousLineup.VI || ''
-          }
-          // Restore the previous libero at the position
-          restoredLineup[position] = String(liberoOut)
-          
-          // Restore the libero substitution info from the previous lineup
-          const previousLiberoSub = previousLineupEvent.payload?.liberoSubstitution
-          if (previousLiberoSub) {
-            // Update to use the previous libero
-            const restoredLiberoSub = {
-              ...previousLiberoSub,
-              liberoNumber: liberoOut,
-              liberoType: lastEvent.payload?.liberoOutType
-            }
-            
-            // Save the restored complete lineup
-            const restoredExchangeSeq = getNextSeqInUndo()
-            await db.events.add({
-              matchId,
-              setIndex: data.set.index,
-              type: 'lineup',
-              payload: {
-                team,
-                lineup: restoredLineup,
-                fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-                liberoSubstitution: restoredLiberoSub
-              },
-              ts: new Date().toISOString(),
-              seq: restoredExchangeSeq
-            })
-          } else {
-            // No previous libero sub, just restore the lineup
-            const restoredExchangeSeq2 = getNextSeqInUndo()
-            await db.events.add({
-              matchId,
-              setIndex: data.set.index,
-              type: 'lineup',
-              payload: {
-                team,
-                lineup: restoredLineup,
-                fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-                liberoSubstitution: null
-              },
-              ts: new Date().toISOString(),
-              seq: restoredExchangeSeq2
-            })
-          }
-        }
-      }
-    }
-    
-    // If it's a libero_redesignation, revert player libero flags in database
-    if (lastEvent.type === 'libero_redesignation' && lastEvent.payload?.team) {
-      const team = lastEvent.payload.team
-      const unableLiberoNumber = lastEvent.payload?.unableLiberoNumber
-      const unableLiberoType = lastEvent.payload?.unableLiberoType // Original type: 'libero1' or 'libero2'
-      const newLiberoNumber = lastEvent.payload?.newLiberoNumber
 
-      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-
-      // Revert the old libero - change from 'unable' back to original type
-      const oldLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(unableLiberoNumber))
-      if (oldLiberoPlayer?.id && unableLiberoType) {
-        await db.players.update(oldLiberoPlayer.id, { libero: unableLiberoType })
-      }
-
-      // Revert the new player - remove 'redesignated' flag (set to empty string)
-      const newLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(newLiberoNumber))
-      if (newLiberoPlayer?.id) {
-        await db.players.update(newLiberoPlayer.id, { libero: '' })
-      }
-
-      // Also delete the associated libero_unable event (logged just before redesignation)
-      const unableEvents = data.events?.filter(e =>
-        e.type === 'libero_unable' &&
-        e.payload?.team === team &&
-        e.payload?.liberoNumber === unableLiberoNumber
-      ) || []
-      for (const unableEvent of unableEvents) {
-        await db.events.delete(unableEvent.id)
-      }
-
-      // Remove remarks about redesignation from match
-      const currentRemarks = data?.match?.remarks || ''
-      const remarkPattern = new RegExp(`\\n?Set \\d+, Team [AB], Time \\d{2}:\\d{2}, Player ${newLiberoNumber} re-designated as Libero \\(replacing ${unableLiberoNumber}\\)`, 'g')
-      const cleanedRemarks = currentRemarks.replace(remarkPattern, '').trim()
-      if (cleanedRemarks !== currentRemarks) {
-        await db.matches.update(matchId, { remarks: cleanedRemarks })
-      }
-    }
-
-    // If it's a libero_unable that was manually declared (not part of redesignation), just delete the event
-    // The event deletion happens at the start, so no additional action needed here
-
-    // If it's a sanction, clear the sanction flag from the match
-    if (lastEvent.type === 'sanction' && lastEvent.payload?.team && lastEvent.payload?.type) {
-      const teamKey = lastEvent.payload.team
-      const sanctionType = lastEvent.payload.type
-      const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
-
-      // Clear the sanction flag for improper_request and delay_warning
-      // Use team key (Home/Away) to match how sanctions are stored
-      if (sanctionType === 'improper_request' || sanctionType === 'delay_warning') {
-        const currentSanctions = data.match?.sanctions || {}
-        const updatedSanctions = { ...currentSanctions }
-        const flagKey = `${sanctionType === 'improper_request' ? 'improperRequest' : 'delayWarning'}${teamKeyCapitalized}`
-        delete updatedSanctions[flagKey]
-
-        await db.matches.update(matchId, {
-          sanctions: updatedSanctions
-        })
-      }
-      // Sanction event will be deleted at the end of the function
-    }
-    
-    // All events with the same base ID have already been deleted at the start
-    // No need to delete again here
-    
-    // Also remove from sync_queue if it exists
-    // Note: payload.type is not indexed, so we filter in memory
-    const allSyncItems = await db.sync_queue
-      .where('status')
-      .equals('queued')
-      .toArray()
-    
-    const syncItems = allSyncItems.filter(item => 
-      item.payload?.type === lastEvent.type && 
-      item.payload?.set_index === lastEvent.setIndex
-    )
-    
-    if (syncItems.length > 0) {
-      const lastSyncItem = syncItems[syncItems.length - 1]
-      await db.sync_queue.delete(lastSyncItem.id)
-    }
     } catch (error) {
-      // Error during undo - silently handle
+      console.error('[handleUndo] Error:', error)
     } finally {
       // Always close the modal
       setUndoConfirm(null)
@@ -5824,7 +5317,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
     }
-  }, [undoConfirm, data?.events, data?.set, data?.match, matchId, leftIsHome, getActionDescription, getNextSeq, syncToReferee, syncLiveStateToSupabase])
+  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, syncToReferee, syncLiveStateToSupabase])
+
+  // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
+  // by the snapshot-based undo system above. Keeping this comment for reference.
+  // Previously there were ~600 lines of event-specific undo handlers for:
+  // - libero_entry, libero_exit, libero_exchange, libero_redesignation
+  // - substitution, timeout, sanction, set_end, rally_start, etc.
+  // Now all handled by simply restoring the previous event's stateSnapshot.
 
   const cancelUndo = useCallback(() => {
     setUndoConfirm(null)

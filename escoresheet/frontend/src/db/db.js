@@ -181,4 +181,19 @@ db.version(12).stores({
   })
 })
 
+// Version 13: Add stateSnapshot to events for snapshot-based undo system
+// Each event now stores a full state snapshot AFTER the event is applied
+// This enables trivial undo (just restore previous snapshot) instead of complex per-event logic
+db.version(13).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
 

@@ -68,10 +68,19 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
     }
   }, [team])
 
+  // Handle match deletion - navigate back
+  const handleMatchDeleted = useCallback(() => {
+    console.log('[RosterSetup] Match deleted, navigating back')
+    if (onBack) {
+      onBack()
+    }
+  }, [onBack])
+
   // Use Supabase Realtime as primary connection, WebSocket as fallback
   const { isConnected, activeConnection } = useRealtimeConnection({
     matchId: matchId !== -1 ? matchId : null, // Disable for test mode
     onData: updateFromMatchData,
+    onDeleted: handleMatchDeleted,
     enabled: matchId && matchId !== -1
   })
 
