@@ -467,11 +467,12 @@ export default function MatchEnd({ matchId, onGoHome }) {
     ? new Date(finishedSets[finishedSets.length - 1].endTime)
     : null
 
+  // Use UTC to match stored values - times are stored as UTC
   const matchStart = matchStartDate
-    ? matchStartDate.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    ? `${String(matchStartDate.getUTCHours()).padStart(2, '0')}:${String(matchStartDate.getUTCMinutes()).padStart(2, '0')}`
     : ''
   const matchEndTime = matchEndDate
-    ? matchEndDate.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    ? `${String(matchEndDate.getUTCHours()).padStart(2, '0')}:${String(matchEndDate.getUTCMinutes()).padStart(2, '0')}`
     : ''
 
   // Calculate duration as matchEnd - matchStart

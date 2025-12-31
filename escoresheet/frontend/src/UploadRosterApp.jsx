@@ -765,11 +765,7 @@ export default function UploadRosterApp() {
       if (activeConnection === 'supabase' && supabase && selectedMatch?.external_id) {
         console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
 
-        // Build update object with pending roster and signatures
-        // Legacy column names (keep during transition)
-        const coachSigKey = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
-        const captainSigKey = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
-        // NEW: JSONB signature keys
+        // JSONB signature keys
         const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
         const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
 
@@ -782,13 +778,11 @@ export default function UploadRosterApp() {
         // Build connections JSONB partial update for pending roster
         const pendingRosterJsonKey = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
 
-        // Also save signatures directly to main signature columns and JSONB
+        // Save signatures to JSONB
         if (coachSignature) {
-          supabaseUpdate[coachSigKey] = coachSignature
           signaturesUpdate[coachSigJsonKey] = coachSignature
         }
         if (captainSignature) {
-          supabaseUpdate[captainSigKey] = captainSignature
           signaturesUpdate[captainSigJsonKey] = captainSignature
         }
 
@@ -797,7 +791,7 @@ export default function UploadRosterApp() {
           .from('matches')
           .select('signatures, connections')
           .eq('external_id', selectedMatch.external_id)
-          .single()
+          .maybeSingle()
 
         // Update signatures JSONB if we have signature updates
         if (Object.keys(signaturesUpdate).length > 0) {
@@ -822,7 +816,7 @@ export default function UploadRosterApp() {
           console.error('[Roster] Supabase write error:', error)
           // Fall back to server
         } else {
-          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', { coachSigKey, captainSigKey, signaturesUpdate })
+          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', signaturesUpdate)
         }
       }
 

@@ -151,9 +151,6 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   const [away, setAway] = useState('Away')
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
-  // Colors are derived from match - no local state (can't change in CoinToss)
-  const homeColor = match?.homeColor || '#ef4444'
-  const awayColor = match?.awayColor || '#3b82f6'
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -327,14 +324,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               [benchKey]: bench || []
             })
             .eq('external_id', match.seed_key)
-            .select('id, coin_toss_team_a')
+            .select('id')
             .single()
 
           console.log(`[CoinToss] Roster synced for ${teamType} team (Supabase)`)
 
           // Also update match_live_state if it exists (just team info, not deprecated columns)
           if (supabaseMatch?.id) {
-            const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+            const coinTossTeamA = match.coinTossTeamA || 'home'
             const homeIsTeamA = coinTossTeamA === 'home'
             // Determine if this team is Team A or Team B
             const isTeamA = (isHome && homeIsTeamA) || (!isHome && !homeIsTeamA)
@@ -373,6 +370,10 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       return null
     }
   }, [matchId])
+
+  // Colors are derived from match - no local state (can't change in CoinToss)
+  const homeColor = match?.homeColor || '#ef4444'
+  const awayColor = match?.awayColor || '#3b82f6'
 
   // Check if coin toss was previously confirmed
   // Use the dedicated coinTossConfirmed field instead of signature comparison
@@ -579,19 +580,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           payload: {
             id: updatedMatch.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'live', // Set status to live after coin toss is confirmed
-            // Legacy columns (keep during transition)
-            hall: updatedMatch.hall || null,
-            city: updatedMatch.city || null,
-            league: updatedMatch.league || null,
-            scheduled_at: updatedMatch.scheduledAt || null,
-            coin_toss_confirmed: true,
-            coin_toss_team_a: teamA,
-            coin_toss_team_b: teamB,
-            coin_toss_serve_a: serveA,
-            first_serve: firstServeTeam,
-            home_short_name: homeShortName || generateShortName(home),
-            away_short_name: awayShortName || generateShortName(away),
-            // NEW: Consolidated JSONB columns
+            // JSONB columns only
             coin_toss: {
               team_a: teamA,
               team_b: teamB,
@@ -761,16 +750,17 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         payload: {
           id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
           status: 'live',
-          referee_pin: match?.refereePin || null,
-          referee_connection_enabled: match?.refereeConnectionEnabled === true,
           // Officials as JSONB
           officials: match?.officials || [],
-          // Legacy signature columns (keep during transition)
-          home_coach_signature: !match?.test ? homeCoachSignature : null,
-          home_captain_signature: !match?.test ? homeCaptainSignature : null,
-          away_coach_signature: !match?.test ? awayCoachSignature : null,
-          away_captain_signature: !match?.test ? awayCaptainSignature : null,
-          // NEW: Consolidated signatures JSONB
+          // Connections JSONB
+          connections: {
+            referee_enabled: match?.refereeConnectionEnabled === true
+          },
+          // Connection PINs JSONB
+          connection_pins: {
+            referee: match?.refereePin || ''
+          },
+          // Signatures JSONB
           signatures: !match?.test ? {
             home_coach: homeCoachSignature || '',
             home_captain: homeCaptainSignature || '',
@@ -1129,14 +1119,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           payload: {
             id: matchData.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: matchData.status || null,
-            hall: matchData.hall || null,
-            city: matchData.city || null,
-            league: matchData.league || null,
-            scheduled_at: matchData.scheduledAt || null,
-            // Short names as separate columns for easy access (generate from team name if empty)
-            home_short_name: homeShortName || generateShortName(home),
-            away_short_name: awayShortName || generateShortName(away),
-            // JSONB columns
+            // JSONB columns only
             home_team: { name: home, short_name: homeShortName || generateShortName(home), color: homeColor },
             away_team: { name: away, short_name: awayShortName || generateShortName(away), color: awayColor },
             players_home: homeRoster.map(p => ({

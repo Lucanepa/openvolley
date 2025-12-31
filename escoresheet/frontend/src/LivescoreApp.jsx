@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import SimpleHeader from './components/SimpleHeader'
 import DashboardHeader from './components/DashboardHeader'
@@ -179,7 +179,7 @@ export default function LivescoreApp() {
     }
   }, [wakeLockActive])
 
-  // Load available matches function - extracted so it can be called manually
+  // Load available matches function - just fetch all from match_live_state
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true)
     try {
@@ -188,18 +188,34 @@ export default function LivescoreApp() {
         (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
       if (useSupabase && supabase) {
-        const result = await listAvailableMatchesSupabase()
-        if (result.success) {
-          // Supabase is connected even if there are no matches
+        // Simply fetch all records from match_live_state - these are the live games
+        const { data, error } = await supabase
+          .from('match_live_state')
+          .select('*')
+          .order('updated_at', { ascending: false })
+
+        if (!error) {
           setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-          if (result.matches && result.matches.length > 0) {
-            setAvailableMatches(result.matches)
+          if (data && data.length > 0) {
+            // Format matches for display - match_live_state has all we need
+            const formattedMatches = data.map(m => ({
+              id: m.match_id, // UUID - use directly for subscription
+              gameNumber: m.current_set || 1,
+              homeTeamName: m.team_left_name || 'Team A',
+              awayTeamName: m.team_right_name || 'Team B',
+              status: 'live'
+            }))
+            setAvailableMatches(formattedMatches)
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
+          } else {
+            // No live games, but Supabase is connected
+            setAvailableMatches([])
           }
         } else {
           // Supabase call failed
+          console.error('[Livescore] Error fetching match_live_state:', error)
           setConnectionStatuses(prev => ({ ...prev, supabase: 'disconnected' }))
         }
       }
@@ -235,13 +251,25 @@ export default function LivescoreApp() {
     )
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
-    // For static deployments without backend, set server as not_available but keep Supabase
+    // For static deployments without backend, set server as not_available but check Supabase
     if (isStaticDeployment && !hasBackendUrl) {
-      setConnectionStatuses(prev => ({
-        ...prev, // Preserve supabase status
-        server: 'not_available',
-        websocket: 'not_available'
-      }))
+      const checkSupabaseOnly = async () => {
+        let supabaseConnected = false
+        if (supabase) {
+          try {
+            const { error } = await supabase.from('matches').select('id').limit(1)
+            supabaseConnected = !error
+          } catch {
+            supabaseConnected = false
+          }
+        }
+        setConnectionStatuses(prev => ({
+          ...prev,
+          server: 'not_available',
+          websocket: 'not_available',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
+        }))
+      }
       setConnectionDebugInfo({
         server: {
           status: 'not_available',
@@ -249,7 +277,9 @@ export default function LivescoreApp() {
           details: 'Real-time WebSocket updates are not available. Match data is loaded from Supabase database.'
         }
       })
-      return // Don't start polling for server status
+      checkSupabaseOnly()
+      const interval = setInterval(checkSupabaseOnly, 10000)
+      return () => clearInterval(interval)
     }
 
     const checkConnections = async () => {
@@ -258,11 +288,22 @@ export default function LivescoreApp() {
         const wsStatus = gameId ? getWebSocketStatus(gameId) : 'no_match'
         const serverConnected = serverStatus?.running
 
+        // Check Supabase connectivity with a simple query
+        let supabaseConnected = false
+        if (supabase) {
+          try {
+            const { error } = await supabase.from('matches').select('id').limit(1)
+            supabaseConnected = !error
+          } catch {
+            supabaseConnected = false
+          }
+        }
+
         setConnectionStatuses(prev => ({
           ...prev,
           server: serverConnected ? 'connected' : 'disconnected',
-          websocket: gameId ? wsStatus : 'no_match'
-          // supabase status is managed by the subscription effect
+          websocket: gameId ? wsStatus : 'no_match',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
         }))
 
         // Update debug info
@@ -407,53 +448,58 @@ export default function LivescoreApp() {
     if (useSupabase && supabase) {
       setActiveConnection('supabase')
 
-      // Fetch initial live state
-      const fetchLiveState = async () => {
+      // gameId is now the UUID directly from match_live_state (when selected from Supabase list)
+      const setupLiveState = async () => {
         try {
+          const matchUuid = gameId // Already a UUID from match_live_state.match_id
+
+          // Fetch initial live state using the UUID
           const { data: liveState, error } = await supabase
             .from('match_live_state')
             .select('*')
-            .eq('match_id', gameId)
+            .eq('match_id', matchUuid)
             .maybeSingle()
 
           if (!error && liveState) {
             setSupabaseLiveState(liveState)
             setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+          } else {
+            console.log('[Livescore] No live state found for match:', matchUuid)
           }
+
+          // Subscribe to realtime updates using the UUID
+          const channel = supabase
+            .channel(`livescore-${matchUuid}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'match_live_state',
+                filter: `match_id=eq.${matchUuid}`
+              },
+              (payload) => {
+                setSupabaseLiveState(payload.new)
+              }
+            )
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+              } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                setConnectionStatuses(prev => ({ ...prev, supabase: 'error' }))
+                // Fall back to WebSocket if AUTO mode
+                if (connectionMode === CONNECTION_MODES.AUTO) {
+                  setActiveConnection('websocket')
+                }
+              }
+            })
+
+          supabaseChannelRef.current = channel
         } catch (err) {
-          console.error('[Livescore] Error fetching live state:', err)
+          console.error('[Livescore] Error setting up live state:', err)
         }
       }
-      fetchLiveState()
-
-      // Subscribe to realtime updates
-      const channel = supabase
-        .channel(`livescore-${gameId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'match_live_state',
-            filter: `match_id=eq.${gameId}`
-          },
-          (payload) => {
-            setSupabaseLiveState(payload.new)
-          }
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'error' }))
-            // Fall back to WebSocket if AUTO mode
-            if (connectionMode === CONNECTION_MODES.AUTO) {
-              setActiveConnection('websocket')
-            }
-          }
-        })
-
-      supabaseChannelRef.current = channel
+      setupLiveState()
     }
 
     // Subscribe to WebSocket if using WebSocket

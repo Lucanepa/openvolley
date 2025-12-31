@@ -255,10 +255,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
 
       // Clear pending roster and save signatures in Supabase if connected
       if (useSupabaseConnection && supabase && matchData?.external_id) {
-        // Legacy column names (keep during transition)
-        const coachSigKeySnake = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
-        const captainSigKeySnake = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
-        // NEW: JSONB signature keys
+        // JSONB signature keys
         const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
         const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
 
@@ -271,11 +268,9 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
 
         // Only update signatures if they were provided
         if (importedCoachSignature) {
-          supabaseUpdate[coachSigKeySnake] = importedCoachSignature
           signaturesUpdate[coachSigJsonKey] = importedCoachSignature
         }
         if (importedCaptainSignature) {
-          supabaseUpdate[captainSigKeySnake] = importedCaptainSignature
           signaturesUpdate[captainSigJsonKey] = importedCaptainSignature
         }
 
@@ -286,7 +281,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             .from('matches')
             .select('signatures')
             .eq('external_id', matchData.external_id)
-            .single()
+            .maybeSingle()
 
           supabaseUpdate.signatures = {
             ...(existingMatch?.signatures || {}),
@@ -299,7 +294,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
           .update(supabaseUpdate)
           .eq('external_id', matchData.external_id)
 
-        console.log('[RosterSetup] Saved signatures to Supabase:', { coachSigKeySnake, captainSigKeySnake, hasCoach: !!importedCoachSignature, hasCaptain: !!importedCaptainSignature })
+        console.log('[RosterSetup] Saved signatures to Supabase:', { hasCoach: !!importedCoachSignature, hasCaptain: !!importedCaptainSignature })
       }
 
       setPendingRoster(null)
@@ -632,10 +627,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         }
 
         // Build update object with pending roster and signatures
-        // Legacy column names (keep during transition)
-        const coachSigKeySnake = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
-        const captainSigKeySnake = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
-        // NEW: JSONB signature keys
+        // JSONB signature keys
         const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
         const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
 
@@ -648,13 +640,11 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         // Build connections JSONB partial update for pending roster
         const pendingRosterJsonKey = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
 
-        // Also save signatures directly to main signature columns and JSONB
+        // Save signatures to JSONB
         if (coachSignature) {
-          supabaseUpdate[coachSigKeySnake] = coachSignature
           signaturesUpdate[coachSigJsonKey] = coachSignature
         }
         if (captainSignature) {
-          supabaseUpdate[captainSigKeySnake] = captainSignature
           signaturesUpdate[captainSigJsonKey] = captainSignature
         }
 
@@ -663,7 +653,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
           .from('matches')
           .select('signatures, connections')
           .eq('external_id', matchData.external_id)
-          .single()
+          .maybeSingle()
 
         // Update signatures JSONB if we have signature updates
         if (Object.keys(signaturesUpdate).length > 0) {
@@ -690,7 +680,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
           console.error('[RosterSetup] Failed to sync roster to Supabase:', supabaseError)
           alert(t('rosterSetup.rosterSaved'))
         } else {
-          console.log('[RosterSetup] Roster synced to Supabase with signatures:', { coachSigKeySnake, captainSigKeySnake })
+          console.log('[RosterSetup] Roster synced to Supabase with signatures:', signaturesUpdate)
           setShowSuccessModal(true)
         }
       } else {

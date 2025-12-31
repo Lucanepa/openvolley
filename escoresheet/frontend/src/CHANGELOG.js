@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.13',
+    date: '31.12.25',
+    changes: [
+      'Refactor date and time handling across components to use UTC for consistency'
+    ]
+  },
+  {
     version: '0.17.12',
     date: '31.12.25',
     changes: [
