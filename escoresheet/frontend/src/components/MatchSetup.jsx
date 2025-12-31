@@ -527,6 +527,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Bench connection - separate for each team
   const [homeTeamConnectionEnabled, setHomeTeamConnectionEnabled] = useState(false)
   const [awayTeamConnectionEnabled, setAwayTeamConnectionEnabled] = useState(false)
+  const [benchConnectionEnabled, setBenchConnectionEnabled] = useState(false)
 
   // Manage Captain on Court setting
   const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
@@ -970,14 +971,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         setRefereeConnectionEnabled(match.refereeConnectionEnabled === true)
 
         // Load bench connection settings (default to disabled if not set)
+        // Support both old (separate home/away) and new (combined) fields
+        const isBenchEnabled = match.benchConnectionEnabled === true ||
+          (match.homeTeamConnectionEnabled === true && match.awayTeamConnectionEnabled === true)
+        setBenchConnectionEnabled(isBenchEnabled)
         setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled === true)
         setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled === true)
 
         // Migrate old matches: ensure connection fields are explicitly set to false if undefined
         const connectionUpdates = {}
         if (match.refereeConnectionEnabled === undefined) connectionUpdates.refereeConnectionEnabled = false
-        if (match.homeTeamConnectionEnabled === undefined) connectionUpdates.homeTeamConnectionEnabled = false
-        if (match.awayTeamConnectionEnabled === undefined) connectionUpdates.awayTeamConnectionEnabled = false
+        if (match.benchConnectionEnabled === undefined) connectionUpdates.benchConnectionEnabled = false
         if (Object.keys(connectionUpdates).length > 0) {
           await db.matches.update(matchId, connectionUpdates)
         }
@@ -1072,13 +1076,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Update effect - runs when match changes (for connection settings, etc.)
   useEffect(() => {
     if (!matchId || !match) return
-    
+
     // Update connection settings (these can change without affecting roster)
     // Default to disabled if not explicitly enabled
     setRefereeConnectionEnabled(match.refereeConnectionEnabled === true)
+    const isBenchEnabled = match.benchConnectionEnabled === true ||
+      (match.homeTeamConnectionEnabled === true && match.awayTeamConnectionEnabled === true)
+    setBenchConnectionEnabled(isBenchEnabled)
     setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled === true)
     setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled === true)
-  }, [matchId, match?.refereeConnectionEnabled, match?.homeTeamConnectionEnabled, match?.awayTeamConnectionEnabled])
+  }, [matchId, match?.refereeConnectionEnabled, match?.benchConnectionEnabled, match?.homeTeamConnectionEnabled, match?.awayTeamConnectionEnabled])
   
 
   // Server management - Only check in Electron
@@ -6166,6 +6173,83 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
+  // Combined Benches toggle handler - enables/disables benches connection for both teams
+  const handleBenchConnectionToggle = async (enabled) => {
+    if (!matchId) return
+    setBenchConnectionEnabled(enabled)
+    // Also set the individual states for backwards compatibility
+    setHomeTeamConnectionEnabled(enabled)
+    setAwayTeamConnectionEnabled(enabled)
+
+    try {
+      const match = await db.matches.get(matchId)
+      if (!match) return
+
+      const updates = {
+        benchConnectionEnabled: enabled,
+        homeTeamConnectionEnabled: enabled,
+        awayTeamConnectionEnabled: enabled
+      }
+
+      // If enabling connection and PINs don't exist, generate them
+      if (enabled) {
+        if (!match.homeTeamPin) {
+          const homePin = await generateUniquePin()
+          updates.homeTeamPin = String(homePin).trim()
+        }
+        if (!match.awayTeamPin) {
+          const awayPin = await generateUniquePin()
+          updates.awayTeamPin = String(awayPin).trim()
+        }
+      }
+
+      await db.matches.update(matchId, updates)
+
+      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
+      const updatedMatch = await db.matches.get(matchId)
+      if (updatedMatch) {
+        await syncMatchToServer(updatedMatch)
+        // Sync to Supabase (use seed_key as external_id)
+        if (updatedMatch.seed_key) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: updatedMatch.seed_key,
+              bench_connection_enabled: enabled,
+              home_team_pin: updatedMatch.homeTeamPin || null,
+              away_team_pin: updatedMatch.awayTeamPin || null
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+              }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update bench connection setting:', error)
+    }
+  }
+
   // Dashboard Toggle Component - two rows: label+toggle on top, PIN below
   const DashboardToggle = ({ label, enabled, onToggle, pin }) => {
     return (
@@ -6236,6 +6320,85 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         onToggle={onToggle}
         pin={pin}
       />
+    )
+  }
+
+  // Combined Benches Toggle Component - shows both PINs when enabled
+  const BenchesToggle = ({ enabled, onToggle, homePin, awayPin }) => {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        padding: '8px 12px',
+        background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
+        borderRadius: '8px',
+        border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255,255,255,0.1)',
+        minWidth: '140px',
+        flex: 1
+      }}>
+        {/* Row 1: Label and Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', flex: 1 }}>Benches</span>
+          <div style={{
+            position: 'relative',
+            width: '40px',
+            height: '22px',
+            background: enabled ? '#22c55e' : '#6b7280',
+            borderRadius: '11px',
+            transition: 'background 0.2s',
+            cursor: 'pointer',
+            flexShrink: 0
+          }}
+          onClick={() => onToggle(!enabled)}
+          >
+            <div style={{
+              position: 'absolute',
+              top: '2px',
+              left: enabled ? '20px' : '2px',
+              width: '18px',
+              height: '18px',
+              background: '#fff',
+              borderRadius: '50%',
+              transition: 'left 0.2s',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }} />
+          </div>
+        </div>
+        {/* Row 2: Both PINs (only when enabled) */}
+        {enabled && (homePin || awayPin) && (
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {homePin && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '9px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchSetup.home')}</div>
+                <span style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  color: 'var(--accent)',
+                  letterSpacing: '2px',
+                  fontFamily: 'monospace'
+                }}>
+                  {homePin}
+                </span>
+              </div>
+            )}
+            {awayPin && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '9px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchSetup.away')}</div>
+                <span style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  color: 'var(--accent)',
+                  letterSpacing: '2px',
+                  fontFamily: 'monospace'
+                }}>
+                  {awayPin}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -6408,17 +6571,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             onToggle={handleRefereeConnectionToggle}
             pin={match?.refereePin}
           />
-          <ConnectionBanner
-            team="home"
-            enabled={homeTeamConnectionEnabled}
-            onToggle={handleHomeTeamConnectionToggle}
-            pin={match?.homeTeamPin}
-          />
-          <ConnectionBanner
-            team="away"
-            enabled={awayTeamConnectionEnabled}
-            onToggle={handleAwayTeamConnectionToggle}
-            pin={match?.awayTeamPin}
+          <BenchesToggle
+            enabled={benchConnectionEnabled}
+            onToggle={handleBenchConnectionToggle}
+            homePin={match?.homeTeamPin}
+            awayPin={match?.awayTeamPin}
           />
         </div>
       </div>

@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
-import SimpleHeader from './components/SimpleHeader'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -182,7 +181,7 @@ export default function BenchApp() {
         (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
       if (useSupabase && supabase) {
-        const result = await listAvailableMatchesSupabase()
+        const result = await listAvailableMatchesForBenchSupabase()
         if (result.success) {
           // Supabase is connected even if there are no matches
           setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
@@ -449,17 +448,17 @@ export default function BenchApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         overflow: 'hidden'
       }}>
-        <SimpleHeader
+        <DashboardHeader
           title={view === 'roster' ? t('benchDashboard.roster') : teamName}
           subtitle={view === 'match' ? `${t('benchDashboard.game')} ${selectedMatch?.gameNumber || matchId}` : teamName}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
           onBack={handleBack}
           backLabel={t('benchDashboard.back')}
         />
@@ -504,16 +503,16 @@ export default function BenchApp() {
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        <SimpleHeader
+        <DashboardHeader
           title={t('benchDashboard.title')}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
         />
 
         <div style={{
@@ -633,17 +632,17 @@ export default function BenchApp() {
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        <SimpleHeader
+        <DashboardHeader
           title={t('benchDashboard.title')}
           subtitle={teamName}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
         />
 
         <div style={{
@@ -780,17 +779,17 @@ export default function BenchApp() {
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        <SimpleHeader
+        <DashboardHeader
           title={t('benchDashboard.title')}
           subtitle={`${t('benchDashboard.game')} ${selectedMatch.gameNumber}`}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
         />
 
         <div style={{

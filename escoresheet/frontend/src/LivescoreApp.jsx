@@ -1301,17 +1301,17 @@ export default function LivescoreApp() {
       color: '#fff',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
-      <SimpleHeader
+      <DashboardHeader
         title={t('livescore.title')}
         subtitle={t('livescore.game', { number: gameId })}
-        wakeLockActive={wakeLockActive}
-        toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
         connectionDebugInfo={connectionDebugInfo}
+        showWakeLock={true}
+        wakeLockActive={wakeLockActive}
+        onToggleWakeLock={toggleWakeLock}
         connectionMode={connectionMode}
         activeConnection={activeConnection}
         onConnectionModeChange={handleConnectionModeChange}
-        showConnectionOptions={true}
         onBack={() => {
           setGameId(null)
           setGameIdInput('')
@@ -1345,27 +1345,23 @@ export default function LivescoreApp() {
         }
       />
 
-
-      {/* Score Counter */}
+      {/* Score Counter - 5 columns: ball | score+name | colon | score+name | ball */}
       <div style={{
-        display: 'flex',
+        display: 'grid',
+        gridTemplateColumns: 'clamp(50px, 12vw, 100px) 1fr auto 1fr clamp(50px, 12vw, 100px)',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyItems: 'center',
         padding: 'clamp(40px, 10vh, 100px) 20px',
         width: '100%',
-        position: 'relative',
-        gap: 'clamp(10px, 3vw, 20px)'
+        maxWidth: '1200px',
+        margin: '0 auto'
       }}>
-        {/* Left Team Score */}
+        {/* Column 1: Left Ball */}
         <div style={{
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          gap: '12px',
-          position: 'relative',
-          padding: '0 clamp(10px, 3vw, 20px) 0 clamp(24px, 6vw, 44px)',
-          flex: '0 1 auto',
-          minWidth: 0
+          justifyContent: 'center',
+          height: '100%'
         }}>
           {leftIsServing && (
             <img
@@ -1374,17 +1370,21 @@ export default function LivescoreApp() {
               style={{
                 width: 'clamp(40px, 10vw, 80px)',
                 height: 'clamp(40px, 10vw, 80px)',
-                position: 'absolute',
-                left: 'clamp(-30px, -7vw, -50px)',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
-                marginRight: '20px'
+                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
               }}
             />
           )}
+        </div>
+
+        {/* Column 2: Left Team Score + Name */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
           <div style={{
-            fontSize: 'clamp(60px, 25vw, 200px)',
+            fontSize: 'clamp(60px, 20vw, 180px)',
             fontWeight: 700,
             color: '#fff',
             lineHeight: '1',
@@ -1396,57 +1396,35 @@ export default function LivescoreApp() {
             fontSize: 'clamp(12px, 3vw, 20px)',
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase'
+            textTransform: 'uppercase',
+            textAlign: 'center'
           }}>
             {leftTeam.name}
           </div>
         </div>
 
-        {/* Separator - Always Centered */}
+        {/* Column 3: Colon - Perfectly Centered */}
         <div style={{
-          fontSize: 'clamp(60px, 25vw, 200px)',
+          fontSize: 'clamp(60px, 20vw, 180px)',
           fontWeight: 700,
           color: 'rgba(255, 255, 255, 0.5)',
-          flexShrink: 0,
-          width: '10px',
-          textAlign: 'center',
           lineHeight: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
+          textAlign: 'center',
+          alignSelf: 'start',
+          paddingTop: '0'
         }}>
           :
         </div>
 
-        {/* Right Team Score */}
+        {/* Column 4: Right Team Score + Name */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '12px',
-          position: 'relative',
-          padding: '0 clamp(24px, 6vw, 44px) 0 clamp(10px, 3vw, 20px)',
-          flex: '0 1 auto',
-          minWidth: 0
+          gap: '12px'
         }}>
-          {rightIsServing && (
-            <img
-              src={mikasaVolleyball}
-              alt={t('livescore.servingTeam')}
-              style={{
-                width: 'clamp(40px, 10vw, 80px)',
-                height: 'clamp(40px, 10vw, 80px)',
-                position: 'absolute',
-                right: 'clamp(-30px, -7vw, -50px)',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
-                marginLeft: '20px'
-              }}
-            />
-          )}
           <div style={{
-            fontSize: 'clamp(60px, 25vw, 200px)',
+            fontSize: 'clamp(60px, 20vw, 180px)',
             fontWeight: 700,
             color: '#fff',
             lineHeight: '1',
@@ -1458,10 +1436,31 @@ export default function LivescoreApp() {
             fontSize: 'clamp(12px, 3vw, 20px)',
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase'
+            textTransform: 'uppercase',
+            textAlign: 'center'
           }}>
             {rightTeam.name}
           </div>
+        </div>
+
+        {/* Column 5: Right Ball */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%'
+        }}>
+          {rightIsServing && (
+            <img
+              src={mikasaVolleyball}
+              alt={t('livescore.servingTeam')}
+              style={{
+                width: 'clamp(40px, 10vw, 80px)',
+                height: 'clamp(40px, 10vw, 80px)',
+                filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
+              }}
+            />
+          )}
         </div>
       </div>
 

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.11',
+    date: '31.12.25',
+    changes: [
+      'Refactor BenchApp, LivescoreApp, and MatchSetup components to enhance bench connection management and UI consistency'
+    ]
+  },
+  {
     version: '0.17.10',
     date: '31.12.25',
     changes: [

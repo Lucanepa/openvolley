@@ -974,6 +974,81 @@ export async function listAvailableMatchesSupabase() {
 }
 
 /**
+ * List available matches from Supabase for Bench apps
+ * Filters by bench_connection_enabled = true
+ */
+export async function listAvailableMatchesForBenchSupabase() {
+  if (!supabase) {
+    return { success: false, matches: [], error: 'Supabase client not initialized' }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        id,
+        external_id,
+        game_n,
+        status,
+        scheduled_at,
+        home_team_name,
+        away_team_name,
+        home_team_pin,
+        away_team_pin,
+        bench_connection_enabled
+      `)
+      .in('status', ['setup', 'live'])
+      .eq('bench_connection_enabled', true)
+      .order('scheduled_at', { ascending: true })
+
+    if (error) {
+      console.error('[listAvailableMatchesForBenchSupabase] Error:', error)
+      return { success: false, matches: [], error: error.message }
+    }
+
+    // Format to match the WebSocket server format
+    const formattedMatches = (data || []).map(m => {
+      let dateTime = 'TBD'
+      if (m.scheduled_at) {
+        try {
+          let scheduledStr = m.scheduled_at
+          if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
+            scheduledStr = scheduledStr + 'Z'
+          }
+          const scheduledDate = new Date(scheduledStr)
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+          dateTime = `${dateStr} ${timeStr}`
+        } catch (e) {
+          dateTime = 'TBD'
+        }
+      }
+
+      return {
+        id: m.external_id || m.id,
+        external_id: m.external_id,
+        gameNumber: m.game_n || m.external_id,
+        homeTeam: m.home_team_name || 'Home',
+        awayTeam: m.away_team_name || 'Away',
+        homeTeamName: m.home_team_name || 'Home',
+        awayTeamName: m.away_team_name || 'Away',
+        scheduledAt: m.scheduled_at,
+        dateTime,
+        benchConnectionEnabled: m.bench_connection_enabled,
+        homeTeamPin: m.home_team_pin,
+        awayTeamPin: m.away_team_pin,
+        status: m.status
+      }
+    })
+
+    return { success: true, matches: formattedMatches }
+  } catch (error) {
+    console.error('[listAvailableMatchesForBenchSupabase] Exception:', error)
+    return { success: false, matches: [], error: error.message }
+  }
+}
+
+/**
  * Validate PIN against Supabase database
  * Returns match data if PIN is valid
  */

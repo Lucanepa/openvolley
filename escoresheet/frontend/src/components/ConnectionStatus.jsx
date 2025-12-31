@@ -130,9 +130,6 @@ export default function ConnectionStatus({
   }
 
   const getOverallStatus = () => {
-    // Check all connection statuses
-    const statuses = Object.entries(connectionStatuses)
-
     // Helper to check if a status is considered "OK"
     const isStatusOk = (status) => {
       return status === 'connected' ||
@@ -146,29 +143,38 @@ export default function ConnectionStatus({
              status === 'no_match' // No match is OK - just waiting for match selection
     }
 
-    // Check if only match/websocket is in "waiting" state
-    const matchStatus = connectionStatuses.match
+    const serverStatus = connectionStatuses.server
     const websocketStatus = connectionStatuses.websocket
-    const otherStatuses = statuses.filter(([key]) => key !== 'match' && key !== 'websocket')
+    const supabaseStatus = connectionStatuses.supabase
+    const matchStatus = connectionStatuses.match
 
-    const waitingForMatch = (
-      (matchStatus === 'no_match' || matchStatus === 'disconnected' || matchStatus === 'unknown' ||
-       websocketStatus === 'no_match' || websocketStatus === 'unknown') &&
-      otherStatuses.every(([, status]) => isStatusOk(status))
-    )
+    // Check if Server+WebSocket path is viable
+    const serverPathOk = serverStatus === 'connected'
+    const websocketPathOk = websocketStatus === 'connected' || websocketStatus === 'no_match'
+    const serverWebsocketViable = serverPathOk && websocketPathOk
+
+    // Check if Supabase path is viable
+    const supabaseViable = supabaseStatus === 'connected'
+
+    // At least one connection path must be working
+    const hasViableConnection = serverWebsocketViable || supabaseViable
+
+    if (!hasViableConnection) {
+      return 'attention' // No viable connection path
+    }
+
+    // Check if we're waiting for match selection
+    const waitingForMatch =
+      websocketStatus === 'no_match' ||
+      matchStatus === 'no_match' ||
+      matchStatus === 'disconnected' ||
+      matchStatus === 'unknown'
 
     if (waitingForMatch) {
       return 'awaiting_match'
     }
 
-    // If all statuses are OK, show connected
-    const allConnected = statuses.every(([, status]) => isStatusOk(status))
-
-    if (allConnected && statuses.length > 0) {
-      return 'connected'
-    } else {
-      return 'attention' // Use 'attention' instead of 'disconnected' for the overall status
-    }
+    return 'connected'
   }
 
   const overallStatus = getOverallStatus()
