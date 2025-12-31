@@ -93,7 +93,7 @@ export default function ConnectionStatus({
     }
   }, [showConnectionMenu, showDebugMenu])
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status, key) => {
     if (status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing') {
       return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? 'Syncing' : 'Connected' }
     } else if (status === 'awaiting_match') {
@@ -101,7 +101,9 @@ export default function ConnectionStatus({
     } else if (status === 'attention') {
       return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: 'Error' }
     } else if (status === 'no_match') {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Ready' }
+      // For websocket, "no_match" means waiting for a match to be selected - show as gray/ready
+      const text = key === 'websocket' ? 'No Match' : 'Ready'
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text }
     } else if (status === 'disconnected' || status === 'error' || status === 'offline') {
       return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? 'Error' : status === 'offline' ? 'Offline' : 'Disconnected' }
     } else if (status === 'not_configured' || status === 'not_applicable') {
@@ -131,40 +133,37 @@ export default function ConnectionStatus({
     // Check all connection statuses
     const statuses = Object.entries(connectionStatuses)
 
-    // Check if only match is disconnected
-    const matchStatus = connectionStatuses.match
-    const otherStatuses = statuses.filter(([key]) => key !== 'match')
-    
-    const onlyMatchDisconnected = (
-      (matchStatus === 'no_match' || matchStatus === 'disconnected' || matchStatus === 'unknown') &&
-      otherStatuses.every(([, status]) => {
-        return status === 'connected' ||
-               status === 'live' ||
-               status === 'scheduled' ||
-               status === 'synced' ||
-               status === 'syncing' ||
-               status === 'test_mode' ||
-               status === 'not_applicable' || // Not applicable is considered OK
-               status === 'not_available' // Static deployment - no backend
-      })
-    )
-    
-    if (onlyMatchDisconnected) {
-      return 'awaiting_match'
-    }
-    
-    // If any status is not connected/ok, show attention
-    const allConnected = statuses.every(([, status]) => {
+    // Helper to check if a status is considered "OK"
+    const isStatusOk = (status) => {
       return status === 'connected' ||
              status === 'live' ||
              status === 'scheduled' ||
              status === 'synced' ||
              status === 'syncing' ||
              status === 'test_mode' ||
-             status === 'not_applicable' || // Not applicable is considered OK
-             status === 'not_available' // Static deployment - no backend
-    })
-    
+             status === 'not_applicable' ||
+             status === 'not_available' ||
+             status === 'no_match' // No match is OK - just waiting for match selection
+    }
+
+    // Check if only match/websocket is in "waiting" state
+    const matchStatus = connectionStatuses.match
+    const websocketStatus = connectionStatuses.websocket
+    const otherStatuses = statuses.filter(([key]) => key !== 'match' && key !== 'websocket')
+
+    const waitingForMatch = (
+      (matchStatus === 'no_match' || matchStatus === 'disconnected' || matchStatus === 'unknown' ||
+       websocketStatus === 'no_match' || websocketStatus === 'unknown') &&
+      otherStatuses.every(([, status]) => isStatusOk(status))
+    )
+
+    if (waitingForMatch) {
+      return 'awaiting_match'
+    }
+
+    // If all statuses are OK, show connected
+    const allConnected = statuses.every(([, status]) => isStatusOk(status))
+
     if (allConnected && statuses.length > 0) {
       return 'connected'
     } else {
@@ -276,7 +275,7 @@ export default function ConnectionStatus({
             Connection Status
           </div>
           {Object.entries(connectionStatuses).map(([key, status]) => {
-            const itemStatusInfo = getStatusColor(status)
+            const itemStatusInfo = getStatusColor(status, key)
             
             let displayText = itemStatusInfo.text
             if (key === 'match' && status !== 'no_match' && status !== 'unknown') {

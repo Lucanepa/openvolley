@@ -656,12 +656,7 @@ export default function RefereeApp() {
               }}>
                 {t('refereeDashboard.noActiveGame')}
               </div>
-              <div style={{
-                fontSize: '13px',
-                color: 'rgba(255, 255, 255, 0.4)'
-              }}>
-                {t('refereeDashboard.startMatchToConnect')}
-              </div>
+              
             </div>
           ) : (
           <form onSubmit={handlePinSubmit} style={{

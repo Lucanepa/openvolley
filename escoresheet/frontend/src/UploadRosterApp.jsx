@@ -983,7 +983,7 @@ export default function UploadRosterApp() {
                 flexDirection: 'column',
                 gap: '12px',
                 width: '100%',
-                maxWidth: '400px'
+                maxWidth: '500px'
               }}>
                 {availableMatches.map((match) => (
                   <button

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { findMatchByGameNumber, getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import SimpleHeader from './components/SimpleHeader'
+import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import TestModeControls from './components/TestModeControls'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -178,44 +179,51 @@ export default function LivescoreApp() {
     }
   }, [wakeLockActive])
 
-  // Load available matches on mount and periodically
-  useEffect(() => {
-    const loadMatches = async () => {
-      setLoadingMatches(true)
-      try {
-        // Try Supabase first if in AUTO or SUPABASE mode
-        const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+  // Load available matches function - extracted so it can be called manually
+  const loadMatches = useCallback(async () => {
+    setLoadingMatches(true)
+    try {
+      // Try Supabase first if in AUTO or SUPABASE mode
+      const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+        (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
-        if (useSupabase && supabase) {
-          const result = await listAvailableMatchesSupabase()
-          if (result.success && result.matches && result.matches.length > 0) {
+      if (useSupabase && supabase) {
+        const result = await listAvailableMatchesSupabase()
+        if (result.success) {
+          // Supabase is connected even if there are no matches
+          setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+          if (result.matches && result.matches.length > 0) {
             setAvailableMatches(result.matches)
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
           }
+        } else {
+          // Supabase call failed
+          setConnectionStatuses(prev => ({ ...prev, supabase: 'disconnected' }))
         }
-
-        // Fall back to WebSocket/server
-        const result = await listAvailableMatches()
-        if (result.success && result.matches) {
-          setAvailableMatches(result.matches)
-          setActiveConnection('websocket')
-        }
-      } catch (err) {
-        console.error('[Livescore] Error loading matches:', err)
-      } finally {
-        setLoadingMatches(false)
       }
-    }
 
+      // Fall back to WebSocket/server
+      const result = await listAvailableMatches()
+      if (result.success && result.matches) {
+        setAvailableMatches(result.matches)
+        setActiveConnection('websocket')
+      }
+    } catch (err) {
+      console.error('[Livescore] Error loading matches:', err)
+    } finally {
+      setLoadingMatches(false)
+    }
+  }, [connectionMode])
+
+  // Load available matches on mount and periodically
+  useEffect(() => {
     loadMatches()
     const interval = setInterval(loadMatches, 30000)
 
     return () => clearInterval(interval)
-  }, [connectionMode])
+  }, [loadMatches])
 
   // Check connection status periodically
   useEffect(() => {
@@ -247,13 +255,13 @@ export default function LivescoreApp() {
     const checkConnections = async () => {
       try {
         const serverStatus = await getServerStatus()
-        const wsStatus = gameId ? getWebSocketStatus(gameId) : 'not_applicable'
+        const wsStatus = gameId ? getWebSocketStatus(gameId) : 'no_match'
         const serverConnected = serverStatus?.running
 
         setConnectionStatuses(prev => ({
           ...prev,
           server: serverConnected ? 'connected' : 'disconnected',
-          websocket: gameId ? wsStatus : 'not_applicable'
+          websocket: gameId ? wsStatus : 'no_match'
           // supabase status is managed by the subscription effect
         }))
 
@@ -915,12 +923,19 @@ export default function LivescoreApp() {
       }}>
         <UpdateBanner />
 
-        <SimpleHeader
+        <DashboardHeader
           title={t('livescore.title')}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          onLoadGames={loadMatches}
+          loadingMatches={loadingMatches}
+          matchCount={availableMatches.length}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
         />
         <div style={{
           flex: 1,
@@ -931,7 +946,7 @@ export default function LivescoreApp() {
         }}>
         <div style={{
           textAlign: 'center',
-          maxWidth: '400px',
+          maxWidth: '500px',
           width: '100%'
         }}>
            <img
