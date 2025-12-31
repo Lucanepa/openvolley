@@ -15,10 +15,12 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
   const [imageError, setImageError] = useState(false);
   const [faviconImageError, setFaviconImageError] = useState(false);
   
-  // Format date and time
+  // Format date and time (use UTC to match stored values)
   const scheduledDate = match?.scheduledAt ? new Date(match.scheduledAt) : null;
   const dateStr = scheduledDate ? scheduledDate.toISOString().split('T')[0] : '';
-  const timeStr = scheduledDate ? scheduledDate.toTimeString().slice(0, 5) : '';
+  const timeStr = scheduledDate
+    ? `${String(scheduledDate.getUTCHours()).padStart(2, '0')}:${String(scheduledDate.getUTCMinutes()).padStart(2, '0')}`
+    : '';
 
   return (
     <header className="border border-black bg-white">

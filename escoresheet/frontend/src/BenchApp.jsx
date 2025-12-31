@@ -228,13 +228,25 @@ export default function BenchApp() {
     )
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
-    // For static deployments without backend, set server as not_available but keep Supabase
+    // For static deployments without backend, set server as not_available but check Supabase
     if (isStaticDeployment && !hasBackendUrl) {
-      setConnectionStatuses(prev => ({
-        ...prev, // Preserve supabase status
-        server: 'not_available',
-        websocket: 'not_available'
-      }))
+      const checkSupabaseOnly = async () => {
+        let supabaseConnected = false
+        if (supabase) {
+          try {
+            const { error } = await supabase.from('matches').select('id').limit(1)
+            supabaseConnected = !error
+          } catch {
+            supabaseConnected = false
+          }
+        }
+        setConnectionStatuses(prev => ({
+          ...prev,
+          server: 'not_available',
+          websocket: 'not_available',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
+        }))
+      }
       setConnectionDebugInfo({
         server: {
           status: 'not_available',
@@ -242,7 +254,9 @@ export default function BenchApp() {
           details: 'Real-time WebSocket updates are not available. Match data is loaded from Supabase database.'
         }
       })
-      return // Don't start polling for server status
+      checkSupabaseOnly()
+      const interval = setInterval(checkSupabaseOnly, 10000)
+      return () => clearInterval(interval)
     }
 
     const checkConnections = async () => {
@@ -251,10 +265,23 @@ export default function BenchApp() {
         const wsStatus = matchId ? getWebSocketStatus(matchId) : 'no_match'
 
         const serverConnected = serverStatus?.running
+
+        // Check Supabase connectivity with a simple query
+        let supabaseConnected = false
+        if (supabase) {
+          try {
+            const { error } = await supabase.from('matches').select('id').limit(1)
+            supabaseConnected = !error
+          } catch {
+            supabaseConnected = false
+          }
+        }
+
         setConnectionStatuses(prev => ({
-          ...prev, // Preserve supabase status
+          ...prev,
           server: serverConnected ? 'connected' : 'disconnected',
-          websocket: matchId ? wsStatus : 'no_match'
+          websocket: matchId ? wsStatus : 'no_match',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
         }))
 
         // Build debug info for disconnected services

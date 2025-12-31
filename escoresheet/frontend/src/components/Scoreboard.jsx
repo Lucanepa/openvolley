@@ -4286,8 +4286,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Compare only hours and minutes since the modal only shows time, not date
     const expectedDate = new Date(setStartTimeModal.defaultTime)
     const confirmedDate = new Date(time)
-    const expectedMinutes = expectedDate.getHours() * 60 + expectedDate.getMinutes()
-    const confirmedMinutes = confirmedDate.getHours() * 60 + confirmedDate.getMinutes()
+    const expectedMinutes = expectedDate.getUTCHours() * 60 + expectedDate.getUTCMinutes()
+    const confirmedMinutes = confirmedDate.getUTCHours() * 60 + confirmedDate.getUTCMinutes()
     const timeDifferent = expectedMinutes !== confirmedMinutes
 
     // Update set with start time (absolute timestamp)
@@ -4935,8 +4935,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const durationMs = end - start
         const durationMin = Math.floor(durationMs / 60000)
         const durationSec = Math.floor((durationMs % 60000) / 1000)
-        const startTimeStr = start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
-        const endTimeStr = end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+        const startTimeStr = `${String(start.getUTCHours()).padStart(2, '0')}:${String(start.getUTCMinutes()).padStart(2, '0')}`
+        const endTimeStr = `${String(end.getUTCHours()).padStart(2, '0')}:${String(end.getUTCMinutes()).padStart(2, '0')}`
         timeInfo = ` (${startTimeStr} - ${endTimeStr}, ${durationMin} min)`
       }
 
@@ -7775,9 +7775,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const setIndex = data.set.index
       const teamLabel = team === teamAKey ? 'A' : 'B'
 
-      // Current time (HHhMMm format)
+      // Current time (HHhMMm format) - use UTC for consistency
       const now = new Date()
-      const timeStr = `${String(now.getHours()).padStart(2, '0')}h${String(now.getMinutes()).padStart(2, '0')}m`
+      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
 
       // Get current score - always put the interested team's score first
       const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
@@ -9074,10 +9074,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const otherPoints = team === 'home' ? data.set.awayPoints : data.set.homePoints
     const scoreStr = `${teamPoints}:${otherPoints}`
 
-    // Get actual time of day (HHhMMm format, no seconds)
+    // Get actual time of day (HHhMMm format, no seconds) - use UTC for consistency
     const currentTime = new Date()
-    const hours = String(currentTime.getHours()).padStart(2, '0')
-    const minutes = String(currentTime.getMinutes()).padStart(2, '0')
+    const hours = String(currentTime.getUTCHours()).padStart(2, '0')
+    const minutes = String(currentTime.getUTCMinutes()).padStart(2, '0')
     const timeStr = `${hours}h${minutes}m`
 
     const remark = `Set ${setIndex}, Team ${teamLabel}, Score ${scoreStr}, Time ${timeStr}, Player ${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
@@ -9148,9 +9148,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const setIndex = data.set.index
         const teamLabel = team === teamAKey ? 'A' : 'B'
 
-        // Current time (HHhMMm format)
+        // Current time (HHhMMm format) - use UTC for consistency
         const now = new Date()
-        const timeStr = `${String(now.getHours()).padStart(2, '0')}h${String(now.getMinutes()).padStart(2, '0')}m`
+        const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
 
         // Get current score - always put the interested team's score first
         const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
@@ -9604,8 +9604,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           action: 'update',
           payload: {
             id: match.seed_key,
-            referee_connection_enabled: enabled,
-            referee_pin: match?.refereePin || null
+            connections: {
+              referee_enabled: enabled
+            },
+            connection_pins: {
+              referee: match?.refereePin || ''
+            }
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -9628,8 +9632,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           action: 'update',
           payload: {
             id: match.seed_key,
-            bench_home_connection_enabled: enabled,
-            bench_home_pin: match?.homeTeamPin || null
+            connections: {
+              home_bench_enabled: enabled
+            },
+            connection_pins: {
+              bench_home: match?.homeTeamPin || ''
+            }
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -9652,8 +9660,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           action: 'update',
           payload: {
             id: match.seed_key,
-            bench_away_connection_enabled: enabled,
-            bench_away_pin: match?.awayTeamPin || null
+            connections: {
+              away_bench_enabled: enabled
+            },
+            connection_pins: {
+              bench_away: match?.awayTeamPin || ''
+            }
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -16835,12 +16847,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           
                           const actionId = Math.floor(event.seq || 0) // Show only base integer ID
                           const eventTime = typeof event.ts === 'number' ? new Date(event.ts) : new Date(event.ts)
-                          const timeStr = eventTime.toLocaleTimeString(undefined, { 
-                            hour: '2-digit', 
-                            minute: '2-digit', 
-                            second: '2-digit', 
-                            hour12: false 
-                          })
+                          const timeStr = `${String(eventTime.getUTCHours()).padStart(2, '0')}:${String(eventTime.getUTCMinutes()).padStart(2, '0')}:${String(eventTime.getUTCSeconds()).padStart(2, '0')}`
                           const setNum = getSetNumber(event)
                           const score = getScoreAtEvent(event)
                           const team = getTeamLabel(event)
@@ -19258,11 +19265,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match start time:</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchStartTime ? matchStartTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—'}
+                                  {matchStartTime ? `${String(matchStartTime.getUTCHours()).padStart(2, '0')}:${String(matchStartTime.getUTCMinutes()).padStart(2, '0')}:${String(matchStartTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
                                 </td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match end time:</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchEndTime ? matchEndTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—'}
+                                  {matchEndTime ? `${String(matchEndTime.getUTCHours()).padStart(2, '0')}:${String(matchEndTime.getUTCMinutes()).padStart(2, '0')}:${String(matchEndTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
                                 </td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match duration:</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
@@ -21314,7 +21321,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   onClick={async () => {
                     // For bench player injury, just add a remark (no substitution needed since they're not on court)
                     const remarks = data?.match?.remarks || ''
-                    const timestamp = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+                    const now = new Date()
+                    const timestamp = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`
                     const teamName = team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
                     const newRemark = `[${timestamp}] Injury: ${teamName} #${playerNumber} (bench)`
                     const updatedRemarks = remarks ? `${remarks}\n${newRemark}` : newRemark

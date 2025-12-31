@@ -103,10 +103,43 @@ export function useSyncQueue() {
       if (job.resource === 'match' && job.action === 'update') {
         const { id, ...updateData } = job.payload
 
-        console.log('[SyncQueue] Match update payload:', { id, ...updateData })
+        // JSONB columns that need to be merged instead of replaced
+        const jsonbColumns = ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
+        const hasJsonbColumns = jsonbColumns.some(col => updateData[col] !== undefined)
+
+        let finalUpdateData = { ...updateData }
+
+        // If updating JSONB columns, fetch existing values and merge
+        if (hasJsonbColumns) {
+          const columnsToFetch = jsonbColumns.filter(col => updateData[col] !== undefined)
+          const { data: existingMatch, error: fetchError } = await supabase
+            .from('matches')
+            .select(columnsToFetch.join(','))
+            .eq('external_id', id)
+            .maybeSingle()
+
+          if (fetchError) {
+            console.error('[SyncQueue] Match fetch for merge error:', fetchError)
+            // Continue with update anyway - worst case we overwrite
+          }
+
+          if (existingMatch) {
+            // Merge JSONB columns
+            for (const col of columnsToFetch) {
+              if (updateData[col] && typeof updateData[col] === 'object' && !Array.isArray(updateData[col])) {
+                finalUpdateData[col] = {
+                  ...(existingMatch[col] || {}),
+                  ...updateData[col]
+                }
+              }
+            }
+          }
+        }
+
+        console.log('[SyncQueue] Match update payload:', { id, ...finalUpdateData })
         const { error } = await supabase
           .from('matches')
-          .update(updateData)
+          .update(finalUpdateData)
           .eq('external_id', id)
         if (error) {
           console.error('[SyncQueue] Match update error:', error, job.payload)

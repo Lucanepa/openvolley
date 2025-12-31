@@ -578,6 +578,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [serverLoading, setServerLoading] = useState(false)
   const [instanceId] = useState(() => `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
 
+  // Sync status tracking for cards
+  // 'idle' = no sync needed, 'syncing' = sync in progress, 'synced' = synced successfully, 'error' = sync failed
+  const [matchInfoSyncStatus, setMatchInfoSyncStatus] = useState('idle')
+  const [officialsSyncStatus, setOfficialsSyncStatus] = useState('idle')
+  const [homeTeamSyncStatus, setHomeTeamSyncStatus] = useState('idle')
+  const [awayTeamSyncStatus, setAwayTeamSyncStatus] = useState('idle')
+  const [isSupabaseAvailable, setIsSupabaseAvailable] = useState(false)
+
   // All 162 municipalities (Gemeinden) of Kanton Zürich
   const citiesZurich = [
     // Bezirk Affoltern
@@ -709,6 +717,234 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView])
+
+  // Clean up stale error jobs with legacy columns on mount
+  useEffect(() => {
+    const cleanupLegacyErrorJobs = async () => {
+      try {
+        const errorJobs = await db.sync_queue
+          .where('status')
+          .equals('error')
+          .toArray()
+
+        // Legacy columns that no longer exist in Supabase
+        const legacyColumns = [
+          'away_team_name', 'home_team_name', 'away_team_short_name', 'home_team_short_name',
+          'home_short_name', 'away_short_name', 'coin_toss_confirmed', 'coin_toss_team_a',
+          'coin_toss_team_b', 'coin_toss_serve_a', 'first_serve', 'referee_pin',
+          'referee_connection_enabled', 'home_team_connection_enabled', 'away_team_connection_enabled'
+        ]
+
+        for (const job of errorJobs) {
+          const payload = job.payload || {}
+          const hasLegacyColumn = legacyColumns.some(col => col in payload)
+
+          if (hasLegacyColumn) {
+            console.log('[MatchSetup] Removing stale error job with legacy columns:', job.id)
+            await db.sync_queue.delete(job.id)
+          }
+        }
+      } catch (err) {
+        console.debug('[MatchSetup] Error cleaning up legacy jobs:', err.message)
+      }
+    }
+
+    cleanupLegacyErrorJobs()
+  }, [])
+
+  // Check Supabase availability and sync status periodically
+  useEffect(() => {
+    const checkSupabaseAndSyncStatus = async () => {
+      // Check if Supabase is available
+      if (!supabase) {
+        setIsSupabaseAvailable(false)
+        return
+      }
+
+      try {
+        const { error } = await supabase.from('matches').select('id').limit(1)
+        const available = !error
+        setIsSupabaseAvailable(available)
+
+        if (!available || !match?.seed_key) return
+
+        // Check sync queue for pending items related to this match
+        const queuedJobs = await db.sync_queue
+          .where('status')
+          .equals('queued')
+          .toArray()
+
+        const errorJobs = await db.sync_queue
+          .where('status')
+          .equals('error')
+          .toArray()
+
+        // Check for match-related sync jobs
+        const matchJobs = [...queuedJobs, ...errorJobs].filter(
+          j => j.resource === 'match' && (j.payload?.id === match.seed_key || j.payload?.external_id === match.seed_key)
+        )
+
+        const hasQueued = matchJobs.some(j => j.status === 'queued')
+        const hasError = matchJobs.some(j => j.status === 'error')
+
+        // Update sync statuses based on queue
+        if (hasError) {
+          setMatchInfoSyncStatus('error')
+          setOfficialsSyncStatus('error')
+          setHomeTeamSyncStatus('error')
+          setAwayTeamSyncStatus('error')
+        } else if (hasQueued) {
+          setMatchInfoSyncStatus('syncing')
+          setOfficialsSyncStatus('syncing')
+          setHomeTeamSyncStatus('syncing')
+          setAwayTeamSyncStatus('syncing')
+        } else {
+          // Check if match exists in Supabase
+          const { data: supabaseMatch } = await supabase
+            .from('matches')
+            .select('id, status')
+            .eq('external_id', match.seed_key)
+            .maybeSingle()
+
+          if (supabaseMatch) {
+            setMatchInfoSyncStatus('synced')
+            setOfficialsSyncStatus('synced')
+            setHomeTeamSyncStatus('synced')
+            setAwayTeamSyncStatus('synced')
+          } else {
+            setMatchInfoSyncStatus('idle')
+            setOfficialsSyncStatus('idle')
+            setHomeTeamSyncStatus('idle')
+            setAwayTeamSyncStatus('idle')
+          }
+        }
+      } catch (err) {
+        console.debug('[MatchSetup] Error checking sync status:', err.message)
+        setIsSupabaseAvailable(false)
+      }
+    }
+
+    checkSupabaseAndSyncStatus()
+    const interval = setInterval(checkSupabaseAndSyncStatus, 5000)
+    return () => clearInterval(interval)
+  }, [match?.seed_key])
+
+  // Retry sync for a specific card type
+  const retrySyncForCard = async (cardType) => {
+    if (!match?.seed_key) return
+
+    try {
+      // Find error jobs for this match and reset them to queued
+      const errorJobs = await db.sync_queue
+        .where('status')
+        .equals('error')
+        .toArray()
+
+      const matchErrorJobs = errorJobs.filter(
+        j => j.resource === 'match' && (j.payload?.id === match.seed_key || j.payload?.external_id === match.seed_key)
+      )
+
+      // If there are error jobs, reset them
+      if (matchErrorJobs.length > 0) {
+        for (const job of matchErrorJobs) {
+          await db.sync_queue.update(job.id, { status: 'queued', retry_count: 0 })
+        }
+      } else if (cardType === 'matchInfo') {
+        // No error jobs - check if match exists in Supabase
+        // If not, create a new match insert job
+        const { data: supabaseMatch } = await supabase
+          .from('matches')
+          .select('id')
+          .eq('external_id', match.seed_key)
+          .maybeSingle()
+
+        if (!supabaseMatch) {
+          // Check if a match with the same game_n already exists (prevent duplicates)
+          if (match.gameN) {
+            const { data: existingByGameN } = await supabase
+              .from('matches')
+              .select('id, external_id')
+              .eq('game_n', parseInt(match.gameN, 10))
+              .maybeSingle()
+
+            if (existingByGameN) {
+              console.warn('[MatchSetup] Match with game_n already exists in Supabase:', match.gameN)
+              setMatchInfoSyncStatus('error')
+              return
+            }
+          }
+
+          // Match doesn't exist in Supabase - create insert job
+          const homeTeam = await db.teams.get(match.homeTeamId)
+          const awayTeam = await db.teams.get(match.awayTeamId)
+
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'insert',
+            payload: {
+              external_id: match.seed_key,
+              status: match.status || 'setup',
+              scheduled_at: match.scheduledAt || null,
+              game_n: match.gameN ? parseInt(match.gameN, 10) : null,
+              game_pin: match.gamePin || null,
+              test: match.test || false,
+              match_info: {
+                hall: match.hall || '',
+                city: match.city || '',
+                league: match.league || '',
+                championship_type: match.championshipType || '',
+                championship_type_other: match.championshipTypeOther || '',
+                match_type_1: match.match_type_1 || '',
+                match_type_1_other: match.match_type_1_other || '',
+                match_type_2: match.match_type_2 || '',
+                match_type_3: match.match_type_3 || '',
+                match_type_3_other: match.match_type_3_other || ''
+              },
+              home_team: {
+                name: homeTeam?.name || home || 'Home',
+                short_name: homeTeam?.shortName || match.homeShortName || generateShortName(homeTeam?.name || home || 'Home'),
+                color: homeTeam?.color || homeColor
+              },
+              away_team: {
+                name: awayTeam?.name || away || 'Away',
+                short_name: awayTeam?.shortName || match.awayShortName || generateShortName(awayTeam?.name || away || 'Away'),
+                color: awayTeam?.color || awayColor
+              },
+              bench_home: match.bench_home || benchHome || [],
+              bench_away: match.bench_away || benchAway || []
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+          console.log('[MatchSetup] Created new match insert job for Supabase sync')
+        }
+      }
+
+      // Set only the specific card status to syncing
+      switch (cardType) {
+        case 'matchInfo':
+          setMatchInfoSyncStatus('syncing')
+          break
+        case 'officials':
+          setOfficialsSyncStatus('syncing')
+          break
+        case 'home':
+          setHomeTeamSyncStatus('syncing')
+          break
+        case 'away':
+          setAwayTeamSyncStatus('syncing')
+          break
+        default:
+          // If no specific card, sync all
+          setMatchInfoSyncStatus('syncing')
+          setOfficialsSyncStatus('syncing')
+          setHomeTeamSyncStatus('syncing')
+          setAwayTeamSyncStatus('syncing')
+      }
+    } catch (err) {
+      console.error('[MatchSetup] Error retrying sync:', err)
+    }
+  }
 
   // Restore original state functions (for Back button)
   const restoreMatchInfo = () => {
@@ -922,24 +1158,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           const awayUploadPin = updates.awayTeamUploadPin || match.awayTeamUploadPin
           if (homeUploadPin || awayUploadPin) {
             try {
-              // Fetch existing connection_pins to merge
+              // Fetch existing connection_pins to merge (use maybeSingle to avoid 406 if match not synced yet)
               const { data: existingMatch } = await supabase
                 .from('matches')
                 .select('connection_pins')
                 .eq('external_id', match.seed_key)
-                .single()
+                .maybeSingle()
 
-              const connectionPinsUpdate = {
-                ...(existingMatch?.connection_pins || {}),
-                ...(homeUploadPin ? { upload_home: homeUploadPin } : {}),
-                ...(awayUploadPin ? { upload_away: awayUploadPin } : {})
+              // Only update if match exists in Supabase
+              if (existingMatch) {
+                const connectionPinsUpdate = {
+                  ...(existingMatch.connection_pins || {}),
+                  ...(homeUploadPin ? { upload_home: homeUploadPin } : {}),
+                  ...(awayUploadPin ? { upload_away: awayUploadPin } : {})
+                }
+
+                await supabase
+                  .from('matches')
+                  .update({ connection_pins: connectionPinsUpdate })
+                  .eq('external_id', match.seed_key)
+                console.log('[MatchSetup] Synced upload PINs to Supabase connection_pins:', connectionPinsUpdate)
               }
-
-              await supabase
-                .from('matches')
-                .update({ connection_pins: connectionPinsUpdate })
-                .eq('external_id', match.seed_key)
-              console.log('[MatchSetup] Synced upload PINs to Supabase connection_pins:', connectionPinsUpdate)
             } catch (err) {
               console.warn('[MatchSetup] Failed to sync upload PINs to Supabase:', err)
             }
@@ -1728,25 +1967,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           external_id: matchSeedKey,
           status: 'setup',
-          // Legacy columns (keep during transition)
-          hall: hall || null,
-          city: city || null,
-          league: league || null,
           scheduled_at: scheduledAt || null,
-          match_type_1: type1 || null,
-          match_type_1_other: type1Other || null,
-          championship_type: championshipType || null,
-          championship_type_other: championshipTypeOther || null,
-          match_type_2: type2 || null,
-          match_type_3: type3 || null,
-          match_type_3_other: type3Other || null,
           game_n: gameN ? parseInt(gameN, 10) : null,
           game_pin: match?.gamePin || null,
           test: false,
-          // Legacy text columns for team names (keep during transition)
-          home_team_name: home.trim(),
-          away_team_name: away.trim(),
-          // NEW: Consolidated JSONB columns
+          // JSONB columns
           match_info: {
             hall: hall || '',
             city: city || '',
@@ -2036,19 +2261,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           external_id: seedKey,
           status: 'live',
-          // Legacy columns (keep during transition)
-          hall: hall || null,
-          city: city || null,
-          league: league || null,
           scheduled_at: scheduledAt || null,
           test: false,
           created_at: new Date().toISOString(),
-          // Legacy text columns (keep during transition)
-          home_team_name: home.trim(),
-          away_team_name: away.trim(),
-          home_short_name: homeShortName || generateShortName(home.trim()),
-          away_short_name: awayShortName || generateShortName(away.trim()),
-          // NEW: Consolidated JSONB columns
+          // JSONB columns
           match_info: {
             hall: hall || '',
             city: city || '',
@@ -2082,14 +2298,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
             true // useSnakeCase for Supabase
           ),
-          // PINs for dashboard connections and match recovery
-          // Legacy columns (keep during transition)
+          // PINs for dashboard connections
           game_pin: generatedGamePin,
-          referee_pin: String(generatedRefereePin).trim(),
-          bench_home_pin: String(generatedHomeTeamPin).trim(),
-          bench_away_pin: String(generatedAwayTeamPin).trim(),
           game_n: gameN ? Number(gameN) : null,
-          // NEW: connection_pins JSONB
           connection_pins: {
             referee: String(generatedRefereePin).trim(),
             bench_home: String(generatedHomeTeamPin).trim(),
@@ -2302,20 +2513,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           id: updatedMatch.seed_key,
           status: 'live', // Status will be 'live' after match setup is confirmed
-          // Legacy columns (keep during transition)
-          hall: updatedMatch.hall || null,
-          city: updatedMatch.city || null,
-          league: updatedMatch.league || null,
           scheduled_at: updatedMatch.scheduledAt || null,
-          coin_toss_confirmed: true,
-          coin_toss_team_a: teamA,
-          coin_toss_team_b: teamB,
-          first_serve: firstServeTeam,
-          home_coach_signature: !updatedMatch.test ? homeCoachSignature : null,
-          home_captain_signature: !updatedMatch.test ? homeCaptainSignature : null,
-          away_coach_signature: !updatedMatch.test ? awayCoachSignature : null,
-          away_captain_signature: !updatedMatch.test ? awayCaptainSignature : null,
-          // NEW: Consolidated JSONB columns
+          // JSONB columns
+          match_info: {
+            hall: updatedMatch.hall || '',
+            city: updatedMatch.city || '',
+            league: updatedMatch.league || ''
+          },
           coin_toss: {
             team_a: teamA,
             team_b: teamB,
@@ -2946,10 +3150,53 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               {/* Home Team */}
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background:'#082815' }}>{t('matchSetup.homeTeam')}</div>
+                {/* Header row: Trikot container + Title */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
+                  {/* Trikot container */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: 16,
+                      cursor: 'pointer'
+                    }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setColorPickerModal({
+                        team: 'home',
+                        position: { x: rect.left + rect.width / 2, y: rect.bottom + 8 }
+                      })
+                    }}
+                  >
+                    <div
+                      className="shirt"
+                      style={{ background: homeColor, transform: 'scale(0.65)', margin: '-10px' }}
+                    >
+                      <div className="collar" style={{ background: homeColor }} />
+                      <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
+                    </div>
+                  </div>
+                  {/* Title */}
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      fontSize: '20px',
+                      fontWeight: 700,
+                      color: getContrastColor(homeColor),
+                      padding: '10px',
+                      border: '0.5px solid white',
+                      borderRadius: '10px',
+                      background: homeColor
+                    }}
+                  >
+                    {t('matchSetup.homeTeam').toUpperCase()}
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0}}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
+                  <div className="field" style={{ flex: '0 0 60%', marginBottom: 0}}>
+                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
                       type="text"
                       value={home}
@@ -2958,15 +3205,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
-                  <div className="field" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
+                  <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
+                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
                       type="text"
                       value={homeShortName}
                       onChange={e => setHomeShortName(e.target.value.toUpperCase())}
                       maxLength={8}
                       placeholder={t('common.home').toUpperCase()}
-                      style={{ width: '120px', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
+                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
                 </div>
@@ -2991,10 +3238,54 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
               {/* Away Team */}
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
-                <div style={{ textAlign: 'center', marginBottom: 16, fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: '#082815' }}>{t('matchSetup.awayTeam')}</div>
+                {/* Header row: Trikot container + Title */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
+                 
+                  {/* Title */}
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      fontSize: '20px',
+                      fontWeight: 700,
+                      color: getContrastColor(awayColor),
+                      padding: '10px',
+                      border: '0.5px solid white',
+                      borderRadius: '10px',
+                      background: awayColor
+                    }}
+                  >
+                    {t('matchSetup.awayTeam').toUpperCase()}
+                  </div>
+                   {/* Trikot container */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: 16,
+                      cursor: 'pointer'
+                    }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setColorPickerModal({
+                        team: 'away',
+                        position: { x: rect.left + rect.width / 2, y: rect.bottom + 8 }
+                      })
+                    }}
+                  >
+                    <div
+                      className="shirt"
+                      style={{ background: awayColor, transform: 'scale(0.65)', margin: '-10px' }}
+                    >
+                      <div className="collar" style={{ background: awayColor }} />
+                      <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
+                    </div>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
+                  <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
+                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
                       type="text"
                       value={away}
@@ -3003,20 +3294,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
-                  <div className="field" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600,alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
+                  <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
+                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
                       type="text"
                       value={awayShortName}
                       onChange={e => setAwayShortName(e.target.value.toUpperCase())}
                       maxLength={8}
                       placeholder={t('common.away').toUpperCase()}
-                      style={{ width: '120px', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
+                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
+                  
                 </div>
+                
               </div>
+              
             </div>
+            
           </div>
         </div>
         {match && !match.test && match.gamePin && (
@@ -3069,6 +3364,78 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
           </button>
         </div>
+
+        {/* Color Picker Modal for Match Info view */}
+        {colorPickerModal && (
+          <>
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 999,
+                background: 'rgba(0, 0, 0, 0.6)'
+              }}
+              onClick={() => setColorPickerModal(null)}
+            />
+            <div
+              style={{
+                position: 'fixed',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 1000,
+                background: '#1f2937',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                padding: '16px',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                minWidth: '280px'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+                {t('matchSetup.chooseTeamColour', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                {teamColors.map((color) => {
+                  const isSelected = (colorPickerModal.team === 'home' ? homeColor : awayColor) === color
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => {
+                        if (colorPickerModal.team === 'home') {
+                          setHomeColor(color)
+                        } else {
+                          setAwayColor(color)
+                        }
+                        setColorPickerModal(null)
+                      }}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '12px 8px',
+                        background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                        border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        minWidth: '60px'
+                      }}
+                    >
+                      <div className="shirt" style={{ background: color, transform: 'scale(0.8)' }}>
+                        <div className="collar" style={{ background: color }} />
+                        <div className="number" style={{ color: getContrastColor(color) }}>1</div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </MatchSetupInfoView>
     )
   }
@@ -4250,11 +4617,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   action: 'update',
                   payload: {
                     id: match.seed_key,
-                    // Legacy columns (keep during transition)
-                    home_team_name: home?.trim() || '',
-                    home_coach_signature: homeCoachSig,
-                    home_captain_signature: homeCaptainSig,
-                    // NEW: Consolidated JSONB columns
+                    // JSONB columns
                     home_team: { name: home?.trim() || '', short_name: homeShortName || generateShortName(home), color: homeColor },
                     signatures: {
                       home_coach: homeCoachSig || '',
@@ -4278,12 +4641,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 try {
                   const { data: supabaseMatch } = await supabase
                     .from('matches')
-                    .select('id, coin_toss_team_a')
+                    .select('id')
                     .eq('external_id', match.seed_key)
-                    .single()
+                    .maybeSingle()
 
                   if (supabaseMatch?.id) {
-                    const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+                    const coinTossTeamA = match.coinTossTeamA || 'home'
                     const homeIsTeamA = coinTossTeamA === 'home'
                     const colorKey = homeIsTeamA ? 'team_a_color' : 'team_b_color'
                     const shortKey = homeIsTeamA ? 'team_a_short' : 'team_b_short'
@@ -4301,7 +4664,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     console.log('[MatchSetup] Synced home team to match_live_state')
                   }
                 } catch (err) {
-                  console.warn('[MatchSetup] Failed to sync home team to match_live_state:', err)
+                  console.debug('[MatchSetup] Could not sync home team to match_live_state:', err.message)
                 }
               }
 
@@ -5566,11 +5929,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   action: 'update',
                   payload: {
                     id: match.seed_key,
-                    // Legacy columns (keep during transition)
-                    away_team_name: away?.trim() || '',
-                    away_coach_signature: awayCoachSig,
-                    away_captain_signature: awayCaptainSig,
-                    // NEW: Consolidated JSONB columns
+                    // JSONB columns
                     away_team: { name: away?.trim() || '', short_name: awayShortName || generateShortName(away), color: awayColor },
                     signatures: {
                       away_coach: awayCoachSig || '',
@@ -5594,12 +5953,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 try {
                   const { data: supabaseMatch } = await supabase
                     .from('matches')
-                    .select('id, coin_toss_team_a')
+                    .select('id')
                     .eq('external_id', match.seed_key)
-                    .single()
+                    .maybeSingle()
 
                   if (supabaseMatch?.id) {
-                    const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+                    const coinTossTeamA = match.coinTossTeamA || 'home'
                     const homeIsTeamA = coinTossTeamA === 'home'
                     // Away is Team B if home is Team A, and vice versa
                     const colorKey = homeIsTeamA ? 'team_b_color' : 'team_a_color'
@@ -5618,7 +5977,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     console.log('[MatchSetup] Synced away team to match_live_state')
                   }
                 } catch (err) {
-                  console.warn('[MatchSetup] Failed to sync away team to match_live_state:', err)
+                  console.debug('[MatchSetup] Could not sync away team to match_live_state:', err.message)
                 }
               }
 
@@ -5921,6 +6280,55 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     </span>
   )
 
+  // Sync status indicator for cards - green=synced, yellow=syncing, red=error, gray=not synced
+  // Hidden if offline mode
+  const SyncStatusIndicator = ({ status, onRetry }) => {
+    if (offlineMode) return null
+
+    const colors = {
+      synced: { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e' },
+      syncing: { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308' },
+      error: { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444' },
+      idle: { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af' }
+    }
+    const labels = {
+      synced: t('matchSetup.syncStatus.synced', 'Synced'),
+      syncing: t('matchSetup.syncStatus.syncing', 'Syncing...'),
+      error: t('matchSetup.syncStatus.error', 'Sync Error'),
+      idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced', 'Not synced') : t('matchSetup.syncStatus.offline', 'Offline')
+    }
+    const c = colors[status] || colors.synced
+
+    return (
+      <div
+        onClick={status !== 'synced' && onRetry ? onRetry : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          padding: '3px 8px',
+          background: c.bg,
+          border: `1px solid ${c.border}`,
+          borderRadius: '4px',
+          fontSize: '10px',
+          cursor: status !== 'synced' && onRetry ? 'pointer' : 'default',
+          transition: 'all 0.2s'
+        }}
+        title={status !== 'synced' ? t('matchSetup.syncStatus.clickToRetry', 'Click to retry sync') : ''}
+      >
+        <span style={{
+          display: 'inline-block',
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          background: c.dot,
+          boxShadow: status === 'syncing' ? `0 0 4px 2px ${c.dot}` : 'none'
+        }} />
+        <span>{labels[status]}</span>
+      </div>
+    )
+  }
+
   // Officials are complete if at least 1st referee and scorer are filled
   // 2nd referee and assistant scorer are optional
   const officialsConfigured =
@@ -6075,14 +6483,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
-              // Legacy columns (keep during transition)
-              referee_connection_enabled: enabled,
-              referee_pin: updatedMatch.refereePin || null,
-              // NEW: connections JSONB (merge with existing)
+              // JSONB columns
               connections: {
                 referee_enabled: enabled
               },
-              // NEW: connection_pins JSONB (merge with existing)
               connection_pins: {
                 referee: updatedMatch.refereePin || ''
               }
@@ -6145,14 +6549,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
-              // Legacy columns (keep during transition)
-              home_team_connection_enabled: enabled,
-              bench_home_pin: updatedMatch.homeTeamPin || null,
-              // NEW: connections JSONB (merge with existing)
               connections: {
                 home_bench_enabled: enabled
               },
-              // NEW: connection_pins JSONB (merge with existing)
               connection_pins: {
                 bench_home: updatedMatch.homeTeamPin || ''
               }
@@ -6215,14 +6614,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
-              // Legacy columns (keep during transition)
-              away_team_connection_enabled: enabled,
-              bench_away_pin: updatedMatch.awayTeamPin || null,
-              // NEW: connections JSONB (merge with existing)
               connections: {
                 away_bench_enabled: enabled
               },
-              // NEW: connection_pins JSONB (merge with existing)
               connection_pins: {
                 bench_away: updatedMatch.awayTeamPin || ''
               }
@@ -6300,9 +6694,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
-              bench_connection_enabled: enabled,
-              home_team_pin: updatedMatch.homeTeamPin || null,
-              away_team_pin: updatedMatch.awayTeamPin || null
+              connections: {
+                home_bench_enabled: enabled,
+                away_bench_enabled: enabled
+              },
+              connection_pins: {
+                bench_home: updatedMatch.homeTeamPin || '',
+                bench_away: updatedMatch.awayTeamPin || ''
+              }
             },
             ts: new Date().toISOString(),
             status: 'queued'
@@ -6571,15 +6970,34 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </span>
                 )}
               </div>
+              <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
             <div
               className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}
+              style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}
             >
-              <span>{t('matchSetup.homeTeam')}:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={home}>{home || t('common.notSet')}</span>
-              <span>{t('matchSetup.awayTeam')}:</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={away}>{away || t('common.notSet')}</span>
+              {/* Home Team row with color indicator */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <span>{t('matchSetup.homeTeam')}:</span>
+              </div>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: '2px 0' }} title={home}>{home || t('common.notSet')}</span>
+
+              {/* Away Team row with color indicator */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <span>{t('matchSetup.awayTeam')}:</span>
+              </div>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: '2px 0' }} title={away}>{away || t('common.notSet')}</span>
+
               <span>{t('matchSetup.date')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || t('common.notSet')}</span>
               <span>{t('matchSetup.time')}:</span>
@@ -6612,6 +7030,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StatusBadge ready={officialsConfigured} />
                 <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>{t('matchSetup.matchOfficials')}</h3>
               </div>
+              <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
             </div>
             <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}>
               <span>{t('matchSetup.referee1')}:</span>
@@ -6666,10 +7085,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       
       <div className="grid-4 setup-section" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
         <div className="card" style={{ order: 1 }}>
-          {/* Row 1: Status + Team Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <StatusBadge ready={homeConfigured} />
-            <h1 style={{ margin: 0 }}>{home && home !== 'Home' ? home.toUpperCase() : t('matchSetup.homeTeam').toUpperCase()}</h1>
+          {/* Row 1: Status + Team Name + Sync Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <StatusBadge ready={homeConfigured} />
+              <h1 style={{
+                margin: 0,
+                background: homeColor,
+                color: getContrastColor(homeColor),
+                padding: '6px 16px',
+                borderRadius: '8px'
+              }}>
+                {home && home !== 'Home' ? home.toUpperCase() : t('matchSetup.homeTeam').toUpperCase()}
+              </h1>
+            </div>
+            <SyncStatusIndicator status={homeTeamSyncStatus} onRetry={() => retrySyncForCard('home')} />
           </div>
 
           {/* Row 2: Stats */}
@@ -6742,10 +7172,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
 
         <div className="card" style={{ order: 2 }}>
-          {/* Row 1: Status + Team Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <StatusBadge ready={awayConfigured} />
-            <h1 style={{ margin: 0 }}>{away && away !== 'Away' ? away.toUpperCase() : t('matchSetup.awayTeam').toUpperCase()}</h1>
+          {/* Row 1: Status + Team Name + Sync Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <StatusBadge ready={awayConfigured} />
+              <h1 style={{
+                margin: 0,
+                background: awayColor,
+                color: getContrastColor(awayColor),
+                padding: '6px 16px',
+                borderRadius: '8px'
+              }}>
+                {away && away !== 'Away' ? away.toUpperCase() : t('matchSetup.awayTeam').toUpperCase()}
+              </h1>
+            </div>
+            <SyncStatusIndicator status={awayTeamSyncStatus} onRetry={() => retrySyncForCard('away')} />
           </div>
 
           {/* Row 2: Stats */}
@@ -7447,14 +7888,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               }
                             })
                             .eq('external_id', match.seed_key)
-                            .select('id, coin_toss_team_a')
-                            .single()
-                          console.log(`[MatchSetup] Synced ${teamKey} color to Supabase:`, color)
+                            .select('id')
+                            .maybeSingle()
+
+                          if (supabaseMatch) {
+                            console.log(`[MatchSetup] Synced ${teamKey} color to Supabase:`, color)
+                          }
 
                           // Also update match_live_state if it exists (for Referee app)
                           if (supabaseMatch?.id) {
                             // Team A = coin toss winner, determine if home is Team A
-                            const coinTossTeamA = match.coinTossTeamA || supabaseMatch.coin_toss_team_a || 'home'
+                            const coinTossTeamA = match.coinTossTeamA || 'home'
                             const homeIsTeamA = coinTossTeamA === 'home'
                             // If changing home color and home is Team A -> update team_a_color
                             // If changing home color and home is Team B -> update team_b_color
