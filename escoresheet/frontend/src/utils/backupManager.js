@@ -662,15 +662,26 @@ export async function importMatchFromSupabase(cloudData) {
       })
     }
 
-    // Create match with all JSONB data
+    // Extract JSONB data with fallback to legacy columns
+    const matchInfo = match.match_info || {}
+    const coinToss = match.coin_toss || {}
+    const signatures = match.signatures || {}
+    const results = match.results || {}
+    const approval = match.approval || {}
+    const connections = match.connections || {}
+    const connectionPins = match.connection_pins || {}
+
+    // Create match with all JSONB data (prefer JSONB, fallback to legacy)
     const localMatchId = await db.matches.add({
       homeTeamId,
       awayTeamId,
       status: match.status,
       scheduledAt: match.scheduled_at,
-      hall: match.hall,
-      city: match.city,
-      league: match.league,
+      // Match info: prefer JSONB, fallback to legacy
+      hall: matchInfo.hall || match.hall,
+      city: matchInfo.city || match.city,
+      league: matchInfo.league || match.league,
+      championshipType: matchInfo.championship_type || match.championship_type,
       refereePin: match.referee_pin,
       gamePin: match.game_pin,
       gameN: match.game_n,
@@ -684,27 +695,43 @@ export async function importMatchFromSupabase(cloudData) {
       officials: match.officials || [],
       bench_home: match.bench_home || [],
       bench_away: match.bench_away || [],
-      // Signatures
-      homeCoachSignature: match.home_coach_signature,
-      homeCaptainSignature: match.home_captain_signature,
-      awayCoachSignature: match.away_coach_signature,
-      awayCaptainSignature: match.away_captain_signature,
-      // Coin toss
-      coinTossConfirmed: match.coin_toss_confirmed,
-      coinTossTeamA: match.coin_toss_team_a,
-      coinTossTeamB: match.coin_toss_team_b,
-      coinTossServeA: match.coin_toss_serve_a,
-      firstServe: match.first_serve,
-      // Match result
-      setResults: match.set_results,
-      winner: match.winner,
-      finalScore: match.final_score,
-      // Referee connection settings
-      refereeConnectionEnabled: match.referee_connection_enabled,
-      homeTeamConnectionEnabled: match.home_team_connection_enabled,
-      awayTeamConnectionEnabled: match.away_team_connection_enabled,
-      homeTeamPin: match.bench_home_pin,
-      awayTeamPin: match.bench_away_pin,
+      // Signatures: prefer JSONB, fallback to legacy
+      homeCoachSignature: signatures.home_coach || match.home_coach_signature,
+      homeCaptainSignature: signatures.home_captain || match.home_captain_signature,
+      awayCoachSignature: signatures.away_coach || match.away_coach_signature,
+      awayCaptainSignature: signatures.away_captain || match.away_captain_signature,
+      homeCoachPostGameSignature: signatures.home_coach_post_game || match.home_coach_post_game_signature,
+      homeCaptainPostGameSignature: signatures.home_captain_post_game || match.home_captain_post_game_signature,
+      awayCoachPostGameSignature: signatures.away_coach_post_game || match.away_coach_post_game_signature,
+      awayCaptainPostGameSignature: signatures.away_captain_post_game || match.away_captain_post_game_signature,
+      refereeSignature: signatures.referee || match.referee_signature,
+      scorerSignature: signatures.scorer || match.scorer_signature,
+      // Coin toss: prefer JSONB, fallback to legacy
+      coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : match.coin_toss_confirmed,
+      coinTossTeamA: coinToss.team_a || match.coin_toss_team_a,
+      coinTossTeamB: coinToss.team_b || match.coin_toss_team_b,
+      coinTossServeA: coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a,
+      firstServe: coinToss.first_serve || match.first_serve,
+      // Match result: prefer JSONB, fallback to legacy
+      setResults: results.set_results || match.set_results,
+      winner: results.winner || match.winner,
+      finalScore: results.final_score || match.final_score,
+      sanctions: results.sanctions || match.sanctions,
+      // Approval: prefer JSONB, fallback to legacy
+      approved: approval.approved !== undefined ? approval.approved : match.approved,
+      approvedAt: approval.approved_at || match.approved_at,
+      // Connection settings: prefer JSONB, fallback to legacy
+      refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : match.referee_connection_enabled,
+      homeTeamConnectionEnabled: connections.home_bench_enabled !== undefined ? connections.home_bench_enabled : match.home_team_connection_enabled,
+      awayTeamConnectionEnabled: connections.away_bench_enabled !== undefined ? connections.away_bench_enabled : match.away_team_connection_enabled,
+      homeTeamPin: connectionPins.bench_home || match.bench_home_pin,
+      awayTeamPin: connectionPins.bench_away || match.bench_away_pin,
+      refereePin: connectionPins.referee || match.referee_pin,
+      homeTeamUploadPin: connectionPins.upload_home || match.home_team_upload_pin,
+      awayTeamUploadPin: connectionPins.upload_away || match.away_team_upload_pin,
+      // Pending rosters: prefer JSONB, fallback to legacy
+      pendingHomeRoster: connections.pending_home_roster || match.pending_home_roster,
+      pendingAwayRoster: connections.pending_away_roster || match.pending_away_roster,
       // Import metadata
       importedFrom: 'supabase',
       importedAt: new Date().toISOString(),

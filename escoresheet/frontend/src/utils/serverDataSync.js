@@ -149,9 +149,9 @@ export async function getMatchData(matchId) {
         .eq('match_id', match.id)
         .maybeSingle()
 
-      // Build team info from matches table
-      const homeTeamName = match.home_team_name || match.home_team?.name || 'Home'
-      const awayTeamName = match.away_team_name || match.away_team?.name || 'Away'
+      // Build team info from matches table (prefer JSONB, fallback to old columns for transition)
+      const homeTeamName = match.home_team?.name || match.home_team_name || 'Home'
+      const awayTeamName = match.away_team?.name || match.away_team_name || 'Away'
 
       // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
       // Determine coinTossTeamA: is Team A the home or away team?
@@ -163,8 +163,8 @@ export async function getMatchData(matchId) {
         teamAIsHome = liveState.team_a_name === homeTeamName
         coinTossTeamA = teamAIsHome ? 'home' : 'away'
       } else {
-        // Fallback to coin_toss_serve_a if live state doesn't have A/B data
-        coinTossTeamA = match.coin_toss_team_a || 'home'
+        // Fallback to coin_toss if live state doesn't have A/B data (prefer JSONB, fallback to old columns)
+        coinTossTeamA = match.coin_toss?.team_a || match.coin_toss_team_a || 'home'
         teamAIsHome = coinTossTeamA === 'home'
       }
 
@@ -179,12 +179,12 @@ export async function getMatchData(matchId) {
 
       const homeTeam = {
         name: homeTeamName,
-        shortName: match.home_short_name || match.home_team?.short_name || 'HOM',
+        shortName: match.home_team?.short_name || match.home_short_name || 'HOM',
         color: homeColorFromLive || match.home_team?.color || '#ef4444'
       }
       const awayTeam = {
         name: awayTeamName,
-        shortName: match.away_short_name || match.away_team?.short_name || 'AWY',
+        shortName: match.away_team?.short_name || match.away_short_name || 'AWY',
         color: awayColorFromLive || match.away_team?.color || '#3b82f6'
       }
 
@@ -406,11 +406,11 @@ export async function getMatchData(matchId) {
           id: matchId, // Use external_id as the reference ID
           coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
           coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
-          coinTossServeA: match.coin_toss_serve_a,
-          firstServe: match.first_serve,
-          // Get short names from columns, or extract from JSONB if columns are empty
-          homeShortName: match.home_short_name || match.home_team?.short_name || homeTeam.shortName,
-          awayShortName: match.away_short_name || match.away_team?.short_name || awayTeam.shortName,
+          coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
+          firstServe: match.coin_toss?.first_serve || match.first_serve,
+          // Get short names from JSONB, or fallback to old columns
+          homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
+          awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
           homeName: homeTeam.name,
           awayName: awayTeam.name,
           homeColor: homeTeam.color,
@@ -914,13 +914,17 @@ export async function listAvailableMatchesSupabase() {
         scheduled_at,
         referee_pin,
         referee_connection_enabled,
+        home_team,
+        away_team,
         home_team_name,
         away_team_name,
         home_team_upload_pin,
-        away_team_upload_pin
+        away_team_upload_pin,
+        connections,
+        connection_pins
       `)
       .in('status', ['setup', 'live'])
-      .eq('referee_connection_enabled', true)
+      .or('referee_connection_enabled.eq.true,connections->referee_enabled.eq.true')
       .order('scheduled_at', { ascending: true })
 
     if (error) {
@@ -948,21 +952,28 @@ export async function listAvailableMatchesSupabase() {
         }
       }
 
+      // Prefer JSONB values, fallback to old columns during transition
+      const homeTeamName = m.home_team?.name || m.home_team_name || 'Home'
+      const awayTeamName = m.away_team?.name || m.away_team_name || 'Away'
+      const connections = m.connections || {}
+      const connectionPins = m.connection_pins || {}
+
       return {
         id: m.external_id || m.id,
         external_id: m.external_id, // Keep original for Supabase writes
         gameNumber: m.game_n || m.external_id,
-        homeTeam: m.home_team_name || 'Home',
-        awayTeam: m.away_team_name || 'Away',
-        homeTeamName: m.home_team_name || 'Home',
-        awayTeamName: m.away_team_name || 'Away',
+        homeTeam: homeTeamName,
+        awayTeam: awayTeamName,
+        homeTeamName: homeTeamName,
+        awayTeamName: awayTeamName,
         scheduledAt: m.scheduled_at,
         dateTime,
-        refereeConnectionEnabled: m.referee_connection_enabled,
+        // Prefer JSONB, fallback to legacy
+        refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : m.referee_connection_enabled,
         status: m.status,
-        // Include upload PINs for roster upload app
-        homeTeamUploadPin: m.home_team_upload_pin,
-        awayTeamUploadPin: m.away_team_upload_pin
+        // Include upload PINs for roster upload app - prefer JSONB
+        homeTeamUploadPin: connectionPins.upload_home || m.home_team_upload_pin,
+        awayTeamUploadPin: connectionPins.upload_away || m.away_team_upload_pin
       }
     })
 
@@ -991,14 +1002,20 @@ export async function listAvailableMatchesForBenchSupabase() {
         game_n,
         status,
         scheduled_at,
+        home_team,
+        away_team,
         home_team_name,
         away_team_name,
-        home_team_pin,
-        away_team_pin,
-        bench_connection_enabled
+        bench_home_pin,
+        bench_away_pin,
+        home_team_connection_enabled,
+        away_team_connection_enabled,
+        connections,
+        connection_pins
       `)
       .in('status', ['setup', 'live'])
-      .eq('bench_connection_enabled', true)
+      // Check if either home or away bench is enabled (legacy or JSONB)
+      .or('home_team_connection_enabled.eq.true,away_team_connection_enabled.eq.true,connections->home_bench_enabled.eq.true,connections->away_bench_enabled.eq.true')
       .order('scheduled_at', { ascending: true })
 
     if (error) {
@@ -1024,19 +1041,27 @@ export async function listAvailableMatchesForBenchSupabase() {
         }
       }
 
+      // Prefer JSONB values, fallback to old columns during transition
+      const homeTeamName = m.home_team?.name || m.home_team_name || 'Home'
+      const awayTeamName = m.away_team?.name || m.away_team_name || 'Away'
+      const connections = m.connections || {}
+      const connectionPins = m.connection_pins || {}
+
       return {
         id: m.external_id || m.id,
         external_id: m.external_id,
         gameNumber: m.game_n || m.external_id,
-        homeTeam: m.home_team_name || 'Home',
-        awayTeam: m.away_team_name || 'Away',
-        homeTeamName: m.home_team_name || 'Home',
-        awayTeamName: m.away_team_name || 'Away',
+        homeTeam: homeTeamName,
+        awayTeam: awayTeamName,
+        homeTeamName: homeTeamName,
+        awayTeamName: awayTeamName,
         scheduledAt: m.scheduled_at,
         dateTime,
-        benchConnectionEnabled: m.bench_connection_enabled,
-        homeTeamPin: m.home_team_pin,
-        awayTeamPin: m.away_team_pin,
+        // Prefer JSONB, fallback to legacy
+        homeBenchEnabled: connections.home_bench_enabled !== undefined ? connections.home_bench_enabled : m.home_team_connection_enabled,
+        awayBenchEnabled: connections.away_bench_enabled !== undefined ? connections.away_bench_enabled : m.away_team_connection_enabled,
+        homeTeamPin: connectionPins.bench_home || m.bench_home_pin,
+        awayTeamPin: connectionPins.bench_away || m.bench_away_pin,
         status: m.status
       }
     })
@@ -1060,7 +1085,7 @@ export async function validatePinSupabase(pin, type = 'referee') {
       return { success: false, error: 'Invalid PIN format' }
     }
 
-    // Query matches by referee_pin (using JSONB columns, no FK joins needed)
+    // Query matches by referee_pin (check both legacy column and JSONB)
     const { data, error } = await supabase
       .from('matches')
       .select(`
@@ -1074,11 +1099,13 @@ export async function validatePinSupabase(pin, type = 'referee') {
         home_team_name,
         away_team_name,
         home_team,
-        away_team
+        away_team,
+        connections,
+        connection_pins
       `)
-      .eq('referee_pin', pinStr)
+      .or(`referee_pin.eq.${pinStr},connection_pins->referee.eq."${pinStr}"`)
       .in('status', ['setup', 'live'])
-      .eq('referee_connection_enabled', true)
+      .or('referee_connection_enabled.eq.true,connections->referee_enabled.eq.true')
       .maybeSingle()
 
     if (error) {
@@ -1090,15 +1117,19 @@ export async function validatePinSupabase(pin, type = 'referee') {
       return { success: false, error: 'Invalid PIN code' }
     }
 
-    // Format match data to match WebSocket server format (using JSONB columns)
+    // Extract JSONB data with fallback to legacy columns
+    const connections = data.connections || {}
+    const connectionPins = data.connection_pins || {}
+
+    // Format match data to match WebSocket server format (prefer JSONB, fallback to old columns)
     const match = {
       id: data.external_id || data.id,
       gameNumber: data.game_n || data.external_id,
       status: data.status,
       scheduledAt: data.scheduled_at,
-      refereeConnectionEnabled: data.referee_connection_enabled,
-      homeTeam: data.home_team_name || data.home_team?.name || 'Home',
-      awayTeam: data.away_team_name || data.away_team?.name || 'Away',
+      refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : data.referee_connection_enabled,
+      homeTeam: data.home_team?.name || data.home_team_name || 'Home',
+      awayTeam: data.away_team?.name || data.away_team_name || 'Away',
       homeTeamColor: data.home_team?.color,
       awayTeamColor: data.away_team?.color
     }
