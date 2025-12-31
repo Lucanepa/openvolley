@@ -921,19 +921,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           const homeUploadPin = updates.homeTeamUploadPin || match.homeTeamUploadPin
           const awayUploadPin = updates.awayTeamUploadPin || match.awayTeamUploadPin
           if (homeUploadPin || awayUploadPin) {
-            const supabaseUpdates = {}
-            if (homeUploadPin) {
-              supabaseUpdates.home_team_upload_pin = homeUploadPin
-            }
-            if (awayUploadPin) {
-              supabaseUpdates.away_team_upload_pin = awayUploadPin
-            }
             try {
+              // Fetch existing connection_pins to merge
+              const { data: existingMatch } = await supabase
+                .from('matches')
+                .select('connection_pins')
+                .eq('external_id', match.seed_key)
+                .single()
+
+              const connectionPinsUpdate = {
+                ...(existingMatch?.connection_pins || {}),
+                ...(homeUploadPin ? { upload_home: homeUploadPin } : {}),
+                ...(awayUploadPin ? { upload_away: awayUploadPin } : {})
+              }
+
               await supabase
                 .from('matches')
-                .update(supabaseUpdates)
+                .update({ connection_pins: connectionPinsUpdate })
                 .eq('external_id', match.seed_key)
-              console.log('[MatchSetup] Synced upload PINs to Supabase:', supabaseUpdates)
+              console.log('[MatchSetup] Synced upload PINs to Supabase connection_pins:', connectionPinsUpdate)
             } catch (err) {
               console.warn('[MatchSetup] Failed to sync upload PINs to Supabase:', err)
             }
@@ -1722,6 +1728,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           external_id: matchSeedKey,
           status: 'setup',
+          // Legacy columns (keep during transition)
           hall: hall || null,
           city: city || null,
           league: league || null,
@@ -1736,10 +1743,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           game_n: gameN ? parseInt(gameN, 10) : null,
           game_pin: match?.gamePin || null,
           test: false,
-          // Text columns for team names (used for listing matches)
+          // Legacy text columns for team names (keep during transition)
           home_team_name: home.trim(),
           away_team_name: away.trim(),
-          // JSONB columns for all team/player/official data
+          // NEW: Consolidated JSONB columns
+          match_info: {
+            hall: hall || '',
+            city: city || '',
+            league: league || '',
+            championship_type: championshipType || '',
+            championship_type_other: championshipTypeOther || '',
+            match_type_1: type1 || '',
+            match_type_1_other: type1Other || '',
+            match_type_2: type2 || '',
+            match_type_3: type3 || '',
+            match_type_3_other: type3Other || ''
+          },
           home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
           away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
           bench_home: benchHome || [],
@@ -2017,19 +2036,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           external_id: seedKey,
           status: 'live',
+          // Legacy columns (keep during transition)
           hall: hall || null,
           city: city || null,
           league: league || null,
           scheduled_at: scheduledAt || null,
           test: false,
           created_at: new Date().toISOString(),
-          // Text columns for team names (used for listing matches)
+          // Legacy text columns (keep during transition)
           home_team_name: home.trim(),
           away_team_name: away.trim(),
-          // Text columns for short names and colors (for direct access)
           home_short_name: homeShortName || generateShortName(home.trim()),
           away_short_name: awayShortName || generateShortName(away.trim()),
-          // JSONB columns for all team/player/official data
+          // NEW: Consolidated JSONB columns
+          match_info: {
+            hall: hall || '',
+            city: city || '',
+            league: league || ''
+          },
           home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor || '#ef4444' },
           away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor || '#3b82f6' },
           players_home: homeRoster.map(p => ({
@@ -2059,11 +2083,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             true // useSnakeCase for Supabase
           ),
           // PINs for dashboard connections and match recovery
+          // Legacy columns (keep during transition)
           game_pin: generatedGamePin,
           referee_pin: String(generatedRefereePin).trim(),
           bench_home_pin: String(generatedHomeTeamPin).trim(),
           bench_away_pin: String(generatedAwayTeamPin).trim(),
-          game_n: gameN ? Number(gameN) : null
+          game_n: gameN ? Number(gameN) : null,
+          // NEW: connection_pins JSONB
+          connection_pins: {
+            referee: String(generatedRefereePin).trim(),
+            bench_home: String(generatedHomeTeamPin).trim(),
+            bench_away: String(generatedAwayTeamPin).trim()
+          }
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -2271,6 +2302,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         payload: {
           id: updatedMatch.seed_key,
           status: 'live', // Status will be 'live' after match setup is confirmed
+          // Legacy columns (keep during transition)
           hall: updatedMatch.hall || null,
           city: updatedMatch.city || null,
           league: updatedMatch.league || null,
@@ -2279,7 +2311,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           coin_toss_team_a: teamA,
           coin_toss_team_b: teamB,
           first_serve: firstServeTeam,
-          // JSONB columns
+          home_coach_signature: !updatedMatch.test ? homeCoachSignature : null,
+          home_captain_signature: !updatedMatch.test ? homeCaptainSignature : null,
+          away_coach_signature: !updatedMatch.test ? awayCoachSignature : null,
+          away_captain_signature: !updatedMatch.test ? awayCaptainSignature : null,
+          // NEW: Consolidated JSONB columns
+          coin_toss: {
+            team_a: teamA,
+            team_b: teamB,
+            confirmed: true,
+            first_serve: firstServeTeam
+          },
+          signatures: !updatedMatch.test ? {
+            home_coach: homeCoachSignature || '',
+            home_captain: homeCaptainSignature || '',
+            away_coach: awayCoachSignature || '',
+            away_captain: awayCaptainSignature || ''
+          } : {},
           home_team: { name: home?.trim() || '', short_name: homeShortName || '', color: homeColor },
           away_team: { name: away?.trim() || '', short_name: awayShortName || '', color: awayColor },
           players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
@@ -2300,12 +2348,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })),
           bench_home: benchHome || [],
           bench_away: benchAway || [],
-          officials: updatedMatch.officials || [],
-          // Signatures (only for official matches)
-          home_coach_signature: !updatedMatch.test ? homeCoachSignature : null,
-          home_captain_signature: !updatedMatch.test ? homeCaptainSignature : null,
-          away_coach_signature: !updatedMatch.test ? awayCoachSignature : null,
-          away_captain_signature: !updatedMatch.test ? awayCaptainSignature : null
+          officials: updatedMatch.officials || []
         },
         ts: new Date().toISOString(),
         status: 'queued'
@@ -4200,13 +4243,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
               // Sync home team data to Supabase as JSONB
               if (match?.seed_key) {
+                const homeCoachSig = homeCoachSignature || savedSignatures.homeCoach || null
+                const homeCaptainSig = homeCaptainSignature || savedSignatures.homeCaptain || null
                 await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
                     id: match.seed_key,
+                    // Legacy columns (keep during transition)
                     home_team_name: home?.trim() || '',
+                    home_coach_signature: homeCoachSig,
+                    home_captain_signature: homeCaptainSig,
+                    // NEW: Consolidated JSONB columns
                     home_team: { name: home?.trim() || '', short_name: homeShortName || generateShortName(home), color: homeColor },
+                    signatures: {
+                      home_coach: homeCoachSig || '',
+                      home_captain: homeCaptainSig || ''
+                    },
                     players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
                       first_name: p.firstName || '',
@@ -4215,10 +4268,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       is_captain: !!p.isCaptain,
                       libero: p.libero || null
                     })),
-                    bench_home: benchHome || [],
-                    // Signatures
-                    home_coach_signature: homeCoachSignature || savedSignatures.homeCoach || null,
-                    home_captain_signature: homeCaptainSignature || savedSignatures.homeCaptain || null
+                    bench_home: benchHome || []
                   },
                   ts: new Date().toISOString(),
                   status: 'queued'
@@ -5509,13 +5559,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
               // Sync away team data to Supabase as JSONB
               if (match?.seed_key) {
+                const awayCoachSig = awayCoachSignature || savedSignatures.awayCoach || null
+                const awayCaptainSig = awayCaptainSignature || savedSignatures.awayCaptain || null
                 await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
                     id: match.seed_key,
+                    // Legacy columns (keep during transition)
                     away_team_name: away?.trim() || '',
+                    away_coach_signature: awayCoachSig,
+                    away_captain_signature: awayCaptainSig,
+                    // NEW: Consolidated JSONB columns
                     away_team: { name: away?.trim() || '', short_name: awayShortName || generateShortName(away), color: awayColor },
+                    signatures: {
+                      away_coach: awayCoachSig || '',
+                      away_captain: awayCaptainSig || ''
+                    },
                     players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
                       first_name: p.firstName || '',
@@ -5524,10 +5584,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       is_captain: !!p.isCaptain,
                       libero: p.libero || null
                     })),
-                    bench_away: benchAway || [],
-                    // Signatures
-                    away_coach_signature: awayCoachSignature || savedSignatures.awayCoach || null,
-                    away_captain_signature: awayCaptainSignature || savedSignatures.awayCaptain || null
+                    bench_away: benchAway || []
                   },
                   ts: new Date().toISOString(),
                   status: 'queued'
@@ -6018,8 +6075,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
+              // Legacy columns (keep during transition)
               referee_connection_enabled: enabled,
-              referee_pin: updatedMatch.refereePin || null
+              referee_pin: updatedMatch.refereePin || null,
+              // NEW: connections JSONB (merge with existing)
+              connections: {
+                referee_enabled: enabled
+              },
+              // NEW: connection_pins JSONB (merge with existing)
+              connection_pins: {
+                referee: updatedMatch.refereePin || ''
+              }
             },
             ts: new Date().toISOString(),
             status: 'queued'
@@ -6079,8 +6145,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
-              bench_home_connection_enabled: enabled,
-              bench_home_pin: updatedMatch.homeTeamPin || null
+              // Legacy columns (keep during transition)
+              home_team_connection_enabled: enabled,
+              bench_home_pin: updatedMatch.homeTeamPin || null,
+              // NEW: connections JSONB (merge with existing)
+              connections: {
+                home_bench_enabled: enabled
+              },
+              // NEW: connection_pins JSONB (merge with existing)
+              connection_pins: {
+                bench_home: updatedMatch.homeTeamPin || ''
+              }
             },
             ts: new Date().toISOString(),
             status: 'queued'
@@ -6140,8 +6215,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             action: 'update',
             payload: {
               id: updatedMatch.seed_key,
-              bench_away_connection_enabled: enabled,
-              bench_away_pin: updatedMatch.awayTeamPin || null
+              // Legacy columns (keep during transition)
+              away_team_connection_enabled: enabled,
+              bench_away_pin: updatedMatch.awayTeamPin || null,
+              // NEW: connections JSONB (merge with existing)
+              connections: {
+                away_bench_enabled: enabled
+              },
+              // NEW: connection_pins JSONB (merge with existing)
+              connection_pins: {
+                bench_away: updatedMatch.awayTeamPin || ''
+              }
             },
             ts: new Date().toISOString(),
             status: 'queued'

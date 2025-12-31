@@ -766,19 +766,51 @@ export default function UploadRosterApp() {
         console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
 
         // Build update object with pending roster and signatures
+        // Legacy column names (keep during transition)
         const coachSigKey = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
         const captainSigKey = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
+        // NEW: JSONB signature keys
+        const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
+        const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
 
         const supabaseUpdate = {
           [pendingField]: rosterData
         }
 
-        // Also save signatures directly to main signature columns
+        // Build signatures JSONB partial update
+        const signaturesUpdate = {}
+        // Build connections JSONB partial update for pending roster
+        const pendingRosterJsonKey = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
+
+        // Also save signatures directly to main signature columns and JSONB
         if (coachSignature) {
           supabaseUpdate[coachSigKey] = coachSignature
+          signaturesUpdate[coachSigJsonKey] = coachSignature
         }
         if (captainSignature) {
           supabaseUpdate[captainSigKey] = captainSignature
+          signaturesUpdate[captainSigJsonKey] = captainSignature
+        }
+
+        // Merge with existing signatures and connections JSONB
+        const { data: existingMatch } = await supabase
+          .from('matches')
+          .select('signatures, connections')
+          .eq('external_id', selectedMatch.external_id)
+          .single()
+
+        // Update signatures JSONB if we have signature updates
+        if (Object.keys(signaturesUpdate).length > 0) {
+          supabaseUpdate.signatures = {
+            ...(existingMatch?.signatures || {}),
+            ...signaturesUpdate
+          }
+        }
+
+        // Always update connections JSONB with pending roster
+        supabaseUpdate.connections = {
+          ...(existingMatch?.connections || {}),
+          [pendingRosterJsonKey]: rosterData
         }
 
         const { error } = await supabase
@@ -790,7 +822,7 @@ export default function UploadRosterApp() {
           console.error('[Roster] Supabase write error:', error)
           // Fall back to server
         } else {
-          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', { coachSigKey, captainSigKey })
+          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', { coachSigKey, captainSigKey, signaturesUpdate })
         }
       }
 
