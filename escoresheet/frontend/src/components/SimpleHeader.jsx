@@ -311,8 +311,8 @@ export default function SimpleHeader({
             <button
               onClick={toggleWakeLock}
               style={{
-                padding: '4px 10px',
-                fontSize: 'clamp(9px, 1.1vw, 11px)',
+                padding: '4px 4px',
+                fontSize: 'clamp(8px, 1.1vw, 10px)',
                 fontWeight: 600,
                 background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
                 color: wakeLockActive ? '#22c55e' : '#fff',

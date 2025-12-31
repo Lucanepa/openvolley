@@ -517,14 +517,18 @@ export default function RefereeApp() {
         flexShrink: 0,
         height: '40px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>{t('refereeDashboard.title')}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '14px', fontWeight: 600 }}>{t('refereeDashboard.title')} 
+          <div style={{ fontSize: '8px', color: 'rgba(255, 255, 255, 0.6)' }}>
+            v{currentVersion}
+          </div></span>
           <button
             onClick={toggleWakeLock}
             style={{
-              padding: '4px 10px',
-              fontSize: '11px',
+              padding: '6px 6px',
+              fontSize: '8px',
               fontWeight: 600,
+              marginRight: '4px',
               background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
               color: wakeLockActive ? '#22c55e' : '#fff',
               border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
@@ -533,7 +537,7 @@ export default function RefereeApp() {
             }}
             title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
           >
-            {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
+            {wakeLockActive ? `☀️` : `🌙`}
           </button>
         </div>
 
@@ -583,9 +587,6 @@ export default function RefereeApp() {
             </div>
           )}
 
-          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
-            v{currentVersion}
-          </div>
 
           <button
             onClick={toggleFullscreen}
@@ -600,7 +601,7 @@ export default function RefereeApp() {
               cursor: 'pointer'
             }}
           >
-            {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : `⛶ ${t('refereeDashboard.fullscreen')}`}
+            {isFullscreen ? `⛶` : `⛶`}
           </button>
 
           <DashboardOptionsMenu showConnectionOptions={true} />

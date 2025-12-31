@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.14',
+    date: '31.12.25',
+    changes: [
+      'Refactor RefereeApp and SimpleHeader components for improved UI consistency and styling'
+    ]
+  },
+  {
     version: '0.17.13',
     date: '31.12.25',
     changes: [
