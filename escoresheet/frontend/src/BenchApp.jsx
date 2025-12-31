@@ -5,6 +5,7 @@ import { getServerStatus } from './utils/networkInfo'
 import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
 import SimpleHeader from './components/SimpleHeader'
+import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { supabase } from './lib/supabaseClient'
@@ -172,44 +173,51 @@ export default function BenchApp() {
     }
   }, [wakeLockActive])
 
-  // Load available matches on mount and periodically
-  useEffect(() => {
-    const loadMatches = async () => {
-      setLoadingMatches(true)
-      try {
-        // Try Supabase first if in AUTO or SUPABASE mode
-        const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+  // Load available matches function - extracted so it can be called manually
+  const loadMatches = useCallback(async () => {
+    setLoadingMatches(true)
+    try {
+      // Try Supabase first if in AUTO or SUPABASE mode
+      const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+        (connectionMode === CONNECTION_MODES.AUTO && supabase)
 
-        if (useSupabase && supabase) {
-          const result = await listAvailableMatchesSupabase()
-          if (result.success && result.matches && result.matches.length > 0) {
+      if (useSupabase && supabase) {
+        const result = await listAvailableMatchesSupabase()
+        if (result.success) {
+          // Supabase is connected even if there are no matches
+          setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+          if (result.matches && result.matches.length > 0) {
             setAvailableMatches(result.matches)
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
           }
+        } else {
+          // Supabase call failed
+          setConnectionStatuses(prev => ({ ...prev, supabase: 'disconnected' }))
         }
-
-        // Fall back to WebSocket/server
-        const result = await listAvailableMatches()
-        if (result.success && result.matches) {
-          setAvailableMatches(result.matches)
-          setActiveConnection('websocket')
-        }
-      } catch (err) {
-        console.error('[Bench] Error loading matches:', err)
-      } finally {
-        setLoadingMatches(false)
       }
-    }
 
+      // Fall back to WebSocket/server
+      const result = await listAvailableMatches()
+      if (result.success && result.matches) {
+        setAvailableMatches(result.matches)
+        setActiveConnection('websocket')
+      }
+    } catch (err) {
+      console.error('[Bench] Error loading matches:', err)
+    } finally {
+      setLoadingMatches(false)
+    }
+  }, [connectionMode])
+
+  // Load available matches on mount and periodically
+  useEffect(() => {
     loadMatches()
     const interval = setInterval(loadMatches, 30000) // Refresh every 30 seconds
 
     return () => clearInterval(interval)
-  }, [connectionMode])
+  }, [loadMatches])
 
   // Check connection status periodically
   useEffect(() => {
@@ -241,13 +249,13 @@ export default function BenchApp() {
     const checkConnections = async () => {
       try {
         const serverStatus = await getServerStatus()
-        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
+        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'no_match'
 
         const serverConnected = serverStatus?.running
         setConnectionStatuses(prev => ({
           ...prev, // Preserve supabase status
           server: serverConnected ? 'connected' : 'disconnected',
-          websocket: matchId ? wsStatus : 'not_applicable'
+          websocket: matchId ? wsStatus : 'no_match'
         }))
 
         // Build debug info for disconnected services
@@ -901,16 +909,19 @@ export default function BenchApp() {
     }}>
       <UpdateBanner />
 
-      <SimpleHeader
+      <DashboardHeader
         title={t('benchDashboard.title')}
-        wakeLockActive={wakeLockActive}
-        toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
         connectionDebugInfo={connectionDebugInfo}
+        onLoadGames={loadMatches}
+        loadingMatches={loadingMatches}
+        matchCount={availableMatches.length}
+        showWakeLock={true}
+        wakeLockActive={wakeLockActive}
+        onToggleWakeLock={toggleWakeLock}
         connectionMode={connectionMode}
         activeConnection={activeConnection}
         onConnectionModeChange={handleConnectionModeChange}
-        showConnectionOptions={true}
       />
 
       <div style={{
@@ -962,12 +973,7 @@ export default function BenchApp() {
             }}>
               {t('benchDashboard.noActiveGames')}
             </div>
-            <div style={{
-              fontSize: '13px',
-              color: 'rgba(255, 255, 255, 0.4)'
-            }}>
-              {t('refereeDashboard.startMatchToConnect')}
-            </div>
+           
           </div>
         ) : (
           <>
