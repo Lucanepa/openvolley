@@ -1628,6 +1628,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           timeout_active: isTimeout,
           timeout_started_at: isTimeout ? new Date().toISOString() : null,
           match_status: matchStatus,
+          // Match metadata (from IndexedDB match record)
+          game_n: match.gameN || match.game_n || null,
+          league: match.league || null,
+          gender: match.gender || null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'match_id' })
 
@@ -5623,12 +5627,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const stopTimeout = useCallback(() => {
     // Stop the countdown (close modal) but keep the timeout logged
+    // The effect will detect the modal closing and sync timeout_active: false to Supabase/referee
     setTimeoutModal(null)
-    // Notify referee to also close their countdown
-    sendActionToReferee('end_timeout', {})
-    // Sync match_status back to 'in_progress' in Supabase
-    syncLiveStateToSupabase('end_timeout', null, null)
-  }, [sendActionToReferee, syncLiveStateToSupabase])
+  }, [])
+
+  // Track previous timeout modal state to detect when countdown ends
+  const prevTimeoutModalRef = useRef(null)
+
+  useEffect(() => {
+    // Detect when timeout ends (was active, now null) and sync to Supabase
+    const wasActive = prevTimeoutModalRef.current?.started
+    const isNowNull = !timeoutModal
+
+    if (wasActive && isNowNull) {
+      // Timeout countdown ended or was stopped - sync timeout_active: false to Supabase
+      sendActionToReferee('end_timeout', {})
+      syncLiveStateToSupabase('end_timeout', null, null)
+    }
+
+    prevTimeoutModalRef.current = timeoutModal
+  }, [timeoutModal, sendActionToReferee, syncLiveStateToSupabase])
 
   useEffect(() => {
     if (!timeoutModal || !timeoutModal.started) return

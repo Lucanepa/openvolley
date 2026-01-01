@@ -419,8 +419,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     console.log('[Referee] Setting up realtime subscription for UUID:', supabaseMatchUuid)
 
+    // Add unique ID to prevent StrictMode double-mount conflicts
+    const channelId = `match_live_state:${supabaseMatchUuid}-${Date.now()}`
     const channel = supabase
-      .channel(`match_live_state:${supabaseMatchUuid}`)
+      .channel(channelId)
       .on(
         'postgres_changes',
         {

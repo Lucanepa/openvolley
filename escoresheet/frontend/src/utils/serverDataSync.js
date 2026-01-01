@@ -442,10 +442,14 @@ export async function getMatchData(matchId) {
         match: {
           ...match,
           id: matchId, // Use external_id as the reference ID
+          // Use liveState.match_status if available (reflects actual game state)
+          status: liveState?.match_status || match.status,
           coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
           coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
           coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
           firstServe: match.coin_toss?.first_serve || match.first_serve,
+          // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
+          coin_toss_confirmed: !!(liveState?.team_a_name),
           // Get short names from JSONB, or fallback to old columns
           homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
           awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
