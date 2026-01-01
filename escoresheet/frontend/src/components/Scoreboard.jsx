@@ -16256,12 +16256,46 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 return eventSetIndex || 1
               }
               
+              // Helper function to get event type for Type column
+              const getEventType = (event) => {
+                switch (event.type) {
+                  case 'point': return 'Point'
+                  case 'timeout': return 'Timeout'
+                  case 'substitution': return event.payload?.isExceptional ? 'Exc. Sub' : 'Substitution'
+                  case 'set_start': return 'Set Start'
+                  case 'set_end': return 'Set End'
+                  case 'rally_start': return 'Rally'
+                  case 'replay': return 'Replay'
+                  case 'decision_change': return 'Decision'
+                  case 'coin_toss': return 'Coin Toss'
+                  case 'lineup': return event.payload?.isInitial ? 'Lineup' : 'Lineup Chg'
+                  case 'libero_entry': return 'Libero In'
+                  case 'libero_exit': return 'Libero Out'
+                  case 'libero_exchange': return 'Libero Exch'
+                  case 'libero_unable': return 'Libero Unable'
+                  case 'libero_redesignation': return 'Libero Redes'
+                  case 'sanction': {
+                    const sanctionType = event.payload?.sanctionType
+                    if (sanctionType === 'warning') return 'Warning'
+                    if (sanctionType === 'penalty') return 'Penalty'
+                    if (sanctionType === 'expulsion') return 'Expulsion'
+                    if (sanctionType === 'disqualification') return 'Disqualif.'
+                    return 'Sanction'
+                  }
+                  case 'remark': return 'Remark'
+                  default: return event.type || 'Unknown'
+                }
+              }
+
               // Helper function to get score at time of event
+              // Set 1, 3: A:B always
+              // Set 2, 4: B:A always
+              // Set 5: depends on which side Team A is on (switches at 8 points)
               const getScoreAtEvent = (event) => {
                 const setIdx = event.setIndex || 1
                 const setEvents = data.events?.filter(e => (e.setIndex || 1) === setIdx) || []
                 const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                
+
                 let homeScore = 0
                 let awayScore = 0
                 // Count points up to and including this event
@@ -16272,17 +16306,134 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     else if (e.payload?.team === 'away') awayScore++
                   }
                 }
-                
-                const team = event.payload?.team
-                if (team === 'home') {
-                  // Team A (home) score : Team B (away) score
-                  return `${homeScore}:${awayScore}`
-                } else if (team === 'away') {
-                  // Team B (away) score : Team A (home) score
-                  return `${awayScore}:${homeScore}`
+
+                // Get Team A (coin toss winner) key
+                const coinTossTeamA = data?.match?.coinTossTeamA || 'home'
+                const scoreA = coinTossTeamA === 'home' ? homeScore : awayScore
+                const scoreB = coinTossTeamA === 'home' ? awayScore : homeScore
+
+                // Determine display order based on set number
+                // Set 1, 3: A:B (Team A on left)
+                // Set 2, 4: B:A (Team B on left)
+                // Set 5: Depends on initial side from coin toss and switches at 8 points
+                if (setIdx === 1 || setIdx === 3) {
+                  // A:B always
+                  return `${scoreA}:${scoreB}`
+                } else if (setIdx === 2 || setIdx === 4) {
+                  // B:A always
+                  return `${scoreB}:${scoreA}`
+                } else if (setIdx === 5) {
+                  // Set 5: check if we've switched sides (at 8 points)
+                  const totalPoints = homeScore + awayScore
+                  const hasSwitched = totalPoints >= 8
+
+                  // In set 5, Team A starts on same side as set 1 (left), so A:B initially
+                  // After switch, it becomes B:A
+                  if (hasSwitched) {
+                    return `${scoreB}:${scoreA}`
+                  } else {
+                    return `${scoreA}:${scoreB}`
+                  }
                 }
-                // For non-team events, show home:away
-                return `${homeScore}:${awayScore}`
+
+                // Default to A:B
+                return `${scoreA}:${scoreB}`
+              }
+
+              // Helper function to get simplified action description
+              const getSimplifiedAction = (event) => {
+                const coinTossTeamA = data?.match?.coinTossTeamA || 'home'
+                // Get team short name for the event's team
+                const getTeamShortName = (teamKey) => {
+                  if (!teamKey) return ''
+                  if (teamKey === 'home') {
+                    return data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'
+                  } else {
+                    return data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
+                  }
+                }
+                const teamShortName = event.payload?.team ? getTeamShortName(event.payload.team) : ''
+
+                switch (event.type) {
+                  case 'point': {
+                    const setIdx = event.setIndex || 1
+                    const setEvents = data.events?.filter(e => (e.setIndex || 1) === setIdx) || []
+                    const eventIndex = setEvents.findIndex(e => e.id === event.id)
+                    let homeScore = 0, awayScore = 0
+                    for (let i = 0; i <= eventIndex; i++) {
+                      const e = setEvents[i]
+                      if (e.type === 'point') {
+                        if (e.payload?.team === 'home') homeScore++
+                        else if (e.payload?.team === 'away') awayScore++
+                      }
+                    }
+                    const scoreA = coinTossTeamA === 'home' ? homeScore : awayScore
+                    const scoreB = coinTossTeamA === 'home' ? awayScore : homeScore
+                    return `${teamShortName} (A ${scoreA}:${scoreB} B)`
+                  }
+                  case 'timeout':
+                    return `${teamShortName} timeout`
+                  case 'substitution': {
+                    const playerOut = event.payload?.playerOut || '?'
+                    const playerIn = event.payload?.playerIn || '?'
+                    return `${teamShortName} OUT:${playerOut} IN:${playerIn}`
+                  }
+                  case 'set_start':
+                    return `Set ${event.setIndex || event.payload?.setIndex || '?'} started`
+                  case 'set_end': {
+                    const winner = event.payload?.teamLabel || '?'
+                    return `Set ${event.setIndex || '?'} won by ${winner}`
+                  }
+                  case 'rally_start':
+                    return 'Rally started'
+                  case 'replay':
+                    return 'Rally replayed'
+                  case 'decision_change': {
+                    const fromName = getTeamShortName(event.payload?.fromTeam)
+                    const toName = getTeamShortName(event.payload?.toTeam)
+                    return `Point ${fromName}→${toName}`
+                  }
+                  case 'coin_toss':
+                    return `First serve: ${event.payload?.firstServe === event.payload?.teamA ? 'A' : 'B'}`
+                  case 'lineup':
+                    return event.payload?.isInitial ? `${teamShortName} lineup set` : `${teamShortName} lineup changed`
+                  case 'libero_entry': {
+                    const liberoIn = event.payload?.liberoIn || '?'
+                    const playerOut = event.payload?.playerOut || '?'
+                    return `${teamShortName} L${event.payload?.liberoType === 'libero2' ? '2' : '1'} #${liberoIn} in for #${playerOut}`
+                  }
+                  case 'libero_exit': {
+                    const liberoOut = event.payload?.liberoOut || '?'
+                    const playerIn = event.payload?.playerIn || '?'
+                    return `${teamShortName} L${event.payload?.liberoType === 'libero2' ? '2' : '1'} #${liberoOut} out, #${playerIn} in`
+                  }
+                  case 'libero_exchange': {
+                    const liberoOut = event.payload?.liberoOut || '?'
+                    const liberoIn = event.payload?.liberoIn || '?'
+                    return `${teamShortName} L1↔L2 #${liberoOut}↔#${liberoIn}`
+                  }
+                  case 'libero_unable': {
+                    const liberoNum = event.payload?.liberoNumber || '?'
+                    const reason = event.payload?.reason || 'declared'
+                    return `${teamShortName} L${event.payload?.liberoType === 'libero2' ? '2' : '1'} #${liberoNum} ${reason}`
+                  }
+                  case 'libero_redesignation': {
+                    const oldNum = event.payload?.unableLiberoNumber || '?'
+                    const newNum = event.payload?.newLiberoNumber || '?'
+                    return `${teamShortName} #${oldNum}→R #${newNum}`
+                  }
+                  case 'sanction': {
+                    const sanctionType = event.payload?.sanctionType || 'sanction'
+                    const playerNum = event.payload?.playerNumber
+                    const role = event.payload?.role
+                    const target = playerNum ? `#${playerNum}` : (role || 'team')
+                    return `${teamShortName} ${sanctionType} ${target}`
+                  }
+                  case 'remark':
+                    return event.payload?.text || 'Remark added'
+                  default:
+                    return event.type || 'Unknown'
+                }
               }
               
               // Helper function to get team label
@@ -16392,12 +16543,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               const filteredEvents = sortedEvents.filter(event => {
                 if (logSearchQuery.trim() === '') return true
                 const searchLower = logSearchQuery.toLowerCase()
-                const eventDescription = getActionDescription(event) || ''
-                const descriptionLower = eventDescription.toLowerCase()
+                const eventType = getEventType(event) || ''
+                const simplifiedAction = getSimplifiedAction(event) || ''
                 const setIndex = String(getSetNumber(event))
                 const teamLabel = getTeamLabel(event)
                 const participant = getParticipant(event)
-                return descriptionLower.includes(searchLower) || 
+                return eventType.toLowerCase().includes(searchLower) ||
+                       simplifiedAction.toLowerCase().includes(searchLower) ||
                        setIndex.includes(searchLower) ||
                        teamLabel.toLowerCase().includes(searchLower) ||
                        participant.toLowerCase().includes(searchLower)
@@ -16411,57 +16563,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     fontSize: '12px'
                   }}>
                     <thead>
-                      <tr style={{ 
+                      <tr style={{
                         borderBottom: '2px solid rgba(255,255,255,0.2)',
                         background: 'rgba(255,255,255,0.05)'
                       }}>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'left', 
-                          fontWeight: 600,
-                          minWidth: '80px'
-                        }}>Action ID</th>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'left', 
-                          fontWeight: 600,
-                          minWidth: '100px'
-                        }}>Time</th>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'center', 
-                          fontWeight: 600,
-                          minWidth: '60px'
-                        }}>Set</th>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'center', 
-                          fontWeight: 600,
-                          minWidth: '80px'
-                        }}>Score</th>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'center', 
-                          fontWeight: 600,
-                          minWidth: '60px'
-                        }}>Team</th>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'left', 
-                          fontWeight: 600,
-                          minWidth: '100px'
-                        }}>Participant</th>
-                        <th style={{ 
-                          padding: '10px 8px', 
-                          textAlign: 'left', 
-                          fontWeight: 600
-                        }}>Action</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>ID</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Time</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Team</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Participant</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Set</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Score</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Type</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredEvents.length === 0 ? (
                         <tr>
-                          <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>
+                          <td colSpan="8" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>
                             No events found
                           </td>
                         </tr>
@@ -16473,9 +16592,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             return seq === Math.floor(seq) // Only show if it's an integer (no decimal part)
                           })
                           .map(event => {
-                          const eventDescription = getActionDescription(event)
-                          if (!eventDescription || eventDescription === 'Unknown action') return null
-                          
+                          const eventType = getEventType(event)
+                          const simplifiedAction = getSimplifiedAction(event)
+                          if (!eventType || eventType === 'Unknown') return null
+
                           const actionId = Math.floor(event.seq || 0) // Show only base integer ID
                           const eventTime = typeof event.ts === 'number' ? new Date(event.ts) : new Date(event.ts)
                           const timeStr = `${String(eventTime.getUTCHours()).padStart(2, '0')}:${String(eventTime.getUTCMinutes()).padStart(2, '0')}:${String(eventTime.getUTCSeconds()).padStart(2, '0')}`
@@ -16483,11 +16603,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           const score = getScoreAtEvent(event)
                           const team = getTeamLabel(event)
                           const participant = getParticipant(event)
-                          
+
                           return (
-                            <tr 
-                              key={event.id} 
-                              style={{ 
+                            <tr
+                              key={event.id}
+                              style={{
                                 borderBottom: '1px solid rgba(255,255,255,0.1)',
                                 transition: 'background 0.2s'
                               }}
@@ -16498,26 +16618,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 e.currentTarget.style.background = 'transparent'
                               }}
                             >
-                              <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
+                              <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>
                                 {actionId}
                               </td>
-                              <td style={{ padding: '8px' }}>
+                              <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                                 {timeStr}
                               </td>
-                              <td style={{ padding: '8px', textAlign: 'center' }}>
-                                {setNum}
-                              </td>
-                              <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace' }}>
-                                {score}
-                              </td>
-                              <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>
+                              <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                 {team}
                               </td>
-                              <td style={{ padding: '8px' }}>
+                              <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                                 {participant}
                               </td>
-                              <td style={{ padding: '8px' }}>
-                                {eventDescription}
+                              <td style={{ padding: '8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                {setNum}
+                              </td>
+                              <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                                {score}
+                              </td>
+                              <td style={{ padding: '8px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                                {eventType}
+                              </td>
+                              <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                                {simplifiedAction}
                               </td>
                             </tr>
                           )
