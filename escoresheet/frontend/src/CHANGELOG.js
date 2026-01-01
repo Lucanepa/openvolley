@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.22',
+    date: '01.01.26',
+    changes: [
+      'Update MatchSetup component to include bench staff information for teams'
+    ]
+  },
+  {
     version: '0.17.21',
     date: '01.01.26',
     changes: [
