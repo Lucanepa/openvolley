@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.25',
+    date: '01.01.26',
+    changes: [
+      'Enhance Scoreboard component with captain on court designation logic'
+    ]
+  },
+  {
     version: '0.17.24',
     date: '01.01.26',
     changes: [
