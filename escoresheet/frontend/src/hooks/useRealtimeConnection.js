@@ -123,7 +123,9 @@ export function useRealtimeConnection({
 
       // Build channel subscriptions
       // Note: events/sets use UUID (match_id), matches uses external_id
-      const channel = supabase.channel(`match-${matchId}`)
+      // Add unique ID to prevent StrictMode double-mount conflicts
+      const channelId = `match-${matchId}-${Date.now()}`
+      const channel = supabase.channel(channelId)
 
       // Only subscribe to events/sets/match_live_state if we have the UUID
       if (supabaseMatchUuid) {

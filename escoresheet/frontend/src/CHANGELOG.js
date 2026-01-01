@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.24',
+    date: '01.01.26',
+    changes: [
+      'Refactor MatchSetup, Referee, Scoreboard, and useRealtimeConnection components for improved match synchronization and UI stability'
+    ]
+  },
+  {
     version: '0.17.22',
     date: '01.01.26',
     changes: [

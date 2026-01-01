@@ -1972,34 +1972,43 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       })
 
       // Queue match for Supabase sync - all data stored as JSONB
+      // Only set status to 'setup' when creating a new match, not when updating existing match
+      // to avoid resetting 'live' status back to 'setup'
+      const syncPayload = {
+        external_id: matchSeedKey,
+        scheduled_at: scheduledAt || null,
+        game_n: gameN ? parseInt(gameN, 10) : null,
+        game_pin: match?.gamePin || null,
+        test: false,
+        // JSONB columns
+        match_info: {
+          hall: hall || '',
+          city: city || '',
+          league: league || '',
+          championship_type: championshipType || '',
+          championship_type_other: championshipTypeOther || '',
+          match_type_1: type1 || '',
+          match_type_1_other: type1Other || '',
+          match_type_2: type2 || '',
+          match_type_3: type3 || '',
+          match_type_3_other: type3Other || ''
+        },
+        home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
+        away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
+        bench_home: benchHome || [],
+        bench_away: benchAway || []
+      }
+
+      // Only set status to 'setup' when creating a new match
+      // When updating, don't overwrite the status (might be 'live')
+      if (isCreating) {
+        syncPayload.status = 'setup'
+      }
+
       const syncJobId = await db.sync_queue.add({
         resource: 'match',
         action: 'insert',
-        payload: {
-          external_id: matchSeedKey,
-          status: 'setup',
-          scheduled_at: scheduledAt || null,
-          game_n: gameN ? parseInt(gameN, 10) : null,
-          game_pin: match?.gamePin || null,
-          test: false,
-          // JSONB columns
-          match_info: {
-            hall: hall || '',
-            city: city || '',
-            league: league || '',
-            championship_type: championshipType || '',
-            championship_type_other: championshipTypeOther || '',
-            match_type_1: type1 || '',
-            match_type_1_other: type1Other || '',
-            match_type_2: type2 || '',
-            match_type_3: type3 || '',
-            match_type_3_other: type3Other || ''
-          },
-          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
-          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
-          bench_home: benchHome || [],
-          bench_away: benchAway || []
-        },
+        payload: syncPayload,
         ts: new Date().toISOString(),
         status: 'queued'
       })
