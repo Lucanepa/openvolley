@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.20',
+    date: '01.01.26',
+    changes: [
+      'Refactor Scoreboard component to enhance lineup event handling and state restoration'
+    ]
+  },
+  {
     version: '0.17.19',
     date: '31.12.25',
     changes: [
