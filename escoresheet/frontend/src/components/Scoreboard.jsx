@@ -94,6 +94,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [accidentalPointConfirmModal, setAccidentalPointConfirmModal] = useState(null) // { team: 'home'|'away', onConfirm: function } | null
   const lastPointAwardedTimeRef = useRef(null) // Track when last point was awarded
   const rallyStartTimeRef = useRef(null) // Track when rally started
+  const eventInProgressRef = useRef(false) // Mutex to prevent race conditions in event logging
+  const eventQueueRef = useRef([]) // Queue for serializing event creation
   const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
     const saved = localStorage.getItem('keybindingsEnabled')
     return saved === 'true' // default false
@@ -3145,6 +3147,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     async (type, payload = {}, options = {}) => {
       if (!data?.set) return null
 
+      // skipMutex: true if caller already holds the mutex (e.g., confirmSubstitution)
+      const shouldAcquireMutex = !options.skipMutex
+
+      // MUTEX: Wait for any in-progress event to complete to prevent race conditions
+      // This ensures snapshots always see all previous events
+      if (shouldAcquireMutex) {
+        const maxWaitTime = 5000 // 5 seconds max wait
+        const startWait = Date.now()
+        while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+          await new Promise(resolve => setTimeout(resolve, 10))
+        }
+        if (eventInProgressRef.current) {
+          console.warn('[logEvent] Timeout waiting for previous event, proceeding anyway')
+        }
+        eventInProgressRef.current = true
+      }
+
+      try {
       // CRITICAL: Use setIndexOverride if provided, otherwise query fresh from IndexedDB
       let actualSetIndex = options.setIndexOverride
       if (actualSetIndex === undefined) {
@@ -3413,6 +3433,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Return the sequence number so it can be used for related events
       return nextSeq
+      } finally {
+        // MUTEX: Only release the lock if we acquired it
+        if (shouldAcquireMutex) {
+          eventInProgressRef.current = false
+        }
+      }
     },
     [data?.set, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
@@ -4928,26 +4954,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         return null
       }
       
-      // Skip lineup events that have a corresponding libero_entry/exit event (they're redundant)
-      if (hasLiberoSub && !isInitial && !hasSubstitution) {
-        // Check if there's a libero_entry or libero_exit event with the same or higher seq
-        const eventSeq = event.seq || 0
-        const allEvents = data.events || []
-        const hasCorrespondingLiberoEvent = allEvents.some(e => 
-          (e.type === 'libero_entry' || e.type === 'libero_exit') && 
-          (e.seq || 0) >= eventSeq &&
-          (e.seq || 0) <= eventSeq + 1 // Should be right after
-        )
-        if (hasCorrespondingLiberoEvent) {
-          return null // Skip this lineup event
-        }
-      }
-      
       // Only show initial lineups as "Line-up setup"
       if (isInitial) {
         eventDescription = `Line-up setup — ${teamName}`
+      } else if (hasLiberoSub) {
+        // Show libero-related lineup changes with the new lineup
+        const lineup = event.payload?.lineup || {}
+        const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+        const lineupStr = positions.map(pos => lineup[pos] || '?').join('-')
+        eventDescription = `Lineup changed — ${teamName} (${lineupStr})`
       } else {
-        return null // Skip non-initial lineups (they're either rotations or redundant)
+        return null // Skip rotation lineups (they're part of the point)
       }
     } else if (event.type === 'libero_entry') {
       const liberoNumber = event.payload?.liberoIn || '?'
@@ -5287,12 +5304,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         console.log('[handleUndo] Restoring from snapshot, points:', previousEvent.stateSnapshot.pointsA, '-', previousEvent.stateSnapshot.pointsB)
         await restoreStateFromSnapshot(previousEvent.stateSnapshot)
       } else {
-        // No previous event with snapshot - restore to initial state (score 0-0)
-        console.log('[handleUndo] No previous snapshot, restoring to initial state')
-        const currentSet = await db.sets.where({ matchId }).and(s => s.index === data.set.index).first()
-        if (currentSet) {
-          await db.sets.update(currentSet.id, { homePoints: 0, awayPoints: 0, finished: false })
+        // No previous event with snapshot - calculate state from remaining events
+        console.log('[handleUndo] No previous snapshot, calculating state from remaining events')
+
+        // Re-query remaining events (after deletion)
+        const remainingAllEvents = await db.events.where({ matchId }).toArray()
+        const currentSetIndex = data.set.index
+        const remainingPointEvents = remainingAllEvents.filter(e =>
+          e.type === 'point' && e.setIndex === currentSetIndex
+        )
+
+        // Count points for each team from remaining point events
+        let homePoints = 0
+        let awayPoints = 0
+        for (const pe of remainingPointEvents) {
+          if (pe.payload?.team === 'home') homePoints++
+          else if (pe.payload?.team === 'away') awayPoints++
         }
+
+        console.log('[handleUndo] Calculated score from', remainingPointEvents.length, 'point events:', homePoints, '-', awayPoints)
+
+        // Update set with calculated score
+        const currentSet = await db.sets.where({ matchId }).and(s => s.index === currentSetIndex).first()
+        if (currentSet) {
+          await db.sets.update(currentSet.id, { homePoints, awayPoints, finished: false })
+        }
+
         // Reset match status to live
         await db.matches.update(matchId, { status: 'live' })
       }
@@ -7194,9 +7231,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Confirm substitution
   const confirmSubstitution = useCallback(async () => {
     if (!substitutionConfirm || !data?.set) return
-    
+
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     const { team, position, playerOut, playerIn, isInjury, isExceptional, isExpelled, isDisqualified } = substitutionConfirm
-    
+
     // Get current lineup for this team in the current set
     const lineupEvents = data.events?.filter(e => 
       e.type === 'lineup' && 
@@ -7247,7 +7293,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       stateBefore: subStateBefore
     })
 
-    // Log the substitution event
+    // Log the substitution event (skipMutex: true because we already hold the mutex)
     await logEvent('substitution', {
       team,
       position,
@@ -7256,7 +7302,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       isExceptional: isExceptional || false,
       isExpelled: isExpelled || false,
       isDisqualified: isDisqualified || false
-    })
+    }, { skipMutex: true })
 
     // Debug log: substitution
     debugLogger.log('SUBSTITUTION', {
@@ -7344,18 +7390,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
       const outPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
       if (outPlayer && outPlayer.libero) {
-        // Log libero_unable event with reason='injury'
+        // Log libero_unable event with reason='injury' (skipMutex: we already hold it)
         await logEvent('libero_unable', {
           team,
           liberoNumber: playerOut,
           liberoType: outPlayer.libero,
           reason: 'injury'
-        })
+        }, { skipMutex: true })
         // Use setTimeout to allow state to update first
         setTimeout(() => {
           checkLiberoRedesignation(team, playerOut, outPlayer.libero)
         }, 100)
       }
+    }
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
     }
   }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, teamAKey, checkLiberoRedesignation, sendActionToReferee])
 
@@ -7902,6 +7952,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const showLiberoConfirm = useCallback(async (liberoType) => {
     if (!liberoDropdown || !liberoType || !data?.set) return
 
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     const team = liberoDropdown.team
     const position = liberoDropdown.position
     const playerOut = liberoDropdown.playerNumber
@@ -7957,9 +8016,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
 
-    // Save the updated lineup with libero substitution info
-    const nextSeq = await getNextSeq()
-    const liberoDropdownStateBefore = getStateSnapshot()
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoType
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
 
     await db.events.add({
       matchId,
@@ -7976,17 +8045,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: nextSeq,
-      stateBefore: liberoDropdownStateBefore
-    })
-
-    // Log the libero entry event
-    await logEvent('libero_entry', {
-      team,
-      position,
-      playerOut,
-      liberoIn: liberoPlayer.number,
-      liberoType: liberoType
+      seq: subEventSeq
     })
 
     // Check if captain is on court after libero entry
@@ -8004,12 +8063,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     setLiberoDropdown(null)
     setSubstitutionDropdown(null)
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
+    }
   }, [liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Handle libero in player selection - directly execute substitution
   const handleLiberoInPlayerSelect = useCallback(async (position, playerNumber) => {
     if (!liberoInDropdown || !data?.set) return
 
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     const { team } = liberoInDropdown
 
     // Get available liberos
@@ -8057,9 +8129,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
 
-    // Save the updated lineup with libero substitution info
-    const nextSeq = await getNextSeq()
-    const liberoRotationStateBefore = getStateSnapshot()
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position: liberoEntryPosition,
+      playerOut: playerNumber,
+      liberoIn: liberoToUse.number,
+      liberoType: liberoToUse.libero
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEventsForSeq = await db.events.where({ matchId }).toArray()
+    const maxSeqForLibero = allEventsForSeq.length > 0 ? Math.max(...allEventsForSeq.map(e => e.seq || 0)) : 0
+    const subEventSeqLibero = Math.floor(maxSeqForLibero) + 0.1
 
     await db.events.add({
       matchId,
@@ -8076,17 +8158,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: nextSeq,
-      stateBefore: liberoRotationStateBefore
-    })
-
-    // Log the libero entry event
-    await logEvent('libero_entry', {
-      team,
-      position: liberoEntryPosition,
-      playerOut: playerNumber,
-      liberoIn: liberoToUse.number,
-      liberoType: liberoToUse.libero
+      seq: subEventSeqLibero
     })
 
     // Check if captain is on court after libero entry
@@ -8103,12 +8175,25 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
 
     setLiberoInDropdown(null)
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
+    }
   }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Confirm libero entry
   const confirmLibero = useCallback(async () => {
     if (!liberoConfirm || !data?.set) return
-    
+
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     const { team, position, playerOut, liberoIn } = liberoConfirm
     
     // Validate that liberos can only enter back-row positions (I, V, VI)
@@ -8204,11 +8289,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
-    // Save the updated lineup with libero substitution info
-    const nextSeq = await getNextSeq()
-    const liberoEntryStateBefore = getStateSnapshot()
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoIn
+    }, { skipMutex: true })
 
-    const liberoEntryEventId = await db.events.add({
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEventsEntry = await db.events.where({ matchId }).toArray()
+    const maxSeqEntry = allEventsEntry.length > 0 ? Math.max(...allEventsEntry.map(e => e.seq || 0)) : 0
+    const subEventSeqEntry = Math.floor(maxSeqEntry) + 0.1
+
+    await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -8223,17 +8318,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: nextSeq,
-      stateBefore: liberoEntryStateBefore
-    })
-
-    // Log the libero entry event
-    await logEvent('libero_entry', {
-      team,
-      position,
-      playerOut,
-      liberoIn: liberoPlayer.number,
-      liberoType: liberoIn
+      seq: subEventSeqEntry
     })
 
     // Debug log: libero entry
@@ -8264,6 +8349,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     setSubstitutionDropdown(null) // Close substitution dropdown if open
     setLiberoDropdown(null) // Close libero dropdown if open
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
+    }
   }, [liberoConfirm, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   const cancelLibero = useCallback(() => {
@@ -8281,6 +8370,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const confirmLiberoReentry = useCallback(async () => {
     if (!liberoReentryModal || !data?.set) return
 
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     // Use the selected libero from availableLiberos if present, otherwise use the original values
     const { team, position, playerNumber, availableLiberos, selectedLiberoIndex } = liberoReentryModal
     const selectedLibero = availableLiberos && availableLiberos[selectedLiberoIndex]
@@ -8326,10 +8424,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
-    // Save the updated lineup with libero substitution info
-    const liberoExitSeq = await getNextSeq()
-    const liberoExitStateBefore = getStateSnapshot()
-    const liberoExitEventId = await db.events.add({
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoNumber,
+      liberoType: liberoType
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
+
+    await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -8344,17 +8453,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: liberoExitSeq,
-      stateBefore: liberoExitStateBefore
-    })
-
-    // Log the libero entry event
-    await logEvent('libero_entry', {
-      team,
-      position,
-      playerOut,
-      liberoIn: liberoNumber,
-      liberoType: liberoType
+      seq: subEventSeq
     })
 
     // Debug log: libero reentry
@@ -8382,6 +8481,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         checkAndRequestCaptainOnCourtRef.current?.(team)
       }, 300)
     }
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
+    }
   }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   const cancelLiberoReentry = useCallback(() => {
@@ -8391,7 +8494,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Handle libero out
   const handleLiberoOut = useCallback(async (side) => {
     if (rallyStatus !== 'idle') return
-    
+
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     const teamKey = mapSideToTeamKey(side)
     const liberoOnCourt = getLiberoOnCourt(teamKey)
     
@@ -8478,10 +8590,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
     
-    // Save the updated lineup (explicitly without libero substitution)
-    const liberoClearSeq = await getNextSeq()
-    const liberoClearStateBefore = getStateSnapshot()
-    const liberoClearEventId = await db.events.add({
+    // Log the libero exit event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_exit', {
+      team: teamKey,
+      position: liberoOnCourt.position,
+      liberoOut: liberoOnCourt.liberoNumber,
+      playerIn: originalPlayerNumber,
+      liberoType: liberoOnCourt.liberoType
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exit on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
+
+    await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -8492,17 +8615,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         liberoSubstitution: null // Explicitly clear libero substitution
       },
       ts: new Date().toISOString(),
-      seq: liberoClearSeq,
-      stateBefore: liberoClearStateBefore
-    })
-
-    // Log the libero exit event
-    await logEvent('libero_exit', {
-      team: teamKey,
-      position: liberoOnCourt.position,
-      liberoOut: liberoOnCourt.liberoNumber,
-      playerIn: originalPlayerNumber,
-      liberoType: liberoOnCourt.liberoType
+      seq: subEventSeq
     })
     
     // Check if the libero leaving is the court captain
@@ -8512,6 +8625,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       setTimeout(() => {
         checkAndRequestCaptainOnCourtRef.current?.(teamKey)
       }, 300)
+    }
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
     }
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
@@ -8719,7 +8836,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Handle exchange libero (L1 <-> L2)
   const handleExchangeLibero = useCallback(async (side) => {
     if (rallyStatus !== 'idle') return
-    
+
+    // MUTEX: Acquire lock before creating any events to prevent race conditions
+    const maxWaitTime = 5000
+    const startWait = Date.now()
+    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    eventInProgressRef.current = true
+
+    try {
     const teamKey = mapSideToTeamKey(side)
     const liberoOnCourt = getLiberoOnCourt(teamKey)
     
@@ -8773,10 +8899,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const newLineup = { ...currentLineup }
     newLineup[liberoOnCourt.position] = String(otherLibero.number)
     
-    // Save the updated lineup with libero substitution info
-    const liberoExchangeSeq = await getNextSeq()
-    const liberoExchangeStateBefore = getStateSnapshot()
-    const liberoExchangeEventId = await db.events.add({
+    // Log the libero exchange event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_exchange', {
+      team: teamKey,
+      position: liberoOnCourt.position,
+      liberoOut: liberoOnCourt.liberoNumber,
+      liberoIn: otherLibero.number,
+      liberoOutType: liberoOnCourt.liberoType,
+      liberoInType: otherLibero.libero,
+      playerNumber: liberoOnCourt.playerNumber
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exchange on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exchange
+
+    await db.events.add({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -8791,20 +8930,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       },
       ts: new Date().toISOString(),
-      seq: liberoExchangeSeq,
-      stateBefore: liberoExchangeStateBefore
+      seq: subEventSeq
     })
-
-    // Log the libero exchange event
-    await logEvent('libero_exchange', {
-      team: teamKey,
-      position: liberoOnCourt.position,
-      liberoOut: liberoOnCourt.liberoNumber,
-      liberoIn: otherLibero.number,
-      liberoOutType: liberoOnCourt.liberoType,
-      liberoInType: otherLibero.libero,
-      playerNumber: liberoOnCourt.playerNumber
-    })
+    } finally {
+      // MUTEX: Always release the lock, even if an error occurred
+      eventInProgressRef.current = false
+    }
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
 
   // Keyboard shortcuts handler
@@ -19309,8 +19440,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       }
                     }
 
-                    // Save the updated lineup
-                    const nextSeq = await getNextSeq()
+                    // Log the libero entry event FIRST (main event)
+                    await logEvent('libero_entry', {
+                      team,
+                      position,
+                      playerOut: playerNumber,
+                      liberoIn: liberoPlayer.number,
+                      liberoType
+                    })
+
+                    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+                    const allEvents = await db.events.where({ matchId }).toArray()
+                    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+                    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
+
                     await db.events.add({
                       matchId,
                       setIndex: data.set.index,
@@ -19326,15 +19469,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }
                       },
                       ts: new Date().toISOString(),
-                      seq: nextSeq
-                    })
-
-                    await logEvent('libero_entry', {
-                      team,
-                      position,
-                      playerOut: playerNumber,
-                      liberoIn: liberoPlayer.number,
-                      liberoType
+                      seq: subEventSeq
                     })
                   }
 
