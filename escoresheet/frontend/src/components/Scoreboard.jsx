@@ -238,6 +238,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const syncFunctionRef = useRef(null) // Store sync function for use in action handlers
   const noSleepVideoRef = useRef(null) // Video element for NoSleep fallback
   const checkAndRequestCaptainOnCourtRef = useRef(null) // Store latest captain check function
+  const logEventRef = useRef(null) // Store latest logEvent function to avoid circular dependencies
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -2052,6 +2053,43 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return { home: homeSetsWon, away: awaySetsWon, left: leftSetsWon, right: rightSetsWon }
   }, [data, leftIsHome])
 
+  // Check if each team's captain is on court (for showing "Designate Captain on Court" button)
+  const captainOnCourtStatus = useMemo(() => {
+    if (!data) return { home: { captainOnCourt: true, hasCourtCaptain: false }, away: { captainOnCourt: true, hasCourtCaptain: false } }
+
+    const checkTeam = (teamKey) => {
+      const teamPlayers = teamKey === 'home' ? data.homePlayers || [] : data.awayPlayers || []
+      const teamLineupEvents = (data.events || [])
+        .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === data.set?.index)
+        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+      const latestLineup = teamLineupEvents[0]?.payload?.lineup || {}
+      const playersOnCourt = Object.values(latestLineup).map(n => String(n))
+
+      // Find team captain
+      const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
+      if (!teamCaptain || !teamCaptain.number) return { captainOnCourt: true, hasCourtCaptain: false }
+
+      const captainNumberStr = String(teamCaptain.number)
+      const captainOnCourt = playersOnCourt.includes(captainNumberStr)
+
+      // Get current court captain from match
+      const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+      const currentCourtCaptain = data.match?.[courtCaptainField]
+
+      return {
+        captainOnCourt,
+        hasCourtCaptain: !!currentCourtCaptain,
+        courtCaptainNumber: currentCourtCaptain
+      }
+    }
+
+    return {
+      home: checkTeam('home'),
+      away: checkTeam('away')
+    }
+  }, [data])
+
   const mapSideToTeamKey = useCallback(
     side => {
       if (!data?.set) return 'home'
@@ -2489,31 +2527,59 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const captainOnCourt = playersOnCourt.some(n => String(n) === captainNumberStr)
 
     // Get current captain on court from match
-    const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const rememberedField = teamKey === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
+    const match = await db.matches.get(matchId)
+    const currentCourtCaptain = match?.[courtCaptainField]
+    const rememberedCourtCaptain = match?.[rememberedField]
 
-    // If team captain is on court, they automatically become captain on court (no need to ask)
-    // Team captain has precedence over everyone
+    // If team captain is on court, they automatically become captain on court
+    // Team captain has precedence over everyone - clear court captain (but keep in memory)
     if (captainOnCourt) {
-      // Set team captain as court captain (or clear if already set to them)
-      if (String(currentCourtCaptain) !== captainNumberStr) {
-        await db.matches.update(matchId, { [captainOnCourtField]: teamCaptain.number })
+      if (currentCourtCaptain && String(currentCourtCaptain) !== captainNumberStr) {
+        // Clear court captain (team captain takes over) but don't clear memory
+        await db.matches.update(matchId, { [courtCaptainField]: null })
+        console.log(`[CaptainOnCourt] Team captain #${captainNumberStr} returned, cleared court captain`)
+        // Sync the cleared court captain to Supabase/Referee
+        syncLiveStateToSupabase('court_captain_cleared', teamKey, { captainNumber: teamCaptain.number })
+        syncToReferee()
       }
       return
     }
 
-    // Captain is not on court - check if we need to show modal
-    // If there's already a court captain and they're still on court, no need to ask
+    // Captain is NOT on court - check if we need to designate someone
+    // If there's already a valid court captain on court, no need to do anything
     if (currentCourtCaptain) {
       const courtCaptainStr = String(currentCourtCaptain)
       const courtCaptainOnCourt = playersOnCourt.some(n => String(n) === courtCaptainStr)
-      if (courtCaptainOnCourt) return // Court captain is still on court, no need to ask
+      if (courtCaptainOnCourt) return // Court captain is still on court, no action needed
     }
 
-    // Show modal to select new captain on court
+    // No valid court captain - check if remembered captain is on court for auto-designation
+    if (rememberedCourtCaptain) {
+      const rememberedStr = String(rememberedCourtCaptain)
+      const rememberedOnCourt = playersOnCourt.some(n => String(n) === rememberedStr)
+      if (rememberedOnCourt) {
+        // Auto-designate remembered captain
+        console.log(`[CaptainOnCourt] Auto-designating remembered captain #${rememberedCourtCaptain} for ${teamKey}`)
+        await db.matches.update(matchId, { [courtCaptainField]: rememberedCourtCaptain })
+        // Log the event using ref to avoid circular dependency
+        if (logEventRef.current) {
+          await logEventRef.current('court_captain_designation', {
+            team: teamKey,
+            playerNumber: rememberedCourtCaptain,
+            previousCourtCaptain: currentCourtCaptain || null,
+            auto: true  // Mark as automatic
+          })
+        }
+        return
+      }
+    }
+
+    // No remembered captain on court - show modal to select new captain
     console.log(`[CaptainOnCourt] Showing modal for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`)
     setCaptainOnCourtModal({ team: teamKey })
-  }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState])
+  }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState, syncLiveStateToSupabase, syncToReferee])
 
   // Keep ref updated with latest function to avoid stale closures in setTimeout
   useEffect(() => {
@@ -3411,7 +3477,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       syncToReferee()
 
       // Sync live state to Supabase for key events
-      const keyEvents = ['point', 'timeout', 'substitution', 'set_start', 'set_end', 'lineup', 'sanction', 'libero_entry', 'libero_exit', 'libero_exchange']
+      const keyEvents = ['point', 'timeout', 'substitution', 'set_start', 'set_end', 'lineup', 'sanction', 'libero_entry', 'libero_exit', 'libero_exchange', 'court_captain_designation']
       if (keyEvents.includes(type)) {
         const eventTeam = payload?.team || null
         let eventData = null
@@ -3425,6 +3491,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           eventData = { liberoNumber: payload?.liberoNumber, playerNumber: payload?.playerNumber }
         } else if (type === 'libero_exchange') {
           eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
+        } else if (type === 'court_captain_designation') {
+          eventData = { playerNumber: payload?.playerNumber }
         }
         syncLiveStateToSupabase(type, eventTeam, eventData)
       }
@@ -3446,6 +3514,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     },
     [data?.set, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
+
+  // Keep logEventRef updated with latest function to avoid circular dependencies
+  useEffect(() => {
+    logEventRef.current = logEvent
+  }, [logEvent])
 
   const checkSetEnd = useCallback(async (set, homePoints, awayPoints) => {
     // Don't show modal if it's already open
@@ -9170,15 +9243,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Handle captain on court selection
   const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
     if (!captainOnCourtModal || !matchId) return
-    
+
     const { team } = captainOnCourtModal
-    const field = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    
-    // Save the selected captain on court
-    await db.matches.update(matchId, { [field]: playerNumber })
-    
+    const courtCaptainField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const rememberedField = team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
+
+    // Get previous court captain for undo
+    const match = await db.matches.get(matchId)
+    const previousCourtCaptain = match?.[courtCaptainField] || null
+
+    // Save the selected captain on court AND remember for auto-redesignation
+    await db.matches.update(matchId, {
+      [courtCaptainField]: playerNumber,
+      [rememberedField]: playerNumber  // Remember for when captain leaves again
+    })
+
+    // Log the event (this triggers snapshot capture and sync to Supabase/Referee)
+    await logEvent('court_captain_designation', {
+      team,
+      playerNumber,
+      previousCourtCaptain
+    })
+
     setCaptainOnCourtModal(null)
-  }, [captainOnCourtModal, matchId])
+  }, [captainOnCourtModal, matchId, logEvent])
   
   // Handle cancel (no captain selected)
   const handleCancelCaptainOnCourt = useCallback(() => {
@@ -11050,6 +11138,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 </div>
               )}
 
+              {/* Designate Captain on Court Button - shown when team captain is NOT on court */}
+              {localManageCaptainOnCourt && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt && (
+                <button
+                  onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'home' : 'away' })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: 'rgba(251, 191, 36, 0.2)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(251, 191, 36, 0.4)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    marginBottom: '4px'
+                  }}
+                >
+                  {t('scoreboard.captainOnCourt.designate', 'Designate Captain on Court')}
+                </button>
+              )}
+
               {/* Show Bench Button */}
               <button
                 onClick={() => setLeftTeamBenchExpanded(!leftTeamBenchExpanded)}
@@ -11637,6 +11746,27 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     {t('scoreboard.sanctions.delayPenalty')}
                   </button>
                 </div>
+              )}
+
+              {/* Designate Captain on Court Button - shown when team captain is NOT on court */}
+              {localManageCaptainOnCourt && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt && (
+                <button
+                  onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'away' : 'home' })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: 'rgba(251, 191, 36, 0.2)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(251, 191, 36, 0.4)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    marginBottom: '4px'
+                  }}
+                >
+                  {t('scoreboard.captainOnCourt.designate', 'Designate Captain on Court')}
+                </button>
               )}
 
               {/* Show Bench Button */}
