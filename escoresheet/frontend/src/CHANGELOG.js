@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.26',
+    date: '01.01.26',
+    changes: [
+      'Update Scoreboard and localization files to standardize captain designation terminology'
+    ]
+  },
+  {
     version: '0.17.25',
     date: '01.01.26',
     changes: [

@@ -524,7 +524,10 @@
       "requiresExceptionalCase": "Diese Auswechslung erfordert einen Ausnahmefall",
       "playerCannotSubstitute": "Dieser Spieler kann den ausgewählten Feldspieler nicht ersetzen"
     },
-    "noEventsRecorded": "Noch keine Ereignisse erfasst."
+    "noEventsRecorded": "Noch keine Ereignisse erfasst.",
+    "captainOnCourt": {
+      "designate": "Spielkapitän"
+    }
   },
   "settings": {
     "title": "Einstellungen",

@@ -524,7 +524,10 @@
       "requiresExceptionalCase": "This substitution requires an exceptional case",
       "playerCannotSubstitute": "This player cannot substitute for the selected court player"
     },
-    "noEventsRecorded": "No events recorded yet."
+    "noEventsRecorded": "No events recorded yet.",
+    "captainOnCourt": {
+      "designate": "Game Captain"
+    }
   },
   "settings": {
     "title": "Settings",
