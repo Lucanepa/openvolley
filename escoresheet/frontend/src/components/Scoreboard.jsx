@@ -31,10 +31,19 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [manualPanelExpandedSections, setManualPanelExpandedSections] = useState({
     lineup: true,      // Change Current Lineup
     scores: false,     // Score & Sets
-    matchSettings: false, // Match Settings (coin toss, status, sides)
+    matchSettings: false, // Match Settings (teams setup, status, sides)
     events: false,     // Event History (points, timeouts, subs, sanctions)
-    advanced: false    // Advanced (add events, delete events, times)
+    advanced: false,   // Advanced (add events, delete events, times)
+    summary: false     // Manual Changes Summary
   })
+  const [manualChangesLog, setManualChangesLog] = useState([])
+
+  // Load existing manual changes when panel opens
+  useEffect(() => {
+    if (showManualPanel && data?.match?.manualChanges) {
+      setManualChangesLog(data.match.manualChanges)
+    }
+  }, [showManualPanel, data?.match?.manualChanges])
   const [showCurrentSetAdjustment, setShowCurrentSetAdjustment] = useState(false)
   const [showRemarks, setShowRemarks] = useState(false)
   const [remarksText, setRemarksText] = useState('')
@@ -3221,6 +3230,38 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
     }
   }, [matchId, data?.match, data?.homeTeam, data?.awayTeam, data?.homePlayers, data?.awayPlayers])
+
+  // Helper function to log manual changes for the summary
+  const logManualChange = useCallback((category, field, before, after, description) => {
+    const change = {
+      ts: new Date().toISOString(),
+      category,
+      field,
+      before,
+      after,
+      description: description || `Changed ${field} from "${before}" to "${after}"`
+    }
+    setManualChangesLog(prev => [...prev, change])
+
+    // Also update the match record with the new change
+    if (matchId && data?.match) {
+      const existingChanges = data.match.manualChanges || []
+      const updatedChanges = [...existingChanges, change]
+      db.matches.update(matchId, { manualChanges: updatedChanges }).catch(() => {})
+
+      // Sync to Supabase
+      if (supabase && data.match?.seed_key) {
+        supabase
+          .from('matches')
+          .update({ manual_changes: updatedChanges })
+          .eq('external_id', data.match.seed_key)
+          .then(() => {})
+          .catch(() => {})
+      }
+    }
+
+    return change
+  }, [matchId, data?.match, supabase])
 
   const logEvent = useCallback(
     async (type, payload = {}, options = {}) => {
@@ -17203,78 +17244,165 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               {manualPanelExpandedSections.matchSettings && (
                 <div style={{ padding: '0 16px 16px 16px' }}>
 
-                {/* Edit Coin Toss */}
-                {data?.match && (
-                  <div
-                    className="manual-item"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      paddingBottom: '16px',
-                      borderBottom: '1px solid rgba(255,255,255,0.08)'
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editCoinToss')}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      {t('scoreboard.edit.editCoinTossDesc')}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '80px' }}>{t('scoreboard.edit.teamALabel')}</label>
-                        <select
-                          value={data.match.coinTossTeamA || 'home'}
-                          onChange={async (e) => {
-                            const teamA = e.target.value
-                            const teamB = teamA === 'home' ? 'away' : 'home'
-                            await db.matches.update(matchId, { coinTossTeamA: teamA, coinTossTeamB: teamB })
+                {/* Teams Setup - Visual court representation */}
+                {data?.match && (() => {
+                  // Determine current serving team
+                  const servingTeam = data.match.firstServe || 'home'
+                  const leftTeamKey = leftIsHome ? 'home' : 'away'
+                  const rightTeamKey = leftIsHome ? 'away' : 'home'
+                  const leftTeamName = leftIsHome ? (data.homeTeam?.shortName || data.homeTeam?.name || 'Home') : (data.awayTeam?.shortName || data.awayTeam?.name || 'Away')
+                  const rightTeamName = leftIsHome ? (data.awayTeam?.shortName || data.awayTeam?.name || 'Away') : (data.homeTeam?.shortName || data.homeTeam?.name || 'Home')
+                  const leftTeamColor = leftIsHome ? (data.homeTeam?.color || '#3b82f6') : (data.awayTeam?.color || '#ef4444')
+                  const rightTeamColor = leftIsHome ? (data.awayTeam?.color || '#ef4444') : (data.homeTeam?.color || '#3b82f6')
+                  const leftIsServing = servingTeam === leftTeamKey
+                  const rightIsServing = servingTeam === rightTeamKey
+
+                  return (
+                    <div
+                      className="manual-item"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        paddingBottom: '16px',
+                        borderBottom: '1px solid rgba(255,255,255,0.08)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '4px' }}>Teams Setup</div>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                        Current court positions and serving team
+                      </div>
+
+                      {/* Visual Court Representation */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '16px',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(255,255,255,0.08)'
+                      }}>
+                        {/* Left Team */}
+                        <div style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '12px',
+                          background: leftTeamColor,
+                          borderRadius: '8px',
+                          color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                        }}>
+                          {leftIsServing && <span style={{ fontSize: '20px' }}>🏐</span>}
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontWeight: 700, fontSize: '14px' }}>{leftTeamName}</div>
+                            <div style={{ fontSize: '10px', opacity: 0.8 }}>{leftIsHome ? 'HOME' : 'AWAY'}</div>
+                          </div>
+                        </div>
+
+                        {/* Net divider */}
+                        <div style={{
+                          width: '4px',
+                          height: '60px',
+                          background: 'rgba(255,255,255,0.3)',
+                          borderRadius: '2px'
+                        }} />
+
+                        {/* Right Team */}
+                        <div style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '12px',
+                          background: rightTeamColor,
+                          borderRadius: '8px',
+                          color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                        }}>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontWeight: 700, fontSize: '14px' }}>{rightTeamName}</div>
+                            <div style={{ fontSize: '10px', opacity: 0.8 }}>{rightIsHome ? 'HOME' : 'AWAY'}</div>
+                          </div>
+                          {rightIsServing && <span style={{ fontSize: '20px' }}>🏐</span>}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          className="secondary"
+                          onClick={async () => {
+                            const oldLeft = leftIsHome ? 'Home' : 'Away'
+                            const newLeft = leftIsHome ? 'Away' : 'Home'
+
+                            // For sets 1-4, update the override for current set
+                            const currentSetIndex = data.set?.index || 1
+                            if (currentSetIndex === 5) {
+                              const currentLeftTeam = data.match.set5LeftTeam || (teamAKey === 'home' ? 'A' : 'B')
+                              const newLeftTeam = currentLeftTeam === 'A' ? 'B' : 'A'
+                              await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
+                              logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set 5)`)
+                            } else {
+                              // Calculate what automatic would be
+                              const automatic = currentSetIndex % 2 === 1 ? 'A' : 'B'
+                              const currentOverride = data.match?.setLeftTeamOverrides?.[currentSetIndex]
+                              const currentValue = currentOverride || automatic
+                              const newValue = currentValue === 'A' ? 'B' : 'A'
+
+                              const newOverrides = {
+                                ...(data.match?.setLeftTeamOverrides || {}),
+                                [currentSetIndex]: newValue
+                              }
+                              await db.matches.update(matchId, { setLeftTeamOverrides: newOverrides })
+                              logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set ${currentSetIndex})`)
+                            }
                           }}
                           style={{
-                            width: '80px',
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            background: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            borderRadius: '4px',
-                            color: 'var(--text)'
+                            flex: 1,
+                            padding: '10px 16px',
+                            fontSize: '13px',
+                            borderRadius: '8px',
+                            fontWeight: 600
                           }}
                         >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
-                        </select>
-                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                          {t('scoreboard.edit.teamBColon', { team: (data.match.coinTossTeamA || 'home') === 'home' ? t('common.away') : t('common.home') })}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '80px' }}>{t('scoreboard.edit.firstServe')}</label>
-                        <select
-                          value={data.match.firstServe || 'home'}
-                          onChange={async (e) => {
-                            const firstServe = e.target.value
-                            // Also update coinTossServeA for PDF rendering
-                            // coinTossServeA = true means Team A serves first
-                            const coinTossTeamA = data.match.coinTossTeamA || 'home'
-                            const coinTossServeA = firstServe === coinTossTeamA
-                            await db.matches.update(matchId, { firstServe, coinTossServeA })
+                          ↔️ Switch Sides
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={async () => {
+                            const oldServing = servingTeam === 'home' ? 'Home' : 'Away'
+                            const newServe = servingTeam === 'home' ? 'away' : 'home'
+                            const newServing = newServe === 'home' ? 'Home' : 'Away'
+
+                            if (data.set?.index === 5) {
+                              const currentSet5Serve = data.match.set5FirstServe || 'A'
+                              const newSet5Serve = currentSet5Serve === 'A' ? 'B' : 'A'
+                              await db.matches.update(matchId, { set5FirstServe: newSet5Serve })
+                            } else {
+                              const coinTossTeamA = data.match.coinTossTeamA || 'home'
+                              const coinTossServeA = newServe === coinTossTeamA
+                              await db.matches.update(matchId, { firstServe: newServe, coinTossServeA })
+                            }
+                            logManualChange('Teams Setup', 'First Serve', oldServing, newServing, `Changed first serve from ${oldServing} to ${newServing}`)
                           }}
                           style={{
-                            width: '80px',
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            background: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            borderRadius: '4px',
-                            color: 'var(--text)'
+                            flex: 1,
+                            padding: '10px 16px',
+                            fontSize: '13px',
+                            borderRadius: '8px',
+                            fontWeight: 600
                           }}
                         >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
-                        </select>
+                          🏐 Switch Serve
+                        </button>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
 
                 {/* Edit Match Information */}
                 {data?.match && (
@@ -18979,6 +19107,189 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   </div>
                 )}
+                </div>
+              )}
+            </div>
+
+            {/* Collapsible Section: Manual Changes Summary */}
+            <div style={{
+              marginBottom: '12px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, summary: !prev.summary }))}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '18px' }}>📋</span>
+                  Manual Changes Summary
+                  {manualChangesLog.length > 0 && (
+                    <span style={{
+                      background: 'var(--primary)',
+                      color: '#fff',
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      marginLeft: '4px'
+                    }}>
+                      {manualChangesLog.length}
+                    </span>
+                  )}
+                </span>
+                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.summary ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {manualPanelExpandedSections.summary && (
+                <div style={{ padding: '0 16px 16px 16px' }}>
+                  {manualChangesLog.length === 0 ? (
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'var(--muted)',
+                      textAlign: 'center',
+                      padding: '24px 0'
+                    }}>
+                      No manual changes recorded yet.
+                      <br />
+                      <span style={{ fontSize: '11px' }}>
+                        Changes made via this panel will be logged here.
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                        All manual modifications made during this match session:
+                      </div>
+                      <div style={{
+                        maxHeight: '400px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        {manualChangesLog.slice().reverse().map((change, idx) => {
+                          const time = new Date(change.ts)
+                          const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}:${String(time.getSeconds()).padStart(2, '0')}`
+
+                          return (
+                            <div key={idx} style={{
+                              padding: '10px 12px',
+                              background: 'rgba(255,255,255,0.03)',
+                              borderRadius: '6px',
+                              border: '1px solid rgba(255,255,255,0.06)',
+                              fontSize: '12px'
+                            }}>
+                              <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '6px'
+                              }}>
+                                <span style={{
+                                  fontWeight: 600,
+                                  color: 'var(--primary)',
+                                  fontSize: '11px',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  {change.category}
+                                </span>
+                                <span style={{
+                                  fontSize: '10px',
+                                  color: 'var(--muted)',
+                                  fontFamily: 'monospace'
+                                }}>
+                                  {timeStr}
+                                </span>
+                              </div>
+                              <div style={{ marginBottom: '4px', color: 'var(--text)' }}>
+                                {change.description}
+                              </div>
+                              <div style={{
+                                display: 'flex',
+                                gap: '12px',
+                                fontSize: '11px',
+                                color: 'var(--muted)'
+                              }}>
+                                <span>
+                                  <strong>Before:</strong> {String(change.before)}
+                                </span>
+                                <span>→</span>
+                                <span>
+                                  <strong>After:</strong> {String(change.after)}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Export/Copy Log */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '8px',
+                        marginTop: '8px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                      }}>
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            const logText = manualChangesLog.map(c => {
+                              const time = new Date(c.ts).toLocaleTimeString()
+                              return `[${time}] ${c.category} - ${c.field}: "${c.before}" → "${c.after}"`
+                            }).join('\n')
+                            navigator.clipboard.writeText(logText)
+                            alert('Manual changes log copied to clipboard!')
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            fontSize: '12px',
+                            flex: 1
+                          }}
+                        >
+                          📋 Copy Log
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={async () => {
+                            // Clear the log
+                            if (confirm('Clear all manual changes log entries?')) {
+                              setManualChangesLog([])
+                              if (matchId) {
+                                await db.matches.update(matchId, { manualChanges: [] })
+                                if (supabase && data?.match?.seed_key) {
+                                  await supabase
+                                    .from('matches')
+                                    .update({ manual_changes: [] })
+                                    .eq('external_id', data.match.seed_key)
+                                }
+                              }
+                            }
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            fontSize: '12px',
+                            flex: 1
+                          }}
+                        >
+                          🗑️ Clear Log
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
