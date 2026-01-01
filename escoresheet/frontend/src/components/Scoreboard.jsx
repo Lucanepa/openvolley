@@ -28,6 +28,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [showLogs, setShowLogs] = useState(false)
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
+  const [manualPanelExpandedSections, setManualPanelExpandedSections] = useState({
+    lineup: true,      // Change Current Lineup
+    scores: false,     // Score & Sets
+    matchSettings: false, // Match Settings (coin toss, status, sides)
+    events: false,     // Event History (points, timeouts, subs, sanctions)
+    advanced: false    // Advanced (add events, delete events, times)
+  })
   const [showCurrentSetAdjustment, setShowCurrentSetAdjustment] = useState(false)
   const [showRemarks, setShowRemarks] = useState(false)
   const [remarksText, setRemarksText] = useState('')
@@ -1818,6 +1825,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [checkConnectionStatuses])
 
   const ensuringSetRef = useRef(false)
+  const setCreationInProgressRef = useRef(false) // Prevent race condition: don't auto-create set while confirmSetEndTime is running
 
   const ensureActiveSet = useCallback(async () => {
     if (!matchId) return
@@ -1873,7 +1881,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [matchId])
 
   useEffect(() => {
-    if (!matchId || !data || data.set || ensuringSetRef.current) return
+    // Skip if: no match, data exists with active set, already ensuring, or confirmSetEndTime is creating a set
+    if (!matchId || !data || data.set || ensuringSetRef.current || setCreationInProgressRef.current) return
     ensuringSetRef.current = true
     ensureActiveSet()
       .catch(err => {
@@ -4712,6 +4721,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         countdown: setIntervalDuration
       })
 
+      // Prevent ensureActiveSet from creating duplicate sets while we're creating the next set
+      setCreationInProgressRef.current = true
+
+      try {
       // If set 4 just ended, prepare for Set 5 inline setup (no modal)
       if (setIndex === 4) {
         // Close the set end time modal first
@@ -4839,6 +4852,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           ts: new Date().toISOString(),
           status: 'queued'
         })
+      }
+      } finally {
+        // Reset flag to allow ensureActiveSet to run again
+        setCreationInProgressRef.current = false
       }
     }
   }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup])
@@ -13198,9 +13215,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           const isCourtCaptain = courtCaptain && Number(courtCaptain) === Number(player.number) && !player.isCaptain
                           if (isCourtCaptain) {
                             return (
-                              <span 
-                                className="court-player-captain" 
-                                style={{ 
+                              <span
+                                className="court-player-captain"
+                                style={{
                                   color: '#fbbf24', // Different color (amber/yellow)
                                   borderColor: '#fbbf24'
                                 }}
@@ -13240,7 +13257,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           )
                         })()}
                         {player.number}
-                        
+
                         {/* Sanction cards indicator */}
                         {sanctions.length > 0 && (
                           <div style={{
@@ -13252,9 +13269,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             {hasExpulsion ? (
                               // Expulsion: overlapping rotated cards
                               <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                                <div className="sanction-card yellow" style={{ 
-                                  width: '6px', 
-                                  height: '9px', 
+                                <div className="sanction-card yellow" style={{
+                                  width: '6px',
+                                  height: '9px',
                                   boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                   position: 'absolute',
                                   left: '0',
@@ -13263,9 +13280,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   zIndex: 1,
                                   borderRadius: '1px'
                                 }}></div>
-                                <div className="sanction-card red" style={{ 
-                                  width: '6px', 
-                                  height: '9px', 
+                                <div className="sanction-card red" style={{
+                                  width: '6px',
+                                  height: '9px',
                                   boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                   position: 'absolute',
                                   right: '0',
@@ -13398,9 +13415,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         }}
                       >
                         {shouldShowBall && (
-                          <img 
-                            src={mikasaVolleyball} 
-                            alt="Volleyball" 
+                          <img
+                            src={mikasaVolleyball}
+                            alt="Volleyball"
                             style={{
                               position: 'absolute',
                               left: '-40px',
@@ -13435,9 +13452,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           const isCourtCaptain = courtCaptain && Number(courtCaptain) === Number(player.number) && !player.isCaptain
                           if (isCourtCaptain) {
                             return (
-                              <span 
-                                className="court-player-captain" 
-                                style={{ 
+                              <span
+                                className="court-player-captain"
+                                style={{
                                   color: '#fbbf24', // Different color (amber/yellow)
                                   borderColor: '#fbbf24'
                                 }}
@@ -13477,7 +13494,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           )
                         })()}
                         {player.number}
-                        
+
                         {/* Sanction cards indicator */}
                         {sanctions.length > 0 && (
                           <div style={{
@@ -13489,9 +13506,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             {hasExpulsion ? (
                               // Expulsion: overlapping rotated cards
                               <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                                <div className="sanction-card yellow" style={{ 
-                                  width: '6px', 
-                                  height: '9px', 
+                                <div className="sanction-card yellow" style={{
+                                  width: '6px',
+                                  height: '9px',
                                   boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                   position: 'absolute',
                                   left: '0',
@@ -13500,9 +13517,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                   zIndex: 1,
                                   borderRadius: '1px'
                                 }}></div>
-                                <div className="sanction-card red" style={{ 
-                                  width: '6px', 
-                                  height: '9px', 
+                                <div className="sanction-card red" style={{
+                                  width: '6px',
+                                  height: '9px',
                                   boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                   position: 'absolute',
                                   right: '0',
@@ -16809,55 +16826,115 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           title={t('scoreboard.menu.manualChanges')}
           open={true}
           onClose={() => setShowManualPanel(false)}
-          width={600}
+          width={650}
         >
-          <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
-            <section className="panel">
-              <h3>{t('scoreboard.edit.manualChanges')}</h3>
-              <div className="manual-list">
-                <div
-                  className="manual-item"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                    paddingBottom: '16px',
-                    borderBottom: '1px solid rgba(255,255,255,0.08)'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{t('scoreboard.edit.changeCurrentLineup')}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {t('scoreboard.edit.overrideLineupDesc')}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        className="secondary"
-                        disabled={!data?.set}
-                        onClick={() => openManualLineup(leftIsHome ? 'home' : 'away')}
-                        style={{
-                          background: leftTeam.color || '#ef4444',
-                          color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff'
-                        }}
-                      >
-                        {t('scoreboard.edit.editTeamLeft', { team: leftTeam.isTeamA ? 'A' : 'B' })}
-                      </button>
-                      <button
-                        className="secondary"
-                        disabled={!data?.set}
-                        onClick={() => openManualLineup(leftIsHome ? 'away' : 'home')}
-                        style={{
-                          background: rightTeam.color || '#3b82f6',
-                          color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff'
-                        }}
-                      >
-                        {t('scoreboard.edit.editTeamRight', { team: rightTeam.isTeamA ? 'A' : 'B' })}
-                      </button>
-                    </div>
+          <div style={{ padding: '16px', maxHeight: '80vh', overflowY: 'auto' }}>
+            {/* Collapsible Section: Lineup */}
+            <div style={{
+              marginBottom: '12px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, lineup: !prev.lineup }))}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '18px' }}>👥</span>
+                  {t('scoreboard.edit.changeCurrentLineup')}
+                </span>
+                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.lineup ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {manualPanelExpandedSections.lineup && (
+                <div style={{ padding: '0 16px 16px 16px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+                    {t('scoreboard.edit.overrideLineupDesc')}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      className="secondary"
+                      disabled={!data?.set}
+                      onClick={() => openManualLineup(leftIsHome ? 'home' : 'away')}
+                      style={{
+                        flex: 1,
+                        minWidth: '120px',
+                        padding: '12px 16px',
+                        background: leftTeam.color || '#ef4444',
+                        color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
+                        borderRadius: '8px',
+                        fontWeight: 600
+                      }}
+                    >
+                      {t('scoreboard.edit.editTeamLeft', { team: leftTeam.isTeamA ? 'A' : 'B' })}
+                    </button>
+                    <button
+                      className="secondary"
+                      disabled={!data?.set}
+                      onClick={() => openManualLineup(leftIsHome ? 'away' : 'home')}
+                      style={{
+                        flex: 1,
+                        minWidth: '120px',
+                        padding: '12px 16px',
+                        background: rightTeam.color || '#3b82f6',
+                        color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
+                        borderRadius: '8px',
+                        fontWeight: 600
+                      }}
+                    >
+                      {t('scoreboard.edit.editTeamRight', { team: rightTeam.isTeamA ? 'A' : 'B' })}
+                    </button>
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* Collapsible Section: Score & Sets */}
+            <div style={{
+              marginBottom: '12px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, scores: !prev.scores }))}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '18px' }}>📊</span>
+                  Score &amp; Sets
+                </span>
+                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.scores ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {manualPanelExpandedSections.scores && (
+                <div style={{ padding: '0 16px 16px 16px' }}>
+                  <div className="manual-list">
                 
                 {/* Reopen completed sets */}
                 {data?.sets && (() => {
@@ -16927,6 +17004,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           onChange={async (e) => {
                             const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                             await db.sets.update(data.set.id, { homePoints: newPoints })
+                            // Sync to Supabase
+                            if (supabase && data.match?.seed_key) {
+                              try {
+                                await supabase.from('sets').update({ home_points: newPoints }).eq('external_id', String(data.set.id))
+                              } catch (err) { /* ignore */ }
+                            }
                           }}
                           style={{
                             width: '60px',
@@ -16951,6 +17034,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           onChange={async (e) => {
                             const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                             await db.sets.update(data.set.id, { awayPoints: newPoints })
+                            // Sync to Supabase
+                            if (supabase && data.match?.seed_key) {
+                              try {
+                                await supabase.from('sets').update({ away_points: newPoints }).eq('external_id', String(data.set.id))
+                              } catch (err) { /* ignore */ }
+                            }
                           }}
                           style={{
                             width: '60px',
@@ -17004,6 +17093,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               onChange={async (e) => {
                                 const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                 await db.sets.update(set.id, { homePoints: newPoints })
+                                // Sync to Supabase
+                                if (supabase && data.match?.seed_key) {
+                                  try {
+                                    await supabase.from('sets').update({ home_points: newPoints }).eq('external_id', String(set.id))
+                                  } catch (err) { /* ignore */ }
+                                }
                               }}
                               style={{
                                 width: '50px',
@@ -17026,6 +17121,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               onChange={async (e) => {
                                 const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                 await db.sets.update(set.id, { awayPoints: newPoints })
+                                // Sync to Supabase
+                                if (supabase && data.match?.seed_key) {
+                                  try {
+                                    await supabase.from('sets').update({ away_points: newPoints }).eq('external_id', String(set.id))
+                                  } catch (err) { /* ignore */ }
+                                }
                               }}
                               style={{
                                 width: '50px',
@@ -17045,6 +17146,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               checked={set.finished || false}
                               onChange={async (e) => {
                                 await db.sets.update(set.id, { finished: e.target.checked })
+                                // Sync to Supabase
+                                if (supabase && data.match?.seed_key) {
+                                  try {
+                                    await supabase.from('sets').update({ finished: e.target.checked }).eq('external_id', String(set.id))
+                                  } catch (err) { /* ignore */ }
+                                }
                               }}
                               style={{
                                 width: '18px',
@@ -17058,7 +17165,44 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   </div>
                 )}
-                
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Collapsible Section: Match Settings */}
+            <div style={{
+              marginBottom: '12px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, matchSettings: !prev.matchSettings }))}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '18px' }}>⚙️</span>
+                  Match Settings
+                </span>
+                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.matchSettings ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {manualPanelExpandedSections.matchSettings && (
+                <div style={{ padding: '0 16px 16px 16px' }}>
+
                 {/* Edit Coin Toss */}
                 {data?.match && (
                   <div
@@ -17067,8 +17211,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '8px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                      paddingBottom: '16px',
+                      borderBottom: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
                     <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editCoinToss')}</div>
@@ -17387,12 +17531,48 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   </div>
                 )}
-                
+                </div>
+              )}
+            </div>
+
+            {/* Collapsible Section: Event History */}
+            <div style={{
+              marginBottom: '12px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, events: !prev.events }))}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '18px' }}>📝</span>
+                  Event History
+                </span>
+                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.events ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {manualPanelExpandedSections.events && (
+                <div style={{ padding: '0 16px 16px 16px' }}>
+
                 {/* Edit Points */}
                 {data?.events && (() => {
                   const pointEvents = data.events.filter(e => e.type === 'point').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
                   if (pointEvents.length === 0) return null
-                  
+
                   return (
                     <div
                       className="manual-item"
@@ -17400,8 +17580,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '8px',
-                        paddingTop: '16px',
-                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                        paddingBottom: '16px',
+                        borderBottom: '1px solid rgba(255,255,255,0.08)'
                       }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Points ({pointEvents.length} most recent)</div>
@@ -18445,7 +18625,43 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   )
                 })()}
-                
+                </div>
+              )}
+            </div>
+
+            {/* Collapsible Section: Advanced */}
+            <div style={{
+              marginBottom: '12px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, advanced: !prev.advanced }))}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '18px' }}>🔧</span>
+                  Advanced
+                </span>
+                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.advanced ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {manualPanelExpandedSections.advanced && (
+                <div style={{ padding: '0 16px 16px 16px' }}>
+
                 {/* Edit Set Times */}
                 {data?.sets && data.sets.length > 0 && (
                   <div
@@ -18454,8 +18670,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '8px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                      paddingBottom: '16px',
+                      borderBottom: '1px solid rgba(255,255,255,0.08)'
                     }}
                   >
                     <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Set Times</div>
@@ -18763,8 +18979,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     </div>
                   </div>
                 )}
-              </div>
-            </section>
+                </div>
+              )}
+            </div>
+
           </div>
         </Modal>
       )}

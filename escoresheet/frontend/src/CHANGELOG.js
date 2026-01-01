@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.18.1',
+    date: '01.01.26',
+    changes: [
+      'Update version to 0.18.0 and enhance App component with demo mode functionality'
+    ]
+  },
+  {
     version: '0.17.26',
     date: '01.01.26',
     changes: [
