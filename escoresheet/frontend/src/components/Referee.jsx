@@ -826,11 +826,33 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
   // Determine which team is on the left (from referee's perspective)
+  // Uses same alternating pattern as Scoreboard: odd sets = Team A on left, even sets = Team A on right
   const homeOnLeftFor2ndRef = useMemo(() => {
     if (!data?.currentSet) return true
-    if (data.currentSet.index === 1) return teamAKey === 'home'
-    return teamAKey !== 'home'
-  }, [data?.currentSet, teamAKey])
+    const setIndex = data.currentSet.index
+    const setLeftTeamOverrides = data?.match?.setLeftTeamOverrides || {}
+    const is5thSet = setIndex === 5
+    const set5CourtSwitched = data?.match?.set5CourtSwitched
+    const set5LeftTeam = data?.match?.set5LeftTeam
+
+    // Determine which side Team A is on this set
+    let sideA
+    if (setLeftTeamOverrides[setIndex] !== undefined) {
+      // Manual override for this set
+      sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
+    } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
+      // Set 5 special configuration (after 8-point switch)
+      sideA = set5LeftTeam === teamAKey ? 'left' : 'right'
+    } else {
+      // Default alternating pattern: odd sets = Team A on left, even sets = Team A on right
+      sideA = setIndex % 2 === 1 ? 'left' : 'right'
+    }
+
+    // Convert sideA to homeOnLeft:
+    // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
+    // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
+    return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
+  }, [data?.currentSet, data?.match?.setLeftTeamOverrides, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, teamAKey])
 
   const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
 
@@ -1261,8 +1283,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightStats = isInSetInterval
     ? { timeouts: 0, substitutions: 0 }
     : (rightTeam === 'home' ? stats.home : stats.away)
-  const leftScore = isInSetInterval ? 0 : (leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
-  const rightScore = isInSetInterval ? 0 : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  // During set interval, show SET SCORE (sets won) instead of points
+  const leftScore = isInSetInterval
+    ? (leftTeam === 'home' ? setScore.home : setScore.away)
+    : (leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  const rightScore = isInSetInterval
+    ? (rightTeam === 'home' ? setScore.home : setScore.away)
+    : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
   // Display set index - during interval show the NEXT set
   const displaySetIndex = isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1)
 
@@ -2679,9 +2706,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <div style={{
               flex: '0 0 auto',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center'
             }}>
+              {isInSetInterval && (
+                <span style={{ fontSize: 'clamp(10px, 3vw, 18px)', fontWeight: 600, color: 'var(--accent)', letterSpacing: '1px' }}>SETS</span>
+              )}
               <span style={{ fontSize: 'clamp(35px, 14vw, 110px)', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
               </div>
 
