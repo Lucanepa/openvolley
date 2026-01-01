@@ -1647,15 +1647,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (home && home.trim()) {
           if (homeTeamId) {
             // Update existing team
-            await db.teams.update(homeTeamId, { 
+            await db.teams.update(homeTeamId, {
               name: home.trim(),
-              color: homeColor 
+              color: homeColor,
+              shortName: homeShortName || home.trim().substring(0, 8).toUpperCase()
             })
           } else {
             // Create new team if it doesn't exist
             homeTeamId = await db.teams.add({
               name: home.trim(),
               color: homeColor,
+              shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
               createdAt: new Date().toISOString()
             })
             // Update match with new team ID
@@ -1666,15 +1668,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (away && away.trim()) {
           if (awayTeamId) {
             // Update existing team
-            await db.teams.update(awayTeamId, { 
+            await db.teams.update(awayTeamId, {
               name: away.trim(),
-              color: awayColor 
+              color: awayColor,
+              shortName: awayShortName || away.trim().substring(0, 8).toUpperCase()
             })
           } else {
             // Create new team if it doesn't exist
             awayTeamId = await db.teams.add({
               name: away.trim(),
               color: awayColor,
+              shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
               createdAt: new Date().toISOString()
             })
             // Update match with new team ID
@@ -1887,6 +1891,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         homeTeamId = await db.teams.add({
           name: home.trim(),
           color: homeColor,
+          shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
           benchStaff: benchHome,
           createdAt: new Date().toISOString()
         })
@@ -1895,6 +1900,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         await db.teams.update(homeTeamId, {
           name: home.trim(),
           color: homeColor,
+          shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
           benchStaff: benchHome
         })
       }
@@ -1903,6 +1909,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         awayTeamId = await db.teams.add({
           name: away.trim(),
           color: awayColor,
+          shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
           benchStaff: benchAway,
           createdAt: new Date().toISOString()
         })
@@ -1911,6 +1918,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         await db.teams.update(awayTeamId, {
           name: away.trim(),
           color: awayColor,
+          shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
           benchStaff: benchAway
         })
       }
@@ -2149,8 +2157,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
 
     await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
-    const homeId = await db.teams.add({ name: home, color: homeColor, createdAt: new Date().toISOString() })
-    const awayId = await db.teams.add({ name: away, color: awayColor, createdAt: new Date().toISOString() })
+    const homeId = await db.teams.add({ name: home, color: homeColor, shortName: homeShortName || home.substring(0, 8).toUpperCase(), createdAt: new Date().toISOString() })
+    const awayId = await db.teams.add({ name: away, color: awayColor, shortName: awayShortName || away.substring(0, 8).toUpperCase(), createdAt: new Date().toISOString() })
 
     // Generate 6-digit PIN code for referee authentication
     const generatePinCode = (existingPins = []) => {

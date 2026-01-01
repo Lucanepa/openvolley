@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.17.21',
+    date: '01.01.26',
+    changes: [
+      'Enhance MatchSetup and Scoreboard components with short name handling and event type descriptions'
+    ]
+  },
+  {
     version: '0.17.20',
     date: '01.01.26',
     changes: [
