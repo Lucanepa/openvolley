@@ -524,7 +524,10 @@
       "requiresExceptionalCase": "Ce remplacement nécessite un cas exceptionnel",
       "playerCannotSubstitute": "Ce joueur ne peut pas remplacer le joueur sélectionné"
     },
-    "noEventsRecorded": "Aucun événement enregistré."
+    "noEventsRecorded": "Aucun événement enregistré.",
+    "captainOnCourt": {
+      "designate": "Capitaine de jeu"
+    }
   },
   "settings": {
     "title": "Paramètres",

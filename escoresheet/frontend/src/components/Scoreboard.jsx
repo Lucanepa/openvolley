@@ -11155,7 +11155,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     marginBottom: '4px'
                   }}
                 >
-                  {t('scoreboard.captainOnCourt.designate', 'Designate Captain on Court')}
+                  {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
                 </button>
               )}
 
@@ -11765,7 +11765,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     marginBottom: '4px'
                   }}
                 >
-                  {t('scoreboard.captainOnCourt.designate', 'Designate Captain on Court')}
+                  {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
                 </button>
               )}
 
