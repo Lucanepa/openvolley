@@ -233,20 +233,36 @@ export async function getMatchData(matchId) {
         const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
         const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
 
-        // Determine serving team from rich lineup format (position I.isServing)
+        // Determine serving team - priority: serving_team field, then lineup isServing
         let servingTeam = 'home'
         let serverNumber = null
 
         const lineupA = liveState.lineup_a
         const lineupB = liveState.lineup_b
 
-        // Rich format: serving info is in position I (isServing field)
-        if (lineupA?.I?.isServing) {
+        // First priority: use serving_team from live state (set by manual changes or score events)
+        // serving_team stores 'left' or 'right', convert to 'home'/'away'
+        if (liveState.serving_team) {
+          const servingSide = liveState.serving_team // 'left' or 'right'
+          // leftIsHome tells us if home is on left
+          servingTeam = (servingSide === 'left') === leftIsHome ? 'home' : 'away'
+          // Get server number from the serving team's lineup position I
+          // If serving home and Team A is home, use lineupA. Otherwise use lineupB.
+          const servingTeamIsA = (servingTeam === 'home') === teamAIsHome
+          const servingTeamLineup = servingTeamIsA ? lineupA : lineupB
+          serverNumber = servingTeamLineup?.I?.number || null
+          console.log('[serverDataSync] Using serving_team field:', { servingSide, leftIsHome, servingTeam, serverNumber })
+        } else if (lineupA?.I?.isServing) {
+          // Fallback: Rich format with serving info in position I (isServing field)
           servingTeam = teamAIsHome ? 'home' : 'away'
           serverNumber = lineupA.I.number
+          console.log('[serverDataSync] Using lineupA.I.isServing:', { servingTeam, serverNumber })
         } else if (lineupB?.I?.isServing) {
           servingTeam = teamAIsHome ? 'away' : 'home'
           serverNumber = lineupB.I.number
+          console.log('[serverDataSync] Using lineupB.I.isServing:', { servingTeam, serverNumber })
+        } else {
+          console.log('[serverDataSync] No serving info found, defaulting to home')
         }
 
         const currentSet = {

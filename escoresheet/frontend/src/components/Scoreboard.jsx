@@ -29,7 +29,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
   const [manualPanelExpandedSections, setManualPanelExpandedSections] = useState({
-    lineup: true,      // Change Current Lineup
+    lineup: false,     // Change Current Lineup
     scores: false,     // Score & Sets
     matchSettings: false, // Match Settings (teams setup, status, sides)
     events: false,     // Event History (points, timeouts, subs, sanctions)
@@ -37,13 +37,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     summary: false     // Manual Changes Summary
   })
   const [manualChangesLog, setManualChangesLog] = useState([])
-
-  // Load existing manual changes when panel opens
-  useEffect(() => {
-    if (showManualPanel && data?.match?.manualChanges) {
-      setManualChangesLog(data.match.manualChanges)
-    }
-  }, [showManualPanel, data?.match?.manualChanges])
   const [showCurrentSetAdjustment, setShowCurrentSetAdjustment] = useState(false)
   const [showRemarks, setShowRemarks] = useState(false)
   const [remarksText, setRemarksText] = useState('')
@@ -707,6 +700,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
   }, [data])
 
+  // Load existing manual changes when panel opens
+  useEffect(() => {
+    if (showManualPanel && data?.match?.manualChanges) {
+      setManualChangesLog(data.match.manualChanges)
+    }
+  }, [showManualPanel, data?.match?.manualChanges])
+
   // Capture FULL state snapshot for snapshot-based undo system
   // This captures everything needed to restore the match state completely
   const captureFullStateSnapshot = useCallback(async () => {
@@ -745,12 +745,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const set5LeftTeam = match.set5LeftTeam
 
       // Determine which side Team A is on this set
+      // setLeftTeamOverrides stores 'A' or 'B' - which team is on the LEFT
       const setLeftTeamOverrides = match.setLeftTeamOverrides || {}
       let sideA
       if (setLeftTeamOverrides[setIndex] !== undefined) {
-        sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
+        // Override stores 'A' or 'B', not 'home'/'away'
+        sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
       } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
-        sideA = set5LeftTeam === teamAKey ? 'left' : 'right'
+        sideA = set5LeftTeam === 'A' ? 'left' : 'right'
       } else {
         sideA = setIndex % 2 === 1 ? 'left' : 'right'
       }
@@ -861,6 +863,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
 
       const servingTeam = pointEvents.length > 0 ? (pointEvents[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
+      console.log('[Snapshot] servingTeam calculation:', {
+        set1FirstServe,
+        currentSetFirstServe,
+        pointEventsCount: pointEvents.length,
+        lastPointTeam: pointEvents[0]?.payload?.team,
+        servingTeam
+      })
       const servingTeamLineup = getLineupForTeam(servingTeam)
       const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
 
@@ -1584,14 +1593,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }
       if (!supabaseMatchId) return
 
-      // Try to get the latest event's stateSnapshot
-      const allEvents = await db.events.where({ matchId }).toArray()
-      const sortedEvents = allEvents.sort((a, b) => (b.seq || 0) - (a.seq || 0))
-      let snapshot = sortedEvents[0]?.stateSnapshot
-
-      // Fallback: capture fresh snapshot if none exists (e.g., before first event)
-      if (!snapshot) {
+      // For manual changes, always capture fresh snapshot (the stored snapshots are stale)
+      // For other events, try to use the latest event's stateSnapshot
+      let snapshot = null
+      if (eventType?.startsWith('manual_')) {
+        // Manual change - must capture fresh to reflect the change
         snapshot = await captureFullStateSnapshot()
+        console.log('[LiveState] Captured fresh snapshot for manual change')
+      } else {
+        // Try to get the latest event's stateSnapshot
+        const allEvents = await db.events.where({ matchId }).toArray()
+        const sortedEvents = allEvents.sort((a, b) => (b.seq || 0) - (a.seq || 0))
+        snapshot = sortedEvents[0]?.stateSnapshot
+
+        // Fallback: capture fresh snapshot if none exists (e.g., before first event)
+        if (!snapshot) {
+          snapshot = await captureFullStateSnapshot()
+        }
       }
       if (!snapshot) return
 
@@ -1603,59 +1621,74 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       else if (isSetInterval) matchStatus = 'interval'
 
       // Map directly from snapshot to Supabase table
+      const liveStateData = {
+        match_id: supabaseMatchId,
+        current_set: snapshot.currentSetIndex,
+        // Team A/B info (from snapshot)
+        team_a_name: snapshot.teamAName,
+        team_a_short: snapshot.teamAShort,
+        team_a_color: snapshot.teamAColor,
+        team_b_name: snapshot.teamBName,
+        team_b_short: snapshot.teamBShort,
+        team_b_color: snapshot.teamBColor,
+        // Scores by team
+        set_score_a: snapshot.setScoreA,
+        set_score_b: snapshot.setScoreB,
+        points_a: snapshot.pointsA,
+        points_b: snapshot.pointsB,
+        // Which side Team A is on
+        side_a: snapshot.sideA,
+        // Rich lineups with all position data
+        lineup_a: snapshot.lineupA,
+        lineup_b: snapshot.lineupB,
+        // Timeouts and subs
+        timeouts_a: snapshot.timeoutsA,
+        timeouts_b: snapshot.timeoutsB,
+        subs_a: snapshot.subsA?.length || 0,
+        subs_b: snapshot.subsB?.length || 0,
+        // Team-level sanctions (delay warning, improper request - not player-specific)
+        sanctions_a: snapshot.sanctionsA?.filter(s => !s.player).length > 0 ? snapshot.sanctionsA.filter(s => !s.player) : null,
+        sanctions_b: snapshot.sanctionsB?.filter(s => !s.player).length > 0 ? snapshot.sanctionsB.filter(s => !s.player) : null,
+        // Serving team (convert to left/right)
+        serving_team: snapshot.servingTeam === snapshot.teamAKey ? snapshot.sideA : (snapshot.sideA === 'left' ? 'right' : 'left'),
+        // Event info
+        last_event_type: eventType || null,
+        last_event_team: eventTeam || null,
+        last_event_data: eventData || null,
+        last_event_ts: new Date().toISOString(),
+        set_interval_active: isSetInterval,
+        set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
+        timeout_active: isTimeout,
+        timeout_started_at: isTimeout ? new Date().toISOString() : null,
+        match_status: matchStatus,
+        // Match metadata (from IndexedDB match record)
+        game_n: match.gameN || match.game_n || null,
+        league: match.league || null,
+        gender: match.gender || null,
+        updated_at: new Date().toISOString()
+      }
+
+      console.log('[LiveState] Syncing to Supabase:', {
+        eventType,
+        teamAKey: snapshot.teamAKey,
+        teamAName: snapshot.teamAName,
+        teamBName: snapshot.teamBName,
+        sideA: snapshot.sideA,
+        servingTeam: snapshot.servingTeam,
+        pointsA: snapshot.pointsA,
+        pointsB: snapshot.pointsB,
+        setScoreA: snapshot.setScoreA,
+        setScoreB: snapshot.setScoreB
+      })
+
       const { error } = await supabase
         .from('match_live_state')
-        .upsert({
-          match_id: supabaseMatchId,
-          current_set: snapshot.currentSetIndex,
-          // Team A/B info (from snapshot)
-          team_a_name: snapshot.teamAName,
-          team_a_short: snapshot.teamAShort,
-          team_a_color: snapshot.teamAColor,
-          team_b_name: snapshot.teamBName,
-          team_b_short: snapshot.teamBShort,
-          team_b_color: snapshot.teamBColor,
-          // Scores by team
-          set_score_a: snapshot.setScoreA,
-          set_score_b: snapshot.setScoreB,
-          points_a: snapshot.pointsA,
-          points_b: snapshot.pointsB,
-          // Which side Team A is on
-          side_a: snapshot.sideA,
-          // Rich lineups with all position data
-          lineup_a: snapshot.lineupA,
-          lineup_b: snapshot.lineupB,
-          // Timeouts and subs
-          timeouts_a: snapshot.timeoutsA,
-          timeouts_b: snapshot.timeoutsB,
-          subs_a: snapshot.subsA?.length || 0,
-          subs_b: snapshot.subsB?.length || 0,
-          // Team-level sanctions (delay warning, improper request - not player-specific)
-          sanctions_a: snapshot.sanctionsA?.filter(s => !s.player).length > 0 ? snapshot.sanctionsA.filter(s => !s.player) : null,
-          sanctions_b: snapshot.sanctionsB?.filter(s => !s.player).length > 0 ? snapshot.sanctionsB.filter(s => !s.player) : null,
-          // Serving team (convert to left/right)
-          serving_team: snapshot.servingTeam === snapshot.teamAKey ? snapshot.sideA : (snapshot.sideA === 'left' ? 'right' : 'left'),
-          // Event info
-          last_event_type: eventType || null,
-          last_event_team: eventTeam || null,
-          last_event_data: eventData || null,
-          last_event_ts: new Date().toISOString(),
-          set_interval_active: isSetInterval,
-          set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
-          timeout_active: isTimeout,
-          timeout_started_at: isTimeout ? new Date().toISOString() : null,
-          match_status: matchStatus,
-          // Match metadata (from IndexedDB match record)
-          game_n: match.gameN || match.game_n || null,
-          league: match.league || null,
-          gender: match.gender || null,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'match_id' })
+        .upsert(liveStateData, { onConflict: 'match_id' })
 
       if (error) {
         console.error('[LiveState] Sync error:', error)
       } else {
-        console.log('[LiveState] Synced successfully - points:', snapshot.pointsA, '-', snapshot.pointsB, 'set:', snapshot.currentSetIndex)
+        console.log('[LiveState] Synced successfully - side_a:', snapshot.sideA, 'serving:', snapshot.servingTeam)
       }
     } catch (err) {
       console.error('[LiveState] Exception:', err)
@@ -3241,23 +3274,42 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       after,
       description: description || `Changed ${field} from "${before}" to "${after}"`
     }
+    console.log('[ManualChange] New change:', change)
     setManualChangesLog(prev => [...prev, change])
 
     // Also update the match record with the new change
     if (matchId && data?.match) {
       const existingChanges = data.match.manualChanges || []
       const updatedChanges = [...existingChanges, change]
-      db.matches.update(matchId, { manualChanges: updatedChanges }).catch(() => {})
+      console.log('[ManualChange] Saving to IndexedDB:', { matchId, existingCount: existingChanges.length, newCount: updatedChanges.length })
+      db.matches.update(matchId, { manualChanges: updatedChanges }).catch((err) => {
+        console.error('[ManualChange] IndexedDB error:', err)
+      })
 
       // Sync to Supabase
       if (supabase && data.match?.seed_key) {
+        console.log('[ManualChange] Syncing to Supabase:', { seed_key: data.match.seed_key, changes: updatedChanges })
         supabase
           .from('matches')
           .update({ manual_changes: updatedChanges })
           .eq('external_id', data.match.seed_key)
-          .then(() => {})
-          .catch(() => {})
+          .select('id, external_id, manual_changes')
+          .then((result) => {
+            console.log('[ManualChange] Supabase result:', result)
+            if (result.data && result.data.length > 0) {
+              console.log('[ManualChange] Updated row:', result.data[0])
+            } else {
+              console.warn('[ManualChange] NO ROWS UPDATED! external_id not found:', data.match.seed_key)
+            }
+          })
+          .catch((err) => {
+            console.error('[ManualChange] Supabase error:', err)
+          })
+      } else {
+        console.log('[ManualChange] No Supabase sync:', { hasSupabase: !!supabase, seed_key: data.match?.seed_key })
       }
+    } else {
+      console.log('[ManualChange] No match data:', { matchId, hasMatch: !!data?.match })
     }
 
     return change
@@ -17246,6 +17298,28 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
                 {/* Teams Setup - Visual court representation */}
                 {data?.match && (() => {
+                  // Calculate which team is on which side based on set index and overrides
+                  const currentSetIndex = data.set?.index || 1
+                  const setLeftTeamOverrides = data.match?.setLeftTeamOverrides || {}
+                  const is5thSet = currentSetIndex === 5
+                  const set5LeftTeam = data.match?.set5LeftTeam
+
+                  let sideA // 'left' or 'right' for Team A
+                  if (setLeftTeamOverrides[currentSetIndex] !== undefined) {
+                    // Override stores 'A' or 'B' (not 'home'/'away')
+                    sideA = setLeftTeamOverrides[currentSetIndex] === 'A' ? 'left' : 'right'
+                  } else if (is5thSet && set5LeftTeam) {
+                    // set5LeftTeam stores 'A' or 'B'
+                    sideA = set5LeftTeam === 'A' ? 'left' : 'right'
+                  } else {
+                    // Default alternating pattern: odd sets = A on left, even sets = A on right
+                    sideA = currentSetIndex % 2 === 1 ? 'left' : 'right'
+                  }
+
+                  // If Team A is on left, and Team A is home, then home is on left
+                  const leftIsHome = sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
+                  const rightIsHome = !leftIsHome
+
                   // Determine current serving team
                   const servingTeam = data.match.firstServe || 'home'
                   const leftTeamKey = leftIsHome ? 'home' : 'away'
@@ -17336,29 +17410,73 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         <button
                           className="secondary"
                           onClick={async () => {
-                            const oldLeft = leftIsHome ? 'Home' : 'Away'
-                            const newLeft = leftIsHome ? 'Away' : 'Home'
-
                             // For sets 1-4, update the override for current set
-                            const currentSetIndex = data.set?.index || 1
-                            if (currentSetIndex === 5) {
-                              const currentLeftTeam = data.match.set5LeftTeam || (teamAKey === 'home' ? 'A' : 'B')
+                            const setIdx = data.set?.index || 1
+
+                            // Helper to convert A/B to Home/Away for logging
+                            const getTeamLabel = (ab) => ab === 'A' ? (teamAKey === 'home' ? 'Home' : 'Away') : (teamAKey === 'home' ? 'Away' : 'Home')
+
+                            console.log('[SwitchSides] Current state:', {
+                              setIdx,
+                              teamAKey,
+                              leftIsHome,
+                              rightIsHome,
+                              servingTeam,
+                              leftTeamName,
+                              rightTeamName,
+                              currentOverrides: data.match?.setLeftTeamOverrides,
+                              set5LeftTeam: data.match?.set5LeftTeam
+                            })
+
+                            if (setIdx === 5) {
+                              const automatic5 = teamAKey === 'home' ? 'A' : 'B'
+                              const currentLeftTeam = data.match.set5LeftTeam || automatic5
                               const newLeftTeam = currentLeftTeam === 'A' ? 'B' : 'A'
+                              const oldLeft = getTeamLabel(currentLeftTeam)
+                              const newLeft = getTeamLabel(newLeftTeam)
+                              console.log('[SwitchSides] Set 5:', { automatic5, currentLeftTeam, newLeftTeam, oldLeft, newLeft })
                               await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
                               logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set 5)`)
+                              // Sync updated side to Supabase live state
+                              syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
                             } else {
-                              // Calculate what automatic would be
-                              const automatic = currentSetIndex % 2 === 1 ? 'A' : 'B'
-                              const currentOverride = data.match?.setLeftTeamOverrides?.[currentSetIndex]
-                              const currentValue = currentOverride || automatic
-                              const newValue = currentValue === 'A' ? 'B' : 'A'
+                              // Sets 1-4: Swap coinTossTeamA (A ALWAYS on left in Set 1)
+                              // Swapping which team is "A" effectively swaps the teams on court
+                              const currentTeamA = data.match.coinTossTeamA || 'home'
+                              const newTeamA = currentTeamA === 'home' ? 'away' : 'home'
+                              const newTeamB = newTeamA === 'home' ? 'away' : 'home'
+                              const oldLeft = leftIsHome ? 'Home' : 'Away'
+                              const newLeft = leftIsHome ? 'Away' : 'Home'
+                              console.log('[SwitchSides] Sets 1-4:', { currentTeamA, newTeamA, oldLeft, newLeft, setIdx })
 
-                              const newOverrides = {
-                                ...(data.match?.setLeftTeamOverrides || {}),
-                                [currentSetIndex]: newValue
+                              // Update local IndexedDB
+                              await db.matches.update(matchId, { coinTossTeamA: newTeamA })
+
+                              // Sync coin_toss JSONB to Supabase
+                              if (data.match?.seed_key) {
+                                const currentServeA = data.match.coinTossServeA ?? true
+                                const firstServeTeam = currentServeA ? newTeamA : newTeamB
+                                await db.sync_queue.add({
+                                  resource: 'match',
+                                  action: 'update',
+                                  payload: {
+                                    id: data.match.seed_key,
+                                    coin_toss: {
+                                      team_a: newTeamA,
+                                      team_b: newTeamB,
+                                      serve_a: currentServeA,
+                                      confirmed: true,
+                                      first_serve: firstServeTeam
+                                    }
+                                  },
+                                  createdAt: new Date().toISOString()
+                                })
+                                console.log('[SwitchSides] Queued coin_toss sync:', { newTeamA, newTeamB, firstServeTeam })
                               }
-                              await db.matches.update(matchId, { setLeftTeamOverrides: newOverrides })
-                              logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set ${currentSetIndex})`)
+
+                              logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set ${setIdx})`)
+                              // Sync updated side to Supabase live state
+                              syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
                             }
                           }}
                           style={{
@@ -17384,10 +17502,33 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               await db.matches.update(matchId, { set5FirstServe: newSet5Serve })
                             } else {
                               const coinTossTeamA = data.match.coinTossTeamA || 'home'
+                              const coinTossTeamB = coinTossTeamA === 'home' ? 'away' : 'home'
                               const coinTossServeA = newServe === coinTossTeamA
                               await db.matches.update(matchId, { firstServe: newServe, coinTossServeA })
+
+                              // Sync coin_toss JSONB to Supabase
+                              if (data.match?.seed_key) {
+                                await db.sync_queue.add({
+                                  resource: 'match',
+                                  action: 'update',
+                                  payload: {
+                                    id: data.match.seed_key,
+                                    coin_toss: {
+                                      team_a: coinTossTeamA,
+                                      team_b: coinTossTeamB,
+                                      serve_a: coinTossServeA,
+                                      confirmed: true,
+                                      first_serve: newServe
+                                    }
+                                  },
+                                  createdAt: new Date().toISOString()
+                                })
+                                console.log('[SwitchServe] Queued coin_toss sync:', { coinTossTeamA, coinTossServeA, firstServe: newServe })
+                              }
                             }
                             logManualChange('Teams Setup', 'First Serve', oldServing, newServing, `Changed first serve from ${oldServing} to ${newServing}`)
+                            // Sync updated serve to Supabase live state
+                            syncLiveStateToSupabase('manual_serve_change', null, { oldServe: oldServing, newServe: newServing })
                           }}
                           style={{
                             flex: 1,
@@ -19238,8 +19379,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
                       {/* Export/Copy Log */}
                       <div style={{
-                        display: 'flex',
-                        gap: '8px',
                         marginTop: '8px',
                         paddingTop: '12px',
                         borderTop: '1px solid rgba(255,255,255,0.08)'
@@ -19257,35 +19396,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           style={{
                             padding: '8px 16px',
                             fontSize: '12px',
-                            flex: 1
+                            width: '100%'
                           }}
                         >
                           📋 Copy Log
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={async () => {
-                            // Clear the log
-                            if (confirm('Clear all manual changes log entries?')) {
-                              setManualChangesLog([])
-                              if (matchId) {
-                                await db.matches.update(matchId, { manualChanges: [] })
-                                if (supabase && data?.match?.seed_key) {
-                                  await supabase
-                                    .from('matches')
-                                    .update({ manual_changes: [] })
-                                    .eq('external_id', data.match.seed_key)
-                                }
-                              }
-                            }
-                          }}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: '12px',
-                            flex: 1
-                          }}
-                        >
-                          🗑️ Clear Log
                         </button>
                       </div>
                     </div>

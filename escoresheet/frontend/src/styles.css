@@ -2598,3 +2598,40 @@
       height: 80% !important;
     }
   }
+
+/* iOS Simulated Fullscreen Mode */
+/* Since iOS doesn't support the Fullscreen API, we simulate it with CSS */
+body.ios-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important; /* Dynamic viewport height for iOS */
+  overflow: hidden !important;
+  z-index: 9999 !important;
+}
+
+body.ios-fullscreen #root {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  overflow: auto !important;
+}
+
+/* Hide scrollbars in iOS fullscreen mode */
+body.ios-fullscreen::-webkit-scrollbar {
+  display: none;
+}
+
+body.ios-fullscreen {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
