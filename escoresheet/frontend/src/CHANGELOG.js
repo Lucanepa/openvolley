@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.18.4',
+    date: '01.01.26',
+    changes: [
+      'Implement viewport size tracking and narrow screen blocking overlay in BenchApp and LivescoreApp'
+    ]
+  },
+  {
     version: '0.18.3',
     date: '01.01.26',
     changes: [

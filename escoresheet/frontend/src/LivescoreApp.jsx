@@ -17,6 +17,18 @@ export default function LivescoreApp() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const channelRef = useRef(null)
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // Track viewport size for narrow screen blocking
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Fetch all live games from match_live_state
   const fetchLiveGames = useCallback(async () => {
@@ -130,6 +142,74 @@ export default function LivescoreApp() {
         display: 'flex',
         flexDirection: 'column'
       }}>
+        {/* Narrow screen blocking overlay */}
+        {(viewportWidth < 357 || viewportHeight < 650) && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.95)',
+            zIndex: 99999,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+            <h2 style={{
+              fontSize: '24px',
+              fontWeight: 700,
+              color: '#ffffff',
+              marginBottom: '16px'
+            }}>
+              {t('common.screenTooNarrow', 'Screen Too Narrow')}
+            </h2>
+            <p style={{
+              fontSize: '16px',
+              color: '#9ca3af',
+              maxWidth: '300px',
+              lineHeight: 1.5,
+              marginBottom: '24px'
+            }}>
+              {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+            </p>
+            <button
+              onClick={() => {
+                if (document.documentElement.requestFullscreen) {
+                  document.documentElement.requestFullscreen().catch(() => {})
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                fontSize: '16px',
+                fontWeight: 600,
+                background: 'var(--accent, #3b82f6)',
+                color: '#000',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span>⛶</span>
+              <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
+            </button>
+            <p style={{
+              fontSize: '12px',
+              color: '#6b7280',
+              marginTop: '12px'
+            }}>
+              {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
+            </p>
+          </div>
+        )}
+
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -278,6 +358,74 @@ export default function LivescoreApp() {
       color: '#fff',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
+      {/* Narrow screen blocking overlay */}
+      {(viewportWidth < 357 || viewportHeight < 650) && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            color: '#ffffff',
+            marginBottom: '16px'
+          }}>
+            {t('common.screenTooNarrow', 'Screen Too Narrow')}
+          </h2>
+          <p style={{
+            fontSize: '16px',
+            color: '#9ca3af',
+            maxWidth: '300px',
+            lineHeight: 1.5,
+            marginBottom: '24px'
+          }}>
+            {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+          </p>
+          <button
+            onClick={() => {
+              if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {})
+              }
+            }}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'var(--accent, #3b82f6)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>⛶</span>
+            <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
+          </button>
+          <p style={{
+            fontSize: '12px',
+            color: '#6b7280',
+            marginTop: '12px'
+          }}>
+            {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
+          </p>
+        </div>
+      )}
+
       <UpdateBanner />
 
       {/* Header */}

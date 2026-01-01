@@ -15,10 +15,152 @@ import { supabase } from '../lib/supabaseClient'
 // Get current version from changelog
 const currentVersion = changelog[0]?.version || '1.0.0'
 
+// Adaptive text component that progressively reduces font size to fit
+// For SECTION 4: tries 1 line -> 2 lines -> 3 lines -> smaller font with same progression
+function AdaptiveTeamName({ text, maxLines = 3, baseFontSize = 24, minFontSize = 14, background, color, style = {} }) {
+  const containerRef = useRef(null)
+  const textRef = useRef(null)
+  const [fontSize, setFontSize] = useState(baseFontSize)
+  const [currentMaxLines, setCurrentMaxLines] = useState(1)
+
+  useEffect(() => {
+    if (!containerRef.current || !textRef.current) return
+
+    const checkFit = () => {
+      const container = containerRef.current
+      const textEl = textRef.current
+      if (!container || !textEl) return
+
+      // Try progressively: 1 line -> 2 lines -> 3 lines at base font
+      // Then: 1 line -> 2 lines -> 3 lines at smaller font
+      const fontSizes = [baseFontSize, Math.round(baseFontSize * 0.75), minFontSize]
+
+      for (const fs of fontSizes) {
+        for (let lines = 1; lines <= maxLines; lines++) {
+          textEl.style.fontSize = `${fs}px`
+          textEl.style.webkitLineClamp = String(lines)
+          textEl.style.maxHeight = `${lines * fs * 1.2}px`
+
+          // Check if text fits (not overflowing)
+          if (textEl.scrollHeight <= textEl.clientHeight + 2) {
+            setFontSize(fs)
+            setCurrentMaxLines(lines)
+            return
+          }
+        }
+      }
+
+      // If nothing fits, use minimum with max lines
+      setFontSize(minFontSize)
+      setCurrentMaxLines(maxLines)
+    }
+
+    checkFit()
+
+    // Re-check on resize
+    const observer = new ResizeObserver(checkFit)
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [text, baseFontSize, minFontSize, maxLines])
+
+  return (
+    <div ref={containerRef} style={{ overflow: 'hidden', ...style }}>
+      <span
+        ref={textRef}
+        style={{
+          fontSize: `${fontSize}px`,
+          fontWeight: 700,
+          background,
+          color,
+          padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 14px)',
+          borderRadius: '6px',
+          textAlign: 'center',
+          lineHeight: 1.2,
+          display: '-webkit-box',
+          WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: currentMaxLines,
+          overflow: 'hidden',
+          wordBreak: 'break-word'
+        }}
+      >
+        {text}
+      </span>
+    </div>
+  )
+}
+
+// Adaptive text for single-line with truncation, then font reduction
+function AdaptiveSingleLineText({ text, baseFontSize = 28, minFontSize = 14, background, color, style = {} }) {
+  const containerRef = useRef(null)
+  const textRef = useRef(null)
+  const [fontSize, setFontSize] = useState(baseFontSize)
+
+  useEffect(() => {
+    if (!containerRef.current || !textRef.current) return
+
+    const checkFit = () => {
+      const container = containerRef.current
+      const textEl = textRef.current
+      if (!container || !textEl) return
+
+      // Try progressively smaller fonts until text fits or we hit minimum
+      const fontSizes = []
+      for (let fs = baseFontSize; fs >= minFontSize; fs -= 2) {
+        fontSizes.push(fs)
+      }
+      if (fontSizes[fontSizes.length - 1] !== minFontSize) {
+        fontSizes.push(minFontSize)
+      }
+
+      for (const fs of fontSizes) {
+        textEl.style.fontSize = `${fs}px`
+        // Check if text fits without needing ellipsis (scrollWidth <= clientWidth)
+        if (textEl.scrollWidth <= textEl.clientWidth + 2) {
+          setFontSize(fs)
+          return
+        }
+      }
+
+      // If nothing fits without truncation, use minimum (will show ellipsis)
+      setFontSize(minFontSize)
+    }
+
+    checkFit()
+
+    const observer = new ResizeObserver(checkFit)
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [text, baseFontSize, minFontSize])
+
+  return (
+    <div ref={containerRef} style={{ overflow: 'hidden', minWidth: 0, ...style }}>
+      <div
+        ref={textRef}
+        style={{
+          fontSize: `${fontSize}px`,
+          fontWeight: 700,
+          background,
+          color,
+          padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
+          borderRadius: '6px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '100%'
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  )
+}
+
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const { t } = useTranslation()
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
   // Modal states (from Scoreboard actions)
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
@@ -80,6 +222,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       document.removeEventListener('mouseup', resetPeeking)
       document.removeEventListener('touchend', resetPeeking)
     }
+  }, [])
+
+  // Track viewport size for narrow screen blocking
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   // Request wake lock to prevent screen from sleeping
@@ -144,13 +296,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Match data state
   const [data, setData] = useState(null)
 
-  // Helper function to update match data state
+  // Debounce ref to prevent flickering from rapid updates
+  const lastDataUpdateRef = useRef(0)
+  const pendingDataRef = useRef(null)
+  const debounceTimerRef = useRef(null)
+  const DATA_UPDATE_DEBOUNCE_MS = 150 // Wait 150ms before applying new data
+
+  // Helper function to update match data state (with debounce to reduce flickering)
   const updateMatchDataState = useCallback((result) => {
     if (result && result.success) {
       const sets = (result.sets || []).sort((a, b) => a.index - b.index)
       const currentSet = sets.find(s => !s.finished) || null
-      
-      setData({
+
+      const newData = {
         match: result.match,
         homeTeam: result.homeTeam,
         awayTeam: result.awayTeam,
@@ -160,7 +318,38 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         currentSet,
         events: result.events || [],
         liveState: result.liveState || null
-      })
+      }
+
+      const now = Date.now()
+      const timeSinceLastUpdate = now - lastDataUpdateRef.current
+
+      // If it's been long enough since last update, apply immediately
+      if (timeSinceLastUpdate >= DATA_UPDATE_DEBOUNCE_MS) {
+        lastDataUpdateRef.current = now
+        setData(newData)
+      } else {
+        // Otherwise, queue the update and wait for debounce
+        pendingDataRef.current = newData
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current)
+        }
+        debounceTimerRef.current = setTimeout(() => {
+          if (pendingDataRef.current) {
+            lastDataUpdateRef.current = Date.now()
+            setData(pendingDataRef.current)
+            pendingDataRef.current = null
+          }
+        }, DATA_UPDATE_DEBOUNCE_MS - timeSinceLastUpdate)
+      }
+    }
+  }, [])
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
     }
   }, [])
 
@@ -776,8 +965,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Determine who has serve
   const getCurrentServe = useMemo(() => {
+    console.log('[Referee] getCurrentServe - data:', {
+      currentSetServingTeam: data?.currentSet?.servingTeam,
+      matchFirstServe: data?.match?.firstServe,
+      setIndex: data?.currentSet?.index
+    })
     // First priority: use servingTeam from Supabase live state (most accurate)
     if (data?.currentSet?.servingTeam) {
+      console.log('[Referee] Using currentSet.servingTeam:', data.currentSet.servingTeam)
       return data.currentSet.servingTeam
     }
 
@@ -1210,8 +1405,30 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
   }, [wakeLockActive, reEnableWakeLock])
 
+  // Detect iOS (Fullscreen API doesn't work on iOS Safari/Chrome)
+  const isIOS = useMemo(() => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  }, [])
+
   // Fullscreen handlers
   const toggleFullscreen = useCallback(async () => {
+    // iOS doesn't support Fullscreen API
+    if (isIOS) {
+      if (!isFullscreen) {
+        // Simulate fullscreen with CSS class
+        document.body.classList.add('ios-fullscreen')
+        setIsFullscreen(true)
+        reEnableWakeLock()
+        // Show a helpful tip
+        alert('Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.')
+      } else {
+        document.body.classList.remove('ios-fullscreen')
+        setIsFullscreen(false)
+      }
+      return
+    }
+
     try {
       if (!document.fullscreenElement) {
         await document.documentElement.requestFullscreen()
@@ -1224,8 +1441,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }
     } catch (error) {
       console.error('Error toggling fullscreen:', error)
+      // Fallback: try simulated fullscreen
+      if (!isFullscreen) {
+        document.body.classList.add('ios-fullscreen')
+        setIsFullscreen(true)
+      }
     }
-  }, [reEnableWakeLock])
+  }, [reEnableWakeLock, isIOS, isFullscreen])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -1989,6 +2211,74 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
+      {/* Narrow screen blocking overlay */}
+      {(viewportWidth < 357 || viewportHeight < 650) && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            color: '#ffffff',
+            marginBottom: '16px'
+          }}>
+            {t('common.screenTooNarrow', 'Screen Too Narrow')}
+          </h2>
+          <p style={{
+            fontSize: '16px',
+            color: '#9ca3af',
+            maxWidth: '300px',
+            lineHeight: 1.5,
+            marginBottom: '24px'
+          }}>
+            {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+          </p>
+          <button
+            onClick={() => {
+              if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {})
+              }
+            }}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'var(--accent, #3b82f6)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>⛶</span>
+            <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
+          </button>
+          <p style={{
+            fontSize: '12px',
+            color: '#6b7280',
+            marginTop: '12px'
+          }}>
+            {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
+          </p>
+        </div>
+      )}
+
       {/* Debug overlay - triple-tap to show */}
       {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
 
