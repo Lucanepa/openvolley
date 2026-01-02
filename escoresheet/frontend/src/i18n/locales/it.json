@@ -947,6 +947,7 @@
       "connectionDisabled": "La connessione è stata disabilitata."
     },
     "connection": {
+      "title": "Connessione",
       "auto": "Auto",
       "autoDesc": "DB → Fallback diretto",
       "dbOnly": "Solo DB",
@@ -959,7 +960,16 @@
     "matchHasEnded": "La partita è terminata",
     "lineupSet": "Formazione inserita",
     "showLineup": "Mostra formazione",
-    "loadGames": "Carica partite"
+    "loadGames": "Carica partite",
+    "title1R": "1° Arbitro",
+    "title2R": "2° Arbitro",
+    "refAbbr": "ARB",
+    "view": "Vista",
+    "firstReferee": "1° Arbitro",
+    "secondReferee": "2° Arbitro",
+    "screenOptions": "Schermo",
+    "keepScreenOn": "Mantieni schermo acceso",
+    "exit": "Esci"
   },
   "connection": {
     "title": "Configurazione connessione",

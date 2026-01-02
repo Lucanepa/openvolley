@@ -969,7 +969,7 @@ export default function BenchApp() {
             color: '#ffffff',
             marginBottom: '16px'
           }}>
-            {t('common.screenTooNarrow', 'Screen Too Narrow')}
+            {t('common.screenTooSmall', 'Screen too Small')}
           </h2>
           <p style={{
             fontSize: '16px',
@@ -978,7 +978,7 @@ export default function BenchApp() {
             lineHeight: 1.5,
             marginBottom: '24px'
           }}>
-            {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
           </p>
           <button
             onClick={() => {

@@ -947,6 +947,7 @@
       "connectionDisabled": "Connexion désactivée."
     },
     "connection": {
+      "title": "Connexion",
       "auto": "Auto",
       "autoDesc": "Direct + Base de données",
       "dbOnly": "Base de données seule",
@@ -959,7 +960,16 @@
     "matchHasEnded": "Le match est terminé",
     "lineupSet": "Composition reçue",
     "showLineup": "Afficher la composition",
-    "loadGames": "Charger les matchs"
+    "loadGames": "Charger les matchs",
+    "title1R": "1er Arbitre",
+    "title2R": "2ème Arbitre",
+    "refAbbr": "ARB",
+    "view": "Vue",
+    "firstReferee": "1er Arbitre",
+    "secondReferee": "2ème Arbitre",
+    "screenOptions": "Écran",
+    "keepScreenOn": "Garder l'écran allumé",
+    "exit": "Quitter"
   },
   "connection": {
     "title": "Configuration de connexion",

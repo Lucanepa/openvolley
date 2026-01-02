@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from './lib/supabaseClient'
 import UpdateBanner from './components/UpdateBanner'
+import DashboardHeader from './components/DashboardHeader'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 /**
@@ -166,7 +167,7 @@ export default function LivescoreApp() {
               color: '#ffffff',
               marginBottom: '16px'
             }}>
-              {t('common.screenTooNarrow', 'Screen Too Narrow')}
+              {t('common.screenTooSmall', 'Screen too Small')}
             </h2>
             <p style={{
               fontSize: '16px',
@@ -175,7 +176,7 @@ export default function LivescoreApp() {
               lineHeight: 1.5,
               marginBottom: '24px'
             }}>
-              {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+              {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
             </p>
             <button
               onClick={() => {
@@ -211,47 +212,13 @@ export default function LivescoreApp() {
         )}
 
         {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)'
-        }}>
-          <button
-            onClick={() => setSelectedGame(null)}
-            style={{
-              padding: '8px 16px',
-              background: 'rgba(255,255,255,0.1)',
-              border: 'none',
-              borderRadius: '6px',
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: 600
-            }}
-          >
-            ← {t('common.back', 'Back')}
-          </button>
-          <div style={{ textAlign: 'center' }}>
-            {gameN && (
-              <div style={{ fontSize: '16px', fontWeight: 600, color: '#fff' }}>
-                Game {gameN}
-              </div>
-            )}
-            {(league || gender) && (
-              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                {[league, gender].filter(Boolean).join(' • ')}
-              </div>
-            )}
-            {!gameN && !league && !gender && (
-              <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>
-                {t('livescore.title', 'Live Score')}
-              </div>
-            )}
-          </div>
-          <div style={{ width: '80px' }}></div>
-        </div>
+        <DashboardHeader
+          title={gameN ? `Game ${gameN}` : t('livescore.title', 'Live Score')}
+          subtitle={[league, gender].filter(Boolean).join(' • ') || null}
+          onBack={() => setSelectedGame(null)}
+          backLabel={t('common.back', 'Back')}
+          showOptionsMenu={false}
+        />
 
         {/* Score Display */}
         <div style={{
@@ -382,7 +349,7 @@ export default function LivescoreApp() {
             color: '#ffffff',
             marginBottom: '16px'
           }}>
-            {t('common.screenTooNarrow', 'Screen Too Narrow')}
+            {t('common.screenTooSmall', 'Screen too Small')}
           </h2>
           <p style={{
             fontSize: '16px',
@@ -391,7 +358,7 @@ export default function LivescoreApp() {
             lineHeight: 1.5,
             marginBottom: '24px'
           }}>
-            {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
           </p>
           <button
             onClick={() => {
@@ -429,18 +396,14 @@ export default function LivescoreApp() {
       <UpdateBanner />
 
       {/* Header */}
-      <div style={{
-        padding: '16px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-        textAlign: 'center'
-      }}>
-        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700 }}>
-          {t('livescore.title', 'Live Scores')}
-        </h1>
-        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-          {liveGames.length} {liveGames.length === 1 ? 'game' : 'games'} live
-        </div>
-      </div>
+      <DashboardHeader
+        title={t('livescore.title', 'Live Scores')}
+        subtitle={`${liveGames.length} ${liveGames.length === 1 ? 'game' : 'games'} live`}
+        onLoadGames={fetchLiveGames}
+        loadingMatches={loading}
+        matchCount={liveGames.length}
+        showOptionsMenu={false}
+      />
 
       {/* Content */}
       <div style={{ padding: '16px' }}>

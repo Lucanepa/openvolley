@@ -22,10 +22,15 @@ export default function TestModeControls({ matchId, onRefresh }) {
 
   // Get current match state
   const getMatchState = async () => {
+    console.log('[TestModeControls] getMatchState called, matchId:', matchId)
     const match = await db.matches.get(matchId)
+    console.log('[TestModeControls] Match from db:', match)
     const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+    console.log('[TestModeControls] Sets from db:', sets)
     const currentSet = sets.find(s => !s.finished) || sets[sets.length - 1]
+    console.log('[TestModeControls] Current set:', currentSet)
     const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
+    console.log('[TestModeControls] Events count:', events.length)
     const currentSetEvents = events.filter(e => e.setIndex === currentSet?.index)
 
     // Get max seq for current set
@@ -54,24 +59,31 @@ export default function TestModeControls({ matchId, onRefresh }) {
 
   // Action handlers
   const handleAddPoint = async () => {
+    console.log('[TestModeControls] handleAddPoint called')
     try {
       const { currentSet } = await getMatchState()
+      console.log('[TestModeControls] Current set:', currentSet)
       if (!currentSet) {
+        console.log('[TestModeControls] No active set found')
         setLastAction('No active set')
         return
       }
 
       const team = randomTeam()
+      console.log('[TestModeControls] Adding point to:', team)
       await addEvent('point', { team }, currentSet.index)
 
       // Update set score
       const field = team === 'home' ? 'homePoints' : 'awayPoints'
       const currentPoints = currentSet[field] || 0
       await db.sets.update(currentSet.id, { [field]: currentPoints + 1 })
+      console.log('[TestModeControls] Set updated, new points:', currentPoints + 1)
 
       setLastAction(`Point: ${team}`)
+      console.log('[TestModeControls] Calling onRefresh...')
       onRefresh?.()
     } catch (err) {
+      console.error('[TestModeControls] Error in handleAddPoint:', err)
       setLastAction(`Error: ${err.message}`)
     }
   }

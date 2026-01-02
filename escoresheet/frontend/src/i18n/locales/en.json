@@ -955,6 +955,7 @@
       "connectionDisabled": "Connection has been disabled."
     },
     "connection": {
+      "title": "Connection",
       "auto": "Auto",
       "autoDesc": "DB → Direct fallback",
       "dbOnly": "DB Only",
@@ -967,7 +968,16 @@
     "matchHasEnded": "The match has ended",
     "lineupSet": "Line-up set",
     "showLineup": "Show Line-up",
-    "loadGames": "Load Games"
+    "loadGames": "Load Games",
+    "title1R": "1st Referee",
+    "title2R": "2nd Referee",
+    "refAbbr": "REF",
+    "view": "View",
+    "firstReferee": "1st Referee",
+    "secondReferee": "2nd Referee",
+    "screenOptions": "Screen",
+    "keepScreenOn": "Keep Screen On",
+    "exit": "Exit"
   },
   "connection": {
     "title": "Connection Setup",
