@@ -37,7 +37,6 @@ import { supabase } from './lib/supabaseClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
-import CourtAnimationDemo from './components/CourtAnimationDemo'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -2851,12 +2850,6 @@ export default function App() {
       console.error('Error continuing match:', error)
       setAlertModal(t('home.modals.errorOpeningMatch'))
     }
-  }
-
-  // Check for demo mode via URL parameter (?demo=animation)
-  const urlParams = new URLSearchParams(window.location.search)
-  if (urlParams.get('demo') === 'animation') {
-    return <CourtAnimationDemo />
   }
 
   return (

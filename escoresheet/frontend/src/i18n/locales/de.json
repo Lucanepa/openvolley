@@ -947,6 +947,7 @@
       "connectionDisabled": "Die Verbindung wurde deaktiviert."
     },
     "connection": {
+      "title": "Verbindung",
       "auto": "Auto",
       "autoDesc": "DB → Direkter Fallback",
       "dbOnly": "Nur DB",
@@ -959,7 +960,16 @@
     "matchHasEnded": "Das Spiel ist beendet",
     "lineupSet": "Aufstellung gesetzt",
     "showLineup": "Aufstellung anzeigen",
-    "loadGames": "Spiele laden"
+    "loadGames": "Spiele laden",
+    "title1R": "1. Schiedsrichter",
+    "title2R": "2. Schiedsrichter",
+    "refAbbr": "SR",
+    "view": "Ansicht",
+    "firstReferee": "1. Schiedsrichter",
+    "secondReferee": "2. Schiedsrichter",
+    "screenOptions": "Bildschirm",
+    "keepScreenOn": "Bildschirm an lassen",
+    "exit": "Beenden"
   },
   "connection": {
     "title": "Verbindungseinrichtung",

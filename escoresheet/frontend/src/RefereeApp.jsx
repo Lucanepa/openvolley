@@ -3,12 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
-import ConnectionStatus from './components/ConnectionStatus'
 import UpdateBanner from './components/UpdateBanner'
-import DashboardOptionsMenu from './components/DashboardOptionsMenu'
+import DashboardHeader from './components/DashboardHeader'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
-import changelog from './CHANGELOG'
 
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
@@ -32,9 +30,6 @@ export default function RefereeApp() {
   const wakeLockRef = useRef(null)
   const testModeTimeoutRef = useRef(null)
 
-  // Get current version from changelog
-  const currentVersion = changelog[0]?.version || '1.0.0'
-
   const [connectionStatuses, setConnectionStatuses] = useState({
     api: 'unknown',
     server: 'unknown',
@@ -43,7 +38,6 @@ export default function RefereeApp() {
     match: 'unknown',
     db: 'unknown'
   })
-  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
 
   // Preload assets that are used later (e.g., referee icon)
   useEffect(() => {
@@ -195,7 +189,6 @@ export default function RefereeApp() {
     }
     
     setConnectionStatuses(statuses)
-    setConnectionDebugInfo(debugInfo)
   }
 
   // Load available matches function - called on mount and manually via button
@@ -447,7 +440,10 @@ export default function RefereeApp() {
     } else {
       setError('')
     }
-  }, [t])
+
+    // Refresh the match list when returning to home
+    loadMatches()
+  }, [t, loadMatches])
 
   // Monitor match status - clear credentials if match becomes final
   useEffect(() => {
@@ -507,111 +503,19 @@ export default function RefereeApp() {
       <UpdateBanner />
 
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        background: 'rgba(0, 0, 0, 0.2)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        padding: '8px 16px',
-        flexShrink: 0,
-        height: '40px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '14px', fontWeight: 600 }}>{t('refereeDashboard.title')} 
-          <div style={{ fontSize: '8px', color: 'rgba(255, 255, 255, 0.6)' }}>
-            v{currentVersion}
-          </div></span>
-          <button
-            onClick={toggleWakeLock}
-            style={{
-              padding: '6px 6px',
-              fontSize: '8px',
-              fontWeight: 600,
-              marginRight: '4px',
-              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: wakeLockActive ? '#22c55e' : '#fff',
-              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-            title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
-          >
-            {wakeLockActive ? `☀️` : `🌙`}
-          </button>
-        </div>
-
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          flex: '0 0 auto'
-        }}>
-          <ConnectionStatus
-            connectionStatuses={connectionStatuses}
-            connectionDebugInfo={connectionDebugInfo}
-            position="right"
-            size="normal"
-          />
-
-          <button
-            onClick={() => { loadMatches(); checkConnectionStatuses() }}
-            disabled={loadingMatches}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: loadingMatches ? 'rgba(255, 255, 255, 0.05)' : 'rgba(59, 130, 246, 0.2)',
-              color: loadingMatches ? 'rgba(255, 255, 255, 0.4)' : '#fff',
-              border: '1px solid rgba(59, 130, 246, 0.5)',
-              borderRadius: '4px',
-              cursor: loadingMatches ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            {(window.innerWidth < 500)
-              ? (loadingMatches ? '...' : '🔄')
-              : <>
-                  {loadingMatches ? '...' : '🔄'} {t('refereeDashboard.loadGames', 'Load Games')}
-                </>
-            }
-          </button>
-
-          {availableMatches.length > 0 && (
-            <div style={{
-              fontSize: '12px',
-              padding: '4px 8px',
-              background: 'rgba(59, 130, 246, 0.2)',
-              border: '1px solid rgba(59, 130, 246, 0.5)',
-              borderRadius: '4px',
-              fontWeight: 600
-            }}>
-              {availableMatches.length} {availableMatches.length === 1 ? t('refereeDashboard.game') : t('refereeDashboard.games')}
-            </div>
-          )}
-
-
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              padding: '6px 6px',
-              fontSize: '10px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-          >
-            {isFullscreen ? `⛶` : `⛶`}
-          </button>
-
-          <DashboardOptionsMenu showConnectionOptions={true} />
-        </div>
-      </div>
+      <DashboardHeader
+        title={t('refereeDashboard.title')}
+        connectionStatuses={connectionStatuses}
+        onLoadGames={() => { loadMatches(); checkConnectionStatuses() }}
+        loadingMatches={loadingMatches}
+        matchCount={availableMatches.length}
+        showFullscreen={true}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={toggleFullscreen}
+        showWakeLock={true}
+        wakeLockActive={wakeLockActive}
+        onToggleWakeLock={toggleWakeLock}
+      />
 
       {/* Main content */}
       <div style={{

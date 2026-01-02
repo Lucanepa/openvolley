@@ -201,6 +201,7 @@ export function DashboardOptionsMenu({
         onClick={() => setIsOpen(!isOpen)}
         style={{
           display: 'flex',
+          height: '25px',
           alignItems: 'center',
           gap: '6px',
           padding: '4px 10px',

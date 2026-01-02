@@ -9,101 +9,33 @@ import WsDebugOverlay from './WsDebugOverlay'
 import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
+import SimpleHeader from './SimpleHeader'
 import { changelog } from '../CHANGELOG'
 import { supabase } from '../lib/supabaseClient'
 
 // Get current version from changelog
 const currentVersion = changelog[0]?.version || '1.0.0'
 
-// Adaptive text component that progressively reduces font size to fit
-// For SECTION 4: tries 1 line -> 2 lines -> 3 lines -> smaller font with same progression
-function AdaptiveTeamName({ text, maxLines = 3, baseFontSize = 24, minFontSize = 14, background, color, style = {} }) {
-  const containerRef = useRef(null)
-  const textRef = useRef(null)
-  const [fontSize, setFontSize] = useState(baseFontSize)
-  const [currentMaxLines, setCurrentMaxLines] = useState(1)
+// Hook to compute synced font size for paired texts using off-screen measurement
+function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isSingleLine = false, maxLines = 3) {
+  const [result, setResult] = useState({ fontSize: baseFontSize, maxLines: 1 })
+  const measureRef = useRef(null)
 
   useEffect(() => {
-    if (!containerRef.current || !textRef.current) return
+    if (containerWidth <= 0) return
 
-    const checkFit = () => {
-      const container = containerRef.current
-      const textEl = textRef.current
-      if (!container || !textEl) return
-
-      // Try progressively: 1 line -> 2 lines -> 3 lines at base font
-      // Then: 1 line -> 2 lines -> 3 lines at smaller font
-      const fontSizes = [baseFontSize, Math.round(baseFontSize * 0.75), minFontSize]
-
-      for (const fs of fontSizes) {
-        for (let lines = 1; lines <= maxLines; lines++) {
-          textEl.style.fontSize = `${fs}px`
-          textEl.style.webkitLineClamp = String(lines)
-          textEl.style.maxHeight = `${lines * fs * 1.2}px`
-
-          // Check if text fits (not overflowing)
-          if (textEl.scrollHeight <= textEl.clientHeight + 2) {
-            setFontSize(fs)
-            setCurrentMaxLines(lines)
-            return
-          }
-        }
-      }
-
-      // If nothing fits, use minimum with max lines
-      setFontSize(minFontSize)
-      setCurrentMaxLines(maxLines)
+    // Create off-screen measurement element if needed
+    if (!measureRef.current) {
+      measureRef.current = document.createElement('div')
+      measureRef.current.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;top:-9999px;left:-9999px;'
+      document.body.appendChild(measureRef.current)
     }
 
-    checkFit()
+    const measureEl = measureRef.current
+    if (!measureEl) return
 
-    // Re-check on resize
-    const observer = new ResizeObserver(checkFit)
-    observer.observe(containerRef.current)
-    return () => observer.disconnect()
-  }, [text, baseFontSize, minFontSize, maxLines])
-
-  return (
-    <div ref={containerRef} style={{ overflow: 'hidden', ...style }}>
-      <span
-        ref={textRef}
-        style={{
-          fontSize: `${fontSize}px`,
-          fontWeight: 700,
-          background,
-          color,
-          padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 14px)',
-          borderRadius: '6px',
-          textAlign: 'center',
-          lineHeight: 1.2,
-          display: '-webkit-box',
-          WebkitBoxOrient: 'vertical',
-          WebkitLineClamp: currentMaxLines,
-          overflow: 'hidden',
-          wordBreak: 'break-word'
-        }}
-      >
-        {text}
-      </span>
-    </div>
-  )
-}
-
-// Adaptive text for single-line with truncation, then font reduction
-function AdaptiveSingleLineText({ text, baseFontSize = 28, minFontSize = 14, background, color, style = {} }) {
-  const containerRef = useRef(null)
-  const textRef = useRef(null)
-  const [fontSize, setFontSize] = useState(baseFontSize)
-
-  useEffect(() => {
-    if (!containerRef.current || !textRef.current) return
-
-    const checkFit = () => {
-      const container = containerRef.current
-      const textEl = textRef.current
-      if (!container || !textEl) return
-
-      // Try progressively smaller fonts until text fits or we hit minimum
+    if (isSingleLine) {
+      // Single line mode: find largest font that fits all texts
       const fontSizes = []
       for (let fs = baseFontSize; fs >= minFontSize; fs -= 2) {
         fontSizes.push(fs)
@@ -113,46 +45,61 @@ function AdaptiveSingleLineText({ text, baseFontSize = 28, minFontSize = 14, bac
       }
 
       for (const fs of fontSizes) {
-        textEl.style.fontSize = `${fs}px`
-        // Check if text fits without needing ellipsis (scrollWidth <= clientWidth)
-        if (textEl.scrollWidth <= textEl.clientWidth + 2) {
-          setFontSize(fs)
+        let allFit = true
+        for (const text of texts) {
+          measureEl.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font-size:${fs}px;font-weight:700;padding:4px 18px;top:-9999px;left:-9999px;`
+          measureEl.textContent = text
+          if (measureEl.scrollWidth > containerWidth) {
+            allFit = false
+            break
+          }
+        }
+        if (allFit) {
+          setResult({ fontSize: fs, maxLines: 1 })
           return
         }
       }
+      // Nothing fits, use minimum (will truncate with ellipsis)
+      setResult({ fontSize: minFontSize, maxLines: 1 })
+    } else {
+      // Multi-line mode: try 1 line -> 2 lines -> 3 lines at each font size
+      const fontSizes = [baseFontSize, Math.round(baseFontSize * 0.75), minFontSize]
 
-      // If nothing fits without truncation, use minimum (will show ellipsis)
-      setFontSize(minFontSize)
+      for (const fs of fontSizes) {
+        for (let lines = 1; lines <= maxLines; lines++) {
+          let allFit = true
+          for (const text of texts) {
+            measureEl.style.cssText = `position:absolute;visibility:hidden;font-size:${fs}px;font-weight:700;padding:4px 14px;line-height:1.2;word-break:break-word;width:${containerWidth}px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${lines};overflow:hidden;top:-9999px;left:-9999px;`
+            measureEl.textContent = text
+            // Check if text overflows the line clamp
+            const maxHeight = lines * fs * 1.2 + 8 // +8 for padding
+            if (measureEl.scrollHeight > maxHeight + 2) {
+              allFit = false
+              break
+            }
+          }
+          if (allFit) {
+            setResult({ fontSize: fs, maxLines: lines })
+            return
+          }
+        }
+      }
+      // Nothing fits, use minimum with max lines
+      setResult({ fontSize: minFontSize, maxLines })
     }
+  }, [texts.join('|'), containerWidth, baseFontSize, minFontSize, isSingleLine, maxLines])
 
-    checkFit()
+  // Cleanup measurement element on unmount
+  useEffect(() => {
+    return () => {
+      if (measureRef.current && measureRef.current.parentNode) {
+        measureRef.current.parentNode.removeChild(measureRef.current)
+        measureRef.current = null
+      }
+    }
+  }, [])
 
-    const observer = new ResizeObserver(checkFit)
-    observer.observe(containerRef.current)
-    return () => observer.disconnect()
-  }, [text, baseFontSize, minFontSize])
-
-  return (
-    <div ref={containerRef} style={{ overflow: 'hidden', minWidth: 0, ...style }}>
-      <div
-        ref={textRef}
-        style={{
-          fontSize: `${fontSize}px`,
-          fontWeight: 700,
-          background,
-          color,
-          padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
-          borderRadius: '6px',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: '100%'
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  )
+  return result
 }
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
@@ -161,6 +108,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // Container width refs for adaptive text sizing
+  const section2AContainerRef = useRef(null)
+  const [section2AWidth, setSection2AWidth] = useState(150)
 
   // Modal states (from Scoreboard actions)
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
@@ -171,12 +122,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }]
   const recentSubFlashTimeoutRef = useRef(null)
 
-  // Referee view dropdown state
-  const [refViewDropdownOpen, setRefViewDropdownOpen] = useState(false)
-
   // Connection type state (auto, supabase, websocket)
   const [connectionType, setConnectionType] = useState(CONNECTION_TYPES.AUTO)
-  const [connectionDropdownOpen, setConnectionDropdownOpen] = useState(false)
 
   // Advanced mode state for reception formations
   const [advancedMode, setAdvancedMode] = useState({ left: false, right: false }) // Per-side advanced mode
@@ -445,24 +392,50 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
 
+  // Track consecutive fetch failures to detect deleted matches
+  const fetchFailureCountRef = useRef(0)
+  const MAX_FETCH_FAILURES = 3 // After 3 consecutive failures, assume match is deleted
+
   // Force fetch fresh data from server
   const fetchFreshData = useCallback(async () => {
-    if (isMasterMode || !matchId) return
-      try {
+    console.log('[Referee] fetchFreshData called', { isMasterMode, matchId })
+    if (isMasterMode) {
+      console.log('[Referee] fetchFreshData: Skipping - in test/master mode (data is local)')
+      return
+    }
+    if (!matchId) {
+      console.log('[Referee] fetchFreshData: Skipping - no matchId')
+      return
+    }
+    try {
       console.log('[Referee] Fetching fresh data from server...')
-        const result = await getMatchData(matchId)
-      if (result.success) {
+      const result = await getMatchData(matchId)
+      if (result && result.success) {
+        fetchFailureCountRef.current = 0 // Reset on success
         updateMatchDataState(result)
         console.log('[Referee] Fresh data received:', {
           currentSet: result.sets?.find(s => !s.finished)?.index,
           homePoints: result.sets?.find(s => !s.finished)?.homePoints,
           awayPoints: result.sets?.find(s => !s.finished)?.awayPoints
-          })
+        })
+      } else {
+        // Match not found or fetch failed
+        fetchFailureCountRef.current++
+        console.warn(`[Referee] Fetch failed (${fetchFailureCountRef.current}/${MAX_FETCH_FAILURES})`)
+        if (fetchFailureCountRef.current >= MAX_FETCH_FAILURES) {
+          console.log('[Referee] Match appears to be deleted, navigating to home')
+          if (onExit) onExit()
         }
-      } catch (err) {
-      console.error('[Referee] Error fetching fresh data:', err)
-        }
-  }, [matchId, updateMatchDataState, isMasterMode])
+      }
+    } catch (err) {
+      fetchFailureCountRef.current++
+      console.error(`[Referee] Error fetching fresh data (${fetchFailureCountRef.current}/${MAX_FETCH_FAILURES}):`, err)
+      if (fetchFailureCountRef.current >= MAX_FETCH_FAILURES) {
+        console.log('[Referee] Match appears to be deleted, navigating to home')
+        if (onExit) onExit()
+      }
+    }
+  }, [matchId, updateMatchDataState, isMasterMode, onExit])
 
   // Handle realtime data updates
   const handleRealtimeData = useCallback((result) => {
@@ -539,7 +512,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Use realtime connection hook (handles Supabase + WebSocket with fallback)
   const {
     status: realtimeStatus,
-    activeConnection,
     error: realtimeError,
     lastUpdate: realtimeLastUpdate,
     forceReconnect: realtimeReconnect
@@ -1065,6 +1037,28 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightServing = getCurrentServe === rightTeam
   const leftColor = leftTeamData?.color || (leftTeam === 'home' ? '#ef4444' : '#3b82f6')
   const rightColor = rightTeamData?.color || (rightTeam === 'home' ? '#ef4444' : '#3b82f6')
+
+  // Compute team name texts for adaptive sizing
+  const leftShortName = (leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || leftTeamData?.name || 'Team'
+  const rightShortName = (rightTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || rightTeamData?.name || 'Team'
+
+  // Resize observer for adaptive text container widths
+  useEffect(() => {
+    const updateWidths = () => {
+      if (section2AContainerRef.current) {
+        setSection2AWidth(section2AContainerRef.current.clientWidth)
+      }
+    }
+    updateWidths()
+
+    const observer = new ResizeObserver(updateWidths)
+    if (section2AContainerRef.current) observer.observe(section2AContainerRef.current)
+
+    return () => observer.disconnect()
+  }, [])
+
+  // Synced font sizes for paired team names (SECTION 2A)
+  const section2AFontSize = useSyncedFontSize([leftShortName, rightShortName], section2AWidth, 28, 14, true)
 
   // Get team-level sanctions (formal warning, improper request, delay warning, bench sanctions)
   // Also returns player-level sanctions (warnings, penalties, expulsions, disqualifications)
@@ -1642,7 +1636,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
     return (
       <div style={{
-        height: '100vh',
+        height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
+        maxHeight: '100dvh',
         width: '100vw',
         maxWidth: '800px',
         margin: '0 auto',
@@ -1650,7 +1645,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         color: '#fff',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        overflow: 'hidden'
       }}>
         {/* Header - same as main view */}
         <div style={{
@@ -1675,7 +1671,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 color: '#fff',
                 border: '1px solid rgba(255,255,255,0.2)',
                 borderRadius: '4px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                height: '25px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                display: 'flex',
               }}
             >
               {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : '⛶'}
@@ -1691,11 +1691,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 color: wakeLockActive ? '#22c55e' : '#fff',
                 border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
                 borderRadius: '4px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                height: '25px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                display: 'flex',
               }}
               title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
             >
-              {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
+              {wakeLockActive ? `☀️` : `🌙`}
             </button>
 
             <ConnectionStatus
@@ -1722,6 +1726,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 padding: '6px 16px',
                 fontSize: '12px',
                 fontWeight: 600,
+                height: '25px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                display: 'flex',
                 background: 'rgba(59, 130, 246, 0.2)',
                 color: '#3b82f6',
                 border: '1px solid rgba(59, 130, 246, 0.4)',
@@ -1739,7 +1747,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             {/* Version */}
-            <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
+            <span style={{ fontSize: '8px', color: 'rgba(255, 255, 255, 0.5)' }}>
               v{currentVersion}
             </span>
             {/* Exit Button with Icon */}
@@ -1747,7 +1755,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               onClick={onExit}
               style={{
                 padding: '4px 8px',
-                fontSize: '14px',
+                fontSize: '10px',
+                height: '25px',
+                width: '25px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                display: 'flex',
                 fontWeight: 600,
                 background: 'rgba(239, 68, 68, 0.2)',
                 color: '#ef4444',
@@ -1928,8 +1941,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return (
       <div style={{
           position: 'relative',
-        width: '1.6em',
-        height: '1.6em',
+        aspectRatio: '1/1',
+        height: 'auto',
         padding: '4px',
         border: isRecentlySub ? '3px solid #22c55e' : '1px solid rgba(255, 255, 255, 0.4)',
         borderRadius: '50%',
@@ -1938,7 +1951,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 'clamp(33px, 9vw, 64px)',
+        fontSize: '7.5vmin',
         fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0,
@@ -1956,7 +1969,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               right: team === leftTeam ? 'calc(100% + 4px)' : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
-              width: 'clamp(12px, 5vw, 40px)',
+              width: '5vmin',
               aspectRatio: '1/1',
               filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
             }}
@@ -2116,7 +2129,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   if (isMatchFinished) {
     return (
       <div style={{
-        height: '100vh',
+        height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
+        maxHeight: '100dvh',
         width: '100vw',
         maxWidth: '800px',
         margin: '0 auto',
@@ -2128,7 +2142,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         alignItems: 'center',
         justifyContent: 'center',
         gap: '24px',
-        padding: '20px'
+        padding: '20px',
+        overflow: 'hidden'
       }}>
         {/* Match Ended Banner */}
         <div style={{
@@ -2200,7 +2215,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   return (
     <div style={{
-      height: '100vh',
+      height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
+      maxHeight: '100dvh',
       width: '100vw',
       maxWidth: '800px',
       margin: '0 auto',
@@ -2235,7 +2251,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             color: '#ffffff',
             marginBottom: '16px'
           }}>
-            {t('common.screenTooNarrow', 'Screen Too Narrow')}
+            {t('common.screenTooSmall', 'Screen Too Small')}
           </h2>
           <p style={{
             fontSize: '16px',
@@ -2244,7 +2260,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             lineHeight: 1.5,
             marginBottom: '24px'
           }}>
-            {t('common.screenTooNarrowMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
           </p>
           <button
             onClick={() => {
@@ -2542,301 +2558,76 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       )}
               
       {/* SECTION 1: Header - 40px */}
-              <div style={{
-        height: '40px',
-        minHeight: '40px',
-        maxHeight: '40px',
-                display: 'flex',
-        justifyContent: 'space-between',
-                alignItems: 'center',
-        padding: '0 12px',
-        background: 'rgba(0, 0, 0, 0.3)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-              }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={toggleFullscreen}
-              style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: 'rgba(255,255,255,0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : '⛶'}
-          </button>
-
-          <button
-            onClick={toggleWakeLock}
-              style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: wakeLockActive ? '#22c55e' : '#fff',
-              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-            title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
-          >
-            {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
-          </button>
-
-          {!isMasterMode && (
-            <ConnectionStatus
-              connectionStatuses={connectionStatuses}
-              connectionDebugInfo={{
-                ...connectionDebugInfo,
-                match: {
-                  ...connectionDebugInfo?.match,
-                  matchId: matchId,
-                  homeTeam: data?.homeTeam?.name,
-                  awayTeam: data?.awayTeam?.name,
-                  gameNumber: data?.match?.gameNumber,
-                  currentSet: data?.currentSet?.index
-                }
-              }}
-              position="right"
-              size="small"
-            />
-          )}
-
-          {isMasterMode && (
-              <span style={{
-              padding: '2px 8px',
-              fontSize: '10px',
-              fontWeight: 700,
-              background: 'rgba(251, 191, 36, 0.2)',
-              border: '1px solid rgba(251, 191, 36, 0.5)',
-              borderRadius: '4px',
+      <SimpleHeader
+        toggleOptions={[
+          { label: `1 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '1st', onClick: () => setRefereeView('1st') },
+          { label: `2 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '2nd', onClick: () => setRefereeView('2nd') }
+        ]}
+        onFullscreen={toggleFullscreen}
+        isFullscreen={isFullscreen}
+        menuItems={[
+          // Screen options
+          { header: t('refereeDashboard.screenOptions') },
+          {
+            icon: wakeLockActive ? '☀️' : '🌙',
+            label: t('refereeDashboard.keepScreenOn'),
+            onClick: toggleWakeLock,
+            toggle: wakeLockActive,
+            keepOpen: true
+          },
+          { divider: true },
+          // Connection (only if not master mode)
+          ...(!isMasterMode ? [
+            { header: t('refereeDashboard.connection.title') },
+            {
+              icon: '🔄',
+              label: t('refereeDashboard.connection.auto'),
+              onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
+              active: connectionType === CONNECTION_TYPES.AUTO
+            },
+            {
+              icon: '🗄️',
+              label: t('refereeDashboard.connection.dbOnly'),
+              onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
+              active: connectionType === CONNECTION_TYPES.SUPABASE,
+              color: '#22c55e'
+            },
+            {
+              icon: '📡',
+              label: t('refereeDashboard.connection.directOnly'),
+              onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
+              active: connectionType === CONNECTION_TYPES.WEBSOCKET,
+              color: '#3b82f6'
+            },
+            { divider: true }
+          ] : []),
+          // Test mode indicator
+          ...(isMasterMode ? [
+            {
+              icon: '⚠️',
+              label: t('refereeDashboard.testMode'),
+              disabled: true,
               color: '#fbbf24'
-              }}>
-              {t('refereeDashboard.testMode')}
-              </span>
-          )}
-            </div>
-
-        {/* Center - Refresh Button */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          {!isMasterMode && (
-            <button
-              onClick={fetchFreshData}
-              style={{
-                padding: '6px 16px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: 'rgba(59, 130, 246, 0.2)',
-                color: '#3b82f6',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-              title={t('refereeDashboard.refresh')}
-            >
-              🔄 {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          
-          {/* Connection Type Dropdown */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setConnectionDropdownOpen(!connectionDropdownOpen)}
-              style={{
-                padding: '4px 8px',
-                fontSize: '10px',
-                fontWeight: 600,
-                background: activeConnection === 'supabase' ? 'rgba(34, 197, 94, 0.2)' :
-                           activeConnection === 'websocket' ? 'rgba(59, 130, 246, 0.2)' :
-                           'rgba(156, 163, 175, 0.2)',
-                color: activeConnection === 'supabase' ? '#22c55e' :
-                       activeConnection === 'websocket' ? '#3b82f6' :
-                       '#9ca3af',
-                border: `1px solid ${activeConnection === 'supabase' ? 'rgba(34, 197, 94, 0.4)' :
-                                     activeConnection === 'websocket' ? 'rgba(59, 130, 246, 0.4)' :
-                                     'rgba(156, 163, 175, 0.4)'}`,
-                borderRadius: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px'
-              }}
-              title={`Connection: ${activeConnection || 'none'} (${realtimeStatus})`}
-            >
-              {activeConnection === 'supabase' ? '🗄️' : activeConnection === 'websocket' ? '📡' : '⚪'}
-              <span style={{ fontSize: '8px' }}>{connectionDropdownOpen ? '▲' : '▼'}</span>
-            </button>
-            {connectionDropdownOpen && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                marginTop: '2px',
-                background: '#1a1a2e',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                overflow: 'hidden',
-                zIndex: 1000,
-                minWidth: '140px'
-              }}>
-                <button
-                  onClick={() => { setConnectionType(CONNECTION_TYPES.AUTO); setConnectionDropdownOpen(false); }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 12px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    background: connectionType === CONNECTION_TYPES.AUTO ? 'rgba(var(--accent-rgb), 0.3)' : 'transparent',
-                    color: connectionType === CONNECTION_TYPES.AUTO ? 'var(--accent)' : '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left'
-                  }}
-                >
-                  🔄 {t('refereeDashboard.connection.auto')}
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{t('refereeDashboard.connection.autoDesc')}</div>
-                </button>
-                <button
-                  onClick={() => { setConnectionType(CONNECTION_TYPES.SUPABASE); setConnectionDropdownOpen(false); }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 12px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    background: connectionType === CONNECTION_TYPES.SUPABASE ? 'rgba(34, 197, 94, 0.2)' : 'transparent',
-                    color: connectionType === CONNECTION_TYPES.SUPABASE ? '#22c55e' : '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left'
-                  }}
-                >
-                  🗄️ {t('refereeDashboard.connection.dbOnly')}
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{t('refereeDashboard.connection.dbDesc')}</div>
-                </button>
-                <button
-                  onClick={() => { setConnectionType(CONNECTION_TYPES.WEBSOCKET); setConnectionDropdownOpen(false); }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 12px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    background: connectionType === CONNECTION_TYPES.WEBSOCKET ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                    color: connectionType === CONNECTION_TYPES.WEBSOCKET ? '#3b82f6' : '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left'
-                  }}
-                >
-                  📡 {t('refereeDashboard.connection.directOnly')}
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{t('refereeDashboard.connection.directDesc')}</div>
-                </button>
-              </div>
-            )}
-          </div>
-          {/* Collapsible 1R/2R Dropdown */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setRefViewDropdownOpen(!refViewDropdownOpen)}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              {refereeView === '1st' ? '1R' : '2R'}
-              <span style={{ fontSize: '8px' }}>{refViewDropdownOpen ? '▲' : '▼'}</span>
-            </button>
-            {refViewDropdownOpen && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                marginTop: '2px',
-                background: '#1a1a2e',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                overflow: 'hidden',
-                zIndex: 1000,
-                minWidth: '50px'
-              }}>
-                <button
-                  onClick={() => { setRefereeView('1st'); setRefViewDropdownOpen(false); }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '6px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: refereeView === '1st' ? 'var(--accent)' : 'transparent',
-                    color: refereeView === '1st' ? '#000' : '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left'
-                  }}
-                >
-                  1R
-                </button>
-                <button
-                  onClick={() => { setRefereeView('2nd'); setRefViewDropdownOpen(false); }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '6px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: refereeView === '2nd' ? 'var(--accent)' : 'transparent',
-                    color: refereeView === '2nd' ? '#000' : '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left'
-                  }}
-                >
-                  2R
-                </button>
-              </div>
-            )}
-          </div>
-          {/* Exit Button with Icon */}
-          <button
-            onClick={onExit}
-            style={{
-              padding: '4px 8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'rgba(239, 68, 68, 0.2)',
-              color: '#ef4444',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              lineHeight: 1
-            }}
-            title="Exit"
-          >
-            ✕
-          </button>
-        </div>
-            </div>
+            },
+            { divider: true }
+          ] : []),
+          // Refresh (always visible)
+          {
+            icon: '🔄',
+            label: t('refereeDashboard.refresh'),
+            onClick: fetchFreshData,
+            color: '#3b82f6'
+          },
+          { divider: true },
+          // Exit
+          {
+            icon: '✕',
+            label: t('refereeDashboard.exit'),
+            onClick: onExit,
+            color: '#ef4444'
+          }
+        ]}
+      />
 
       {/* Main content wrapper - percentage-based heights */}
       <div style={{
@@ -2851,22 +2642,31 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       <div style={{ flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'rgba(0, 0, 0, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
         {/* Left: Team Name (centered in its space) + A/B */}
         <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
-          <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0 }}>
-            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: leftColor, color: isBrightColor(leftColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(16px, 4vw, 28px)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{(() => {
-                const fullName = leftTeamData?.name || 'Team';
-                const shortName = leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName;
-                return shortName || fullName;
-              })()}</div>
+          <div ref={section2AContainerRef} style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
+            <div style={{
+              fontSize: `${section2AFontSize.fontSize}px`,
+              fontWeight: 700,
+              background: leftColor,
+              color: isBrightColor(leftColor) ? '#000' : '#fff',
+              padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
+              borderRadius: '6px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%'
+            }}>
+              {leftShortName}
+            </div>
           </div>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: leftColor, color: isBrightColor(leftColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
         </div>
 
         {/* Center: Set scores + SET n */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', flexShrink: 0, marginLeft: '8px', marginRight: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1vw, 12px)', flexShrink: 0, marginLeft: '8px', marginRight: '8px' }}>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{leftSetScore}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span style={{ fontSize: 'clamp(15px, 4vw, 30px)', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
-            <span style={{ fontSize: 'clamp(22px, 5.5vw, 40px)', fontWeight: 800 }}>{displaySetIndex}</span>
+            <span style={{ fontSize: '3vmin', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
+            <span style={{ fontSize: '4vmin', fontWeight: 800 }}>{displaySetIndex}</span>
           </div>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{rightSetScore}</div>
         </div>
@@ -2874,12 +2674,21 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Right: A/B + Team Name (centered in its space) */}
         <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: rightColor, color: isBrightColor(rightColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
-          <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0 }}>
-            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: rightColor, color: isBrightColor(rightColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(16px, 4vw, 28px)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{(() => {
-                const fullName = rightTeamData?.name || 'Team';
-                const shortName = rightTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName;
-                return shortName || fullName;
-              })()}</div>
+          <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
+            <div style={{
+              fontSize: `${section2AFontSize.fontSize}px`,
+              fontWeight: 700,
+              background: rightColor,
+              color: isBrightColor(rightColor) ? '#000' : '#fff',
+              padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
+              borderRadius: '6px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%'
+            }}>
+              {rightShortName}
+            </div>
           </div>
         </div>
       </div>
@@ -2896,7 +2705,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         width: '100%',
         maxWidth: '100%',
         overflow: 'hidden',
-        minHeight: 0
+        minHeight: 0,
+        height: '100%'
       }}>
         {/* LEFT COLUMN - Serve indicator (1/5) */}
               <div style={{
@@ -2904,7 +2714,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 display: 'flex',
                 alignItems: 'center',
               justifyContent: 'center',
-          minHeight: '80px',
+          Height: '100%',
           minWidth: 0,
           overflow: 'hidden'
               }}>
@@ -2915,19 +2725,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 alignItems: 'center',
               gap: '2px'
               }}>
-              <span style={{ fontSize: 'clamp(14px, 4vw, 30px)', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+              <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                padding: 'clamp(4px, 1vw, 14px)',
+                padding: '0.5vmin',
                 background: 'rgba(34, 197, 94, 0.15)',
                 border: '2px solid var(--accent)',
                 borderRadius: '8px',
                 aspectRatio: '1/1',
-                width: 'clamp(40px, 12vw, 90px)'
+                minWidth: '6vmin'
               }}>
-                <span style={{ fontSize: 'clamp(24px, 8vw, 70px)', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
+                <span style={{ fontSize: '8vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
                   {typeof leftLineup?.I === 'object' ? leftLineup?.I?.number : leftLineup?.I || ''}
                 </span>
                   </div>
@@ -2952,8 +2762,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               flexDirection: 'column',
               alignItems: 'flex-end',
               paddingRight: 'clamp(4px, 1.5vw, 12px)',
-              minWidth: 0,
-              overflow: 'hidden'
+                minWidth: 0,
+                overflow: 'hidden'
             }}>
               {/* Ball indicator (if serving) + Score */}
                 <div style={{
@@ -2981,7 +2791,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </div>
               <span style={{
-                  fontSize: 'clamp(48px, 18vw, 140px)',
+                  fontSize: '17vmin',
             fontWeight: 800,
             color: 'var(--accent)',
                   lineHeight: 1,
@@ -3001,9 +2811,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               justifyContent: 'center'
             }}>
               {isInSetInterval && (
-                <span style={{ fontSize: 'clamp(10px, 3vw, 18px)', fontWeight: 600, color: 'var(--accent)', letterSpacing: '1px' }}>SETS</span>
+                <span style={{ fontSize: '2vmin', fontWeight: 600, color: 'var(--accent)', letterSpacing: '1px' }}>SETS</span>
               )}
-              <span style={{ fontSize: 'clamp(35px, 14vw, 110px)', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
+              <span style={{ fontSize: '7vmin', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
               </div>
 
             {/* Right team side */}
@@ -3022,7 +2832,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 gap: 'clamp(6px, 2vw, 20px)'
             }}>
               <span style={{
-                  fontSize: 'clamp(48px, 18vw, 140px)',
+                  fontSize: '17vmin',
                 fontWeight: 800,
                 color: 'var(--accent)',
                   lineHeight: 1,
@@ -3055,36 +2865,36 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
 
         {/* RIGHT COLUMN - Serve indicator (1/5) */}
-          <div style={{
+        <div style={{
           flex: '0 0 15%',
-              display: 'flex',
-              alignItems: 'center',
-          justifyContent: 'center', 
-          minHeight: '80px',
+                display: 'flex',
+                alignItems: 'center',
+              justifyContent: 'center',
+          Height: '100%',
           minWidth: 0,
           overflow: 'hidden'
-        }}>
+              }}>
           {rightServing && (
-                <div style={{ 
-          display: 'flex', 
-              flexDirection: 'column',
-          alignItems: 'center', 
-              gap: '2px'
-          }}>
-              <span style={{ fontSize: 'clamp(14px, 4vw, 30px)', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
-                <div style={{ 
-          display: 'flex',
+        <div style={{
+                display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-          justifyContent: 'center',
-                padding: 'clamp(4px, 1vw, 14px)',
+              gap: '2px'
+              }}>
+              <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                padding: '0.5vmin',
                 background: 'rgba(34, 197, 94, 0.15)',
                 border: '2px solid var(--accent)',
                 borderRadius: '8px',
                 aspectRatio: '1/1',
-                width: 'clamp(40px, 12vw, 90px)'
+                minWidth: '6vmin'
               }}>
-                <span style={{ fontSize: 'clamp(24px, 8vw, 70px)', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
-                  {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
+                <span style={{ fontSize: '8vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
+                   {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
                 </span>
                 </div>
                 </div>
@@ -3177,14 +2987,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '4px 4px',
         overflow: 'hidden',
         minHeight: 0
       }}>
           <div style={{
-          width: '95%',
-          maxWidth: '800px',
-          height: '95%',
+          width: '98%',
+          height: '98%',
           position: 'relative',
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
@@ -3557,417 +3365,337 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       </div>
       </div>{/* End SECTION 3: Court Area - 40% */}
 
-      {/* SECTION 4: Teams with TO/SUB counters - 10% */}
-      <div style={{
-        flex: '0 0 10%',
-        display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto 1fr auto',
-        alignItems: 'center',
-        padding: '4px 12px',
-        background: 'rgba(0, 0, 0, 0.15)',
-        gap: '8px',
-        minHeight: 0,
-        overflow: 'hidden'
-      }}>
-        {/* Column 1: Left counters (far left) - grid for alignment */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'auto 1fr',
-          gap: '6px 6px',
-          fontSize: 'clamp(14px, 3vw, 22px)',
-          fontWeight: 700,
-          alignItems: 'stretch',
-          height: '100%'
-        }}>
-          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>TO</span>
-          <span style={{
-            background: leftStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
-            padding: '4px 10px',
-            borderRadius: '4px',
-            border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
-            minWidth: '32px',
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
-          }}>{leftStats.timeouts}</span>
-          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>SUB</span>
-          <span style={{
-            background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
-            padding: '4px 10px',
-            borderRadius: '4px',
-            border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
-            minWidth: '32px',
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
-          }}>{leftStats.substitutions}</span>
-        </div>
-
-        {/* Column 2: Left team name (fills space, text centered) */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden'
-        }}>
-          <span style={{
-            fontSize: 'clamp(14px, 4vw, 24px)',
-            fontWeight: 700,
-            background: leftColor,
-            color: isBrightColor(leftColor) ? '#000' : '#fff',
-            padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 14px)',
-            borderRadius: '6px',
-            textAlign: 'center',
-            lineHeight: 1.1,
-            wordBreak: 'break-word'
-          }}>
-            {leftTeamData?.name || 'Team'}
-          </span>
-        </div>
-
-        {/* Column 3: VS circle (exact center, beneath net) */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 'clamp(36px, 6vw, 50px)',
-          height: 'clamp(36px, 6vw, 50px)',
-          background: 'rgba(255, 255, 255, 0.1)',
-          border: '2px solid rgba(255, 255, 255, 0.3)',
-          flexShrink: 0
-        }}>
-          <span style={{
-            fontStyle: 'italic',
-            fontSize: 'clamp(12px, 2.5vw, 18px)',
-            fontWeight: 700,
-            color: 'rgba(255, 255, 255, 0.7)'
-          }}>VS</span>
-        </div>
-
-        {/* Column 4: Right team name (fills space, text centered) */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden'
-        }}>
-          <span style={{
-            fontSize: 'clamp(14px, 4vw, 24px)',
-            fontWeight: 700,
-            background: rightColor,
-            color: isBrightColor(rightColor) ? '#000' : '#fff',
-            padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 14px)',
-            borderRadius: '6px',
-            textAlign: 'center',
-            lineHeight: 1.1,
-            wordBreak: 'break-word'
-          }}>
-            {rightTeamData?.name || 'Team'}
-          </span>
-        </div>
-
-        {/* Column 5: Right counters (far right) - grid for alignment */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto',
-          gap: '6px 6px',
-          fontSize: 'clamp(14px, 3vw, 22px)',
-          fontWeight: 700,
-          alignItems: 'stretch',
-          height: '100%'
-        }}>
-          <span style={{
-            background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
-            padding: '4px 10px',
-            borderRadius: '4px',
-            border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
-            minWidth: '32px',
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: rightStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
-          }}>{rightStats.timeouts}</span>
-          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', textAlign: 'left', display: 'flex', alignItems: 'center' }}>TO</span>
-          <span style={{
-            background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
-            padding: '4px 10px',
-            borderRadius: '4px',
-            border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
-            minWidth: '32px',
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
-          }}>{rightStats.substitutions}</span>
-          <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.75em', textAlign: 'left', display: 'flex', alignItems: 'center' }}>SUB</span>
-        </div>
-      </div>
-
-      {/* SECTION 5: Team Sanctions Bar - fills remaining space */}
+      {/* SECTION 4: Combined TO/SUB counters + Sanctions - fills remaining space */}
       <div style={{
         flex: '1 1 auto',
         display: 'grid',
-        gridTemplateColumns: '20% 60% 20%',
+        gridTemplateColumns: 'auto 1fr auto',
         alignItems: 'center',
-        alignContent: 'center',
-        padding: '2px 12px',
-        background: 'rgba(0, 0, 0, 0.1)',
-        minHeight: 0,
-        height: '100%',
-        overflow: 'hidden'
+        padding: '6px 12px',
+        background: 'rgba(0, 0, 0, 0.15)',
+        gap: '12px',
+        minHeight: 0
       }}>
-        {/* Left team sanctions */}
+        {/* Left team counters - TO SUB (vertical stacked) */}
         <div style={{
           display: 'flex',
-          gap: '6px',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          height: '100%'
+          gap: '10px',
+          fontSize: 'clamp(16px, 4vw, 23px)',
+          fontWeight: 700
         }}>
-          {leftTeamSanctions.formalWarning && (
+          {/* TO counter */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>TO</span>
             <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#fde047',
-              color: '#000',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>FW</span>
-          )}
-          {leftTeamSanctions.improperRequest && (
+              background: leftStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+              padding: '7px 14px',
+              borderRadius: '6px',
+              border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+              minWidth: '42px',
+              textAlign: 'center',
+              color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
+            }}>{leftStats.timeouts}</span>
+          </div>
+          {/* SUB counter */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>SUB</span>
             <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#6b7280',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>Improper Request</span>
-          )}
-          {leftTeamSanctions.delayWarning && (
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#fde047',
-              color: '#000',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>DW</span>
-          )}
-          {leftTeamSanctions.delayPenalty && (
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#ef4444',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>DP</span>
-          )}
-          {leftTeamSanctions.benchSanctions.length > 0 && (
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#a855f7',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>B×{leftTeamSanctions.benchSanctions.length}</span>
-          )}
-          {/* Player sanctions: warnings (yellow card) */}
-          {leftTeamSanctions.playerWarnings.map((w, i) => (
-            <span key={`w${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#fde047',
-              color: '#000',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>W#{w.player}</span>
-          ))}
-          {/* Player sanctions: penalties (red card) */}
-          {leftTeamSanctions.playerPenalties.map((p, i) => (
-            <span key={`p${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#ef4444',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>P#{p.player}</span>
-          ))}
-          {/* Player sanctions: expulsions (red+yellow) */}
-          {leftTeamSanctions.expulsions.map((e, i) => (
-            <span key={`e${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              textShadow: '0 0 2px #000'
-            }}>E#{e.player}</span>
-          ))}
-          {/* Player sanctions: disqualifications */}
-          {leftTeamSanctions.disqualifications.map((d, i) => (
-            <span key={`d${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#7f1d1d',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>DQ#{d.player}</span>
-          ))}
+              background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+              padding: '7px 14px',
+              borderRadius: '6px',
+              border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+              minWidth: '42px',
+              textAlign: 'center',
+              color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
+            }}>{leftStats.substitutions}</span>
+          </div>
         </div>
 
-        {/* Center: Countdown when active, otherwise Favicon */}
+        {/* Center: Inner container with sanctions + countdown/icon */}
         <div style={{
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
           alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column'
+          height: '100%',
+          gap: '8px'
         }}>
-          {timeoutModal ? (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>TIMEOUT</div>
-              <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontWeight: 800, color: 'var(--accent)' }}>
-                {timeoutModal.countdown}"
+          {/* Left team sanctions */}
+          <div style={{
+            display: 'flex',
+            gap: '4px',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap'
+          }}>
+            {leftTeamSanctions.formalWarning && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#fde047',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>FW</span>
+            )}
+            {leftTeamSanctions.improperRequest && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#6b7280',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>IR</span>
+            )}
+            {leftTeamSanctions.delayWarning && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#fde047',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>DW</span>
+            )}
+            {leftTeamSanctions.delayPenalty && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#ef4444',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>DP</span>
+            )}
+            {leftTeamSanctions.benchSanctions.length > 0 && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#a855f7',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>B×{leftTeamSanctions.benchSanctions.length}</span>
+            )}
+            {leftTeamSanctions.playerWarnings.map((w, i) => (
+              <span key={`w${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#fde047',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>W#{w.player}</span>
+            ))}
+            {leftTeamSanctions.playerPenalties.map((p, i) => (
+              <span key={`p${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#ef4444',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>P#{p.player}</span>
+            ))}
+            {leftTeamSanctions.expulsions.map((e, i) => (
+              <span key={`e${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                textShadow: '0 0 2px #000'
+              }}>E#{e.player}</span>
+            ))}
+            {leftTeamSanctions.disqualifications.map((d, i) => (
+              <span key={`d${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#7f1d1d',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>DQ#{d.player}</span>
+            ))}
+          </div>
+
+          {/* Center: Countdown when active, otherwise Favicon */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column'
+          }}>
+            {timeoutModal ? (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)' }}>TIMEOUT</div>
+                <div style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, color: 'var(--accent)' }}>
+                  {timeoutModal.countdown}"
+                </div>
               </div>
-            </div>
-          ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>INTERVAL</div>
-              <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontWeight: 800, color: '#22c55e' }}>
-                {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+            ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)' }}>INTERVAL</div>
+                <div style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, color: '#22c55e' }}>
+                  {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+                </div>
               </div>
-            </div>
-          ) : (
-            <img
-              src="/favicon.png"
-              alt="OpenVolley"
-              style={{
-                width: '100%',
-                height: '100%',
-                maxWidth: '120px',
-                maxHeight: '120px',
-                objectFit: 'contain',
-                opacity: 0.7
-              }}
-            />
-          )}
+            ) : (
+              <img
+                src="/favicon.png"
+                alt="OpenVolley"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  maxWidth: '80px',
+                  maxHeight: '80px',
+                  objectFit: 'contain',
+                  opacity: 0.7
+                }}
+              />
+            )}
+          </div>
+
+          {/* Right team sanctions */}
+          <div style={{
+            display: 'flex',
+            gap: '4px',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap'
+          }}>
+            {rightTeamSanctions.formalWarning && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#fde047',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>FW</span>
+            )}
+            {rightTeamSanctions.improperRequest && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#6b7280',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>IR</span>
+            )}
+            {rightTeamSanctions.delayWarning && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#fde047',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>DW</span>
+            )}
+            {rightTeamSanctions.delayPenalty && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#ef4444',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>DP</span>
+            )}
+            {rightTeamSanctions.benchSanctions.length > 0 && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#a855f7',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>B×{rightTeamSanctions.benchSanctions.length}</span>
+            )}
+            {rightTeamSanctions.playerWarnings.map((w, i) => (
+              <span key={`w${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#fde047',
+                color: '#000',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>W#{w.player}</span>
+            ))}
+            {rightTeamSanctions.playerPenalties.map((p, i) => (
+              <span key={`p${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#ef4444',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>P#{p.player}</span>
+            ))}
+            {rightTeamSanctions.expulsions.map((e, i) => (
+              <span key={`e${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                textShadow: '0 0 2px #000'
+              }}>E#{e.player}</span>
+            ))}
+            {rightTeamSanctions.disqualifications.map((d, i) => (
+              <span key={`d${i}`} style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                background: '#7f1d1d',
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}>DQ#{d.player}</span>
+            ))}
+          </div>
         </div>
 
-        {/* Right team sanctions */}
+        {/* Right team counters - TO SUB (vertical stacked) */}
         <div style={{
           display: 'flex',
-          gap: '6px',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          flexWrap: 'wrap'
+          gap: '10px',
+          fontSize: 'clamp(16px, 4vw, 23px)',
+          fontWeight: 700
         }}>
-          {rightTeamSanctions.formalWarning && (
+          {/* TO counter */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>TO</span>
             <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#fde047',
-              color: '#000',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>FW</span>
-          )}
-          {rightTeamSanctions.improperRequest && (
+              background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+              padding: '7px 14px',
+              borderRadius: '6px',
+              border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+              minWidth: '42px',
+              textAlign: 'center',
+              color: rightStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
+            }}>{rightStats.timeouts}</span>
+          </div>
+          {/* SUB counter */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>SUB</span>
             <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#6b7280',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>Improper Request</span>
-          )}
-          {rightTeamSanctions.delayWarning && (
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#fde047',
-              color: '#000',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>DW</span>
-          )}
-          {rightTeamSanctions.delayPenalty && (
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#ef4444',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>DP</span>
-          )}
-          {rightTeamSanctions.benchSanctions.length > 0 && (
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#a855f7',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>B×{rightTeamSanctions.benchSanctions.length}</span>
-          )}
-          {/* Player sanctions: warnings (yellow card) */}
-          {rightTeamSanctions.playerWarnings.map((w, i) => (
-            <span key={`w${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#fde047',
-              color: '#000',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>W#{w.player}</span>
-          ))}
-          {/* Player sanctions: penalties (red card) */}
-          {rightTeamSanctions.playerPenalties.map((p, i) => (
-            <span key={`p${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#ef4444',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>P#{p.player}</span>
-          ))}
-          {/* Player sanctions: expulsions (red+yellow) */}
-          {rightTeamSanctions.expulsions.map((e, i) => (
-            <span key={`e${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              textShadow: '0 0 2px #000'
-            }}>E#{e.player}</span>
-          ))}
-          {/* Player sanctions: disqualifications */}
-          {rightTeamSanctions.disqualifications.map((d, i) => (
-            <span key={`d${i}`} style={{
-              fontSize: '14px',
-              fontWeight: 700,
-              background: '#7f1d1d',
-              color: '#fff',
-              padding: '3px 8px',
-              borderRadius: '4px'
-            }}>DQ#{d.player}</span>
-          ))}
+              background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+              padding: '7px 14px',
+              borderRadius: '6px',
+              border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+              minWidth: '42px',
+              textAlign: 'center',
+              color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
+            }}>{rightStats.substitutions}</span>
+          </div>
         </div>
       </div>
 
@@ -3977,14 +3705,34 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {(matchId === -1 || data?.match?.test === true) && (
         <TestModeControls
           matchId={matchId}
-          onRefresh={() => {
-            // Force re-fetch data
-            if (matchId && matchId !== -1) {
-              getMatchData(matchId).then(result => {
-                if (result.success) {
-                  setData(result)
-                }
+          onRefresh={async () => {
+            console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
+            // In test mode, reload from local IndexedDB
+            try {
+              const match = await db.matches.get(matchId)
+              const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+              const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
+              const homeTeam = await db.teams.get(match?.homeTeamId)
+              const awayTeam = await db.teams.get(match?.awayTeamId)
+
+              console.log('[TestModeControls] Reloaded from IndexedDB:', {
+                matchId,
+                sets: sets.length,
+                events: events.length,
+                currentSet: sets.find(s => !s.finished)?.index
               })
+
+              // Update state with fresh local data
+              setData({
+                success: true,
+                match,
+                homeTeam,
+                awayTeam,
+                sets,
+                events
+              })
+            } catch (err) {
+              console.error('[TestModeControls] Error reloading from IndexedDB:', err)
             }
           }}
         />
