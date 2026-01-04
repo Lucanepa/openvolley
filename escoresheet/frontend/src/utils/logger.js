@@ -178,31 +178,28 @@ export async function uploadBackupToCloud(matchId, backupData) {
     return null
   }
 
-  // Get game_pin from backup data
-  const gamePin = backupData?.match?.gamePin || backupData?.match?.game_pin
   const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1
 
-  if (!gamePin) {
-    console.warn('[Logger] No game PIN in backup data - cannot upload')
-    return null
-  }
-
-  // Increment sequence
-  backupSequence++
-
-  // Build state summary for filename (e.g., "set2_15-12")
-  let stateSummary = ''
+  // Get set and score info for filename
+  let setIndex = 1
+  let leftScore = 0
+  let rightScore = 0
   if (backupData?.sets?.length > 0) {
     const latestSet = backupData.sets.sort((a, b) => (b.index || 0) - (a.index || 0))[0]
     if (latestSet) {
-      stateSummary = `_set${latestSet.index || 1}_${latestSet.homePoints || 0}-${latestSet.awayPoints || 0}`
+      setIndex = latestSet.index || 1
+      leftScore = latestSet.homePoints || 0
+      rightScore = latestSet.awayPoints || 0
     }
   }
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const seqStr = String(backupSequence).padStart(5, '0')
-  // Use PIN and game number in folder: backups/pin_123456_g1/
-  const filename = `backups/pin_${gamePin}_g${gameN}/${seqStr}${stateSummary}_${timestamp}.json`
+  // Generate UTC timestamp in yyyymmdd_hhmm format
+  const now = new Date()
+  const utcDate = now.toISOString().slice(0, 10).replace(/-/g, '') // yyyymmdd
+  const utcTime = now.toISOString().slice(11, 16).replace(':', '') // hhmm
+
+  // Folder structure: backup_g{gameN}/
+  const filename = `backup_g${gameN}/backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}.json`
 
   try {
     const { data, error } = await supabase.storage
@@ -226,11 +223,12 @@ export async function uploadBackupToCloud(matchId, backupData) {
 }
 
 /**
- * List all cloud backups for a match
- * @param {number} matchId - Match ID
+ * List all cloud backups for a game
+ * @param {string} gamePin - Game PIN (unused but kept for API compatibility)
+ * @param {number} gameN - Game number
  * @returns {Array} List of backup files with name and metadata
  */
-export async function listCloudBackups(matchId) {
+export async function listCloudBackups(gamePin, gameN = 1) {
   if (!supabase) {
     console.warn('[Logger] Supabase not configured')
     return []
@@ -239,7 +237,7 @@ export async function listCloudBackups(matchId) {
   try {
     const { data, error } = await supabase.storage
       .from('backup')
-      .list(`backups/match_${matchId}`, {
+      .list(`backup_g${gameN}`, {
         sortBy: { column: 'name', order: 'desc' }
       })
 
@@ -248,25 +246,25 @@ export async function listCloudBackups(matchId) {
       return []
     }
 
-    // Parse filenames to extract state info
+    // Parse filenames like "backup_g1_set2_scoreleft15_scoreright12_20250104_1530.json"
     return (data || []).map(file => {
-      // Parse filename like "00015_set2_15-12_2025-12-21T11-00-00-000Z.json"
-      const match = file.name.match(/^(\d+)_set(\d+)_(\d+)-(\d+)_(.+)\.json$/)
+      const match = file.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{4})\.json$/)
       if (match) {
         return {
           name: file.name,
-          path: `backups/match_${matchId}/${file.name}`,
-          sequence: parseInt(match[1]),
+          path: `backup_g${gameN}/${file.name}`,
+          gameN: parseInt(match[1]),
           setIndex: parseInt(match[2]),
-          homePoints: parseInt(match[3]),
-          awayPoints: parseInt(match[4]),
-          timestamp: match[5].replace(/-/g, ':').replace('T', ' ').replace('Z', ''),
+          leftScore: parseInt(match[3]),
+          rightScore: parseInt(match[4]),
+          date: match[5],
+          time: match[6],
           created_at: file.created_at
         }
       }
       return {
         name: file.name,
-        path: `backups/match_${matchId}/${file.name}`,
+        path: `backup_g${gameN}/${file.name}`,
         created_at: file.created_at
       }
     })

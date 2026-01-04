@@ -11,6 +11,7 @@ import { db } from '../db/db'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 import SimpleHeader from './SimpleHeader'
+import DonutCountdown from './DonutCountdown'
 import { changelog } from '../CHANGELOG'
 import { supabase } from '../lib/supabaseClient'
 
@@ -211,6 +212,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [wakeLockActive, setWakeLockActive] = useState(false) // Track wake lock status
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown, started }
   const [showIntervalModal, setShowIntervalModal] = useState(false) // Modal visibility (separate from countdown state)
+  const setIntervalDuration = useMemo(() => {
+    const saved = localStorage.getItem('setIntervalDuration')
+    return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
+  }, [])
   const [peekingLineup, setPeekingLineup] = useState({ left: false, right: false }) // Track which team's lineup is being peeked
 
   // Reset peeking state on any mouseup/touchend (since overlay disappears when peeking)
@@ -3698,17 +3703,21 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
             {timeoutModal ? (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600 }}>TIMEOUT</div>
-                <div style={{ fontSize: 'clamp(36px, 10vw, 64px)', fontWeight: 800, color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)', lineHeight: 1 }}>
-                  {timeoutModal.countdown}"
-                </div>
+                <div style={{ fontSize: '20px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>TIMEOUT</div>
+                <DonutCountdown current={timeoutModal.countdown} total={30} size={130} strokeWidth={6}>
+                  <div style={{ fontSize: 'clamp(24px, 8vw, 40px)', fontWeight: 600, color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)', lineHeight: 1 }}>
+                    {timeoutModal.countdown}"
+                  </div>
+                </DonutCountdown>
               </div>
             ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600 }}>INTERVAL</div>
-                <div style={{ fontSize: 'clamp(36px, 10vw, 64px)', fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
-                  {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
-                </div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>INTERVAL</div>
+                <DonutCountdown current={betweenSetsCountdown.countdown} total={setIntervalDuration} size={90} strokeWidth={5}>
+                  <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
+                    {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+                  </div>
+                </DonutCountdown>
               </div>
             ) : (
               <img

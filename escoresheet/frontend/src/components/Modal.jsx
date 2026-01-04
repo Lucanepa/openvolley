@@ -67,4 +67,3 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
     </div>
   )
 }
-
