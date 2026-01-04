@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.18.7',
+    date: '04.01.26',
+    changes: [
+      'Refactor ConnectionStatus component for cleaner styling'
+    ]
+  },
+  {
     version: '0.18.6',
     date: '04.01.26',
     changes: [
