@@ -30,8 +30,8 @@ export default function HomePage({
         </div>
 
         <div className="home-match-section" style={{ margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-          {/* New Match Button with Collapsible Menu - Separate row with higher z-index */}
-          <div style={{ position: 'relative', zIndex: 100 }}>
+          {/* New Match Button with Collapsible Menu */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
             <button
               onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
               style={{
@@ -63,21 +63,16 @@ export default function HomePage({
               <span style={{ transform: newMatchMenuOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
             </button>
 
-            {/* Collapsible Menu - Absolutely positioned */}
+            {/* Collapsible Menu - Pushes content down */}
             {newMatchMenuOpen && (
               <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
                 width: '400px',
-                marginTop: '8px',
-                background: 'rgba(30, 30, 40, 0.98)',
+                background: 'rgba(0, 0, 0, 0.98)',
                 borderRadius: '12px',
                 padding: '12px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
-                zIndex: 101,
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
                 border: '1px solid rgba(255, 255, 255, 0.1)'
               }}>
@@ -91,15 +86,15 @@ export default function HomePage({
                     padding: '12px 20px',
                     fontSize: '20px',
                     fontWeight: 600,
-                    background: 'rgba(59, 130, 246, 0.1)',
-                    color: '#3b82f6',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    background: 'rgba(59, 246, 62, 0.1)',
+                    color: 'rgba(59, 246, 62)',
+                    border: '1px solid rgba(59, 246, 62, 0.3)',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     transition: 'background 0.2s'
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 246, 62, 0.2)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(59, 246, 62, 0.1)' }}
                 >
                   {t('home.officialMatch')}
                 </button>
@@ -114,9 +109,9 @@ export default function HomePage({
                     padding: '12px 20px',
                     fontSize: '20px',
                     fontWeight: 600,
-                    background: testMatchLoading ? 'rgba(168, 85, 247, 0.05)' : 'rgba(168, 85, 247, 0.1)',
-                    color: testMatchLoading ? 'rgba(168, 85, 247, 0.5)' : '#a855f7',
-                    border: testMatchLoading ? '1px solid rgba(168, 85, 247, 0.15)' : '1px solid rgba(168, 85, 247, 0.3)',
+                    background: testMatchLoading ? 'hsla(52, 100.00%, 50.00%, 0.05)' : 'hsla(52, 100.00%, 50.00%, 0.10)',
+                    color: testMatchLoading ? 'hsla(52, 100.00%, 50.00%, 0.5)' : 'hsla(52, 100.00%, 50.00%, 1.00)',
+                    border: testMatchLoading ? '1px solid hsla(52, 100.00%, 50.00%, 0.15)' : '1px solid hsla(52, 100.00%, 50.00%, 0.3)',
                     borderRadius: '8px',
                     cursor: testMatchLoading ? 'not-allowed' : 'pointer',
                     transition: 'background 0.2s'
@@ -130,8 +125,8 @@ export default function HomePage({
             )}
           </div>
 
-          {/* Other buttons row */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative', zIndex: 1 }}>
+          {/* Other buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Continue Match Button - only show when there's a match */}
             {(currentOfficialMatch || currentTestMatch) && (
               <button

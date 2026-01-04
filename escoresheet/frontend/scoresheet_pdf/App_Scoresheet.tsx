@@ -2777,7 +2777,7 @@ const handlePrint = () => {
                             whiteSpace: 'nowrap'
                         }}
                     >
-                        eScoresheet
+                       eScoresheet<br />Openvolley
                     </div>
                 </div>
             </div>
@@ -2848,16 +2848,25 @@ const handlePrint = () => {
                         </div>
                     </div>
                     <div
-                        className="flex items-center justify-center text-xl border border-black bg-gray-300"
+                        className="flex items-center justify-center text-xl"
                         style={{
                             width: '97px',
                             writingMode: 'vertical-lr',
-                            transform: 'rotate(180deg)',
                             textAlign: 'center',
                             whiteSpace: 'nowrap'
                         }}
                     >
-                        Openvolley
+                        <img
+                            src="/favicon.png"
+                            alt="Openvolley"
+                            style={{
+                                width: '97px',
+                                height: '97px',
+                                objectFit: 'contain',
+                                margin: '0 auto',
+                                display: 'block'
+                            }}
+                        />
                     </div>
                 </div>
             </div>
