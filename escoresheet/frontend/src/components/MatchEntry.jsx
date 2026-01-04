@@ -239,8 +239,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     }
   }, [data?.set, team])
 
-  // Get set score
-  const setScore = useMemo(() => {
+  // Get sets won by each team
+  const setsWon = useMemo(() => {
     if (!data?.allSets) return { team: 0, opponent: 0 }
     let teamWins = 0
     let opponentWins = 0
@@ -260,8 +260,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
   // Check if match is finished
   const isMatchFinished = useMemo(() => {
-    return setScore.team === 3 || setScore.opponent === 3
-  }, [setScore])
+    return setsWon.team === 3 || setsWon.opponent === 3
+  }, [setsWon])
 
   // Calculate set results for Results component
   const calculateSetResults = useMemo(() => {
@@ -341,14 +341,14 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Match finished info
   const matchWinner = useMemo(() => {
     if (!isMatchFinished || !data) return ''
-    const teamWon = setScore.team > setScore.opponent
+    const teamWon = setsWon.team > setsWon.opponent
     return teamWon ? teamInfo.name : opponentInfo.name
-  }, [isMatchFinished, data, setScore, teamInfo, opponentInfo])
+  }, [isMatchFinished, data, setsWon, teamInfo, opponentInfo])
 
   const matchResult = useMemo(() => {
     if (!isMatchFinished) return ''
-    return `3:${Math.min(setScore.team, setScore.opponent)}`
-  }, [isMatchFinished, setScore])
+    return `3:${Math.min(setsWon.team, setsWon.opponent)}`
+  }, [isMatchFinished, setsWon])
 
   // Get timeouts used in current set
   const timeoutsUsed = useMemo(() => {
@@ -1005,13 +1005,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               fontWeight: 700,
               color: '#22c55e',
               fontSize: '18px'
-            }}>{setScore.team}</span>
+            }}>{setsWon.team}</span>
             <span style={{ color: 'rgba(255,255,255,0.4)' }}>-</span>
             <span style={{
               fontWeight: 600,
               color: 'rgba(255,255,255,0.5)',
               fontSize: '14px'
-            }}>{setScore.opponent}</span>
+            }}>{setsWon.opponent}</span>
           </div>
         </div>
 

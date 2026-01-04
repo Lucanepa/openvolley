@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.18.6',
+    date: '04.01.26',
+    changes: [
+      'Fix sets_won sync bug and rename set_score_a/b to sets_won_a/b'
+    ]
+  },
+  {
     version: '0.18.5',
     date: '02.01.26',
     changes: [

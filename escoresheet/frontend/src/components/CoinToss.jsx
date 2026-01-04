@@ -580,6 +580,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           payload: {
             id: updatedMatch.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'live', // Set status to live after coin toss is confirmed
+            current_set: 1, // Match starts at set 1
             // JSONB columns only
             coin_toss: {
               team_a: teamA,
@@ -737,9 +738,9 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       })
     }
 
-    // Update match status to 'live'
-    await db.matches.update(matchId, { status: 'live' })
-    console.log('[CoinToss] Match status updated to live')
+    // Update match status to 'live' and set current_set to 1
+    await db.matches.update(matchId, { status: 'live', current_set: 1 })
+    console.log('[CoinToss] Match status updated to live, current_set: 1')
 
     // Sync match status to Supabase (including officials, signatures, and referee connection info)
     // Only sync if match has seed_key (for Supabase lookup)
@@ -750,15 +751,20 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         payload: {
           id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
           status: 'live',
+          current_set: 1, // Match starts at set 1
           // Officials as JSONB
           officials: match?.officials || [],
-          // Connections JSONB
+          // Connections JSONB - include both referee and bench settings
           connections: {
-            referee_enabled: match?.refereeConnectionEnabled === true
+            referee_enabled: match?.refereeConnectionEnabled === true,
+            home_bench_enabled: match?.homeTeamConnectionEnabled === true,
+            away_bench_enabled: match?.awayTeamConnectionEnabled === true
           },
-          // Connection PINs JSONB
+          // Connection PINs JSONB - include both referee and bench PINs
           connection_pins: {
-            referee: match?.refereePin || ''
+            referee: match?.refereePin || '',
+            bench_home: match?.homeTeamPin || '',
+            bench_away: match?.awayTeamPin || ''
           },
           // Signatures JSONB
           signatures: !match?.test ? {
@@ -806,8 +812,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               team_b_short: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
               team_b_color: teamBColor || '#3b82f6',
               // Scores
-              set_score_a: 0,
-              set_score_b: 0,
+              sets_won_a: 0,
+              sets_won_b: 0,
               points_a: 0,
               points_b: 0,
               // Side (Team A always on left in Set 1)
@@ -818,6 +824,10 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               subs_a: 0,
               subs_b: 0,
               match_status: 'starting',
+              // Match metadata
+              game_n: match.gameN || match.game_n || null,
+              league: match.league || null,
+              gender: match.match_type_2 || null,
               updated_at: new Date().toISOString()
             }, { onConflict: 'match_id' })
 

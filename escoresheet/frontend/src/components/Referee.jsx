@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -15,6 +16,57 @@ import { supabase } from '../lib/supabaseClient'
 
 // Get current version from changelog
 const currentVersion = changelog[0]?.version || '1.0.0'
+
+// Flag SVG components for language selector
+const FlagGB = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="42" fill="#012169"/>
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7"/>
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)"/>
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12"/>
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7"/>
+  </svg>
+)
+
+const FlagIT = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#009246"/>
+    <rect x="20" width="20" height="42" fill="#fff"/>
+    <rect x="40" width="20" height="42" fill="#CE2B37"/>
+  </svg>
+)
+
+const FlagDE = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="14" fill="#000"/>
+    <rect y="14" width="60" height="14" fill="#DD0000"/>
+    <rect y="28" width="60" height="14" fill="#FFCE00"/>
+  </svg>
+)
+
+const FlagFR = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#002395"/>
+    <rect x="20" width="20" height="42" fill="#fff"/>
+    <rect x="40" width="20" height="42" fill="#ED2939"/>
+  </svg>
+)
+
+const FlagCH = () => (
+  <svg width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="32" height="32" fill="#ff0000" />
+    <rect x="14" y="6" width="4" height="20" fill="#fff" />
+    <rect x="6" y="14" width="20" height="4" fill="#fff" />
+  </svg>
+)
+
+const languages = [
+  { code: 'en', Flag: FlagGB, label: 'EN' },
+  { code: 'it', Flag: FlagIT, label: 'IT' },
+  { code: 'de', Flag: FlagDE, label: 'DE' },
+  { code: 'ch', Flag: FlagCH, label: 'DE' },
+  { code: 'fr', Flag: FlagFR, label: 'FR' }
+]
 
 // Hook to compute synced font size for paired texts using off-screen measurement
 function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isSingleLine = false, maxLines = 3) {
@@ -106,6 +158,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const { t } = useTranslation()
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
@@ -482,6 +535,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         setRecentlySubstitutedPlayers([])
       }, 5000)
     } else if (action === 'set_end') {
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('[Referee] 🏁 SET_END Action Received (WebSocket):')
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('[Referee] 📊 Action Data:', {
+        setIndex: actionData.setIndex,
+        winner: actionData.winner,
+        homePoints: actionData.homePoints,
+        awayPoints: actionData.awayPoints,
+        countdown: actionData.countdown
+      })
       setBetweenSetsCountdown({
         countdown: actionData.countdown || 180,
         started: true,
@@ -671,6 +734,22 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           // Handle set end (3-minute interval)
           if (state.last_event_type === 'set_end' || state.set_interval_active) {
+            console.log('═══════════════════════════════════════════════════════════════')
+            console.log('[Referee] 🏁 SET_END Received from Supabase Realtime:')
+            console.log('═══════════════════════════════════════════════════════════════')
+            console.log('[Referee] 📊 Live State Data:', {
+              current_set: state.current_set,
+              sets_won_a: state.sets_won_a,
+              sets_won_b: state.sets_won_b,
+              points_a: state.points_a,
+              points_b: state.points_b,
+              side_a: state.side_a,
+              serving_team: state.serving_team,
+              match_status: state.match_status,
+              set_interval_active: state.set_interval_active,
+              last_event_type: state.last_event_type,
+              last_event_data: state.last_event_data
+            })
             setBetweenSetsCountdown({
               countdown: 180,
               started: true,
@@ -924,10 +1003,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
   }, [data])
 
-  // Calculate set scores
-  const setScore = useMemo(() => {
+  // Calculate sets won by each team (from finished sets)
+  const setsWon = useMemo(() => {
     if (!data) return { home: 0, away: 0 }
-    
+
     const finishedSets = data.sets?.filter(s => s.finished) || []
     return {
       home: finishedSets.filter(s => s.homePoints > s.awayPoints).length,
@@ -1029,10 +1108,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightTeamData = rightTeam === 'home' ? data?.homeTeam : data?.awayTeam
   const leftLabel = leftTeam === 'home' ? homeLabel : awayLabel
   const rightLabel = rightTeam === 'home' ? homeLabel : awayLabel
-
-  // Basic team info (set interval overrides will be computed after isBetweenSets is defined)
-  const leftSetScore = leftTeam === 'home' ? setScore.home : setScore.away
-  const rightSetScore = rightTeam === 'home' ? setScore.home : setScore.away
   const leftServing = getCurrentServe === leftTeam
   const rightServing = getCurrentServe === rightTeam
   const leftColor = leftTeamData?.color || (leftTeam === 'home' ? '#ef4444' : '#3b82f6')
@@ -1065,50 +1140,103 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const getTeamSanctions = useCallback((teamKey) => {
     if (!data?.events) return {
       formalWarning: false, improperRequest: false, delayWarning: false, delayPenalty: false,
-      benchSanctions: [], playerWarnings: [], playerPenalties: [], expulsions: [], disqualifications: []
+      benchSanctions: [], warnings: [], penalties: [], expulsions: [], disqualifications: []
     }
 
     const teamSanctions = data.events.filter(e =>
       e.type === 'sanction' && e.payload?.team === teamKey
     )
 
-    // Player sanctions (on-court players with numbers)
-    const playerWarnings = teamSanctions.filter(s => {
+    // Helper to get display identifier (number or function abbreviation)
+    const getIdentifier = (s) => {
+      const playerNum = s.payload?.playerNumber || s.payload?.player
+      const playerType = s.payload?.playerType
+      const role = s.payload?.role || s.payload?.function
+
+      // For bench/official sanctions, show role abbreviation
+      if (playerType === 'bench' || playerType === 'official') {
+        if (role) {
+          // Map common roles to abbreviations
+          const roleMap = {
+            'coach': 'C', 'head_coach': 'C', 'headCoach': 'C',
+            'assistant_coach': 'AC', 'assistantCoach': 'AC', 'assistant': 'AC',
+            'trainer': 'T', 'therapist': 'T',
+            'doctor': 'Dr', 'medical': 'Dr',
+            'manager': 'M'
+          }
+          return roleMap[role.toLowerCase()] || role.substring(0, 2).toUpperCase()
+        }
+        return playerNum || 'B' // B for bench if no specific identifier
+      }
+      return playerNum
+    }
+
+    // Warnings (player or bench/official, excluding team/formal warnings and delay warnings)
+    const warnings = teamSanctions.filter(s => {
       const type = s.payload?.type || s.payload?.sanctionType
       const playerNum = s.payload?.playerNumber || s.payload?.player
       const playerType = s.payload?.playerType
-      // Warning on a player (not team, not delay, not bench/official)
+      const isBenchOrOfficial = playerType === 'bench' || playerType === 'official'
+      // For players: require a number. For bench/officials: don't require number
+      const hasValidTarget = isBenchOrOfficial || (playerNum && String(playerNum) !== 'D')
       return type === 'warning' &&
-        playerNum && String(playerNum) !== 'D' &&
-        playerType !== 'team' && playerType !== 'bench' && playerType !== 'official' &&
-        !s.payload?.isTeamWarning
-    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+        hasValidTarget &&
+        playerType !== 'team' && !s.payload?.isTeamWarning
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
 
-    const playerPenalties = teamSanctions.filter(s => {
+    // Penalties (player or bench/official, excluding delay penalties)
+    const penalties = teamSanctions.filter(s => {
       const type = s.payload?.type || s.payload?.sanctionType
       const playerNum = s.payload?.playerNumber || s.payload?.player
       const playerType = s.payload?.playerType
-      // Penalty on a player (not delay)
-      return type === 'penalty' &&
-        playerNum && String(playerNum) !== 'D' &&
-        playerType !== 'bench' && playerType !== 'official'
-    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+      const isBenchOrOfficial = playerType === 'bench' || playerType === 'official'
+      // For players: require a number. For bench/officials: don't require number
+      const hasValidTarget = isBenchOrOfficial || (playerNum && String(playerNum) !== 'D')
+      return type === 'penalty' && hasValidTarget
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
 
+    // Expulsions (any - player or bench)
     const expulsions = teamSanctions.filter(s => {
       const type = s.payload?.type || s.payload?.sanctionType
       return type === 'expulsion'
-    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
 
+    // Disqualifications (any - player or bench)
     const disqualifications = teamSanctions.filter(s => {
       const type = s.payload?.type || s.payload?.sanctionType
       return type === 'disqualification'
-    }).map(s => ({ player: s.payload?.playerNumber || s.payload?.player, position: s.payload?.position }))
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
+
+    // Debug: log all sanctions for this team
+    if (teamSanctions.length > 0) {
+      console.log(`[Referee] Sanctions for ${teamKey}:`, teamSanctions.map(s => ({
+        type: s.payload?.type,
+        playerType: s.payload?.playerType,
+        playerNumber: s.payload?.playerNumber,
+        role: s.payload?.role,
+        isTeamWarning: s.payload?.isTeamWarning
+      })))
+      console.log(`[Referee] Warnings for ${teamKey}:`, warnings)
+    }
 
     return {
-      formalWarning: teamSanctions.some(s =>
-        (s.payload?.type === 'warning' || s.payload?.sanctionType === 'warning') &&
-        (s.payload?.playerType === 'team' || s.payload?.isTeamWarning)
-      ),
+      // Formal warning: ANY warning to ANY team member (player, bench, official) triggers this
+      formalWarning: teamSanctions.some(s => {
+        const type = s.payload?.type || s.payload?.sanctionType
+        return type === 'warning'
+      }),
       improperRequest: teamSanctions.some(s =>
         s.payload?.type === 'improper_request' || s.payload?.sanctionType === 'improper_request'
       ),
@@ -1125,8 +1253,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       benchSanctions: teamSanctions.filter(s =>
         s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
       ),
-      playerWarnings,
-      playerPenalties,
+      warnings,
+      penalties,
       expulsions,
       disqualifications
     }
@@ -1488,7 +1616,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Check if we're in set interval (from liveState or local detection)
   const isInSetInterval = data?.liveState?.set_interval_active || isBetweenSets
-  const nextSetIndex = isInSetInterval ? (data?.currentSet?.index || 1) + 1 : null
+  // During interval, currentSet is already the NEW set (Scoreboard creates it immediately on set_end)
+  // So we should use currentSet.index directly, not add +1
+  // Also check liveState.current_set which is already set to the next set index
+  const nextSetIndex = isInSetInterval
+    ? (data?.liveState?.current_set || data?.currentSet?.index || 1)
+    : null
 
   // During set interval, show cleared values for the NEW set
   const leftLineup = isInSetInterval ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
@@ -1499,13 +1632,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightStats = isInSetInterval
     ? { timeouts: 0, substitutions: 0 }
     : (rightTeam === 'home' ? stats.home : stats.away)
-  // During set interval, show SET SCORE (sets won) instead of points
-  const leftScore = isInSetInterval
-    ? (leftTeam === 'home' ? setScore.home : setScore.away)
-    : (leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
-  const rightScore = isInSetInterval
-    ? (rightTeam === 'home' ? setScore.home : setScore.away)
-    : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  // Current set points (always points, not sets won)
+  const leftPoints = leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0
+  const rightPoints = rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0
+
+  // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon
+  const liveStateSetsWonHome = teamAKey === 'home'
+    ? (data?.liveState?.sets_won_a ?? setsWon.home)
+    : (data?.liveState?.sets_won_b ?? setsWon.home)
+  const liveStateSetsWonAway = teamAKey === 'home'
+    ? (data?.liveState?.sets_won_b ?? setsWon.away)
+    : (data?.liveState?.sets_won_a ?? setsWon.away)
+  const leftSetsWon = leftTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
+  const rightSetsWon = rightTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
+
+  // During interval, show sets won; during play, show current set points
+  const leftDisplayScore = leftPoints
+  const rightDisplayScore = rightPoints
   // Display set index - during interval show the NEXT set
   const displaySetIndex = isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1)
 
@@ -1746,6 +1889,104 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {/* Language Selector */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLanguageMenuOpen(!languageMenuOpen)
+                }}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '10px',
+                  height: '25px',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  display: 'flex',
+                  gap: '4px',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: '#fff',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+                title={t('header.language', 'Language')}
+              >
+                {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
+                <span style={{ fontSize: '8px' }}>▼</span>
+              </button>
+
+              {/* Language Dropdown */}
+              {languageMenuOpen && (
+                <>
+                  <div
+                    onClick={() => setLanguageMenuOpen(false)}
+                    style={{
+                      position: 'fixed',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      zIndex: 998
+                    }}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '4px',
+                    background: '#1a1a2e',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    zIndex: 1000,
+                    minWidth: '100px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+                  }}>
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          i18n.changeLanguage(lang.code)
+                          setLanguageMenuOpen(false)
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '10px 12px',
+                          fontSize: '12px',
+                          fontWeight: i18n.language === lang.code ? 600 : 400,
+                          background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
+                          color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'all 0.15s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (i18n.language !== lang.code) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (i18n.language !== lang.code) {
+                            e.currentTarget.style.background = 'transparent'
+                          }
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center' }}><lang.Flag /></span>
+                        <span>{lang.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
             {/* Version */}
             <span style={{ fontSize: '8px', color: 'rgba(255, 255, 255, 0.5)' }}>
               v{currentVersion}
@@ -2104,17 +2345,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }
 
   // Check if match is finished
-  const isMatchFinished = setScore.home === 3 || setScore.away === 3
+  const isMatchFinished = setsWon.home === 3 || setsWon.away === 3
 
   // Match finished info
   const matchWinner = isMatchFinished && data
-    ? (setScore.home > setScore.away
+    ? (setsWon.home > setsWon.away
         ? (data.homeTeam?.name || 'Home')
         : (data.awayTeam?.name || 'Away'))
     : ''
 
   const matchResult = isMatchFinished
-    ? `3:${Math.min(setScore.home, setScore.away)}`
+    ? `3:${Math.min(setsWon.home, setsWon.away)}`
     : ''
 
   // Team A/B short names for Results table (always available)
@@ -2298,124 +2539,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {/* Debug overlay - triple-tap to show */}
       {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
 
-      {/* Between Sets Countdown Modal */}
-      {showIntervalModal && betweenSetsCountdown && (
-        <div
-          onClick={() => setShowIntervalModal(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-            zIndex: 9996,
-            cursor: 'pointer'
-          }}
-        >
-          <div style={{
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            borderRadius: '24px',
-            padding: '48px 64px',
-            border: '2px solid rgba(255, 255, 255, 0.1)',
-            textAlign: 'center',
-            maxWidth: '90vw'
-        }}>
-          <div style={{
-              fontSize: 'clamp(24px, 6vw, 40px)',
-              fontWeight: 700,
-              marginBottom: '24px',
-              color: '#fbbf24',
-              textTransform: 'uppercase',
-              letterSpacing: '2px'
-            }}>
-              ⏱️ SET INTERVAL
-            </div>
-            <div style={{
-              fontSize: 'clamp(60px, 20vw, 120px)',
-            fontWeight: 800,
-              fontVariantNumeric: 'tabular-nums',
-              color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#fff',
-            lineHeight: 1
-          }}>
-              {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
-          </div>
-            <div style={{
-              marginTop: '24px',
-              fontSize: '14px',
-              color: 'rgba(255, 255, 255, 0.5)'
-            }}>
-              Tap anywhere to close
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Timeout Modal (from Scoreboard action) */}
-      {showTimeoutModal && timeoutModal && timeoutModal.started && (
-        <div
-          onClick={() => setShowTimeoutModal(false)}
-            style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9998,
-              cursor: 'pointer'
-            }}
-          >
-          <div style={{
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            borderRadius: '24px',
-            padding: '48px 64px',
-            textAlign: 'center',
-            border: '2px solid rgba(251, 146, 60, 0.5)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-          }}>
-            <div style={{
-              fontSize: '18px',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '2px',
-              color: '#fb923c',
-              marginBottom: '16px'
-            }}>
-              ⏱️ Timeout
-        </div>
-        <div style={{
-              fontSize: '14px',
-              color: 'rgba(255, 255, 255, 0.7)',
-              marginBottom: '24px'
-            }}>
-              {timeoutModal.team === 'home' ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home') : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')}
-            </div>
-        <div style={{
-              fontSize: 'clamp(60px, 20vw, 120px)',
-              fontWeight: 800,
-              fontVariantNumeric: 'tabular-nums',
-              color: timeoutModal.countdown <= 10 ? '#ef4444' : '#fb923c',
-              lineHeight: 1
-        }}>
-              {timeoutModal.countdown}"
-            </div>
-            <div style={{
-              marginTop: '24px',
-              fontSize: '14px',
-              color: 'rgba(255, 255, 255, 0.5)'
-            }}>
-              Tap anywhere to close
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Setter Selection Modal for Advanced Mode */}
       {setterSelectionModal && (
@@ -2663,31 +2787,50 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
         {/* Center: Set scores + SET n */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1vw, 12px)', flexShrink: 0, marginLeft: '8px', marginRight: '8px' }}>
-          <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{leftSetScore}</div>
+          <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', 
+            fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>
+              {leftSetsWon}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <span style={{ fontSize: '3vmin', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
             <span style={{ fontSize: '4vmin', fontWeight: 800 }}>{displaySetIndex}</span>
           </div>
-          <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{rightSetScore}</div>
+          <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)',
+            borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800 }}>{rightSetsWon}</div>
         </div>
 
         {/* Right: A/B + Team Name (centered in its space) */}
         <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
           <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: rightColor, color: isBrightColor(rightColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
           <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
-            <div style={{
-              fontSize: `${section2AFontSize.fontSize}px`,
-              fontWeight: 700,
-              background: rightColor,
-              color: isBrightColor(rightColor) ? '#000' : '#fff',
-              padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
-              borderRadius: '6px',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '100%'
-            }}>
-              {rightShortName}
+            <div
+              style={{
+                fontSize: `${section2AFontSize.fontSize}px`,
+                fontWeight: 700,
+                background: rightColor,
+                color: isBrightColor(rightColor) ? '#000' : '#fff',
+                padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
+                borderRadius: '6px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '100%',
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  minWidth: 0,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  verticalAlign: 'bottom',
+                  fontSize: 'inherit',
+                  fontWeight: 'inherit',
+                }}
+              >
+                {rightShortName}
+              </span>
             </div>
           </div>
         </div>
@@ -2792,12 +2935,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 </div>
               <span style={{
                   fontSize: '17vmin',
-            fontWeight: 800,
-            color: 'var(--accent)',
+            fontWeight: 600,
                   lineHeight: 1,
                   textAlign: 'right'
               }}>
-                {leftScore}
+                {leftDisplayScore}
               </span>
             </div>
           </div>
@@ -2810,9 +2952,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              {isInSetInterval && (
-                <span style={{ fontSize: '2vmin', fontWeight: 600, color: 'var(--accent)', letterSpacing: '1px' }}>SETS</span>
-              )}
+              
               <span style={{ fontSize: '7vmin', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
               </div>
 
@@ -2833,12 +2973,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             }}>
               <span style={{
                   fontSize: '17vmin',
-                fontWeight: 800,
-                color: 'var(--accent)',
+                fontWeight: 600,
                   lineHeight: 1,
                   textAlign: 'left'
                       }}>
-                {rightScore}
+                {rightDisplayScore}
               </span>
                 {/* Ball indicator for serving team */}
                 <div style={{
@@ -3417,109 +3556,136 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         <div style={{
           display: 'grid',
           gridTemplateColumns: '1fr auto 1fr',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           height: '100%',
-          gap: '8px'
+          gap: '8px',
+          paddingTop: '4px'
         }}>
           {/* Left team sanctions */}
           <div style={{
             display: 'flex',
-            gap: '4px',
+            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            flexWrap: 'wrap'
+            justifyContent: 'flex-start',
+            gap: '4px'
           }}>
-            {leftTeamSanctions.formalWarning && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#fde047',
-                color: '#000',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>FW</span>
+            {/* Sanctions title if any sanctions exist */}
+            {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
             )}
-            {leftTeamSanctions.improperRequest && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#6b7280',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>IR</span>
+            {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
+            {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest) && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                fontSize: '11px',
+                fontWeight: 600
+              }}>
+                {leftTeamSanctions.formalWarning && (
+                  <span style={{
+                    background: '#fde047',
+                    color: '#000',
+                    padding: '1px 6px',
+                    borderRadius: '3px'
+                  }}>Formal warning</span>
+                )}
+                {leftTeamSanctions.improperRequest && (
+                  <span style={{
+                    background: '#000',
+                    color: '#fff',
+                    padding: '1px 6px',
+                    borderRadius: '3px'
+                  }}>Improper Request</span>
+                )}
+              </div>
             )}
-            {leftTeamSanctions.delayWarning && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#fde047',
-                color: '#000',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>DW</span>
+            {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
+            {(leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0 || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty) && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(24px, auto))',
+                gap: '3px',
+                alignItems: 'start',
+                justifyContent: 'center'
+              }}>
+                {/* Column 1: Warnings (W) + Delay Warning */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {leftTeamSanctions.warnings.map((w, i) => (
+                    <span key={`w${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#fde047',
+                      color: '#000',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>W-{w.id}</span>
+                  ))}
+                  {leftTeamSanctions.delayWarning && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#fde047',
+                      color: '#000',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>DW</span>
+                  )}
+                </div>
+                {/* Column 2: Penalties (P) + Delay Penalty */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {leftTeamSanctions.penalties.map((p, i) => (
+                    <span key={`p${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#ef4444',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>P-{p.id}</span>
+                  ))}
+                  {leftTeamSanctions.delayPenalty && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#ef4444',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>DP</span>
+                  )}
+                </div>
+                {/* Column 3: Expulsions (E) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {leftTeamSanctions.expulsions.map((e, i) => (
+                    <span key={`e${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      textShadow: '0 0 2px #000'
+                    }}>E-{e.id}</span>
+                  ))}
+                </div>
+                {/* Column 4: Disqualifications (D) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {leftTeamSanctions.disqualifications.map((d, i) => (
+                    <span key={`d${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #991b1b 50%, #fde047 50%)',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      textShadow: '0 0 2px #000'
+                    }}>D-{d.id}</span>
+                  ))}
+                </div>
+              </div>
             )}
-            {leftTeamSanctions.delayPenalty && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#ef4444',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>DP</span>
-            )}
-            {leftTeamSanctions.benchSanctions.length > 0 && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#a855f7',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>B×{leftTeamSanctions.benchSanctions.length}</span>
-            )}
-            {leftTeamSanctions.playerWarnings.map((w, i) => (
-              <span key={`w${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#fde047',
-                color: '#000',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>W#{w.player}</span>
-            ))}
-            {leftTeamSanctions.playerPenalties.map((p, i) => (
-              <span key={`p${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#ef4444',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>P#{p.player}</span>
-            ))}
-            {leftTeamSanctions.expulsions.map((e, i) => (
-              <span key={`e${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                textShadow: '0 0 2px #000'
-              }}>E#{e.player}</span>
-            ))}
-            {leftTeamSanctions.disqualifications.map((d, i) => (
-              <span key={`d${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#7f1d1d',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>DQ#{d.player}</span>
-            ))}
           </div>
 
           {/* Center: Countdown when active, otherwise Favicon */}
@@ -3527,19 +3693,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            alignSelf: 'center'
           }}>
             {timeoutModal ? (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '10px', color: 'var(--muted)' }}>TIMEOUT</div>
-                <div style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, color: 'var(--accent)' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600 }}>TIMEOUT</div>
+                <div style={{ fontSize: 'clamp(36px, 10vw, 64px)', fontWeight: 800, color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)', lineHeight: 1 }}>
                   {timeoutModal.countdown}"
                 </div>
               </div>
             ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '10px', color: 'var(--muted)' }}>INTERVAL</div>
-                <div style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, color: '#22c55e' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600 }}>INTERVAL</div>
+                <div style={{ fontSize: 'clamp(36px, 10vw, 64px)', fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
                   {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
                 </div>
               </div>
@@ -3562,102 +3729,128 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           {/* Right team sanctions */}
           <div style={{
             display: 'flex',
-            gap: '4px',
+            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            flexWrap: 'wrap'
+            justifyContent: 'flex-start',
+            gap: '4px'
           }}>
-            {rightTeamSanctions.formalWarning && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#fde047',
-                color: '#000',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>FW</span>
+            {/* Sanctions title if any sanctions exist */}
+            {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
             )}
-            {rightTeamSanctions.improperRequest && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#6b7280',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>IR</span>
+            {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
+            {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest) && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                fontSize: '11px',
+                fontWeight: 600
+              }}>
+                {rightTeamSanctions.formalWarning && (
+                  <span style={{
+                    background: '#fde047',
+                    color: '#000',
+                    padding: '1px 6px',
+                    borderRadius: '3px'
+                  }}>Formal warning</span>
+                )}
+                {rightTeamSanctions.improperRequest && (
+                  <span style={{
+                    background: '#000',
+                    color: '#fff',
+                    padding: '1px 6px',
+                    borderRadius: '3px'
+                  }}>Improper Request</span>
+                )}
+              </div>
             )}
-            {rightTeamSanctions.delayWarning && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#fde047',
-                color: '#000',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>DW</span>
+            {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
+            {(rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0 || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty) && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(24px, auto))',
+                gap: '3px',
+                alignItems: 'start',
+                justifyContent: 'center'
+              }}>
+                {/* Column 1: Warnings (W) + Delay Warning */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {rightTeamSanctions.warnings.map((w, i) => (
+                    <span key={`w${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#fde047',
+                      color: '#000',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>W-{w.id}</span>
+                  ))}
+                  {rightTeamSanctions.delayWarning && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#fde047',
+                      color: '#000',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>DW</span>
+                  )}
+                </div>
+                {/* Column 2: Penalties (P) + Delay Penalty */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {rightTeamSanctions.penalties.map((p, i) => (
+                    <span key={`p${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#ef4444',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>P-{p.id}</span>
+                  ))}
+                  {rightTeamSanctions.delayPenalty && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: '#ef4444',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>DP</span>
+                  )}
+                </div>
+                {/* Column 3: Expulsions (E) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {rightTeamSanctions.expulsions.map((e, i) => (
+                    <span key={`e${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      textShadow: '0 0 2px #000'
+                    }}>E-{e.id}</span>
+                  ))}
+                </div>
+                {/* Column 4: Disqualifications (D) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
+                  {rightTeamSanctions.disqualifications.map((d, i) => (
+                    <span key={`d${i}`} style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #991b1b 50%, #fde047 50%)',
+                      color: '#fff',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      textShadow: '0 0 2px #000'
+                    }}>D-{d.id}</span>
+                  ))}
+                </div>
+              </div>
             )}
-            {rightTeamSanctions.delayPenalty && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#ef4444',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>DP</span>
-            )}
-            {rightTeamSanctions.benchSanctions.length > 0 && (
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#a855f7',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>B×{rightTeamSanctions.benchSanctions.length}</span>
-            )}
-            {rightTeamSanctions.playerWarnings.map((w, i) => (
-              <span key={`w${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#fde047',
-                color: '#000',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>W#{w.player}</span>
-            ))}
-            {rightTeamSanctions.playerPenalties.map((p, i) => (
-              <span key={`p${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#ef4444',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>P#{p.player}</span>
-            ))}
-            {rightTeamSanctions.expulsions.map((e, i) => (
-              <span key={`e${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                textShadow: '0 0 2px #000'
-              }}>E#{e.player}</span>
-            ))}
-            {rightTeamSanctions.disqualifications.map((d, i) => (
-              <span key={`d${i}`} style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                background: '#7f1d1d',
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: '4px'
-              }}>DQ#{d.player}</span>
-            ))}
           </div>
         </div>
 

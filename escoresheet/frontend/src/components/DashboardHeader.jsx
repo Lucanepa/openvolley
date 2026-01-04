@@ -1,6 +1,58 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import changelog from '../CHANGELOG'
+
+// Flag SVG components for language selector
+const FlagGB = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="42" fill="#012169"/>
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7"/>
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)"/>
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12"/>
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7"/>
+  </svg>
+)
+
+const FlagIT = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#009246"/>
+    <rect x="20" width="20" height="42" fill="#fff"/>
+    <rect x="40" width="20" height="42" fill="#CE2B37"/>
+  </svg>
+)
+
+const FlagDE = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="14" fill="#000"/>
+    <rect y="14" width="60" height="14" fill="#DD0000"/>
+    <rect y="28" width="60" height="14" fill="#FFCE00"/>
+  </svg>
+)
+
+const FlagFR = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#002395"/>
+    <rect x="20" width="20" height="42" fill="#fff"/>
+    <rect x="40" width="20" height="42" fill="#ED2939"/>
+  </svg>
+)
+
+const FlagCH = () => (
+  <svg width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="32" height="32" fill="#ff0000" />
+    <rect x="14" y="6" width="4" height="20" fill="#fff" />
+    <rect x="6" y="14" width="20" height="4" fill="#fff" />
+  </svg>
+)
+
+const languages = [
+  { code: 'en', Flag: FlagGB, label: 'EN' },
+  { code: 'it', Flag: FlagIT, label: 'IT' },
+  { code: 'de', Flag: FlagDE, label: 'DE' },
+  { code: 'ch', Flag: FlagCH, label: 'DE' },
+  { code: 'fr', Flag: FlagFR, label: 'FR' }
+]
 
 /**
  * DashboardHeader - 3-column header for dashboard views (Bench, Livescore)
@@ -38,6 +90,7 @@ export default function DashboardHeader({
   const currentVersion = changelog[0]?.version || '1.0.0'
   const [menuOpen, setMenuOpen] = useState(false)
   const [versionExpanded, setVersionExpanded] = useState(false)
+  const [languageExpanded, setLanguageExpanded] = useState(false)
 
   // Close menu on outside click
   useEffect(() => {
@@ -368,6 +421,87 @@ export default function DashboardHeader({
                       </button>
                     )
                   })}
+
+                  {/* Language selector */}
+                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setLanguageExpanded(!languageExpanded)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '10px 14px',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
+                    </span>
+                    <span style={{ flex: 1 }}>{t('header.language', 'Language')}</span>
+                    <span style={{
+                      fontSize: '8px',
+                      transform: languageExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s'
+                    }}>▼</span>
+                  </button>
+
+                  {/* Language options */}
+                  {languageExpanded && (
+                    <div style={{
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                      background: 'rgba(0, 0, 0, 0.2)'
+                    }}>
+                      {languages.map((lang) => (
+                        <button
+                          key={lang.code}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            i18n.changeLanguage(lang.code)
+                            setLanguageExpanded(false)
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            width: '100%',
+                            padding: '10px 14px 10px 44px',
+                            fontSize: '12px',
+                            fontWeight: i18n.language === lang.code ? 600 : 400,
+                            background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
+                            color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                            border: 'none',
+                            borderLeft: i18n.language === lang.code ? '3px solid #22c55e' : '3px solid transparent',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.15s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (i18n.language !== lang.code) {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (i18n.language !== lang.code) {
+                              e.currentTarget.style.background = 'transparent'
+                            }
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center' }}><lang.Flag /></span>
+                          <span>{lang.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Version info at bottom */}
                   <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
