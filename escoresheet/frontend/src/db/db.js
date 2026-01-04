@@ -196,4 +196,19 @@ db.version(13).stores({
   scorers: '++id,seedKey,lastName,createdAt'
 })
 
+// Version 14: Add compound indexes on events for performance optimization
+// [matchId+seq] enables fast max seq lookup without full table scan
+// [matchId+setIndex] enables fast set-specific event filtering
+db.version(14).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot,[matchId+seq],[matchId+setIndex]',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
 

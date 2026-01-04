@@ -119,8 +119,8 @@ export default function LivescoreApp() {
       rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
       leftScore: isALeft ? (game.points_a || 0) : (game.points_b || 0),
       rightScore: isALeft ? (game.points_b || 0) : (game.points_a || 0),
-      leftSets: isALeft ? (game.set_score_a || 0) : (game.set_score_b || 0),
-      rightSets: isALeft ? (game.set_score_b || 0) : (game.set_score_a || 0),
+      leftSets: isALeft ? (game.sets_won_a || 0) : (game.sets_won_b || 0),
+      rightSets: isALeft ? (game.sets_won_b || 0) : (game.sets_won_a || 0),
       // Serving: convert team key to side
       servingTeam: game.serving_team // already 'left' or 'right'
     }

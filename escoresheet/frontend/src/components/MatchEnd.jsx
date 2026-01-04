@@ -694,6 +694,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
           payload: {
             id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'final',
+            current_set: null, // Clear current_set when match is final (not_live)
             approved: true,
             approvedAt: new Date().toISOString()
           },
@@ -706,7 +707,8 @@ export default function MatchEnd({ matchId, onGoHome }) {
       await db.matches.update(matchId, {
         approved: true,
         approvedAt: new Date().toISOString(),
-        status: 'final'
+        status: 'final',
+        current_set: null // Clear current_set when match is final
       })
       setIsApproved(true)
 

@@ -276,8 +276,8 @@ export async function getMatchData(matchId) {
         sets = [currentSet]
 
         // Set scores
-        const homeSetsWon = teamAIsHome ? liveState.set_score_a : liveState.set_score_b
-        const awaySetsWon = teamAIsHome ? liveState.set_score_b : liveState.set_score_a
+        const homeSetsWon = teamAIsHome ? liveState.sets_won_a : liveState.sets_won_b
+        const awaySetsWon = teamAIsHome ? liveState.sets_won_b : liveState.sets_won_a
         // We only have set counts, not individual set scores - this is a limitation
       } else {
         // No live state yet (before first point) - create empty set 1
@@ -983,8 +983,14 @@ export async function listAvailableMatchesSupabase() {
       return { success: false, matches: [], error: error.message }
     }
 
+    // Filter to only show matches where referee connection is enabled
+    const filteredData = (data || []).filter(m => {
+      const connections = m.connections || {}
+      return connections.referee_enabled === true
+    })
+
     // Format to match the WebSocket server format
-    const formattedMatches = (data || []).map(m => {
+    const formattedMatches = filteredData.map(m => {
       let dateTime = 'TBD'
       if (m.scheduled_at) {
         try {
@@ -1020,6 +1026,7 @@ export async function listAvailableMatchesSupabase() {
         scheduledAt: m.scheduled_at,
         dateTime,
         status: m.status,
+        refereeConnectionEnabled: connections.referee_enabled === true,
         // Include upload PINs for roster upload app
         homeTeamUploadPin: connectionPins.upload_home,
         awayTeamUploadPin: connectionPins.upload_away
@@ -1064,8 +1071,14 @@ export async function listAvailableMatchesForBenchSupabase() {
       return { success: false, matches: [], error: error.message }
     }
 
+    // Filter to only show matches where at least one bench connection is enabled
+    const filteredData = (data || []).filter(m => {
+      const connections = m.connections || {}
+      return connections.home_bench_enabled === true || connections.away_bench_enabled === true
+    })
+
     // Format to match the WebSocket server format
-    const formattedMatches = (data || []).map(m => {
+    const formattedMatches = filteredData.map(m => {
       let dateTime = 'TBD'
       if (m.scheduled_at) {
         try {
