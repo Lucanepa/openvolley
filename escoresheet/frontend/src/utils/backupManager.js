@@ -182,10 +182,31 @@ export async function exportMatchData(matchId) {
 }
 
 /**
- * Generate backup filename
+ * Generate backup filename with UTC timestamp
+ * Format: backup_g[gameN]_set[setN]_scoreleft[left]_scoreright[right]_[yyyymmdd]_[hhmm].json
  */
-export function generateBackupFilename(matchId) {
-  return `match_${matchId}.json`
+export function generateBackupFilename(data) {
+  const gameN = data?.match?.gameN || data?.match?.game_n || 1
+
+  // Get latest set info
+  let setIndex = 1
+  let leftScore = 0
+  let rightScore = 0
+  if (data?.sets?.length > 0) {
+    const latestSet = data.sets.sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+    if (latestSet) {
+      setIndex = latestSet.index || 1
+      leftScore = latestSet.homePoints || 0
+      rightScore = latestSet.awayPoints || 0
+    }
+  }
+
+  // Generate UTC timestamp in yyyymmdd_hhmm format
+  const now = new Date()
+  const utcDate = now.toISOString().slice(0, 10).replace(/-/g, '') // yyyymmdd
+  const utcTime = now.toISOString().slice(11, 16).replace(':', '') // hhmm
+
+  return `backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}.json`
 }
 
 /**
@@ -193,7 +214,7 @@ export function generateBackupFilename(matchId) {
  */
 export async function writeMatchBackup(matchId, directoryHandle) {
   const data = await exportMatchData(matchId)
-  const filename = generateBackupFilename(matchId)
+  const filename = generateBackupFilename(data)
 
   try {
     const fileHandle = await directoryHandle.getFileHandle(filename, { create: true })
@@ -212,13 +233,7 @@ export async function writeMatchBackup(matchId, directoryHandle) {
  */
 export async function downloadMatchBackup(matchId) {
   const data = await exportMatchData(matchId)
-  const match = data.match
-
-  // Generate a more descriptive filename for downloads
-  const date = new Date().toISOString().split('T')[0]
-  const homeName = data.homeTeam?.shortName || data.homeTeam?.name?.substring(0, 10) || 'home'
-  const awayName = data.awayTeam?.shortName || data.awayTeam?.name?.substring(0, 10) || 'away'
-  const filename = `match_${matchId}_${sanitizeSimple(homeName, 15)}_vs_${sanitizeSimple(awayName, 15)}_${date}.json`
+  const filename = generateBackupFilename(data)
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -236,6 +251,7 @@ export async function downloadMatchBackup(matchId) {
 
 /**
  * Restore match from JSON backup data
+ * WIPE & REPLACE: Clears all local match data, restores from backup, queues Supabase sync
  */
 export async function restoreMatchFromJson(jsonData) {
   // Validate schema
@@ -245,20 +261,32 @@ export async function restoreMatchFromJson(jsonData) {
 
   const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
 
+  // Get external_id for Supabase sync (seed_key in local, external_id in backup)
+  const externalId = match.seed_key || match.seedKey || match.external_id
+  if (!externalId) {
+    console.warn('[Restore] No external_id found - Supabase sync will be skipped')
+  }
+
   let restoredMatchId = null
 
-  // Start transaction
-  await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, async () => {
-    // Create teams
+  // Start transaction - WIPE then RESTORE
+  await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, db.sync_queue, async () => {
+    // STEP A: WIPE ALL existing match data from IndexedDB
+    // (Keep teams/players/referees/scorers as they're reusable)
+    console.log('[Restore] Wiping local IndexedDB: events, sets, matches, sync_queue')
+    await db.events.clear()
+    await db.sets.clear()
+    await db.matches.clear()
+    await db.sync_queue.clear()
+
+    // STEP B: Create teams (reuse existing or create new)
     let homeTeamId = null
     let awayTeamId = null
 
     if (homeTeam) {
-      // Check if team with same name exists
       const existingHome = await db.teams.where('name').equals(homeTeam.name).first()
       if (existingHome) {
         homeTeamId = existingHome.id
-        // Update team data
         await db.teams.update(homeTeamId, {
           ...homeTeam,
           id: homeTeamId,
@@ -267,7 +295,7 @@ export async function restoreMatchFromJson(jsonData) {
       } else {
         homeTeamId = await db.teams.add({
           ...homeTeam,
-          id: undefined, // Let Dexie auto-generate
+          id: undefined,
           createdAt: new Date().toISOString()
         })
       }
@@ -291,13 +319,13 @@ export async function restoreMatchFromJson(jsonData) {
       }
     }
 
-    // Create match with new ID
+    // Create match with ID=1 (always single match in session)
     const matchId = await db.matches.add({
       ...match,
-      id: undefined, // Let Dexie auto-generate new ID
+      id: 1, // Fixed ID for single match
       homeTeamId,
       awayTeamId,
-      restoredFrom: match.id, // Track original ID
+      seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })
 
@@ -332,26 +360,120 @@ export async function restoreMatchFromJson(jsonData) {
       }
     }
 
-    // Create sets
+    // Create sets with sequential IDs
     if (sets?.length) {
-      for (const set of sets) {
+      for (let i = 0; i < sets.length; i++) {
+        const set = sets[i]
         await db.sets.add({
           ...set,
-          id: undefined,
+          id: i + 1, // Sequential IDs
           matchId
         })
       }
     }
 
-    // Create events
+    // Create events with sequential IDs
     if (events?.length) {
-      for (const event of events) {
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i]
         await db.events.add({
           ...event,
-          id: undefined,
+          id: i + 1, // Sequential IDs
           matchId
         })
       }
+    }
+
+    // STEP C: Queue Supabase 'restore' sync job (DELETE first, then UPSERT)
+    if (externalId) {
+      console.log('[Restore] Queuing Supabase restore job for match:', externalId)
+
+      // Build match payload for Supabase (convert local field names to Supabase column names)
+      const matchPayload = {
+        external_id: externalId,
+        game_pin: match.gamePin || match.game_pin,
+        game_n: match.gameN || match.game_n,
+        status: match.status || 'live',
+        home_team: homeTeam ? {
+          name: homeTeam.name,
+          short_name: homeTeam.shortName || homeTeam.short_name,
+          color: homeTeam.color
+        } : null,
+        away_team: awayTeam ? {
+          name: awayTeam.name,
+          short_name: awayTeam.shortName || awayTeam.short_name,
+          color: awayTeam.color
+        } : null,
+        players_home: homePlayers || [],
+        players_away: awayPlayers || [],
+        // Include other match fields
+        hall: match.hall,
+        city: match.city,
+        league: match.league,
+        championship_type: match.championshipType || match.championship_type,
+        coin_toss_confirmed: match.coinTossConfirmed || match.coin_toss_confirmed,
+        coin_toss_team_a: match.coinTossTeamA || match.coin_toss_team_a,
+        coin_toss_team_b: match.coinTossTeamB || match.coin_toss_team_b,
+        first_serve: match.firstServe || match.first_serve
+      }
+
+      // Build sets payload (convert local to Supabase format)
+      const setsPayload = (sets || []).map(s => ({
+        external_id: s.externalId || s.external_id || `${externalId}_set_${s.index}`,
+        index: s.index,
+        home_points: s.homePoints ?? s.home_points ?? 0,
+        away_points: s.awayPoints ?? s.away_points ?? 0,
+        finished: s.finished || false,
+        start_time: s.startTime || s.start_time,
+        end_time: s.endTime || s.end_time
+      }))
+
+      // Build events payload (convert local to Supabase format)
+      const eventsPayload = (events || []).map(e => ({
+        external_id: e.externalId || e.external_id || `${externalId}_event_${e.seq || e.id}`,
+        set_index: e.setIndex ?? e.set_index,
+        type: e.type,
+        payload: e.payload,
+        ts: e.ts,
+        seq: e.seq
+      }))
+
+      // Build live state payload from latest set data
+      const latestSet = sets?.length > 0
+        ? [...sets].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+        : null
+      const finishedSets = (sets || []).filter(s => s.finished)
+      const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+      const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+
+      const liveStatePayload = {
+        current_set: latestSet?.index || 1,
+        points_a: latestSet?.homePoints ?? latestSet?.home_points ?? 0,
+        points_b: latestSet?.awayPoints ?? latestSet?.away_points ?? 0,
+        sets_won_a: homeSetsWon,
+        sets_won_b: awaySetsWon,
+        status: match.status || 'live'
+      }
+
+      // Queue the restore job
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'restore',
+        payload: {
+          match: matchPayload,
+          sets: setsPayload,
+          events: eventsPayload,
+          liveState: liveStatePayload
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+
+      console.log('[Restore] Restore job queued:', {
+        matchId: externalId,
+        setsCount: setsPayload.length,
+        eventsCount: eventsPayload.length
+      })
     }
   })
 

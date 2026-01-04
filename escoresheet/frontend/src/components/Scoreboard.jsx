@@ -11910,18 +11910,39 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       fontWeight: 600,
                       color: 'var(--muted)',
                       textAlign: 'center',
-                      marginBottom: '4px'
+                      marginBottom: '8px'
                     }}>
                       Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}
                     </div>
                     <div style={{
                       fontSize: '32px',
                       fontWeight: 700,
-                      color: 'var(--accent)',
+                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
                       fontFamily: 'monospace'
                     }}>
                       {formatCountdown(timeoutModal.countdown)}
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{
+                      width: '60%',
+                      height: '8px',
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      marginTop: '8px',
+                      marginBottom: '12px',
+                      marginLeft: 'auto',
+                      marginRight: 'auto'
+                    }}>
+                      <div style={{
+                        width: `${(timeoutModal.countdown / 30) * 100}%`,
+                        height: '100%',
+                        background: 'var(--accent)',
+                        borderRadius: '4px',
+                        transition: 'width 1s linear',
+                        marginLeft: 'auto'
+                      }} />
                     </div>
                     <button onClick={stopTimeout} style={{
                       padding: '12px',
@@ -12021,11 +12042,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     <div style={{
                       fontSize: '33px',
                       fontWeight: 700,
-                      color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
+                      color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
                       fontFamily: 'monospace'
                     }}>
                       {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{
+                      width: '60%',
+                      height: '8px',
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      marginTop: '8px',
+                      marginBottom: '12px',
+                      marginLeft: 'auto',
+                      marginRight: 'auto'
+                    }}>
+                      <div style={{
+                        width: `${(betweenSetsCountdown.countdown / setIntervalDuration) * 100}%`,
+                        height: '100%',
+                        background: 'var(--accent)',
+                        borderRadius: '4px',
+                        transition: 'width 1s linear',
+                        marginLeft: 'auto'
+                      }} />
                     </div>
                     <button onClick={endSetInterval} style={{
                       padding: '12px',
@@ -14866,12 +14908,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   <div style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: 'var(--accent)',
+                    color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                     textAlign: 'center',
-                    marginBottom: '16px',
                     fontFamily: 'monospace'
                   }}>
                     {formatCountdown(timeoutModal.countdown)}
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{
+                    width: '60%',
+                    height: '8px',
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    borderRadius: '4px',
+                    overflow: 'hidden',
+                    marginTop: '8px',
+                    marginBottom: '16px',
+                    marginLeft: 'auto',
+                    marginRight: 'auto'
+                  }}>
+                    <div style={{
+                      width: `${(timeoutModal.countdown / 30) * 100}%`,
+                      height: '100%',
+                      background: 'var(--accent)',
+                      borderRadius: '4px',
+                      transition: 'width 1s linear',
+                      marginLeft: 'auto'
+                    }} />
                   </div>
                   <button
                     className="secondary"
@@ -15047,12 +15109,32 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       <div style={{
                         fontSize: '49px',
                         fontWeight: 700,
-                        color: betweenSetsCountdown.countdown <= 0 ? '#ef4444' : 'var(--accent)',
+                        color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                         textAlign: 'center',
-                        marginBottom: '5px',
                         fontFamily: 'monospace'
                       }}>
                         {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{
+                        width: '60%',
+                        height: '8px',
+                        background: 'rgba(255, 255, 255, 0.15)',
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        marginTop: '8px',
+                        marginBottom: '16px',
+                        marginLeft: 'auto',
+                        marginRight: 'auto'
+                      }}>
+                        <div style={{
+                          width: `${(betweenSetsCountdown.countdown / setIntervalDuration) * 100}%`,
+                          height: '100%',
+                          background: 'var(--accent)',
+                          borderRadius: '4px',
+                          transition: 'width 1s linear',
+                          marginLeft: 'auto'
+                        }} />
                       </div>
                       <button
                         className="secondary"

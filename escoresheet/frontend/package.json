@@ -1,6 +1,6 @@
 {
   "name": "escoresheet",
-  "version": "0.18.7",
+  "version": "0.18.8",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "animejs": "^4.2.2",
     "dexie": "^4.0.8",
     "dexie-react-hooks": "^1.1.7",
     "html-to-image": "^1.11.13",

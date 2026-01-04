@@ -237,6 +237,122 @@ export function useSyncQueue() {
         return true
       }
 
+      // ==================== MATCH RESTORE ====================
+      // Special action for backup restore: DELETE first, then UPSERT
+      // SAFETY: Only deletes data for THIS SPECIFIC MATCH by external_id
+      if (job.resource === 'match' && job.action === 'restore') {
+        const { match, sets, events, liveState } = job.payload
+
+        // SAFETY CHECK: external_id is required - identifies THIS specific match
+        if (!match?.external_id) {
+          console.error('[SyncQueue] Restore failed: missing external_id in match payload')
+          return false
+        }
+
+        const externalId = match.external_id
+        console.log('[SyncQueue] Processing restore job for match:', externalId)
+
+        try {
+          // Step 1: Look up existing match UUID by external_id (THIS MATCH ONLY)
+          const { data: existingMatch, error: lookupError } = await supabase
+            .from('matches')
+            .select('id')
+            .eq('external_id', externalId)
+            .maybeSingle()
+
+          if (lookupError) {
+            console.error('[SyncQueue] Restore lookup error:', lookupError)
+            return false
+          }
+
+          // Step 2: DELETE existing data for THIS MATCH ONLY (if it exists)
+          if (existingMatch) {
+            const matchUuid = existingMatch.id
+            console.log('[SyncQueue] Deleting existing data for match UUID:', matchUuid)
+
+            // Delete ONLY records with this specific match_id
+            const { error: eventsDelErr } = await supabase.from('events').delete().eq('match_id', matchUuid)
+            if (eventsDelErr) console.warn('[SyncQueue] Events delete warning:', eventsDelErr)
+
+            const { error: setsDelErr } = await supabase.from('sets').delete().eq('match_id', matchUuid)
+            if (setsDelErr) console.warn('[SyncQueue] Sets delete warning:', setsDelErr)
+
+            const { error: liveStateDelErr } = await supabase.from('match_live_state').delete().eq('match_id', matchUuid)
+            if (liveStateDelErr) console.warn('[SyncQueue] match_live_state delete warning:', liveStateDelErr)
+
+            console.log('[SyncQueue] Deleted existing data for match:', externalId)
+          } else {
+            console.log('[SyncQueue] No existing match found in Supabase, will create new')
+          }
+
+          // Step 3: UPSERT match (creates or updates BY external_id)
+          const { data: upsertedMatch, error: matchError } = await supabase
+            .from('matches')
+            .upsert(match, { onConflict: 'external_id' })
+            .select('id')
+            .single()
+
+          if (matchError) {
+            console.error('[SyncQueue] Match upsert failed:', matchError)
+            return false
+          }
+
+          const matchUuid = upsertedMatch.id
+          console.log('[SyncQueue] Match upserted, UUID:', matchUuid)
+
+          // Step 4: INSERT all sets (with resolved match_id)
+          if (sets?.length > 0) {
+            for (const set of sets) {
+              const setPayload = { ...set, match_id: matchUuid }
+              const { error: setErr } = await supabase
+                .from('sets')
+                .upsert(setPayload, { onConflict: 'external_id' })
+              if (setErr) {
+                console.warn('[SyncQueue] Set upsert warning:', setErr, set.external_id)
+              }
+            }
+            console.log('[SyncQueue] Upserted', sets.length, 'sets')
+          }
+
+          // Step 5: INSERT all events (with resolved match_id)
+          if (events?.length > 0) {
+            // Batch insert events for efficiency
+            const eventsWithMatchId = events.map(e => ({ ...e, match_id: matchUuid }))
+            const { error: eventsErr } = await supabase
+              .from('events')
+              .upsert(eventsWithMatchId, { onConflict: 'external_id' })
+            if (eventsErr) {
+              console.warn('[SyncQueue] Events batch upsert warning:', eventsErr)
+              // Try individual inserts as fallback
+              for (const event of eventsWithMatchId) {
+                await supabase.from('events').upsert(event, { onConflict: 'external_id' })
+              }
+            }
+            console.log('[SyncQueue] Upserted', events.length, 'events')
+          }
+
+          // Step 6: UPSERT match_live_state (keyed by match_id)
+          if (liveState) {
+            const liveStatePayload = { ...liveState, match_id: matchUuid }
+            const { error: liveStateErr } = await supabase
+              .from('match_live_state')
+              .upsert(liveStatePayload, { onConflict: 'match_id' })
+            if (liveStateErr) {
+              console.warn('[SyncQueue] match_live_state upsert warning:', liveStateErr)
+            } else {
+              console.log('[SyncQueue] match_live_state upserted')
+            }
+          }
+
+          console.log('[SyncQueue] Restore complete for match:', externalId)
+          return true
+
+        } catch (restoreErr) {
+          console.error('[SyncQueue] Restore exception:', restoreErr)
+          return false
+        }
+      }
+
       // ==================== SET ====================
       if (job.resource === 'set' && job.action === 'insert') {
         // Resolve match_id from external_id
