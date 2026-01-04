@@ -1604,16 +1604,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           }
         }
         
-        await db.matches.update(matchId, {
+        // Build update object - only include match type fields if match info is confirmed
+        // This prevents auto-save from writing default values before user has explicitly confirmed
+        const matchUpdate = {
           hall,
           city,
-          match_type_1: type1,
-          match_type_1_other: type1 === 'other' ? type1Other : null,
-          championshipType,
-          championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
-          match_type_2: type2,
-          match_type_3: type3,
-          match_type_3_other: type3 === 'other' ? type3Other : null,
           homeShortName: homeShortName || home.substring(0, 8).toUpperCase(),
           awayShortName: awayShortName || away.substring(0, 8).toUpperCase(),
           game_n: gameN ? Number(gameN) : null,
@@ -1638,7 +1633,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           ),
           bench_home: benchHome,
           bench_away: benchAway
-        })
+        }
+
+        // Only save match type fields if explicitly saving OR match was previously confirmed
+        // This prevents scoresheet from showing default Xs before user confirms match info
+        if (!silent || match?.matchInfoConfirmedAt) {
+          matchUpdate.match_type_1 = type1
+          matchUpdate.match_type_1_other = type1 === 'other' ? type1Other : null
+          matchUpdate.championshipType = championshipType
+          matchUpdate.championshipTypeOther = championshipType === 'other' ? championshipTypeOther : null
+          matchUpdate.match_type_2 = type2
+          matchUpdate.match_type_3 = type3
+          matchUpdate.match_type_3_other = type3 === 'other' ? type3Other : null
+        }
+
+        await db.matches.update(matchId, matchUpdate)
 
         // Update or create teams
         let homeTeamId = match?.homeTeamId

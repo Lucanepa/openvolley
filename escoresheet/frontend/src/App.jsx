@@ -380,7 +380,9 @@ export default function App() {
   const currentOfficialMatch = useLiveQuery(async () => {
     try {
       const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      return matches.find(m => m.test !== true && m.status !== 'final') || null
+      // Only consider matches that have been confirmed (matchInfoConfirmedAt set)
+      // This prevents showing Continue/Delete for matches where user hasn't clicked "Create Match"
+      return matches.find(m => m.test !== true && m.status !== 'final' && m.matchInfoConfirmedAt) || null
     } catch (error) {
       console.error('Unable to load official match', error)
       return null
@@ -2215,14 +2217,25 @@ export default function App() {
       return // Don't allow creating new match when one is ongoing
     }
 
-    // Delete current match if exists
+    // Check if there's a CONFIRMED match (has matchInfoConfirmedAt)
+    // Unconfirmed matches (user started but didn't click "Create Match") should be silently deleted
     if (currentMatch) {
-      setNewMatchModal({
-        type: 'official',
-        message: t('home.modals.existingMatchWarning')
-      })
-      return
+      if (currentMatch.matchInfoConfirmedAt) {
+        // This is a real confirmed match - warn the user
+        setNewMatchModal({
+          type: 'official',
+          message: t('home.modals.existingMatchWarning')
+        })
+        return
+      } else {
+        // This is an unconfirmed match - delete it silently
+        console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
+        await db.matches.delete(currentMatch.id)
+      }
     }
+
+    // Clear any stray draft data from previous sessions
+    await db.match_setup.clear()
 
     // Create new blank match
     const newMatchId = await db.matches.add({
