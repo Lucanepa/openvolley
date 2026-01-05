@@ -614,7 +614,6 @@
   },
   "options": {
     "title": "Opzioni",
-    "close": "Chiudi",
     "checkAccidentalRallyStart": "Controllo avvio accidentale",
     "checkAccidentalRallyStartInfo": "Chiedi conferma se \"Inizia scambio\" e premuto entro {{duration}}s dall'assegnazione di un punto",
     "duration": "Durata",
