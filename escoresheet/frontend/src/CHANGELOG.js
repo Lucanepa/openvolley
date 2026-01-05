@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.18.11',
+    date: '05.01.26',
+    changes: [
+      'Refactor time formatting and enhance UI consistency across components'
+    ]
+  },
+  {
     version: '0.18.10',
     date: '05.01.26',
     changes: [

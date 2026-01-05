@@ -1,17 +1,19 @@
 import { useMemo } from 'react'
+import { formatTimeLocal } from '../utils/timeUtils'
 
 function formatDateTime(iso) {
   if (!iso) return 'Date TBC'
   try {
     const date = new Date(iso)
-    return date.toLocaleString(undefined, {
+    // Format date in local timezone
+    const datePart = date.toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
+      day: '2-digit'
     })
+    // Format time using utility for consistency
+    const timePart = formatTimeLocal(iso)
+    return `${datePart}, ${timePart}`
   } catch (error) {
     return iso
   }

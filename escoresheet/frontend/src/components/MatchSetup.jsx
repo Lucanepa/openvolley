@@ -13,6 +13,7 @@ import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { supabase } from '../lib/supabaseClient'
 import { generateMatchSeedKey } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
+import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -58,18 +59,9 @@ function formatDateToISO(dateStr) {
 
 // Helper to safely parse a date and extract components for input fields
 // Uses UTC methods to avoid timezone conversion - time is stored and displayed as-entered
+// Parse UTC ISO string to local date and time for display/editing
 function safeParseScheduledAt(scheduledAt) {
-  if (!scheduledAt) return { date: '', time: '' }
-  try {
-    const dateObj = new Date(scheduledAt)
-    if (isNaN(dateObj.getTime())) return { date: '', time: '' }
-    const date = dateObj.toISOString().split('T')[0]
-    const hours = String(dateObj.getUTCHours()).padStart(2, '0')
-    const minutes = String(dateObj.getUTCMinutes()).padStart(2, '0')
-    return { date, time: `${hours}:${minutes}` }
-  } catch {
-    return { date: '', time: '' }
-  }
+  return splitLocalDateTime(scheduledAt)
 }
 
 // Helper to build officials array, filtering out entries with no name
@@ -101,7 +93,8 @@ function buildOfficialsArray(ref1, ref2, scorer, asst, lineJudges = {}, useSnake
   return officials
 }
 
-// Helper to validate and create an ISO string from date and time inputs
+// Helper to validate and create a UTC ISO string from local date and time inputs
+// Treats user input as LOCAL time and converts to UTC for storage
 // Throws an error if the date/time is invalid (unless allowEmpty is true and both are empty)
 function createScheduledAt(date, time, options = {}) {
   const { allowEmpty = false } = options
@@ -149,15 +142,14 @@ function createScheduledAt(date, time, options = {}) {
     throw new Error(`Invalid minutes: ${minutes}. Must be between 0 and 59.`)
   }
 
-  // Validate by parsing, but return the literal time without timezone conversion
-  // This ensures 16:00 entered = 16:00 stored (not converted from local to UTC)
-  const dateObj = new Date(`${date}T${timeToUse}:00Z`)
-  if (isNaN(dateObj.getTime())) {
+  // Parse as LOCAL time and convert to UTC ISO string
+  // This ensures user enters 14:00 local → stored as 13:00Z (in UTC+1)
+  const isoString = parseLocalDateTimeToISO(date, timeToUse)
+  if (!isoString) {
     throw new Error(`Invalid date/time combination: ${date} ${timeToUse}`)
   }
 
-  // Return the time as-entered (treating it as UTC, no conversion)
-  return `${date}T${timeToUse}:00Z`
+  return isoString
 }
 
 // Helper to check if two values are equal (handles objects and arrays)
@@ -420,9 +412,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const canConfirmMatchInfo = Boolean(
     home?.trim() &&
     away?.trim() &&
-    !dateError &&
-    !timeError
+    homeShortName?.trim() &&  // Home short name must be filled
+    awayShortName?.trim() &&  // Away short name must be filled
+    date?.trim() &&      // Date must be filled
+    !dateError &&        // Date must be valid
+    time?.trim() &&      // Time must be filled
+    !timeError &&        // Time must be valid
+    gameN?.trim() &&     // Game # must be filled
+    league?.trim() &&    // League must be filled
+    city?.trim() &&      // City must be filled
+    hall?.trim()         // Hall must be filled
   )
+
+  // Generate dynamic tooltip showing which fields are missing
+  const getMissingFieldsTooltip = () => {
+    const missing = []
+    if (!home?.trim()) missing.push(t('matchSetup.homeTeamName') || 'Home team')
+    if (!away?.trim()) missing.push(t('matchSetup.awayTeamName') || 'Away team')
+    if (!homeShortName?.trim()) missing.push(`${t('common.home') || 'Home'} ${t('matchSetup.short') || 'short'}`)
+    if (!awayShortName?.trim()) missing.push(`${t('common.away') || 'Away'} ${t('matchSetup.short') || 'short'}`)
+    if (!date?.trim()) missing.push(t('matchSetup.date') || 'Date')
+    else if (dateError) missing.push(t('matchSetup.date') + ' (invalid)')
+    if (!time?.trim()) missing.push(t('matchSetup.time') || 'Time')
+    else if (timeError) missing.push(t('matchSetup.time') + ' (invalid)')
+    if (!gameN?.trim()) missing.push(t('matchSetup.gameNumber') || 'Game #')
+    if (!league?.trim()) missing.push(t('matchSetup.league') || 'League')
+    if (!city?.trim()) missing.push(t('matchSetup.city') || 'City')
+    if (!hall?.trim()) missing.push(t('matchSetup.hall') || 'Hall')
+
+    if (missing.length === 0) return ''
+    return `${t('matchSetup.required') || 'Required'}: ${missing.join(', ')}`
+  }
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -3382,9 +3402,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         )}
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button
-            onClick={confirmMatchInfo}
+            onClick={(e) => {
+              if (!canConfirmMatchInfo) {
+                e.preventDefault()
+                const tooltip = getMissingFieldsTooltip()
+                if (tooltip) {
+                  alert(tooltip)
+                }
+              } else {
+                confirmMatchInfo()
+              }
+            }}
             disabled={!canConfirmMatchInfo}
-            title={!canConfirmMatchInfo ? t('matchSetup.fillTeamNames') : ''}
+            title={!canConfirmMatchInfo ? getMissingFieldsTooltip() : ''}
           >
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
           </button>
@@ -6362,6 +6392,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const homeConfigured = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
   const awayConfigured = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
 
+  // All 4 cards must be complete before proceeding to coin toss
+  const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
+
   const formatOfficial = (lastName, firstName) => {
     if (!lastName && !firstName) return t('common.notSet')
     if (!lastName) return firstName
@@ -7401,12 +7434,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {isMatchOngoing && onReturn ? (
           <button onClick={onReturn}>{t('scoreboard.returnToMatch')}</button>
         ) : (
-          <button onClick={async () => {
+          <button
+            disabled={!canProceedToCoinToss}
+            style={{
+              opacity: canProceedToCoinToss ? 1 : 0.5,
+              cursor: canProceedToCoinToss ? 'pointer' : 'not-allowed'
+            }}
+            onClick={async () => {
             // Check if match has no data (no sets, no signatures)
             if (matchId && match) {
               const sets = await db.sets.where('matchId').equals(matchId).toArray()
               const hasNoData = sets.length === 0 && !match.homeCoachSignature && !match.homeCaptainSignature && !match.awayCoachSignature && !match.awayCaptainSignature
-              
+
               if (hasNoData) {
                 // Check for existing validation errors
                 if (dateError) {
@@ -7462,7 +7501,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 if (match.awayTeamId) {
                   await db.teams.update(match.awayTeamId, { name: away, color: awayColor })
                 }
-                
+
                 // Update players
                 if (match.homeTeamId && homeRoster.length) {
                   // Delete existing players and add new ones
@@ -7500,7 +7539,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }))
                   )
                 }
-                
+
                 // Check if all 4 setup cards are ready before going to coin toss
                 const setupIssues = []
 
