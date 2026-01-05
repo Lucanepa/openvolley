@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drag & Drop Substitution Preview Demo</title>
+  <style>
+    /* ==================== GLOBAL STYLES ==================== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+      color: #333;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      color: white;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .instructions {
+      text-align: center;
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+
+    /* ==================== COURT SECTION ==================== */
+    .court-section {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      margin-bottom: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    .court-title {
+      font-size: 1.5em;
+      margin-bottom: 20px;
+      color: #667eea;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    /* Court grid: 2 rows x 3 columns (volleyball formation) */
+    .court {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    /* Position labels for volleyball court */
+    .court::before {
+      content: 'FRONT ROW';
+      position: absolute;
+      top: -30px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9em;
+      color: #999;
+      font-weight: 600;
+    }
+
+    .court::after {
+      content: 'BACK ROW';
+      position: absolute;
+      bottom: -30px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9em;
+      color: #999;
+      font-weight: 600;
+    }
+
+    .court-player {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 15px;
+      padding: 30px 20px;
+      text-align: center;
+      color: white;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      position: relative;
+      cursor: pointer;
+    }
+
+    .court-player:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+
+    .court-player.valid-drop-target {
+      background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+      box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.4);
+      transform: scale(1.05);
+    }
+
+    .court-player.invalid-drop-target {
+      background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .position-label {
+      font-size: 0.9em;
+      opacity: 0.8;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+
+    .player-number {
+      font-size: 2.5em;
+      font-weight: 700;
+      margin: 10px 0;
+    }
+
+    .player-name {
+      font-size: 1.1em;
+      opacity: 0.9;
+    }
+
+    /* ==================== BENCH SECTION ==================== */
+    .bench-section {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    .bench-title {
+      font-size: 1.5em;
+      margin-bottom: 20px;
+      color: #667eea;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .bench {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .bench-player {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      border-radius: 12px;
+      padding: 20px 25px;
+      text-align: center;
+      color: white;
+      cursor: grab;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      min-width: 140px;
+    }
+
+    .bench-player:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+
+    .bench-player:active {
+      cursor: grabbing;
+    }
+
+    .bench-player.dragging {
+      opacity: 0.5;
+      transform: scale(0.95);
+    }
+
+    .bench-player .player-number {
+      font-size: 2em;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .bench-player .player-name {
+      font-size: 1em;
+    }
+
+    /* ==================== SUBSTITUTION PREVIEW POPUP ==================== */
+    .substitution-preview {
+      position: fixed;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+      z-index: 1000;
+      pointer-events: none;
+      min-width: 280px;
+      border: 3px solid #667eea;
+    }
+
+    /* Normal substitution - black background */
+    .substitution-preview.normal-sub {
+      background: #1f2937;
+      color: white;
+    }
+
+    /* Libero substitution - white background */
+    .substitution-preview.libero-sub {
+      background: white;
+      color: #1f2937;
+    }
+
+    /* Animation classes */
+    .substitution-preview.hidden {
+      display: none;
+    }
+
+    .substitution-preview.preview-enter {
+      animation: slideScaleFade 0.25s ease-out forwards;
+    }
+
+    .substitution-preview.preview-exit {
+      animation: slideScaleFadeOut 0.2s ease-in forwards;
+    }
+
+    @keyframes slideScaleFade {
+      from {
+        opacity: 0;
+        transform: translateX(-30px) scale(0.85);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+    }
+
+    @keyframes slideScaleFadeOut {
+      from {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+      to {
+        opacity: 0;
+        transform: translateX(-20px) scale(0.9);
+      }
+    }
+
+    .preview-header {
+      text-align: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+    }
+
+    .normal-sub .preview-header {
+      border-bottom: 2px solid #4b5563;
+    }
+
+    .libero-sub .preview-header {
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .preview-position {
+      font-size: 0.9em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .normal-sub .preview-position {
+      color: #60a5fa;
+    }
+
+    .libero-sub .preview-position {
+      color: #667eea;
+    }
+
+    .preview-content {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .preview-player {
+      flex: 1;
+      padding: 15px;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .preview-player.out {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      border: 2px solid #ef4444;
+    }
+
+    .preview-player.in {
+      background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+      border: 2px solid #22c55e;
+    }
+
+    .preview-label {
+      font-size: 0.75em;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .preview-player.out .preview-label {
+      color: #dc2626;
+    }
+
+    .preview-player.in .preview-label {
+      color: #16a34a;
+    }
+
+    .preview-number {
+      font-size: 1.8em;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 5px;
+    }
+
+    .preview-name {
+      font-size: 0.9em;
+      color: #4b5563;
+      font-weight: 500;
+    }
+
+    .preview-arrows {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .preview-arrow {
+      font-size: 1.8em;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .preview-arrow.up {
+      color: #22c55e;
+    }
+
+    .preview-arrow.down {
+      color: #ef4444;
+    }
+
+    /* ==================== CONFIRMATION MODAL ==================== */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .confirmation-modal {
+      background: white;
+      border-radius: 20px;
+      padding: 35px;
+      max-width: 450px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      animation: modalSlideUp 0.3s ease-out;
+    }
+
+    @keyframes modalSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-title {
+      font-size: 1.5em;
+      color: #1f2937;
+      margin-bottom: 10px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .modal-subtitle {
+      font-size: 0.9em;
+      color: #667eea;
+      margin-bottom: 25px;
+      text-align: center;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .modal-content {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f9fafb;
+      border-radius: 12px;
+    }
+
+    .modal-player {
+      flex: 1;
+      text-align: center;
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    .modal-player.out {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      border: 2px solid #ef4444;
+    }
+
+    .modal-player.in {
+      background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+      border: 2px solid #22c55e;
+    }
+
+    .modal-label {
+      font-size: 0.75em;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .modal-player.out .modal-label {
+      color: #dc2626;
+    }
+
+    .modal-player.in .modal-label {
+      color: #16a34a;
+    }
+
+    .modal-number {
+      font-size: 2.2em;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 5px;
+    }
+
+    .modal-name {
+      font-size: 1em;
+      color: #4b5563;
+      font-weight: 500;
+    }
+
+    .modal-arrows {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .modal-arrow {
+      font-size: 2.2em;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .modal-arrow.up {
+      color: #22c55e;
+    }
+
+    .modal-arrow.down {
+      color: #ef4444;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .modal-button {
+      flex: 1;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .modal-button.confirm {
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+    }
+
+    .modal-button.confirm:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+    }
+
+    .modal-button.cancel {
+      background: #f3f4f6;
+      color: #4b5563;
+      border: 2px solid #e5e7eb;
+    }
+
+    .modal-button.cancel:hover {
+      background: #e5e7eb;
+    }
+
+    /* ==================== DEMO CONTROLS ==================== */
+    .demo-controls {
+      background: white;
+      border-radius: 20px;
+      padding: 25px;
+      margin-top: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      text-align: center;
+    }
+
+    .demo-controls h3 {
+      color: #667eea;
+      margin-bottom: 15px;
+    }
+
+    .demo-controls label {
+      display: inline-block;
+      margin: 0 15px;
+      cursor: pointer;
+      font-size: 1em;
+      color: #4b5563;
+    }
+
+    .demo-controls input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Libero badge */
+    .libero-badge {
+      display: inline-block;
+      background: #FFF8E7;
+      color: #b45309;
+      font-size: 0.75em;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      margin-left: 5px;
+      border: 1px solid #fbbf24;
+    }
+
+    /* ==================== RESPONSIVE ==================== */
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2em;
+      }
+
+      .court {
+        gap: 15px;
+      }
+
+      .court-player {
+        padding: 20px 15px;
+      }
+
+      .player-number {
+        font-size: 2em;
+      }
+
+      .substitution-preview {
+        min-width: 240px;
+        padding: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🏐 Drag & Drop Substitution Preview Demo</h1>
+    <p class="instructions">
+      Drag a bench player onto a court player to see the substitution preview!
+    </p>
+
+    <!-- Court Section -->
+    <div class="court-section">
+      <div class="court-title">Court</div>
+      <div class="court">
+        <!-- Front Row: Positions IV, III, II -->
+        <div class="court-player" data-position="IV" data-player-number="7" data-player-name="Sarah">
+          <div class="position-label">Position IV</div>
+          <div class="player-number">#7</div>
+          <div class="player-name">Sarah</div>
+        </div>
+        <div class="court-player" data-position="III" data-player-number="3" data-player-name="Emma">
+          <div class="position-label">Position III</div>
+          <div class="player-number">#3</div>
+          <div class="player-name">Emma</div>
+        </div>
+        <div class="court-player" data-position="II" data-player-number="9" data-player-name="Lisa">
+          <div class="position-label">Position II</div>
+          <div class="player-number">#9</div>
+          <div class="player-name">Lisa</div>
+        </div>
+
+        <!-- Back Row: Positions V, VI, I -->
+        <div class="court-player" data-position="V" data-player-number="2" data-player-name="Kate">
+          <div class="position-label">Position V</div>
+          <div class="player-number">#2</div>
+          <div class="player-name">Kate</div>
+        </div>
+        <div class="court-player" data-position="VI" data-player-number="11" data-player-name="Anna">
+          <div class="position-label">Position VI</div>
+          <div class="player-number">#11</div>
+          <div class="player-name">Anna</div>
+        </div>
+        <div class="court-player" data-position="I" data-player-number="5" data-player-name="Maria">
+          <div class="position-label">Position I</div>
+          <div class="player-number">#5</div>
+          <div class="player-name">Maria</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bench Section -->
+    <div class="bench-section">
+      <div class="bench-title">Bench (Drag Me!)</div>
+      <div class="bench">
+        <div class="bench-player" draggable="true" data-player-number="12" data-player-name="Sophie">
+          <div class="player-number">#12</div>
+          <div class="player-name">Sophie</div>
+        </div>
+        <div class="bench-player" draggable="true" data-player-number="8" data-player-name="Rachel">
+          <div class="player-number">#8</div>
+          <div class="player-name">Rachel</div>
+        </div>
+        <div class="bench-player" draggable="true" data-player-number="15" data-player-name="Mia" data-is-libero="true">
+          <div class="player-number">#15 <span class="libero-badge">L1</span></div>
+          <div class="player-name">Mia</div>
+        </div>
+        <div class="bench-player" draggable="true" data-player-number="4" data-player-name="Julia">
+          <div class="player-number">#4</div>
+          <div class="player-name">Julia</div>
+        </div>
+        <div class="bench-player" draggable="true" data-player-number="6" data-player-name="Nina" data-is-libero="true">
+          <div class="player-number">#6 <span class="libero-badge">L2</span></div>
+          <div class="player-name">Nina</div>
+        </div>
+        <div class="bench-player" draggable="true" data-player-number="10" data-player-name="Zoe">
+          <div class="player-number">#10</div>
+          <div class="player-name">Zoe</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Demo Controls -->
+    <div class="demo-controls">
+      <h3>Demo Controls</h3>
+      <label>
+        <input type="checkbox" id="position-ii-enabled" checked>
+        Enable Position II
+      </label>
+      <label>
+        <input type="checkbox" id="position-v-enabled" checked>
+        Enable Position V
+      </label>
+      <label>
+        <input type="checkbox" id="position-i-enabled" checked>
+        Enable Position I
+      </label>
+    </div>
+  </div>
+
+  <!-- Substitution Preview Popup (initially hidden) -->
+  <div class="substitution-preview normal-sub hidden" id="substitution-preview">
+    <div class="preview-header">
+      <div class="preview-position" id="preview-position">Position I</div>
+    </div>
+    <div class="preview-content">
+      <div class="preview-player out">
+        <div class="preview-label">Out</div>
+        <div class="preview-number" id="preview-out-number">#5</div>
+        <div class="preview-name" id="preview-out-name">Maria</div>
+      </div>
+      <div class="preview-arrows">
+        <div class="preview-arrow down">↓</div>
+        <div class="preview-arrow up">↑</div>
+      </div>
+      <div class="preview-player in">
+        <div class="preview-label">In</div>
+        <div class="preview-number" id="preview-in-number">#12</div>
+        <div class="preview-name" id="preview-in-name">Sophie</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal (initially hidden) -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="confirmation-modal">
+      <h2 class="modal-title" id="modal-title">Confirm Substitution</h2>
+      <div class="modal-subtitle" id="modal-subtitle">Position I</div>
+      <div class="modal-content">
+        <div class="modal-player out">
+          <div class="modal-label">Out</div>
+          <div class="modal-number" id="modal-out-number">#5</div>
+          <div class="modal-name" id="modal-out-name">Maria</div>
+        </div>
+        <div class="modal-arrows">
+          <div class="modal-arrow down">↓</div>
+          <div class="modal-arrow up">↑</div>
+        </div>
+        <div class="modal-player in">
+          <div class="modal-label">In</div>
+          <div class="modal-number" id="modal-in-number">#12</div>
+          <div class="modal-name" id="modal-in-name">Sophie</div>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button class="modal-button cancel" onclick="closeModal()">Cancel</button>
+        <button class="modal-button confirm" onclick="confirmSubstitution()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== GLOBAL STATE ====================
+    let draggedPlayerData = null;
+    let currentPreviewTarget = null;
+    let hidePreviewTimeout = null;
+    let pendingSubstitution = null;
+
+    // ==================== DOM ELEMENTS ====================
+    const benchPlayers = document.querySelectorAll('.bench-player');
+    const courtPlayers = document.querySelectorAll('.court-player');
+    const previewPopup = document.getElementById('substitution-preview');
+    const modalOverlay = document.getElementById('modal-overlay');
+
+    // ==================== DRAG EVENT HANDLERS ====================
+
+    /**
+     * Handle drag start - store dragged player data
+     */
+    function handleDragStart(e) {
+      const playerNumber = this.dataset.playerNumber;
+      const playerName = this.dataset.playerName;
+      const isLibero = this.dataset.isLibero === 'true';
+
+      draggedPlayerData = {
+        number: playerNumber,
+        name: playerName,
+        isLibero: isLibero
+      };
+
+      this.classList.add('dragging');
+
+      // Set drag data for compatibility
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/html', this.innerHTML);
+
+      console.log('🎯 Drag started:', draggedPlayerData);
+    }
+
+    /**
+     * Handle drag end - cleanup
+     */
+    function handleDragEnd(e) {
+      this.classList.remove('dragging');
+      draggedPlayerData = null;
+      hidePreview();
+
+      // Remove all drop target highlights
+      courtPlayers.forEach(player => {
+        player.classList.remove('valid-drop-target', 'invalid-drop-target');
+      });
+
+      console.log('✋ Drag ended');
+    }
+
+    /**
+     * Handle drag over court player - show preview
+     */
+    function handleDragOver(e) {
+      e.preventDefault(); // Allow drop
+
+      if (!draggedPlayerData) return;
+
+      const courtPlayer = this;
+      const position = courtPlayer.dataset.position;
+      const courtNumber = courtPlayer.dataset.playerNumber;
+      const courtName = courtPlayer.dataset.playerName;
+
+      // Check if this position is enabled (demo control)
+      const isEnabled = isPositionEnabled(position);
+
+      if (!isEnabled) {
+        courtPlayer.classList.add('invalid-drop-target');
+        courtPlayer.classList.remove('valid-drop-target');
+        hidePreview();
+        return;
+      }
+
+      courtPlayer.classList.add('valid-drop-target');
+      courtPlayer.classList.remove('invalid-drop-target');
+
+      // Show preview if not already showing for this target
+      if (currentPreviewTarget !== courtPlayer) {
+        showPreview(courtPlayer, {
+          position: position,
+          courtNumber: courtNumber,
+          courtName: courtName,
+          benchNumber: draggedPlayerData.number,
+          benchName: draggedPlayerData.name
+        });
+        currentPreviewTarget = courtPlayer;
+      }
+
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    /**
+     * Handle drag leave - hide preview
+     */
+    function handleDragLeave(e) {
+      // Only hide if we're actually leaving the element (not entering a child)
+      if (!this.contains(e.relatedTarget)) {
+        this.classList.remove('valid-drop-target', 'invalid-drop-target');
+
+        // Delay hiding to allow moving to preview popup
+        hidePreviewTimeout = setTimeout(() => {
+          if (currentPreviewTarget === this) {
+            hidePreview();
+            currentPreviewTarget = null;
+          }
+        }, 100);
+      }
+    }
+
+    /**
+     * Handle drop - show confirmation modal
+     */
+    function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!draggedPlayerData) return;
+
+      const courtPlayer = this;
+      const position = courtPlayer.dataset.position;
+      const isEnabled = isPositionEnabled(position);
+
+      if (!isEnabled) {
+        console.log('❌ Drop not allowed - position disabled');
+        return;
+      }
+
+      const courtNumber = courtPlayer.dataset.playerNumber;
+      const courtName = courtPlayer.dataset.playerName;
+
+      // Store pending substitution data
+      pendingSubstitution = {
+        position: position,
+        courtNumber: courtNumber,
+        courtName: courtName,
+        benchNumber: draggedPlayerData.number,
+        benchName: draggedPlayerData.name,
+        isLibero: draggedPlayerData.isLibero
+      };
+
+      // Hide the preview
+      hidePreview();
+
+      // Show confirmation modal
+      showModal(pendingSubstitution);
+
+      console.log('📋 Opening confirmation modal:', pendingSubstitution);
+
+      return false;
+    }
+
+    // ==================== PREVIEW POPUP FUNCTIONS ====================
+
+    /**
+     * Show the substitution preview popup with animation
+     */
+    function showPreview(targetElement, data) {
+      // Clear any pending hide timeout
+      if (hidePreviewTimeout) {
+        clearTimeout(hidePreviewTimeout);
+        hidePreviewTimeout = null;
+      }
+
+      // Update preview content
+      document.getElementById('preview-position').textContent = `Position ${data.position}`;
+      document.getElementById('preview-out-number').textContent = `#${data.courtNumber}`;
+      document.getElementById('preview-out-name').textContent = data.courtName;
+      document.getElementById('preview-in-number').textContent = `#${data.benchNumber}`;
+      document.getElementById('preview-in-name').textContent = data.benchName;
+
+      // Set background color based on substitution type
+      if (draggedPlayerData.isLibero) {
+        previewPopup.classList.remove('normal-sub');
+        previewPopup.classList.add('libero-sub');
+      } else {
+        previewPopup.classList.remove('libero-sub');
+        previewPopup.classList.add('normal-sub');
+      }
+
+      // Position the preview popup
+      positionPreview(targetElement);
+
+      // Show with animation
+      previewPopup.classList.remove('hidden', 'preview-exit');
+      previewPopup.classList.add('preview-enter');
+
+      console.log('👁️  Preview shown:', data);
+    }
+
+    /**
+     * Hide the substitution preview popup with animation
+     */
+    function hidePreview() {
+      if (previewPopup.classList.contains('hidden')) return;
+
+      previewPopup.classList.remove('preview-enter');
+      previewPopup.classList.add('preview-exit');
+
+      // Hide after animation completes
+      setTimeout(() => {
+        previewPopup.classList.add('hidden');
+        previewPopup.classList.remove('preview-exit');
+      }, 200); // Match animation duration
+
+      console.log('👁️  Preview hidden');
+    }
+
+    /**
+     * Position the preview popup next to the target element
+     */
+    function positionPreview(targetElement) {
+      const rect = targetElement.getBoundingClientRect();
+      const previewWidth = 280; // min-width from CSS
+      const previewHeight = 150; // approximate height
+      const offset = 15; // spacing from target
+
+      // Default: position to the right
+      let left = rect.right + offset;
+      let top = rect.top + (rect.height / 2) - (previewHeight / 2);
+
+      // If too close to right edge, position to the left
+      if (left + previewWidth > window.innerWidth - 20) {
+        left = rect.left - previewWidth - offset;
+      }
+
+      // Ensure it doesn't overflow top/bottom
+      if (top < 20) top = 20;
+      if (top + previewHeight > window.innerHeight - 20) {
+        top = window.innerHeight - previewHeight - 20;
+      }
+
+      previewPopup.style.left = `${left}px`;
+      previewPopup.style.top = `${top}px`;
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+
+    /**
+     * Show the confirmation modal
+     */
+    function showModal(data) {
+      // Update modal content
+      const title = data.isLibero ? 'Confirm Libero Replacement' : 'Confirm Substitution';
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-subtitle').textContent = `Position ${data.position}`;
+      document.getElementById('modal-out-number').textContent = `#${data.courtNumber}`;
+      document.getElementById('modal-out-name').textContent = data.courtName;
+      document.getElementById('modal-in-number').textContent = `#${data.benchNumber}`;
+      document.getElementById('modal-in-name').textContent = data.benchName;
+
+      // Show modal
+      modalOverlay.classList.add('show');
+    }
+
+    /**
+     * Close the confirmation modal
+     */
+    function closeModal() {
+      modalOverlay.classList.remove('show');
+      pendingSubstitution = null;
+      console.log('❌ Substitution cancelled');
+    }
+
+    /**
+     * Confirm the substitution
+     */
+    function confirmSubstitution() {
+      if (!pendingSubstitution) return;
+
+      console.log('✅ SUBSTITUTION CONFIRMED!');
+      console.log(`   Position: ${pendingSubstitution.position}`);
+      console.log(`   OUT: #${pendingSubstitution.courtNumber} ${pendingSubstitution.courtName}`);
+      console.log(`   IN:  #${pendingSubstitution.benchNumber} ${pendingSubstitution.benchName}`);
+      console.log(`   Type: ${pendingSubstitution.isLibero ? 'Libero Replacement' : 'Normal Substitution'}`);
+
+      // In a real app, you would update the lineup here
+      // For demo, close the modal
+      closeModal();
+
+      // Optional: Show success feedback
+      alert(`✅ ${pendingSubstitution.isLibero ? 'Libero replacement' : 'Substitution'} confirmed!\n\nPosition: ${pendingSubstitution.position}\nOUT: #${pendingSubstitution.courtNumber} ${pendingSubstitution.courtName}\nIN: #${pendingSubstitution.benchNumber} ${pendingSubstitution.benchName}`);
+    }
+
+    // ==================== DEMO CONTROLS ====================
+
+    /**
+     * Check if a position is enabled (for demo purposes)
+     */
+    function isPositionEnabled(position) {
+      const checkboxMap = {
+        'I': 'position-i-enabled',
+        'II': 'position-ii-enabled',
+        'V': 'position-v-enabled'
+      };
+
+      const checkboxId = checkboxMap[position];
+      if (!checkboxId) return true; // Positions without checkboxes are always enabled
+
+      const checkbox = document.getElementById(checkboxId);
+      return checkbox ? checkbox.checked : true;
+    }
+
+    // ==================== EVENT LISTENERS ====================
+
+    // Attach drag events to bench players
+    benchPlayers.forEach(player => {
+      player.addEventListener('dragstart', handleDragStart);
+      player.addEventListener('dragend', handleDragEnd);
+    });
+
+    // Attach drag events to court players
+    courtPlayers.forEach(player => {
+      player.addEventListener('dragover', handleDragOver);
+      player.addEventListener('dragleave', handleDragLeave);
+      player.addEventListener('drop', handleDrop);
+    });
+
+    // Re-position preview on window resize
+    window.addEventListener('resize', () => {
+      if (!previewPopup.classList.contains('hidden') && currentPreviewTarget) {
+        positionPreview(currentPreviewTarget);
+      }
+    });
+
+    console.log('✅ Demo initialized! Drag a bench player onto a court player to see the preview.');
+  </script>
+</body>
+</html>

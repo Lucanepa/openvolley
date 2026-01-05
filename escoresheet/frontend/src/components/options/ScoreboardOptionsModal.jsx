@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import Modal from '../Modal'
 import { listCloudBackups, loadCloudBackup } from '../../utils/logger'
 import { restoreMatchInPlace } from '../../utils/backupManager'
+import BackupTable from '../BackupTable'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -948,47 +949,13 @@ export default function ScoreboardOptionsModal({
                 </p>
               ) : (
                 <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px' }}>
-                  {cloudBackups.map((backup, index) => (
-                    <div
-                      key={backup.name}
-                      onClick={() => setRestoreConfirm(backup)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '12px',
-                        background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>
-                          {backup.homePoints !== undefined ? (
-                            t('options.backupSetScore', { setIndex: backup.setIndex, homePoints: backup.homePoints, awayPoints: backup.awayPoints })
-                          ) : (
-                            backup.name
-                          )}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                          #{backup.sequence || index + 1} • {backup.timestamp || backup.created_at || t('options.unknownTime')}
-                        </div>
-                      </div>
-                      <div style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: 'rgba(34, 197, 94, 0.2)',
-                        color: '#22c55e',
-                        borderRadius: '4px'
-                      }}>
-                        {t('options.restore')}
-                      </div>
-                    </div>
-                  ))}
+                  <BackupTable
+                    backups={cloudBackups}
+                    onBackupSelect={(backup) => setRestoreConfirm(backup)}
+                    showRestoreButton={true}
+                    mode="row"
+                    restoreButtonText={t('options.restore')}
+                  />
                 </div>
               )}
 

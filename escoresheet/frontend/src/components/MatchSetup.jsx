@@ -5,6 +5,7 @@ import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
+import LoadOfficialMatchModal from './LoadOfficialMatchModal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
@@ -404,11 +405,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [awayColor, setAwayColor] = useState('#3b82f6')
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
+  const [notificationEmail, setNotificationEmail] = useState('')
 
   // Match info confirmation state - other sections are disabled until confirmed
   const [matchInfoConfirmed, setMatchInfoConfirmed] = useState(false)
 
   // Check if match info can be confirmed (all required fields filled)
+  const requireEmail = import.meta.env.VITE_REQUIRE_EMAIL === 'true'
   const canConfirmMatchInfo = Boolean(
     home?.trim() &&
     away?.trim() &&
@@ -421,7 +424,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     gameN?.trim() &&     // Game # must be filled
     league?.trim() &&    // League must be filled
     city?.trim() &&      // City must be filled
-    hall?.trim()         // Hall must be filled
+    hall?.trim() &&      // Hall must be filled
+    (!requireEmail || notificationEmail?.trim())  // Email required if VITE_REQUIRE_EMAIL=true
   )
 
   // Generate dynamic tooltip showing which fields are missing
@@ -439,6 +443,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!league?.trim()) missing.push(t('matchSetup.league') || 'League')
     if (!city?.trim()) missing.push(t('matchSetup.city') || 'City')
     if (!hall?.trim()) missing.push(t('matchSetup.hall') || 'Hall')
+    if (requireEmail && !notificationEmail?.trim()) missing.push(t('matchSetup.notificationEmail') || 'Email')
 
     if (missing.length === 0) return ''
     return `${t('matchSetup.required') || 'Required'}: ${missing.join(', ')}`
@@ -568,6 +573,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // PDF import summary modal state
   const [importSummaryModal, setImportSummaryModal] = useState(null) // { team: 'home'|'away', players: number, errors: string[], benchOfficials: number }
+
+  // Load Official Match modal state
+  const [loadOfficialMatchModal, setLoadOfficialMatchModal] = useState(false)
 
   // Upload mode toggle state (local or remote)
   const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
@@ -2050,6 +2058,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         syncing: true
       })
 
+      // Send match info email if provided (non-blocking)
+      if (notificationEmail && notificationEmail.trim() && match?.gamePin) {
+        const emailData = {
+          email: notificationEmail.trim(),
+          gameN: gameN || 'N/A',
+          gamePin: match.gamePin,
+          home: home.trim(),
+          away: away.trim(),
+          homeShortName: homeShortName || '',
+          awayShortName: awayShortName || '',
+          date: date || '',
+          time: time || '',
+          hall: hall || '',
+          city: city || '',
+          league: league || ''
+        }
+
+        // Get backend URL from environment or use default
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://openvolley-escoresheet-backend-production.up.railway.app'
+
+        fetch(`${backendUrl}/api/match/send-info`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emailData)
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            console.log('[MatchSetup] Match info email sent successfully')
+          } else {
+            console.warn('[MatchSetup] Failed to send match info email:', data.error)
+          }
+        })
+        .catch(err => console.warn('[MatchSetup] Match info email failed:', err))
+      }
+
       // Cloud backup at match setup (non-blocking)
       exportMatchData(matchId).then(backupData => {
         uploadBackupToCloud(matchId, backupData)
@@ -2744,6 +2788,31 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     onStart(matchId)
   }
 
+  // Handler for Load Official Match modal selection
+  const handleOfficialMatchSelect = (matchData) => {
+    // Populate all the form fields from the selected official match
+    setDate(matchData.date)
+    setTime(matchData.time)
+    setCity(matchData.city)
+    setHall(matchData.hall)
+    setType1(matchData.type1)
+    setChampionshipType(matchData.championshipType)
+    setType2(matchData.type2)
+    setType3(matchData.type3)
+    setGameN(matchData.gameN)
+    setLeague(matchData.league)
+    setHome(matchData.home)
+    setAway(matchData.away)
+
+    // Generate short names automatically from team names (first 8 chars uppercase)
+    if (matchData.home) {
+      setHomeShortName(matchData.home.substring(0, 8).toUpperCase())
+    }
+    if (matchData.away) {
+      setAwayShortName(matchData.away.substring(0, 8).toUpperCase())
+    }
+  }
+
   // PDF file handlers - must be defined before conditional returns
   const handleHomeFileSelect = (e) => {
     const file = e.target.files[0]
@@ -3072,7 +3141,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <MatchSetupInfoView>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <h2>{t('matchSetup.matchInfo')}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h2 style={{ margin: 0 }}>{t('matchSetup.matchInfo')}</h2>
+            <button
+              onClick={() => setLoadOfficialMatchModal(true)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                color: '#60a5fa',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              {t('loadOfficialMatch.button')}
+            </button>
+          </div>
           <div style={{ width: 80 }}></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
@@ -3362,17 +3448,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {match && !match.test && match.gamePin && (
           <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
             <div
-              onClick={() => {
-                const blob = new Blob([match.gamePin], { type: 'text/plain' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `game-pin-${match.gamePin}.txt`
-                document.body.appendChild(a)
-                a.click()
-                document.body.removeChild(a)
-                URL.revokeObjectURL(url)
-              }}
               style={{
                 padding: '12px 24px',
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -3383,23 +3458,98 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 letterSpacing: '2px',
                 textAlign: 'center',
                 minWidth: '200px',
-                cursor: 'pointer',
                 transition: 'background 0.2s ease'
               }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
             >
               <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>{t('matchSetup.gamePin')}</div>
-              <div>{match.gamePin}</div>
+              <div style={{ userSelect: 'text', cursor: 'text' }}>{match.gamePin}</div>
               <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
                 {t('matchSetup.gamePinDescription')}
               </div>
-              <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '6px', fontStyle: 'italic' }}>
-                {t('matchSetup.clickToSave')}
+              {match && !match.test && match.gamePin && (
+          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+            <div className="field" style={{ maxWidth: '400px', width: '100%' }}>
+              <label style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', display: 'block' }}>
+                {t('matchSetup.notificationEmail')}
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 12px',
+                    fontSize: '14px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'inherit'
+                  }}
+                />
+                <button
+                  onClick={async () => {
+                    if (!notificationEmail || !notificationEmail.includes('@')) {
+                      alert(t('matchSetup.invalidEmail') || 'Please enter a valid email address')
+                      return
+                    }
+                    try {
+                      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+                      const res = await fetch(`${backendUrl}/api/match/send-info`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          email: notificationEmail,
+                          gameN: match.gameN,
+                          gamePin: match.gamePin,
+                          home: match.home,
+                          homeShortName: match.homeShortName,
+                          away: match.away,
+                          awayShortName: match.awayShortName,
+                          date: match.date,
+                          time: match.time,
+                          hall: match.hall,
+                          city: match.city,
+                          league: match.league
+                        })
+                      })
+                      const data = await res.json()
+                      if (data.success) {
+                        alert(t('matchSetup.emailSent') || 'Email sent successfully!')
+                      } else {
+                        alert(data.error || t('matchSetup.emailFailed') || 'Failed to send email')
+                      }
+                    } catch (err) {
+                      console.error('Failed to send email:', err)
+                      alert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.')
+                    }
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    fontSize: '14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'var(--primary, #4a90d9)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  {t('matchSetup.send') || 'Send'}
+                </button>
               </div>
             </div>
           </div>
         )}
+            </div>
+            
+          </div>
+          
+        )}
+
+        
+
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
           <button
             onClick={(e) => {
@@ -3491,6 +3641,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </>
         )}
+
+        {/* Load Official Match Modal */}
+        <LoadOfficialMatchModal
+          open={loadOfficialMatchModal}
+          onClose={() => setLoadOfficialMatchModal(false)}
+          onSelectMatch={handleOfficialMatchSelect}
+        />
       </MatchSetupInfoView>
     )
   }

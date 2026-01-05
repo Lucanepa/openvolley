@@ -131,7 +131,7 @@ export function downloadLogs(matchId = null) {
 }
 
 /**
- * Upload logs to Supabase storage
+ * Upload logs to Supabase storage - appends to a single log file per game
  * @param {string|null} matchId - Match ID for organizing logs
  * @param {string|number|null} gameNumber - Game number for human-readable folder names
  */
@@ -141,18 +141,34 @@ export async function uploadLogsToCloud(matchId = null, gameNumber = null) {
     return null
   }
 
-  const text = exportLogsAsText()
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const newLogs = exportLogsAsText()
   // Use gameNumber if available for human-readable paths, fall back to matchId
   const folderName = gameNumber ? `game_${gameNumber}` : (matchId ? `match_${matchId}` : 'general')
-  const filename = `logs/${folderName}/${timestamp}.txt`
+  const filename = `logs/${folderName}/logs.txt` // Single file name, not timestamped
 
   try {
+    // Try to download existing log file
+    let existingLogs = ''
+    const { data: existingData, error: downloadError } = await supabase.storage
+      .from('backup')
+      .download(filename)
+
+    if (!downloadError && existingData) {
+      // File exists, read its contents
+      existingLogs = await existingData.text()
+    }
+
+    // Append new logs to existing logs
+    const combinedLogs = existingLogs
+      ? `${existingLogs}\n${newLogs}`
+      : newLogs
+
+    // Upload combined logs (will replace the file)
     const { data, error } = await supabase.storage
       .from('backup')
-      .upload(filename, text, {
+      .upload(filename, combinedLogs, {
         contentType: 'text/plain',
-        upsert: true
+        upsert: true // Replace existing file
       })
 
     if (error) {
@@ -160,7 +176,7 @@ export async function uploadLogsToCloud(matchId = null, gameNumber = null) {
       return null
     }
 
-    console.log('[Logger] Logs uploaded to cloud:', filename)
+    console.log('[Logger] Logs appended to cloud:', filename)
     return data?.path || filename
   } catch (err) {
     console.error('[Logger] Error uploading logs:', err)
@@ -303,6 +319,40 @@ export async function loadCloudBackup(path) {
     console.error('[Logger] Error loading backup:', err)
     return null
   }
+}
+
+/**
+ * Format backup timestamp for display
+ * @param {string} date - Date string in yyyymmdd format
+ * @param {string} time - Time string in hhmmss format
+ * @param {string} ms - Milliseconds string
+ * @returns {string} Formatted datetime string
+ */
+export function formatBackupTimestamp(date, time, ms) {
+  if (!date || !time) return 'Unknown'
+
+  // Parse yyyymmdd
+  const year = date.substring(0, 4)
+  const month = date.substring(4, 6)
+  const day = date.substring(6, 8)
+
+  // Parse hhmmss
+  const hours = time.substring(0, 2)
+  const minutes = time.substring(2, 4)
+  const seconds = time.substring(4, 6)
+
+  // Create date object
+  const dateObj = new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}Z`)
+
+  // Format for display (local time)
+  return dateObj.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
 }
 
 /**

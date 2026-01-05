@@ -1,0 +1,249 @@
+import { useState, useEffect } from 'react'
+import { loadCloudBackup } from '../utils/logger'
+import { formatBackupDateTime } from '../utils/dateFormatter'
+
+/**
+ * Format event type for display
+ */
+function formatEventType(type) {
+  const typeMap = {
+    'point': 'Point',
+    'timeout': 'Timeout',
+    'substitution': 'Substitution',
+    'libero_entry': 'Libero Entry',
+    'libero_exit': 'Libero Exit',
+    'libero_exchange': 'Libero Exchange',
+    'libero_unable': 'Libero Unable',
+    'libero_redesignation': 'Libero Redesignation',
+    'set_start': 'Set Start',
+    'set_end': 'Set End',
+    'coin_toss': 'Coin Toss',
+    'rotation': 'Rotation',
+    'sanction': 'Sanction',
+    'challenge': 'Challenge',
+    'decision_change': 'Decision Change'
+  }
+  return typeMap[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')
+}
+
+/**
+ * Extract the last significant action from backup events
+ * Filters out sub-events (decimal seq), rally_start, and replay events
+ * Returns the most recent main event type
+ */
+function extractLastAction(events) {
+  if (!events || events.length === 0) return null
+
+  // Filter and sort events
+  const lastEvent = events
+    .filter(event => {
+      // Filter out sub-events (rotation events with decimal seq like 1.1, 1.2)
+      if (event.seq && event.seq % 1 !== 0) return false
+
+      // Filter out rally_start and replay (not significant for display)
+      if (['rally_start', 'replay'].includes(event.type)) return false
+
+      return true
+    })
+    .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+
+  return lastEvent ? formatEventType(lastEvent.type) : null
+}
+
+/**
+ * BackupTable - Reusable component for displaying cloud backups
+ */
+export default function BackupTable({
+  backups = [],
+  onBackupSelect,
+  loading = false,
+  showRestoreButton = false,
+  mode = 'button', // 'button' = entire row is clickable, 'row' = row clickable with separate button
+  loadingBackupPath = null,
+  restoreButtonText = 'Restore'
+}) {
+  const [lastActions, setLastActions] = useState({})
+  const [loadingActions, setLoadingActions] = useState({})
+
+  // Fetch last actions for all backups
+  useEffect(() => {
+    if (backups.length === 0) return
+
+    const fetchLastActions = async () => {
+      const actions = {}
+      const loadingStates = {}
+
+      // Mark all as loading
+      backups.forEach(backup => {
+        loadingStates[backup.path] = true
+      })
+      setLoadingActions(loadingStates)
+
+      // Fetch all in parallel
+      await Promise.all(
+        backups.map(async (backup) => {
+          try {
+            const backupData = await loadCloudBackup(backup.path)
+            if (backupData && backupData.events) {
+              actions[backup.path] = extractLastAction(backupData.events)
+            } else {
+              actions[backup.path] = 'No actions'
+            }
+          } catch (err) {
+            console.error(`Failed to load backup ${backup.path}:`, err)
+            actions[backup.path] = 'Error'
+          }
+        })
+      )
+
+      setLastActions(actions)
+      setLoadingActions({})
+    }
+
+    fetchLastActions()
+  }, [backups])
+
+  if (backups.length === 0) {
+    return null
+  }
+
+  const gridColumns = showRestoreButton
+    ? '60px 35px 70px 90px 1fr 70px'
+    : '60px 35px 70px 90px 1fr'
+
+  return (
+    <>
+      {/* Table Header */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: gridColumns,
+        gap: '2px',
+        padding: '8px 10px',
+        fontSize: '11px',
+        fontWeight: 600,
+        color: 'rgba(255,255,255,0.5)',
+        borderBottom: '2px solid rgba(255,255,255,0.2)',
+        marginBottom: '2px',
+        alignItems: 'center'
+      }}>
+        <span style={{ textAlign: 'center' }}>Game N</span>
+        <span style={{ textAlign: 'center' }}>Set</span>
+        <span style={{ textAlign: 'center' }}>Score</span>
+        <span >Last Action</span>
+        <span style={{ textAlign: 'right' }}>Created At</span>
+        {showRestoreButton && <span></span>}
+      </div>
+
+      {/* Table Rows */}
+      {backups.map((backup, index) => {
+        const formattedTime = backup.date && backup.time
+          ? formatBackupDateTime(backup.date, backup.time, backup.ms)
+          : (backup.created_at ? new Date(backup.created_at).toLocaleString() : 'Unknown')
+
+        const lastAction = loadingActions[backup.path]
+          ? 'Loading...'
+          : (lastActions[backup.path] || 'Unknown')
+
+        const isDisabled = loading || loadingBackupPath === backup.path
+
+        const rowStyle = {
+          display: 'grid',
+          gridTemplateColumns: gridColumns,
+          gap: '2px',
+          alignItems: 'center',
+          padding: '8px 10px',
+          background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+          textAlign: 'left'
+        }
+
+        if (mode === 'button') {
+          // App.jsx mode - entire row is a button
+          return (
+            <button
+              key={backup.name}
+              onClick={() => !isDisabled && onBackupSelect(backup)}
+              disabled={isDisabled}
+              style={{
+                ...rowStyle,
+                width: '100%',
+                color: 'var(--text)',
+                border: 'none',
+                borderBottom: index < backups.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                fontSize: '12px'
+              }}
+            >
+              <span style={{ fontWeight: 600, textAlign: 'center' }}>{backup.gameN || 'N/A'}</span>
+              <span style={{ textAlign: 'center' }}>{backup.setIndex || 'N/A'}</span>
+              <span style={{ fontWeight: 600, color: '#22c55e', textAlign: 'center' }}>
+                {backup.leftScore !== undefined && backup.rightScore !== undefined
+                  ? `${backup.leftScore}:${backup.rightScore}`
+                  : 'N/A'}
+              </span>
+              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '11px' }}>
+                {lastAction}
+              </span>
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', textAlign: 'right' }}>
+                {formattedTime}
+              </span>
+              {showRestoreButton && <div></div>}
+            </button>
+          )
+        } else {
+          // ScoreboardOptionsModal mode - row clickable with separate restore button
+          return (
+            <div
+              key={backup.name}
+              onClick={() => !isDisabled && onBackupSelect(backup)}
+              style={{
+                ...rowStyle,
+                width: '100%',
+                borderRadius: '4px',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => !isDisabled && (e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)')}
+              onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
+            >
+              <span style={{ fontWeight: 600, fontSize: '12px', textAlign: 'center' }}>{backup.gameN || 'N/A'}</span>
+              <span style={{ fontSize: '12px', textAlign: 'center' }}>{backup.setIndex || 'N/A'}</span>
+              <span style={{ fontWeight: 600, fontSize: '12px', color: '#22c55e', textAlign: 'center' }}>
+                {backup.leftScore !== undefined && backup.rightScore !== undefined
+                  ? `${backup.leftScore}:${backup.rightScore}`
+                  : 'N/A'}
+              </span>
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>
+                {lastAction}
+              </span>
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', textAlign: 'right' }}>
+                {formattedTime}
+              </span>
+              {showRestoreButton && (
+                <div style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  background: 'rgba(34, 197, 94, 0.2)',
+                  color: '#22c55e',
+                  borderRadius: '4px',
+                  textAlign: 'center'
+                }}>
+                  {restoreButtonText}
+                </div>
+              )}
+            </div>
+          )
+        }
+      })}
+    </>
+  )
+}
+
+// PropTypes removed to avoid dependency issues
+// Expected props:
+// - backups: array (required)
+// - onBackupSelect: function (required)
+// - loading: boolean
+// - showRestoreButton: boolean
+// - mode: 'button' | 'row'
+// - loadingBackupPath: string
+// - restoreButtonText: string

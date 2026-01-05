@@ -483,19 +483,27 @@ export async function restoreMatchFromJson(jsonData) {
 /**
  * Restore match in place - overwrite existing match with backup data
  * Used for cloud backup restore during active match
+ * IMPORTANT: Queues sync job to update match_live_state in Supabase
  */
 export async function restoreMatchInPlace(matchId, jsonData) {
   if (!jsonData.version || !jsonData.match) {
     throw new Error('Invalid backup file format')
   }
 
-  const { match, sets, events } = jsonData
+  const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
 
-  await db.transaction('rw', db.matches, db.sets, db.events, async () => {
+  // Get external_id for Supabase sync
+  const externalId = match.seed_key || match.seedKey || match.external_id
+  if (!externalId) {
+    console.warn('[RestoreInPlace] No external_id found - Supabase sync will be skipped')
+  }
+
+  await db.transaction('rw', db.matches, db.sets, db.events, db.sync_queue, async () => {
     // Update match data (keep same ID)
     await db.matches.update(matchId, {
       ...match,
       id: matchId,
+      seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })
 
@@ -523,6 +531,98 @@ export async function restoreMatchInPlace(matchId, jsonData) {
           matchId
         })
       }
+    }
+
+    // Queue Supabase 'restore' sync job (same as restoreMatchFromJson)
+    if (externalId) {
+      console.log('[RestoreInPlace] Queuing Supabase restore job for match:', externalId)
+
+      // Build match payload for Supabase
+      const matchPayload = {
+        external_id: externalId,
+        game_pin: match.gamePin || match.game_pin,
+        game_n: match.gameN || match.game_n,
+        status: match.status || 'live',
+        home_team: homeTeam ? {
+          name: homeTeam.name,
+          short_name: homeTeam.shortName || homeTeam.short_name,
+          color: homeTeam.color
+        } : (match.home_team || null),
+        away_team: awayTeam ? {
+          name: awayTeam.name,
+          short_name: awayTeam.shortName || awayTeam.short_name,
+          color: awayTeam.color
+        } : (match.away_team || null),
+        players_home: homePlayers || match.players_home || [],
+        players_away: awayPlayers || match.players_away || [],
+        hall: match.hall,
+        city: match.city,
+        league: match.league,
+        championship_type: match.championshipType || match.championship_type,
+        coin_toss_confirmed: match.coinTossConfirmed || match.coin_toss_confirmed,
+        coin_toss_team_a: match.coinTossTeamA || match.coin_toss_team_a,
+        coin_toss_team_b: match.coinTossTeamB || match.coin_toss_team_b,
+        first_serve: match.firstServe || match.first_serve
+      }
+
+      // Build sets payload
+      const setsPayload = (sets || []).map(s => ({
+        external_id: s.externalId || s.external_id || `${externalId}_set_${s.index}`,
+        index: s.index,
+        home_points: s.homePoints ?? s.home_points ?? 0,
+        away_points: s.awayPoints ?? s.away_points ?? 0,
+        finished: s.finished || false,
+        start_time: s.startTime || s.start_time,
+        end_time: s.endTime || s.end_time
+      }))
+
+      // Build events payload
+      const eventsPayload = (events || []).map(e => ({
+        external_id: e.externalId || e.external_id || `${externalId}_event_${e.seq || e.id}`,
+        set_index: e.setIndex ?? e.set_index,
+        type: e.type,
+        payload: e.payload,
+        ts: e.ts,
+        seq: e.seq
+      }))
+
+      // Build live state payload from latest set data
+      const latestSet = sets?.length > 0
+        ? [...sets].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+        : null
+      const finishedSets = (sets || []).filter(s => s.finished)
+      const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+      const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+
+      const liveStatePayload = {
+        current_set: latestSet?.index || 1,
+        points_a: latestSet?.homePoints ?? latestSet?.home_points ?? 0,
+        points_b: latestSet?.awayPoints ?? latestSet?.away_points ?? 0,
+        sets_won_a: homeSetsWon,
+        sets_won_b: awaySetsWon,
+        status: match.status || 'live'
+      }
+
+      // Queue the restore job
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'restore',
+        payload: {
+          match: matchPayload,
+          sets: setsPayload,
+          events: eventsPayload,
+          liveState: liveStatePayload
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+
+      console.log('[RestoreInPlace] Restore job queued:', {
+        matchId: externalId,
+        setsCount: setsPayload.length,
+        eventsCount: eventsPayload.length,
+        liveState: liveStatePayload
+      })
     }
   })
 
@@ -1017,7 +1117,8 @@ export async function listCloudBackups(gamePin, gameN = 1) {
     throw new Error('Supabase not configured')
   }
 
-  const folderPath = `backups/pin_${gamePin}_g${gameN}`
+  // Use the same path format as logger.js continuous backups
+  const folderPath = `backups/backup_g${gameN}`
 
   const { data, error } = await supabase
     .storage
@@ -1029,18 +1130,30 @@ export async function listCloudBackups(gamePin, gameN = 1) {
   if (error) throw error
 
   // Parse filenames to extract useful info
-  // Format: 00015_set2_15-12_timestamp.json
+  // Format: backup_g785111_set2_scoreleft23_scoreright23_20260105_113229_798.json
   return (data || [])
     .filter(f => f.name.endsWith('.json'))
     .map(f => {
-      const parts = f.name.replace('.json', '').split('_')
+      const match = f.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
+      if (match) {
+        return {
+          name: f.name,
+          path: `${folderPath}/${f.name}`,
+          gameN: parseInt(match[1]),
+          setIndex: parseInt(match[2]),
+          leftScore: parseInt(match[3]),
+          rightScore: parseInt(match[4]),
+          date: match[5],
+          time: match[6],
+          ms: match[7],
+          created: f.created_at,
+          size: f.metadata?.size || 0
+        }
+      }
+      // Fallback for files that don't match the pattern
       return {
         name: f.name,
         path: `${folderPath}/${f.name}`,
-        seq: parts[0] || '0',
-        set: parts[1] || '',
-        score: parts[2] || '',
-        timestamp: parts.slice(3).join('_') || '',
         created: f.created_at,
         size: f.metadata?.size || 0
       }
