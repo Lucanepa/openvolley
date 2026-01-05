@@ -183,7 +183,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [liberoRotationModal, setLiberoRotationModal] = useState(null) // { team: 'home'|'away', position: 'IV', liberoNumber: number, playerNumber: number } | null
   const [exchangeLiberoDropdown, setExchangeLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', liberoNumber: number, element: HTMLElement } | null
   const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string, availableLiberos: [{number, type, label}], selectedLiberoIndex: number } | null
-  const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string } | null
+  const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string, reason: 'declared'|'injury'|'expulsion'|'disqualification' } | null
   const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, reason?: 'declared'|'injury' } | null
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
   const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away' } | null
@@ -2051,14 +2051,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   const ensureActiveSet = useCallback(async () => {
     if (!matchId) return
+
+    console.log('[ensureActiveSet] 🔍 Checking for active set...')
     const existing = await db.sets
       .where('matchId')
       .equals(matchId)
       .and(s => !s.finished)
       .first()
 
-    if (existing) return
+    if (existing) {
+      console.log('[ensureActiveSet] ✅ Active set exists:', { id: existing.id, index: existing.index })
+      return
+    }
 
+    console.log('[ensureActiveSet] ⚠️ No active set found, will create new set')
     const allSets = await db.sets
       .where('matchId')
       .equals(matchId)
@@ -2068,6 +2074,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       allSets.length > 0
         ? Math.max(...allSets.map(s => s.index || 0)) + 1
         : 1
+
+    console.log('[ensureActiveSet] 📝 Creating set with index:', nextIndex, 'Total sets:', allSets.length)
+
+    // CRITICAL VALIDATION 1: Check if a set with this index already exists
+    const duplicate = allSets.find(s => s.index === nextIndex)
+    if (duplicate) {
+      console.log('[ensureActiveSet] ⛔ Duplicate detected! Set', nextIndex, 'already exists:', duplicate.id)
+      return
+    }
+
+    // CRITICAL VALIDATION 2: Check if previous set (nextIndex - 1) is finished
+    if (nextIndex > 1) {
+      const previousSet = allSets.find(s => s.index === nextIndex - 1)
+      if (!previousSet || !previousSet.finished) {
+        console.log('[ensureActiveSet] ⛔ Cannot create set', nextIndex, '- previous set', (nextIndex - 1), 'is not finished:', previousSet)
+        return
+      }
+    }
 
     const setId = await db.sets.add({
       matchId,
@@ -5163,6 +5187,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
         const existingSet5 = allSetsForMatch.find(s => s.index === newSetIndex)
 
+        // CRITICAL VALIDATION: Verify set 4 is finished before creating set 5
+        const set4Record = allSetsForMatch.find(s => s.index === 4)
+        if (!set4Record || !set4Record.finished) {
+          console.log('[SET_END] ⛔ ABORT: Set 4 is not finished. Cannot create Set 5')
+          console.log('[SET_END] Set 4 state:', set4Record)
+          return
+        }
+
         let newSetId
         if (existingSet5) {
           await db.sets.update(existingSet5.id, { finished: false, homePoints: 0, awayPoints: 0 })
@@ -5218,6 +5250,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         allSetsCount: allSetsForMatch.length,
         existingSet: existingSet ? { id: existingSet.id, index: existingSet.index } : null
       })
+
+      // CRITICAL VALIDATION: Verify previous set is finished before creating next one
+      const previousSetRecord = allSetsForMatch.find(s => s.index === setIndex)
+      if (!previousSetRecord || !previousSetRecord.finished) {
+        console.log('[SET_END] ⛔ ABORT: Previous set', setIndex, 'is not finished. Cannot create set', newSetIndex)
+        console.log('[SET_END] Previous set state:', previousSetRecord)
+        return
+      }
 
       let newSetId
       if (existingSet) {
@@ -5283,9 +5323,12 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         })
       }
       } finally {
-        // Reset flag to allow ensureActiveSet to run again
-        setCreationInProgressRef.current = false
-        console.log('[SET_END] 🔓 Set creation lock released')
+        // Small delay before releasing lock to allow database to commit
+        // Combined with validation checks, this ensures no duplicate sets are created
+        setTimeout(() => {
+          setCreationInProgressRef.current = false
+          console.log('[SET_END] 🔓 Set creation lock released')
+        }, 200)
       }
       console.log('═══════════════════════════════════════════════════════════════')
       console.log('[SET_END] ✅ confirmSetEndTime COMPLETED')
@@ -7062,22 +7105,48 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const lastLiberoEvent = liberoEvents[0]
     const lastLiberoEventIndex = data.events.findIndex(e => e.id === lastLiberoEvent.id)
 
-    // Special case: Allow immediate libero entry after expulsion/disqualification/injury or redesignation
-    // Check if there's been a libero_unable (any unable reason) or redesignation event since last libero event
+    // Special case: Allow immediate libero entry in specific scenarios:
+    // 1. After libero BECOMES unable (injury/expulsion/disqualification) - immediate entry
+    // 2. After redesignation due to becoming unable - immediate entry for FIRST entry only
+    // 3. After redesignation due to being declared unable - must wait for point
     const specialEvents = data.events.filter(e =>
       e.setIndex === data.set.index &&
       e.payload?.team === teamKey &&
       (
-        (e.type === 'libero_unable' && (e.payload?.reason === 'expulsion' || e.payload?.reason === 'disqualification' || e.payload?.reason === 'injury')) ||
-        e.type === 'libero_redesignation'
+        // Allow immediate entry after libero BECOMES unable (not declared)
+        (e.type === 'libero_unable' &&
+         (e.payload?.reason === 'expulsion' ||
+          e.payload?.reason === 'disqualification' ||
+          e.payload?.reason === 'injury')) ||
+        // Allow immediate entry after redesignation ONLY if due to becoming unable
+        (e.type === 'libero_redesignation' &&
+         e.payload?.reason !== 'declared' &&
+         e.payload?.reason !== undefined)
       )
     ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
 
     if (specialEvents.length > 0) {
       const lastSpecialEvent = specialEvents[0]
-      // If special event happened after the last libero entry/exit, allow immediate entry
+
       if (new Date(lastSpecialEvent.ts) > new Date(lastLiberoEvent.ts)) {
-        return true
+        // If this is a redesignation, only allow immediate entry for FIRST entry
+        if (lastSpecialEvent.type === 'libero_redesignation') {
+          const entriesSinceRedesignation = data.events.filter(e =>
+            e.setIndex === data.set.index &&
+            e.type === 'libero_entry' &&
+            e.payload?.team === teamKey &&
+            new Date(e.ts) > new Date(lastSpecialEvent.ts)
+          )
+
+          // If redesignated libero already entered, require point for subsequent entries
+          if (entriesSinceRedesignation.length === 0) {
+            return true  // First entry after redesignation, allow immediate
+          }
+          // Fall through to normal point check
+        } else {
+          // libero_unable event (injury/expulsion/disqualification), allow immediate entry
+          return true
+        }
       }
     }
 
@@ -7698,7 +7767,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
   // Check if libero re-designation is needed and trigger modal
   // Called after a libero is marked as unable - we know they're unable so skip that check
-  const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType) => {
+  const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType, reason = 'declared') => {
     if (!data?.set) return
 
     // Check if already re-designated
@@ -7743,7 +7812,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     setLiberoRedesignationModal({
       team: teamKey,
       unableLiberoNumber: liberoNumber,
-      unableLiberoType: liberoType
+      unableLiberoType: liberoType,
+      reason: reason
     })
   }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
@@ -9460,7 +9530,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const confirmLiberoRedesignation = useCallback(async (newLiberoNumber) => {
     if (!liberoRedesignationModal || !data?.set) return
 
-    const { team, unableLiberoNumber, unableLiberoType } = liberoRedesignationModal
+    const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
 
     // Log the libero_unable event if not already logged (with reason='declared' if not specified)
     const hasUnableEvent = data?.events?.some(e =>
@@ -9483,7 +9553,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       team,
       unableLiberoNumber,
       unableLiberoType,
-      newLiberoNumber
+      newLiberoNumber,
+      reason
     })
 
     // Update the player records: remove libero status from old player, add to new player
@@ -13304,7 +13375,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
                           <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
-                            {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
+                            {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? <span>L<sub style={{ fontSize: '0.5em' }}>R</sub></span> : 'L2'}
                           </span>
                           {/* Captain badge for libero-captain on bench (left team) */}
                           {(player.isCaptain || player.captain) && (
@@ -14062,7 +14133,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                          const liberoType = player.liberoType
+                          const isUnable = liberoType === 'unable'
+                          const isRedesignated = liberoType === 'redesignated'
+
+                          // Determine base label
+                          let baseLabel = ''
+                          if (liberoCount === 1) {
+                            baseLabel = 'L'
+                          } else if (liberoType === 'libero1') {
+                            baseLabel = 'L1'
+                          } else if (liberoType === 'libero2') {
+                            baseLabel = 'L2'
+                          } else if (isRedesignated) {
+                            baseLabel = 'L'
+                          } else {
+                            baseLabel = 'L'
+                          }
+
                           return (
                             <span style={{
                               position: 'absolute',
@@ -14082,7 +14170,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               zIndex: 5,
                               boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
-                              {liberoLabel}
+                              <span style={{ position: 'relative', display: 'inline-block' }}>
+                                {baseLabel}
+                                {isRedesignated && <sub style={{ fontSize: '0.7em', verticalAlign: 'sub' }}>R</sub>}
+                                {isUnable && (
+                                  <span style={{
+                                    position: 'absolute',
+                                    top: '50%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    fontSize: '1.2em',
+                                    color: '#ef4444',
+                                    fontWeight: 900
+                                  }}>✕</span>
+                                )}
+                              </span>
                             </span>
                           )
                         })()}
@@ -14569,7 +14671,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                          const liberoType = player.liberoType
+                          const isUnable = liberoType === 'unable'
+                          const isRedesignated = liberoType === 'redesignated'
+
+                          // Determine base label
+                          let baseLabel = ''
+                          if (liberoCount === 1) {
+                            baseLabel = 'L'
+                          } else if (liberoType === 'libero1') {
+                            baseLabel = 'L1'
+                          } else if (liberoType === 'libero2') {
+                            baseLabel = 'L2'
+                          } else if (isRedesignated) {
+                            baseLabel = 'L'
+                          } else {
+                            baseLabel = 'L'
+                          }
+
                           return (
                             <span style={{
                               position: 'absolute',
@@ -14589,7 +14708,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               zIndex: 5,
                               boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
-                              {liberoLabel}
+                              <span style={{ position: 'relative', display: 'inline-block' }}>
+                                {baseLabel}
+                                {isRedesignated && <sub style={{ fontSize: '0.7em', verticalAlign: 'sub' }}>R</sub>}
+                                {isUnable && (
+                                  <span style={{
+                                    position: 'absolute',
+                                    top: '50%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    fontSize: '1.2em',
+                                    color: '#ef4444',
+                                    fontWeight: 900
+                                  }}>✕</span>
+                                )}
+                              </span>
                             </span>
                           )
                         })()}
@@ -14797,7 +14930,24 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {player.isLibero && !player.isCaptain && (() => {
                           const teamPlayers = rightTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                           const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                          const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                          const liberoType = player.liberoType
+                          const isUnable = liberoType === 'unable'
+                          const isRedesignated = liberoType === 'redesignated'
+
+                          // Determine base label
+                          let baseLabel = ''
+                          if (liberoCount === 1) {
+                            baseLabel = 'L'
+                          } else if (liberoType === 'libero1') {
+                            baseLabel = 'L1'
+                          } else if (liberoType === 'libero2') {
+                            baseLabel = 'L2'
+                          } else if (isRedesignated) {
+                            baseLabel = 'L'
+                          } else {
+                            baseLabel = 'L'
+                          }
+
                           return (
                             <span style={{
                               position: 'absolute',
@@ -14817,7 +14967,21 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               zIndex: 5,
                               boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
                             }}>
-                              {liberoLabel}
+                              <span style={{ position: 'relative', display: 'inline-block' }}>
+                                {baseLabel}
+                                {isRedesignated && <sub style={{ fontSize: '0.7em', verticalAlign: 'sub' }}>R</sub>}
+                                {isUnable && (
+                                  <span style={{
+                                    position: 'absolute',
+                                    top: '50%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    fontSize: '1.2em',
+                                    color: '#ef4444',
+                                    fontWeight: 900
+                                  }}>✕</span>
+                                )}
+                              </span>
                             </span>
                           )
                         })()}
@@ -16270,7 +16434,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         >
                           <span style={{ fontWeight: 600 }}>{player.number}</span>
                           <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
-                            {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
+                            {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? <span>L<sub style={{ fontSize: '0.5em' }}>R</sub></span> : 'L2'}
                           </span>
                           {/* Captain badge for libero-captain on bench (right team) */}
                           {(player.isCaptain || player.captain) && (
@@ -24280,7 +24444,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                     <button
                       onClick={() => {
-                        checkLiberoRedesignation(liberoUnableModal.team, liberoUnableModal.liberoNumber, liberoUnableModal.liberoType)
+                        checkLiberoRedesignation(liberoUnableModal.team, liberoUnableModal.liberoNumber, liberoUnableModal.liberoType, liberoUnableModal.reason)
                         setLiberoUnableModal(null)
                       }}
                       style={{

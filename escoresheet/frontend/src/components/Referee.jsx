@@ -2203,9 +2203,45 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const isLiberoReplacementBadge = !!liberoReplacedPlayer
 
     // Get libero label for bottom-left
-    const liberoLabel = isLibero ? (player?.libero === 'libero1' ? 'L1' : 'L2') : null
-    const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-    const displayLiberoLabel = isLibero ? (liberoCount === 1 ? 'L' : liberoLabel) : null
+    const liberoType = player?.libero
+    const isUnable = liberoType === 'unable'
+    const isRedesignated = liberoType === 'redesignated'
+    const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+
+    // Determine base label
+    let baseLabel = ''
+    if (isLibero) {
+      if (liberoCount === 1) {
+        baseLabel = 'L'
+      } else if (liberoType === 'libero1') {
+        baseLabel = 'L1'
+      } else if (liberoType === 'libero2') {
+        baseLabel = 'L2'
+      } else if (isRedesignated) {
+        baseLabel = 'L'
+      } else {
+        baseLabel = 'L'
+      }
+    }
+
+    // Create display label with special formatting
+    const displayLiberoLabel = isLibero ? (
+      <span style={{ position: 'relative', display: 'inline-block' }}>
+        {baseLabel}
+        {isRedesignated && <sub style={{ fontSize: '0.5em', verticalAlign: 'sub' }}>R</sub>}
+        {isUnable && (
+          <span style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            fontSize: '1.2em',
+            color: '#ef4444',
+            fontWeight: 900
+          }}>✕</span>
+        )}
+      </span>
+    ) : null
 
     const showCaptainBadge = isCaptain || isCourtCaptain // Liberos can be captains too
     const isLiberoCaptain = isLibero && isCaptain // Special styling for libero who is also captain

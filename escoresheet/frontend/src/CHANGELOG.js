@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.1',
+    date: '06.01.26',
+    changes: [
+      'Integrate iCal support and enhance match notification features'
+    ]
+  },
+  {
     version: '0.18.11',
     date: '05.01.26',
     changes: [

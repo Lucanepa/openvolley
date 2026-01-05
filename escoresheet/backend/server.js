@@ -14,6 +14,7 @@
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
+import ical from 'node-ical'
 
 const PORT = process.env.PORT || 8080
 
@@ -36,6 +37,162 @@ const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
 
+// iCal feed configuration for Swiss VolleyManager
+const ICAL_FEEDS = {
+  SV: {
+    national: true,
+    leagues: {
+      '1LD': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/ae02358a6a06486238124a59f1449e8a82606f70', gender: 'women' },
+      '1LM': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/c0bef7b2b63c41841fd9857fb641a0384f126b50', gender: 'men' }
+    }
+  },
+  SVRZ: {
+    national: false,
+    leagues: {
+      '2LD': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/845ac49df3bd9411aa3094ec5fb58c934c3351a3', gender: 'women' },
+      '2LM': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/10d3dbb456d62789fbb5f324d6b2977fa31a2142', gender: 'men' },
+      '3LD': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/64059c25792dea0dc30d5d9f63d17a5a8b4030a4', gender: 'women' },
+      '3LM': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/06dbdddc56b1792558dcc02e00db9d5eb35197d9', gender: 'men' },
+      '4LD': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/fdff38685c5166350b903f1238e7510185f8bbcc', gender: 'women' },
+      '4LM': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/7fe2162c7ce91df5ab10dc3466fb6252315b25a4', gender: 'men' },
+      '5LD': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/52e4678e8e476857aeb96b45c8c953fa4c1da1d8', gender: 'women' },
+      'U23D-1': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/ae87559b2b0ccb924e5f4c8a12299fdbd2946623', gender: 'women', level: 'U23' },
+      'U23D-2': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/2876c11fa736b4b88eb1f3038a37e075563e515e', gender: 'women', level: 'U23' },
+      'U23D-3': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/82e03b16627e47d941e2d95a3d5e8a0d1bcc8249', gender: 'women', level: 'U23' },
+      'U23M': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/1bb02aaf2b8acad94d5d440c6ce44fb6fa4eb3c5', gender: 'men', level: 'U23' },
+      'ZCD': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/e0567aa2b79236b9dc5bf69b575e537beb670ec4', gender: 'women', cup: true },
+      'ZCM': { url: 'https://volleymanager.volleyball.ch/iCal/schedule/749f56450d476e450c5391106b95d151a0b53ee9', gender: 'men', cup: true }
+    }
+  }
+}
+
+// Cache for iCal data (5 minute TTL)
+const icalCache = new Map()
+const ICAL_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+// Helper functions for iCal parsing
+function extractGameNumber(uid) {
+  const match = uid?.match(/game-(\d+)/)
+  return match ? match[1] : ''
+}
+
+function extractCity(location) {
+  if (!location) return ''
+  // Match pattern: "..., POSTCODE CITY" where POSTCODE is 4 digits for Switzerland
+  const match = location.match(/,\s*(\d{4})\s+(.+)$/)
+  if (match) {
+    return match[2].trim()
+  }
+  // Fallback: return everything after last comma
+  const parts = location.split(',')
+  if (parts.length > 1) {
+    return parts[parts.length - 1].trim()
+  }
+  return location
+}
+
+function parseIcalDescription(description) {
+  if (!description) return {}
+  const data = {}
+  const lines = description.split(/\\n|\n/)
+
+  for (const line of lines) {
+    if (line.includes('Risultato:')) {
+      data.result = line.replace(/.*Risultato:\s*/, '').trim()
+    }
+    if (line.includes('Lega:')) {
+      // Parse: "#6655 | 3L | ♀"
+      const legaMatch = line.match(/#(\d+)\s*\|\s*([^|]+)\s*\|\s*([♂♀])/)
+      if (legaMatch) {
+        data.leagueId = legaMatch[1]
+        data.leagueName = legaMatch[2].trim()
+        data.genderSymbol = legaMatch[3]
+      }
+    }
+    if (line.includes('Palestra:')) {
+      data.venue = line.replace(/.*Palestra:\s*/, '').trim()
+    }
+    if (line.includes('Indirizzo:')) {
+      data.address = line.replace(/.*Indirizzo:\s*/, '').trim()
+    }
+  }
+
+  return data
+}
+
+async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) {
+  // Check cache first
+  const cacheKey = `${federation}-${leagueCode}`
+  const cached = icalCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < ICAL_CACHE_TTL) {
+    console.log(`[iCal] Using cached data for ${cacheKey}`)
+    return cached.matches
+  }
+
+  console.log(`[iCal] Fetching fresh data for ${cacheKey} from ${feedUrl}`)
+
+  try {
+    const events = await ical.fromURL(feedUrl)
+    const now = new Date()
+    now.setHours(0, 0, 0, 0) // Start of today
+
+    const matches = []
+
+    for (const [key, event] of Object.entries(events)) {
+      if (event.type !== 'VEVENT') continue
+
+      // Skip past events
+      const startDate = event.start
+      if (!startDate || startDate < now) continue
+
+      // Parse SUMMARY for teams: "Home Team - Away Team (League)"
+      const summaryMatch = event.summary?.match(/^(.+?)\s*-\s*(.+?)\s*\(([^)]+)\)$/)
+      const home = summaryMatch?.[1]?.trim() || ''
+      const away = summaryMatch?.[2]?.trim() || ''
+      const leagueInSummary = summaryMatch?.[3]?.trim() || ''
+
+      // Parse DESCRIPTION for structured data
+      const parsedDesc = parseIcalDescription(event.description)
+
+      // Determine match type
+      const isCup = leagueConfig.cup === true || leagueCode.startsWith('ZC')
+      const isNational = ICAL_FEEDS[federation]?.national === true
+      const isU23 = leagueConfig.level === 'U23' || leagueCode.includes('U23')
+
+      matches.push({
+        gameN: extractGameNumber(event.uid),
+        dtstart: startDate.toISOString(),
+        home,
+        away,
+        league: parsedDesc.leagueName || leagueInSummary || leagueCode,
+        venue: parsedDesc.venue || '',
+        city: extractCity(event.location),
+        address: event.location || '',
+        type1: isCup ? 'cup' : 'championship',
+        type2: leagueConfig.gender,
+        type3: isU23 ? 'U23' : 'senior',
+        championshipType: isNational ? 'national' : 'regional',
+        result: parsedDesc.result || '-'
+      })
+    }
+
+    // Sort by date ascending
+    matches.sort((a, b) => new Date(a.dtstart) - new Date(b.dtstart))
+
+    // Cache the results
+    icalCache.set(cacheKey, {
+      matches,
+      timestamp: Date.now()
+    })
+
+    console.log(`[iCal] Parsed ${matches.length} upcoming matches for ${cacheKey}`)
+    return matches
+  } catch (err) {
+    console.error(`[iCal] Error fetching ${feedUrl}:`, err.message)
+    throw err
+  }
+}
+
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://openvolley.app',
@@ -53,16 +210,25 @@ const ALLOWED_ORIGINS = [
 
 function getCorsOrigin(req) {
   const origin = req.headers.origin
+  console.log(`[CORS] Request from origin: ${origin}, IS_CLOUD: ${IS_CLOUD}`)
   // In development or local network, allow all origins
   if (!IS_CLOUD) return '*'
   // In production, check against allowed list
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    console.log(`[CORS] Origin ${origin} is in ALLOWED_ORIGINS`)
     return origin
   }
   // Allow any openvolley.app subdomain
   if (origin && origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/)) {
+    console.log(`[CORS] Origin ${origin} matches openvolley.app subdomain pattern`)
     return origin
   }
+  // Allow localhost/127.0.0.1 origins even in cloud mode (for development)
+  if (origin && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+    console.log(`[CORS] Allowing localhost origin: ${origin}`)
+    return origin
+  }
+  console.log(`[CORS] Origin ${origin} not recognized, using default: ${ALLOWED_ORIGINS[0]}`)
   return ALLOWED_ORIGINS[0] // Default to main domain
 }
 
@@ -189,53 +355,63 @@ const server = createServer((req, res) => {
   // List active matches (ephemeral - just for current session)
   // Only return matches where refereeConnectionEnabled is true
   if (url.pathname === '/api/match/list') {
-    const allMatches = Array.from(activeMatches.values())
-    const filteredMatches = allMatches.filter(m => {
-      // Check if refereeConnectionEnabled is explicitly true
-      return m.match?.refereeConnectionEnabled === true
-    })
-    console.log(`[API] /api/match/list - Total: ${allMatches.length}, Referee enabled: ${filteredMatches.length}`)
-    allMatches.forEach(m => {
-      console.log(`  - Game #${m.gameNumber || m.matchId}: refereeConnectionEnabled=${m.match?.refereeConnectionEnabled}`)
-    })
+    try {
+      const allMatches = Array.from(activeMatches.values())
+      const filteredMatches = allMatches.filter(m => {
+        // Check if refereeConnectionEnabled is explicitly true
+        return m.match?.refereeConnectionEnabled === true
+      })
+      console.log(`[API] /api/match/list - Total: ${allMatches.length}, Referee enabled: ${filteredMatches.length}`)
+      allMatches.forEach(m => {
+        console.log(`  - Game #${m.gameNumber || m.matchId}: refereeConnectionEnabled=${m.match?.refereeConnectionEnabled}`)
+      })
 
-    // Format response to match dev server (flat structure)
-    const formattedMatches = filteredMatches.map(m => {
-      // Format scheduled date/time
-      let dateTime = 'TBD'
-      if (m.match?.scheduledAt) {
-        try {
-          const scheduledDate = new Date(m.match.scheduledAt)
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-          dateTime = `${dateStr} ${timeStr}`
-        } catch (e) {
-          dateTime = 'TBD'
+      // Format response to match dev server (flat structure)
+      const formattedMatches = filteredMatches.map(m => {
+        // Format scheduled date/time
+        let dateTime = 'TBD'
+        if (m.match?.scheduledAt) {
+          try {
+            const scheduledDate = new Date(m.match.scheduledAt)
+            const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+            dateTime = `${dateStr} ${timeStr}`
+          } catch (e) {
+            dateTime = 'TBD'
+          }
         }
-      }
 
-      // Get team names - handle both object format {name: 'Team'} and string format 'Team'
-      const homeTeamName = typeof m.homeTeam === 'object' ? m.homeTeam?.name : m.homeTeam
-      const awayTeamName = typeof m.awayTeam === 'object' ? m.awayTeam?.name : m.awayTeam
+        // Get team names - handle both object format {name: 'Team'} and string format 'Team'
+        const homeTeamName = typeof m.homeTeam === 'object' ? m.homeTeam?.name : m.homeTeam
+        const awayTeamName = typeof m.awayTeam === 'object' ? m.awayTeam?.name : m.awayTeam
 
-      return {
-        id: m.matchId,
-        gameNumber: m.gameNumber || m.match?.gameNumber || m.match?.game_n || m.matchId,
-        homeTeam: homeTeamName || 'Home',
-        awayTeam: awayTeamName || 'Away',
-        scheduledAt: m.match?.scheduledAt,
-        dateTime,
-        status: m.match?.status || 'scheduled',
-        refereePin: m.match?.refereePin,
-        refereeConnectionEnabled: m.match?.refereeConnectionEnabled === true
-      }
-    })
+        return {
+          id: m.matchId,
+          gameNumber: m.gameNumber || m.match?.gameNumber || m.match?.game_n || m.matchId,
+          homeTeam: homeTeamName || 'Home',
+          awayTeam: awayTeamName || 'Away',
+          scheduledAt: m.match?.scheduledAt,
+          dateTime,
+          status: m.match?.status || 'scheduled',
+          refereePin: m.match?.refereePin,
+          refereeConnectionEnabled: m.match?.refereeConnectionEnabled === true
+        }
+      })
 
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({
-      success: true,
-      matches: formattedMatches
-    }))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: true,
+        matches: formattedMatches
+      }))
+    } catch (error) {
+      console.error('[API] Error in /api/match/list:', error)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: false,
+        error: error.message || 'Internal server error',
+        matches: []
+      }))
+    }
     return
   }
 
@@ -468,6 +644,166 @@ eScoresheet Developer
         }))
       }
     })
+    return
+  }
+
+  // Send match info email
+  if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
+    let body = ''
+    req.on('data', chunk => body += chunk)
+    req.on('end', async () => {
+      try {
+        const matchData = JSON.parse(body)
+
+        console.log('[Match Email] Sending match info to:', matchData.email)
+
+        if (!emailTransporter) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            success: false,
+            error: 'Email not configured on server'
+          }))
+          return
+        }
+
+        // Format date and time
+        const formatDate = (dateStr) => {
+          if (!dateStr) return 'TBD'
+          const [year, month, day] = dateStr.split('-')
+          return `${day}.${month}.${year}`
+        }
+
+        const formatTime = (timeStr) => {
+          if (!timeStr) return 'TBD'
+          return timeStr.substring(0, 5) // HH:MM
+        }
+
+        // Build email content
+        const subject = `Game ${matchData.gameN || 'N/A'} eScoresheet`
+
+        const emailBody = `
+Match Information
+=================
+
+Game Number: ${matchData.gameN || 'N/A'}
+Game PIN: ${matchData.gamePin}
+
+Teams
+-----
+Home: ${matchData.home || 'N/A'}${matchData.homeShortName ? ` (${matchData.homeShortName})` : ''}
+Away: ${matchData.away || 'N/A'}${matchData.awayShortName ? ` (${matchData.awayShortName})` : ''}
+
+Match Details
+-------------
+Date: ${formatDate(matchData.date)}
+Time: ${formatTime(matchData.time)}
+Venue: ${matchData.hall || 'N/A'}
+City: ${matchData.city || 'N/A'}
+League: ${matchData.league || 'N/A'}
+
+---
+Generated by eScoresheet
+`.trim()
+
+        // Send email
+        await emailTransporter.sendMail({
+          from: process.env.SMTP_USER,
+          to: matchData.email,
+          subject: subject,
+          text: emailBody
+        })
+
+        console.log('[Match Email] Sent successfully to:', matchData.email)
+
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: true,
+          message: 'Match info sent to email'
+        }))
+      } catch (err) {
+        console.error('[Match Email] Error:', err)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Failed to send email'
+        }))
+      }
+    })
+    return
+  }
+
+  // Get official matches from iCal feeds
+  if (url.pathname === '/api/official-matches' && req.method === 'GET') {
+    const federation = url.searchParams.get('federation')
+    const league = url.searchParams.get('league')
+
+    // Validate federation
+    if (!federation || !ICAL_FEEDS[federation]) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Invalid federation. Use SV or SVRZ.'
+      }))
+      return
+    }
+
+    // Validate league
+    const leagueConfig = ICAL_FEEDS[federation].leagues[league]
+    if (!league || !leagueConfig) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: false,
+        error: `Invalid league for ${federation}. Available: ${Object.keys(ICAL_FEEDS[federation].leagues).join(', ')}`
+      }))
+      return
+    }
+
+    // Use async IIFE since the request handler isn't async
+    ;(async () => {
+      try {
+        const matches = await fetchAndParseIcal(leagueConfig.url, federation, league, leagueConfig)
+
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: true,
+          federation,
+          league,
+          matches
+        }))
+      } catch (err) {
+        console.error('[API] Error fetching official matches:', err)
+        res.writeHead(503, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Failed to fetch matches from VolleyManager. Please try again.'
+        }))
+      }
+    })()
+    return
+  }
+
+  // Get available leagues for official matches
+  if (url.pathname === '/api/official-matches/leagues' && req.method === 'GET') {
+    const result = {}
+    for (const [federation, config] of Object.entries(ICAL_FEEDS)) {
+      result[federation] = {
+        national: config.national,
+        leagues: {}
+      }
+      for (const [leagueCode, leagueConfig] of Object.entries(config.leagues)) {
+        result[federation].leagues[leagueCode] = {
+          gender: leagueConfig.gender,
+          level: leagueConfig.level || 'senior',
+          cup: leagueConfig.cup || false
+        }
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      success: true,
+      federations: result
+    }))
     return
   }
 

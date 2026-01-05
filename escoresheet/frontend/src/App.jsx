@@ -10,6 +10,7 @@ import Modal from './components/Modal'
 import GuideModal from './components/GuideModal'
 import ConnectionStatus from './components/ConnectionStatus'
 import MainHeader from './components/MainHeader'
+import BackupTable from './components/BackupTable'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectionSetupModal from './components/options/ConnectionSetupModal'
@@ -3183,7 +3184,7 @@ export default function App() {
             setCloudBackupGameN('')
             setCloudBackupError('')
           }}
-          width={450}
+          width={500}
         >
           <div style={{ padding: '24px' }}>
             {/* Restore from Cloud Backup */}
@@ -3209,7 +3210,7 @@ export default function App() {
                         const value = e.target.value.replace(/\D/g, '')
                         setCloudBackupGameN(value)
                       }}
-                      placeholder="123"
+                      placeholder="123456"
                       style={{
                         width: '100%',
                         padding: '12px',
@@ -3271,7 +3272,7 @@ export default function App() {
                       const backups = await listCloudBackups(cloudBackupPin, parseInt(cloudBackupGameN) || 1)
                       setCloudBackups(backups)
                       if (backups.length === 0) {
-                        setCloudBackupError('No cloud backups found for this PIN')
+                        setCloudBackupError('No cloud backups found for this Game Number/PIN')
                       }
                     } catch (err) {
                       setCloudBackupError(err.message || 'Failed to list backups')
@@ -3299,55 +3300,35 @@ export default function App() {
                 )}
                 {cloudBackups.length > 0 && (
                   <div style={{
-                    maxHeight: '200px',
-                    overflowY: 'auto',
                     border: '1px solid rgba(255,255,255,0.2)',
                     borderRadius: '8px',
-                    marginTop: '8px'
+                    marginTop: '8px',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
                   }}>
-                    {cloudBackups.map((backup, index) => (
-                      <button
-                        key={backup.name}
-                        onClick={async () => {
-                          setRestoreLoading(true)
-                          setRestoreError('')
-                          try {
-                            const cloudData = await fetchCloudBackup(backup.path)
-                            if (!cloudData) {
-                              setRestoreError('Failed to fetch backup data')
-                              setRestoreLoading(false)
-                              return
-                            }
-                            // Show preview instead of immediately restoring
-                            setRestorePreviewData({ data: cloudData, source: 'cloud', backupName: backup.name })
-                          } catch (err) {
-                            setRestoreError(err.message || 'Failed to load cloud backup')
-                          } finally {
+                    <BackupTable
+                      backups={cloudBackups}
+                      onBackupSelect={async (backup) => {
+                        setRestoreLoading(true)
+                        setRestoreError('')
+                        try {
+                          const cloudData = await fetchCloudBackup(backup.path)
+                          if (!cloudData) {
+                            setRestoreError('Failed to fetch backup data')
                             setRestoreLoading(false)
+                            return
                           }
-                        }}
-                        disabled={restoreLoading}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          fontSize: '13px',
-                          background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
-                          color: 'var(--text)',
-                          border: 'none',
-                          borderBottom: index < cloudBackups.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
-                          cursor: restoreLoading ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}
-                      >
-                        <span style={{ fontFamily: 'monospace' }}>{backup.name.replace('.json', '')}</span>
-                        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                          {backup.created_at ? new Date(backup.created_at).toLocaleString() : ''}
-                        </span>
-                      </button>
-                    ))}
+                          // Show preview instead of immediately restoring
+                          setRestorePreviewData({ data: cloudData, source: 'cloud', backupName: backup.name })
+                        } catch (err) {
+                          setRestoreError(err.message || 'Failed to load cloud backup')
+                        } finally {
+                          setRestoreLoading(false)
+                        }
+                      }}
+                      loading={restoreLoading}
+                      mode="button"
+                    />
                   </div>
                 )}
               </div>
