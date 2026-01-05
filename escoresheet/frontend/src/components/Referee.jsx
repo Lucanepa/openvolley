@@ -212,6 +212,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [wakeLockActive, setWakeLockActive] = useState(false) // Track wake lock status
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown, started }
   const [showIntervalModal, setShowIntervalModal] = useState(false) // Modal visibility (separate from countdown state)
+  const intervalDismissedRef = useRef(false) // Track when interval was manually dismissed
   const setIntervalDuration = useMemo(() => {
     const saved = localStorage.getItem('setIntervalDuration')
     return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
@@ -525,6 +526,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       setTimeoutModal({
         team: actionData.team,
         countdown: actionData.countdown || 30,
+        startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
+        initialCountdown: actionData.countdown || 30,
         started: true
       })
       setShowTimeoutModal(true) // Show the modal overlay
@@ -552,6 +555,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       })
       setBetweenSetsCountdown({
         countdown: actionData.countdown || 180,
+        startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
+        initialCountdown: actionData.countdown || 180,
         started: true,
         setIndex: actionData.setIndex,
         winner: actionData.winner
@@ -564,6 +569,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       setShowTimeoutModal(false)
     } else if (action === 'end_interval') {
       // Scoreboard ended the set interval - clear countdown and modal
+      intervalDismissedRef.current = true
       setBetweenSetsCountdown(null)
       setShowIntervalModal(false)
     }
@@ -700,6 +706,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               setTimeoutModal({
                 team,
                 countdown: state.last_event_data?.duration || 30,
+                startTimestamp: Date.now(), // Generate timestamp for Supabase path
+                initialCountdown: state.last_event_data?.duration || 30,
                 started: true
               })
               setShowTimeoutModal(true) // Show the modal overlay
@@ -757,6 +765,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             })
             setBetweenSetsCountdown({
               countdown: 180,
+              startTimestamp: Date.now(), // Generate timestamp for Supabase path
+              initialCountdown: 180,
               started: true,
               setIndex: state.last_event_data?.setIndex || state.current_set,
               winner: state.last_event_data?.winner
@@ -779,22 +789,29 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Handle timeout countdown timer
   useEffect(() => {
     if (!timeoutModal || !timeoutModal.started) return
-    
+
+    const startTimestamp = timeoutModal.startTimestamp || Date.now()
+    const initialCountdown = timeoutModal.initialCountdown || timeoutModal.countdown || 30
+
     if (timeoutModal.countdown <= 0) {
       setTimeoutModal(null)
       return
     }
 
+    // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      setTimeoutModal(prev => {
-        if (!prev || !prev.started) return null
-        const newCountdown = prev.countdown - 1
-        if (newCountdown <= 0) {
-          return null
-        }
-        return { ...prev, countdown: newCountdown }
-      })
-    }, 1000)
+      const elapsed = Math.floor((Date.now() - startTimestamp) / 1000)
+      const remaining = Math.max(0, initialCountdown - elapsed)
+
+      if (remaining <= 0) {
+        setTimeoutModal(null)
+      } else {
+        setTimeoutModal(prev => {
+          if (!prev || !prev.started) return null
+          return { ...prev, countdown: remaining }
+        })
+      }
+    }, 100) // 100ms for smooth updates
 
     return () => clearInterval(timer)
   }, [timeoutModal])
@@ -1667,35 +1684,44 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Start between-sets countdown when we detect we're between sets
   useEffect(() => {
     // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
-    if (isBetweenSets && betweenSetsCountdown === null) {
+    // AND it wasn't manually dismissed
+    if (isBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
       setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
       setShowIntervalModal(true) // Show the modal overlay
     } else if (!isBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
       setShowIntervalModal(false) // Hide the modal when set starts
+      intervalDismissedRef.current = false // Reset dismissal flag when set starts
     }
   }, [isBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
 
   // Handle between-sets countdown timer
   useEffect(() => {
     if (!betweenSetsCountdown || !betweenSetsCountdown.started) return
-    
+
+    const startTimestamp = betweenSetsCountdown.startTimestamp || Date.now()
+    const initialCountdown = betweenSetsCountdown.initialCountdown || betweenSetsCountdown.countdown || 180
+
     // Don't set interval if already at 0
     if (betweenSetsCountdown.countdown <= 0) return
-    
+
+    // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      setBetweenSetsCountdown(prev => {
-        if (!prev || !prev.started) return prev
-        const newCountdown = prev.countdown - 1
-        if (newCountdown <= 0) {
-          // Stay at 0, don't reset to null
-          return { countdown: 0, started: false }
-        }
-        return { ...prev, countdown: newCountdown }
-      })
-    }, 1000)
-    
+      const elapsed = Math.floor((Date.now() - startTimestamp) / 1000)
+      const remaining = Math.max(0, initialCountdown - elapsed)
+
+      if (remaining <= 0) {
+        // Stay at 0, don't reset to null
+        setBetweenSetsCountdown(prev => ({ ...prev, countdown: 0, started: false }))
+      } else {
+        setBetweenSetsCountdown(prev => {
+          if (!prev || !prev.started) return prev
+          return { ...prev, countdown: remaining }
+        })
+      }
+    }, 100) // 100ms for smooth updates
+
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
 
@@ -2190,9 +2216,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         aspectRatio: '1/1',
         height: 'auto',
         padding: '4px',
-        border: isRecentlySub ? '3px solid #22c55e' : '1px solid rgba(255, 255, 255, 0.4)',
+        border: isRecentlySub ? '3px solid #f97316' : '1px solid rgba(255, 255, 255, 0.4)',
         borderRadius: '50%',
-        background: isRecentlySub ? '#86efac' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
+        background: isRecentlySub ? '#fdba74' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
           color: isRecentlySub ? '#000' : isLibero ? '#000' : '#fff',
           display: 'flex',
           alignItems: 'center',

@@ -204,6 +204,7 @@
     "gamePinDescription": "PIN auto-généré pour ouvrir ce match dans une nouvelle session",
     "clickToSave": "Cliquer pour sauvegarder en .txt",
     "fillTeamNames": "Remplir les noms des équipes pour confirmer",
+    "required": "Requis",
     "save": "Sauvegarder",
     "lastName": "Nom",
     "firstName": "Prénom",

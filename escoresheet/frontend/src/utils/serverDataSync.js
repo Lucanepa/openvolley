@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '../lib/supabaseClient'
+import { formatTimeLocal } from './timeUtils'
 
 /**
  * Generate a unique seed_key for a match
@@ -1000,9 +1001,9 @@ export async function listAvailableMatchesSupabase() {
             scheduledStr = scheduledStr + 'Z'
           }
           const scheduledDate = new Date(scheduledStr)
-          // Display as UTC (no timezone conversion) since we store time as-entered
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+          // Display in local timezone
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = formatTimeLocal(scheduledStr)
           dateTime = `${dateStr} ${timeStr}`
         } catch (e) {
           dateTime = 'TBD'
@@ -1087,8 +1088,9 @@ export async function listAvailableMatchesForBenchSupabase() {
             scheduledStr = scheduledStr + 'Z'
           }
           const scheduledDate = new Date(scheduledStr)
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+          // Display in local timezone
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = formatTimeLocal(scheduledStr)
           dateTime = `${dateStr} ${timeStr}`
         } catch (e) {
           dateTime = 'TBD'

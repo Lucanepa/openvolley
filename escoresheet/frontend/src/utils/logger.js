@@ -193,13 +193,14 @@ export async function uploadBackupToCloud(matchId, backupData) {
     }
   }
 
-  // Generate UTC timestamp in yyyymmdd_hhmm format
+  // Generate UTC timestamp in yyyymmdd_hhmmss_ms format for uniqueness
   const now = new Date()
   const utcDate = now.toISOString().slice(0, 10).replace(/-/g, '') // yyyymmdd
-  const utcTime = now.toISOString().slice(11, 16).replace(':', '') // hhmm
+  const utcTime = now.toISOString().slice(11, 19).replace(/:/g, '') // hhmmss
+  const ms = now.getMilliseconds().toString().padStart(3, '0') // milliseconds
 
-  // Folder structure: backup_g{gameN}/
-  const filename = `backup_g${gameN}/backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}.json`
+  // Folder structure: backups/backup_g{gameN}/
+  const filename = `backups/backup_g${gameN}/backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}_${ms}.json`
 
   try {
     const { data, error } = await supabase.storage
@@ -237,7 +238,7 @@ export async function listCloudBackups(gamePin, gameN = 1) {
   try {
     const { data, error } = await supabase.storage
       .from('backup')
-      .list(`backup_g${gameN}`, {
+      .list(`backups/backup_g${gameN}`, {
         sortBy: { column: 'name', order: 'desc' }
       })
 
@@ -246,25 +247,26 @@ export async function listCloudBackups(gamePin, gameN = 1) {
       return []
     }
 
-    // Parse filenames like "backup_g1_set2_scoreleft15_scoreright12_20250104_1530.json"
+    // Parse filenames like "backup_g1_set2_scoreleft15_scoreright12_20250104_153045_123.json"
     return (data || []).map(file => {
-      const match = file.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{4})\.json$/)
+      const match = file.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
       if (match) {
         return {
           name: file.name,
-          path: `backup_g${gameN}/${file.name}`,
+          path: `backups/backup_g${gameN}/${file.name}`,
           gameN: parseInt(match[1]),
           setIndex: parseInt(match[2]),
           leftScore: parseInt(match[3]),
           rightScore: parseInt(match[4]),
           date: match[5],
           time: match[6],
+          ms: match[7],
           created_at: file.created_at
         }
       }
       return {
         name: file.name,
-        path: `backup_g${gameN}/${file.name}`,
+        path: `backups/backup_g${gameN}/${file.name}`,
         created_at: file.created_at
       }
     })

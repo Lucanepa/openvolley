@@ -5,6 +5,7 @@ import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import { sanitizeForFilename } from '../utils/stringUtils'
+import { formatTimeLocal } from '../utils/timeUtils'
 
 // Standard Results component for MatchEnd page
 const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration }) => {
@@ -467,12 +468,10 @@ export default function MatchEnd({ matchId, onGoHome }) {
     ? new Date(finishedSets[finishedSets.length - 1].endTime)
     : null
 
-  // Use UTC to match stored values - times are stored as UTC
-  const matchStart = matchStartDate
-    ? `${String(matchStartDate.getUTCHours()).padStart(2, '0')}:${String(matchStartDate.getUTCMinutes()).padStart(2, '0')}`
-    : ''
-  const matchEndTime = matchEndDate
-    ? `${String(matchEndDate.getUTCHours()).padStart(2, '0')}:${String(matchEndDate.getUTCMinutes()).padStart(2, '0')}`
+  // Display times in local timezone
+  const matchStart = match?.scheduledAt ? formatTimeLocal(match.scheduledAt) : ''
+  const matchEndTime = finishedSets.length > 0 && finishedSets[finishedSets.length - 1].endTime
+    ? formatTimeLocal(finishedSets[finishedSets.length - 1].endTime)
     : ''
 
   // Calculate duration as matchEnd - matchStart

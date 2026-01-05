@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import swissvolleyLogo from './swissvolleylogo.jpg';
 import favicon from '../../src/favicon.png';
+import { formatTimeLocal } from '../../src/utils/timeUtils';
 
 interface HeaderProps {
   match?: any;
@@ -15,12 +16,10 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
   const [imageError, setImageError] = useState(false);
   const [faviconImageError, setFaviconImageError] = useState(false);
   
-  // Format date and time (use UTC to match stored values)
+  // Format date and time (display in local timezone)
   const scheduledDate = match?.scheduledAt ? new Date(match.scheduledAt) : null;
   const dateStr = scheduledDate ? scheduledDate.toISOString().split('T')[0] : '';
-  const timeStr = scheduledDate
-    ? `${String(scheduledDate.getUTCHours()).padStart(2, '0')}:${String(scheduledDate.getUTCMinutes()).padStart(2, '0')}`
-    : '';
+  const timeStr = match?.scheduledAt ? formatTimeLocal(match.scheduledAt) : '';
 
   return (
     <header className="border border-black bg-white">

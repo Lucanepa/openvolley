@@ -204,6 +204,7 @@
     "gamePinDescription": "Auto-generierter PIN um dieses Spiel in einer neuen Sitzung zu öffnen",
     "clickToSave": "Klicken zum Speichern als .txt",
     "fillTeamNames": "Teamnamen eingeben um zu bestätigen",
+    "required": "Erforderlich",
     "save": "Speichern",
     "lastName": "Nachname",
     "firstName": "Vorname",

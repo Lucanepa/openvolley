@@ -204,6 +204,7 @@
     "gamePinDescription": "Auto-generated PIN to open this match in a new session",
     "clickToSave": "Click to save as .txt",
     "fillTeamNames": "Fill in Home and Away team names to confirm",
+    "required": "Required",
     "save": "Save",
     "lastName": "Last Name",
     "firstName": "First Name",
