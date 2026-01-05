@@ -614,7 +614,6 @@
   },
   "options": {
     "title": "Optionen",
-    "close": "Schliessen",
     "checkAccidentalRallyStart": "Versehentlichen Ballwechsel-Start prufen",
     "checkAccidentalRallyStartInfo": "Bestatigung anfordern wenn \"Ballwechsel starten\" innerhalb von {{duration}}s nach Punktvergabe gedruckt wird",
     "duration": "Dauer",

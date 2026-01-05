@@ -614,7 +614,6 @@
   },
   "options": {
     "title": "Options",
-    "close": "Fermer",
     "checkAccidentalRallyStart": "Vérifier démarrage accidentel",
     "checkAccidentalRallyStartInfo": "Demander confirmation si l'échange démarre dans les {{duration}}s après un point",
     "duration": "Durée",
