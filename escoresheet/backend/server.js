@@ -20,6 +20,10 @@ const PORT = process.env.PORT || 8080
 
 // Email configuration - set these environment variables in Railway
 // SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
+console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
+console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
+console.log('[Email Config] SMTP_USER:', process.env.SMTP_USER ? 'SET' : 'NOT SET')
+console.log('[Email Config] SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SET')
 const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587'),
@@ -658,6 +662,7 @@ eScoresheet Developer
         console.log('[Match Email] Sending match info to:', matchData.email)
 
         if (!emailTransporter) {
+          console.log('[Match Email] ERROR: emailTransporter is null - SMTP not configured')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             success: false,
