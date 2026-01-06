@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.6',
+    date: '06.01.26',
+    changes: [
+      'Enhance match info display logic and add email button debug logging'
+    ]
+  },
+  {
     version: '0.19.5',
     date: '06.01.26',
     changes: [
