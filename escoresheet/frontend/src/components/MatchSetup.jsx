@@ -3487,7 +3487,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <button
+                  type="button"
                   onClick={async () => {
+                    console.log('[Email] Button clicked, email:', notificationEmail)
                     if (!notificationEmail || !notificationEmail.includes('@')) {
                       showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
                       return

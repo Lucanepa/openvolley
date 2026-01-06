@@ -767,7 +767,8 @@ export default function MainHeader({
       </div>
 
       {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}
-      {!effectivelyCollapsed && (((showMatchSetup || matchId) && currentMatch) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch))) ? (
+      {/* Only show when match has a gamePin set OR is a test match */}
+      {!effectivelyCollapsed && (((showMatchSetup || matchId) && currentMatch && (currentMatch.gamePin || currentMatch.test)) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch) && ((currentOfficialMatch || currentTestMatch)?.gamePin || (currentOfficialMatch || currentTestMatch)?.test))) ? (
         <div style={{
           position: 'absolute',
           left: '50%',
