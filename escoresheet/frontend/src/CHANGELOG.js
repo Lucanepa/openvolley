@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.15',
+    date: '06.01.26',
+    changes: [
+      'Add BIMI logo for email sender avatar'
+    ]
+  },
+  {
     version: '0.19.14',
     date: '06.01.26',
     changes: [
