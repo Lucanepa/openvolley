@@ -20,6 +20,12 @@
     "notSet": "Nicht festgelegt",
     "options": "Optionen"
   },
+  "alert": {
+    "error": "Fehler",
+    "success": "Erfolg",
+    "warning": "Warnung",
+    "info": "Info"
+  },
   "coinToss": {
     "title": "Coin Toss",
     "teamA": "Team A",
@@ -188,7 +194,7 @@
     "national": "National",
     "international": "International",
     "categoryLevel": "Kategorie und Stufe",
-    "matchCategory": "Kategorie",
+    "gender": "Geschlecht",
     "men": "Herren",
     "women": "Damen",
     "matchLevel": "Stufe",
@@ -1026,7 +1032,12 @@
     "backendNotAvailable": "Backend-Server nicht verfügbar",
     "reminderAlert": "Ligagruppe falls vorhanden, Teamfarben und Kurznamen einstellen",
     "loading": "Lade Spiele...",
-    "selectFilters": "Wähle Geschlecht und Liga um Spiele anzuzeigen"
+    "selectFilters": "Wähle Geschlecht und Liga um Spiele anzuzeigen",
+    "searchPlaceholder": "Suchen...",
+    "today": "Heute",
+    "tomorrow": "Morgen",
+    "clearFilter": "Filter löschen",
+    "noMatchesForFilter": "Keine Spiele für diesen Filter gefunden"
   },
   "livescore": {
     "title": "Live-Ergebnis",

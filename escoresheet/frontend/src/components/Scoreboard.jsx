@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
@@ -20,6 +21,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
@@ -2196,10 +2198,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         setServerStatus(result.status)
         setServerRunning(true)
       } else {
-        alert(`Failed to start server: ${result.error}`)
+        showAlert(`Failed to start server: ${result.error}`, 'error')
       }
     } catch (error) {
-      alert(`Error starting server: ${error.message}`)
+      showAlert(`Error starting server: ${error.message}`, 'error')
     } finally {
       setServerLoading(false)
     }
@@ -2218,7 +2220,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         }
       }
     } catch (error) {
-      alert(`Error stopping server: ${error.message}`)
+      showAlert(`Error stopping server: ${error.message}`, 'error')
     } finally {
       setServerLoading(false)
     }
@@ -4805,7 +4807,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         await handlePoint(otherSide)
       } else {
         // Lineups not set - show message
-        alert('Delay penalty recorded. Point will be awarded after both teams set their lineups.')
+        showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
       }
     } else {
       setSanctionConfirm(null)
@@ -6389,7 +6391,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   )
 
   const handlePlaceholder = message => () => {
-    alert(`${message} — coming soon.`)
+    showAlert(`${message} — coming soon.`, 'info')
   }
 
   // Check if there was a point change between two events
@@ -7357,7 +7359,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         // Bench libero dropped ON the court libero - this is a libero exchange (L1 <-> L2)
         // Check if there has been a point since last libero exchange
         if (!hasPointSinceLastLiberoExchange(teamKey)) {
-          alert('A point must be awarded before exchanging liberos')
+          showAlert('A point must be awarded before exchanging liberos', 'warning')
           return
         }
 
@@ -7368,11 +7370,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         // Check if both liberos are available
         if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
-          alert('The libero currently on court is unable to play')
+          showAlert('The libero currently on court is unable to play', 'warning')
           return
         }
         if (isLiberoUnable(teamKey, benchPlayerNumber)) {
-          alert('The other libero is unable to play')
+          showAlert('The other libero is unable to play', 'warning')
           return
         }
 
@@ -7417,7 +7419,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           // This is the replaced player being dropped on the libero - libero exit
           // Check if there has been a point since last libero exchange
           if (!hasPointSinceLastLiberoExchange(teamKey)) {
-            alert('A point must be awarded before removing the libero')
+            showAlert('A point must be awarded before removing the libero', 'warning')
             return
           }
 
@@ -7543,7 +7545,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         // Dropped on different libero - libero exchange (L1 <-> L2)
         // Check if there has been a point since last libero exchange
         if (!hasPointSinceLastLiberoExchange(teamKey)) {
-          alert('A point must be awarded before exchanging liberos')
+          showAlert('A point must be awarded before exchanging liberos', 'warning')
           return
         }
 
@@ -7554,11 +7556,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
         // Check if both liberos are available
         if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
-          alert('The libero currently on court is unable to play')
+          showAlert('The libero currently on court is unable to play', 'warning')
           return
         }
         if (isLiberoUnable(teamKey, benchPlayerNumber)) {
-          alert('The other libero is unable to play')
+          showAlert('The other libero is unable to play', 'warning')
           return
         }
 
@@ -7605,9 +7607,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const availableExceptionalSubs = getAvailableSubstitutes(teamKey, courtPlayerNumber, true)
         const canExceptionalSub = availableExceptionalSubs.some(p => String(p.number) === String(benchPlayerNumber))
         if (canExceptionalSub) {
-          alert('This substitution requires an exceptional case (injury, expulsion, etc.)')
+          showAlert('This substitution requires an exceptional case (injury, expulsion, etc.)', 'warning')
         } else {
-          alert('This player cannot substitute for the selected court player')
+          showAlert('This player cannot substitute for the selected court player', 'warning')
         }
         return
       }
@@ -7804,7 +7806,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Get available players
     const availablePlayers = getAvailablePlayersForRedesignation(teamKey, liberoNumber)
     if (availablePlayers.length === 0) {
-      alert('No available players for libero re-designation. All players are either on court or already liberos.')
+      showAlert('No available players for libero re-designation. All players are either on court or already liberos.', 'warning')
       return
     }
     
@@ -8165,7 +8167,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Defensive check: ensure player can still be substituted
     if (!canPlayerBeSubstituted(team, playerNumber)) {
-      alert('This player cannot be substituted (already completed a substitution cycle)')
+      showAlert('This player cannot be substituted (already completed a substitution cycle)', 'warning')
       setPlayerActionMenu(null)
       return
     }
@@ -8444,14 +8446,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Prevent giving the same sanction type again
       if (hasThisSanction) {
-        alert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`)
+        showAlert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`, 'warning')
         setSanctionConfirmModal(null)
         return
       }
 
       // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
       if (sanctionType === 'warning' && teamWarning) {
-        alert(`Warning cannot be given because the team has already been warned.`)
+        showAlert(`Warning cannot be given because the team has already been warned.`, 'warning')
         setSanctionConfirmModal(null)
         return
       }
@@ -8702,7 +8704,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           await handlePoint(otherSide)
         } else {
           // Lineups not set - show message
-          alert('Penalty recorded. Point will be awarded after both teams set their lineups.')
+          showAlert('Penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
         }
       } else {
         setSanctionConfirmModal(null)
@@ -8730,7 +8732,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Validate that liberos can only enter back-row positions (I, V, VI)
     const isBackRow = position === 'I' || position === 'V' || position === 'VI'
     if (!isBackRow) {
-      alert('Liberos can only enter back-row positions (I, V, VI)')
+      showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning')
       setLiberoDropdown(null)
       return
     }
@@ -8745,7 +8747,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     // Check if libero is unable to play
     if (isLiberoUnable(team, liberoPlayer.number)) {
-      alert('This libero is unable to play (injured, expelled, disqualified, or declared unable)')
+      showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
       setLiberoDropdown(null)
       return
     }
@@ -8852,7 +8854,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const availableLiberos = liberos.filter(libero => !isLiberoUnable(team, libero.number))
 
     if (availableLiberos.length === 0) {
-      alert('No available liberos')
+      showAlert('No available liberos', 'warning')
       setLiberoInDropdown(null)
       return
     }
@@ -8962,7 +8964,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (isExit) {
       // Check if there has been a point since last libero exchange
       if (!hasPointSinceLastLiberoExchange(team)) {
-        alert('A point must be awarded before removing the libero')
+        showAlert('A point must be awarded before removing the libero', 'warning')
         setLiberoConfirm(null)
         return
       }
@@ -8980,7 +8982,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       if (String(playerAtPosition) !== String(playerOut)) {
         console.error('[Libero Exit] VALIDATION FAILED: libero', playerOut,
           'is not at position', position, '- found', playerAtPosition, 'instead')
-        alert(`Libero #${playerOut} is not at position ${position}. Cannot proceed with libero exit.`)
+        showAlert(`Libero #${playerOut} is not at position ${position}. Cannot proceed with libero exit.`, 'error')
         setLiberoConfirm(null)
         return
       }
@@ -8994,7 +8996,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const originalPlayerNumber = replacedPlayer
 
       if (!originalPlayerNumber) {
-        alert('Original player not found for this libero. Please update lineup manually.')
+        showAlert('Original player not found for this libero. Please update lineup manually.', 'error')
         setLiberoConfirm(null)
         return
       }
@@ -9085,7 +9087,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Validate that liberos can only enter back-row positions (I, V, VI)
     const isBackRow = position === 'I' || position === 'V' || position === 'VI'
     if (!isBackRow) {
-      alert('Liberos can only enter back-row positions (I, V, VI)')
+      showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning')
       setLiberoConfirm(null)
       setLiberoDropdown(null)
       return
@@ -9109,7 +9111,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     // Check if libero is unable to play
     if (isLiberoUnable(team, liberoPlayer.number)) {
-      alert('This libero is unable to play (injured, expelled, disqualified, or declared unable)')
+      showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
       setLiberoConfirm(null)
       setLiberoDropdown(null)
       return
@@ -9120,7 +9122,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     if (String(playerAtPosition) !== String(playerOut)) {
       console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
         'is not at position', position, '- found', playerAtPosition, 'instead')
-      alert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`)
+      showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error')
       setLiberoConfirm(null)
       setLiberoDropdown(null)
       return
@@ -9130,7 +9132,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const playerOutInfo = teamPlayers?.find(p => String(p.number) === String(playerOut))
     if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
       console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
-      alert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`)
+      showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning')
       setLiberoConfirm(null)
       setLiberoDropdown(null)
       return
@@ -9273,7 +9275,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     
     // Check if libero is unable to play
     if (isLiberoUnable(team, liberoNumber)) {
-      alert('This libero is unable to play (injured, expelled, disqualified, or declared unable)')
+      showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
       setLiberoReentryModal(null)
       return
     }
@@ -9394,13 +9396,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const liberoOnCourt = getLiberoOnCourt(teamKey)
     
     if (!liberoOnCourt) {
-      alert('No libero is currently on court')
+      showAlert('No libero is currently on court', 'warning')
       return
     }
     
     // Check if there has been a point since last libero exchange
     if (!hasPointSinceLastLiberoExchange(teamKey)) {
-      alert('A point must be awarded before removing the libero')
+      showAlert('A point must be awarded before removing the libero', 'warning')
       return
     }
     
@@ -9438,7 +9440,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }
     
     if (!originalPlayerNumber) {
-      alert('Original player not found for this libero. Please update lineup manually.')
+      showAlert('Original player not found for this libero. Please update lineup manually.', 'error')
       return
     }
     
@@ -9717,20 +9719,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Check if a libero is already on court
     const liberoOnCourt = getLiberoOnCourt(teamKey)
     if (liberoOnCourt) {
-      alert('A libero is already on court')
+      showAlert('A libero is already on court', 'warning')
       return
     }
     
     // Check if team has any liberos
     if (liberos.length === 0) {
-      alert('No liberos available')
+      showAlert('No liberos available', 'warning')
       return
     }
     
     // Check if any libero is available (not unable)
     const availableLiberos = liberos.filter(libero => !isLiberoUnable(teamKey, libero.number))
     if (availableLiberos.length === 0) {
-      alert('No available liberos (all are unable to play)')
+      showAlert('No available liberos (all are unable to play)', 'warning')
       return
     }
     
@@ -9762,13 +9764,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const liberoOnCourt = getLiberoOnCourt(teamKey)
     
     if (!liberoOnCourt) {
-      alert('No libero is currently on court')
+      showAlert('No libero is currently on court', 'warning')
       return
     }
     
     // Check if there has been a point since last libero exchange
     if (!hasPointSinceLastLiberoExchange(teamKey)) {
-      alert('A point must be awarded before exchanging liberos')
+      showAlert('A point must be awarded before exchanging liberos', 'warning')
       return
     }
     
@@ -9784,18 +9786,18 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     )
 
     if (!otherLibero) {
-      alert('Other libero not found')
+      showAlert('Other libero not found', 'warning')
       return
     }
     
     // Check if either libero is unable to play
     if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
-      alert('The libero currently on court is unable to play (injured, expelled, disqualified, or declared unable)')
+      showAlert('The libero currently on court is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
       return
     }
     
     if (isLiberoUnable(teamKey, otherLibero.number)) {
-      alert('The other libero is unable to play (injured, expelled, disqualified, or declared unable)')
+      showAlert('The other libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
       return
     }
     
@@ -11025,7 +11027,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   try {
                     const match = data?.match
                     if (!match) {
-                      alert('No match data available')
+                      showAlert('No match data available', 'error')
                       return
                     }
 
@@ -11044,7 +11046,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
-                      alert(t('header.allowPopups'))
+                      showAlert(t('header.allowPopups'), 'warning')
                       return
                     }
 
@@ -11072,7 +11074,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   try {
                     const match = data?.match
                     if (!match) {
-                      alert('No match data available')
+                      showAlert('No match data available', 'error')
                       return
                     }
 
@@ -11091,7 +11093,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const scoresheetWindow = window.open('/scoresheet?action=print', '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
-                      alert(t('header.allowPopups'))
+                      showAlert(t('header.allowPopups'), 'warning')
                       return
                     }
 
@@ -11119,7 +11121,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   try {
                     const match = data?.match
                     if (!match) {
-                      alert('No match data available')
+                      showAlert('No match data available', 'error')
                       return
                     }
 
@@ -11138,7 +11140,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     const scoresheetWindow = window.open('/scoresheet?action=save', '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
-                      alert(t('header.allowPopups'))
+                      showAlert(t('header.allowPopups'), 'warning')
                       return
                     }
 
@@ -11267,7 +11269,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     URL.revokeObjectURL(url)
                   } catch (error) {
                     console.error('Error exporting database:', error)
-                    alert('Error exporting database data. Please try again.')
+                    showAlert('Error exporting database data. Please try again.', 'error')
                   }
                 }
               },
@@ -16985,7 +16987,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   setMenuModal(false)
                 } catch (error) {
                   console.error('Error exporting database:', error)
-                  alert('Error exporting database data. Please try again.')
+                  showAlert('Error exporting database data. Please try again.', 'error')
                 }
               }}>
                 📥 Download Game Data (JSON)
@@ -20021,7 +20023,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         const team = document.getElementById('newEventTeam')?.value
                         
                         if (!eventType || !setIndex || !team) {
-                          alert('Please fill in all fields')
+                          showAlert('Please fill in all fields', 'warning')
                           return
                         }
                         
@@ -20064,7 +20066,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           seq: debugSeq
                         })
 
-                        alert('Event added. You can now edit it in the sections above.')
+                        showAlert('Event added. You can now edit it in the sections above.', 'success')
                       }}
                       style={{
                         padding: '8px 16px',
@@ -20298,7 +20300,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               return `[${time}] ${c.category} - ${c.field}: "${c.before}" → "${c.after}"`
                             }).join('\n')
                             navigator.clipboard.writeText(logText)
-                            alert('Manual changes log copied to clipboard!')
+                            showAlert('Manual changes log copied to clipboard!', 'success')
                           }}
                           style={{
                             padding: '8px 16px',

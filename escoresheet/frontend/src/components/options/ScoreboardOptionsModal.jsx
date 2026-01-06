@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import { listCloudBackups, loadCloudBackup } from '../../utils/logger'
 import { restoreMatchInPlace } from '../../utils/backupManager'
@@ -181,6 +182,7 @@ export default function ScoreboardOptionsModal({
   onRestoreBackup
 }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [showCloudBackups, setShowCloudBackups] = useState(false)
   const [cloudBackups, setCloudBackups] = useState([])
@@ -190,7 +192,7 @@ export default function ScoreboardOptionsModal({
   // Load cloud backups
   const loadBackups = async () => {
     if (!matchId) {
-      alert(t('options.alerts.noMatchId'))
+      showAlert(t('options.alerts.noMatchId'), 'warning')
       return
     }
     setBackupsLoading(true)
@@ -200,7 +202,7 @@ export default function ScoreboardOptionsModal({
       setShowCloudBackups(true)
     } catch (err) {
       console.error('Failed to load backups:', err)
-      alert(t('options.alerts.failedToLoadBackups'))
+      showAlert(t('options.alerts.failedToLoadBackups'), 'error')
     } finally {
       setBackupsLoading(false)
     }
@@ -211,7 +213,7 @@ export default function ScoreboardOptionsModal({
     try {
       const backupData = await loadCloudBackup(backup.path)
       if (!backupData) {
-        alert(t('options.alerts.failedToLoadBackupData'))
+        showAlert(t('options.alerts.failedToLoadBackupData'), 'error')
         return
       }
       // Use the callback or in-place restore
@@ -226,7 +228,7 @@ export default function ScoreboardOptionsModal({
       window.location.reload()
     } catch (err) {
       console.error('Failed to restore backup:', err)
-      alert(t('options.alerts.failedToRestoreBackup', { error: err.message }))
+      showAlert(t('options.alerts.failedToRestoreBackup', { error: err.message }), 'error')
     }
   }
 
@@ -258,7 +260,7 @@ export default function ScoreboardOptionsModal({
       window.location.reload()
     } catch (error) {
       console.error('Error clearing cache:', error)
-      alert(t('options.alerts.failedToClearCache', { error: error.message }))
+      showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')
     }
   }
 

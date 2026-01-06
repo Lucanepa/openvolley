@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
@@ -216,6 +217,7 @@ export default function HomeOptionsModal({
   dashboardServer = null // Optional dashboard server props from useDashboardServer
 }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
@@ -297,7 +299,7 @@ export default function HomeOptionsModal({
       window.location.reload()
     } catch (error) {
       console.error('Error clearing cache:', error)
-      alert(t('options.alerts.failedToClearCache', { error: error.message }))
+      showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')
     }
   }
 

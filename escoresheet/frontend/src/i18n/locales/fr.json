@@ -20,6 +20,12 @@
     "notSet": "Non défini",
     "options": "Options"
   },
+  "alert": {
+    "error": "Erreur",
+    "success": "Succès",
+    "warning": "Avertissement",
+    "info": "Info"
+  },
   "coinToss": {
     "title": "Tirage au sort",
     "teamA": "Équipe A",
@@ -188,7 +194,7 @@
     "national": "National",
     "international": "International",
     "categoryLevel": "Catégorie et niveau",
-    "matchCategory": "Catégorie",
+    "gender": "Genre",
     "men": "Hommes",
     "women": "Femmes",
     "matchLevel": "Niveau",
@@ -1026,7 +1032,12 @@
     "backendNotAvailable": "Serveur backend non disponible",
     "reminderAlert": "Définir le groupe de ligue si présent, les couleurs et les noms courts des équipes",
     "loading": "Chargement des matchs...",
-    "selectFilters": "Sélectionnez genre et ligue pour voir les matchs"
+    "selectFilters": "Sélectionnez genre et ligue pour voir les matchs",
+    "searchPlaceholder": "Rechercher...",
+    "today": "Aujourd'hui",
+    "tomorrow": "Demain",
+    "clearFilter": "Effacer filtre",
+    "noMatchesForFilter": "Aucun match trouvé pour ce filtre"
   },
   "livescore": {
     "title": "Score en direct",

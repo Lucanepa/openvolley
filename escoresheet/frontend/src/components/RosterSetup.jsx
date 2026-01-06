@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../contexts/AlertContext'
 import { getMatchData } from '../utils/serverDataSync'
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
@@ -9,6 +10,7 @@ import SignaturePad from './SignaturePad'
 
 export default function RosterSetup({ matchId, team, onBack, embedded = false, useSupabaseConnection = false, matchData = null }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const [players, setPlayers] = useState([])
   const [benchOfficials, setBenchOfficials] = useState([])
   const [loading, setLoading] = useState(false)
@@ -687,13 +689,13 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
 
         if (supabaseError) {
           console.error('[RosterSetup] Failed to sync roster to Supabase:', supabaseError)
-          alert(t('rosterSetup.rosterSaved'))
+          showAlert(t('rosterSetup.rosterSaved'), 'success')
         } else {
           console.log('[RosterSetup] Roster synced to Supabase with signatures:', signaturesUpdate)
           setShowSuccessModal(true)
         }
       } else {
-        alert(t('rosterSetup.rosterSaved'))
+        showAlert(t('rosterSetup.rosterSaved'), 'success')
       }
     } catch (err) {
       console.error('Error saving roster:', err)

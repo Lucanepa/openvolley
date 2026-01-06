@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getApiUrl } from '../utils/backendConfig'
+import { useAlert } from '../contexts/AlertContext'
 
 // Styles
 const selectStyle = {
@@ -26,6 +27,50 @@ const labelStyle = {
   fontWeight: 600,
   color: 'rgba(255,255,255,0.7)',
   marginBottom: '6px'
+}
+
+const filterButtonStyle = {
+  padding: '6px 12px',
+  fontSize: '12px',
+  background: 'rgba(255,255,255,0.1)',
+  border: '1px solid rgba(255,255,255,0.2)',
+  borderRadius: '6px',
+  color: '#ffffff',
+  cursor: 'pointer',
+  transition: 'all 0.15s'
+}
+
+const filterButtonActiveStyle = {
+  ...filterButtonStyle,
+  background: 'rgba(59, 130, 246, 0.3)',
+  borderColor: 'rgba(59, 130, 246, 0.5)'
+}
+
+/**
+ * Format league code for display
+ * - ZCM/ZCD -> "Züri Cup (♂/♀)"
+ * - Other leagues: replace M/D suffix with (♂/♀)
+ */
+function formatLeagueDisplay(code, gender) {
+  const genderSymbol = gender === 'men' ? '♂' : '♀'
+
+  // Handle Züri Cup
+  if (code.startsWith('ZC')) {
+    return `Züri Cup (${genderSymbol})`
+  }
+
+  // For codes ending in M or D (men/damen) like 1LM, 2LD, 3LM
+  if (code.endsWith('M') || code.endsWith('D')) {
+    return `${code.slice(0, -1)} (${genderSymbol})`
+  }
+
+  // For codes like U23D-1, U23D-2, etc.
+  const match = code.match(/^(.+?)(M|D)(-\d+)?$/)
+  if (match) {
+    return `${match[1]}${match[3] || ''} (${genderSymbol})`
+  }
+
+  return code
 }
 
 /**
@@ -74,8 +119,34 @@ function toLocalTime(isoString) {
   return `${hours}:${minutes}`
 }
 
+/**
+ * Check if a date is today (local time)
+ */
+function isToday(isoString) {
+  if (!isoString) return false
+  const date = new Date(isoString)
+  const today = new Date()
+  return date.getDate() === today.getDate() &&
+         date.getMonth() === today.getMonth() &&
+         date.getFullYear() === today.getFullYear()
+}
+
+/**
+ * Check if a date is tomorrow (local time)
+ */
+function isTomorrow(isoString) {
+  if (!isoString) return false
+  const date = new Date(isoString)
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return date.getDate() === tomorrow.getDate() &&
+         date.getMonth() === tomorrow.getMonth() &&
+         date.getFullYear() === tomorrow.getFullYear()
+}
+
 export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
 
   // Dynamic leagues from backend
   const [allLeagues, setAllLeagues] = useState([])
@@ -84,6 +155,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   // Filter state (simplified: just gender and league)
   const [gender, setGender] = useState('')
   const [league, setLeague] = useState('')
+
+  // Search and date filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [dateFilter, setDateFilter] = useState('') // '' | 'today' | 'tomorrow'
 
   // Data state
   const [matches, setMatches] = useState([])
@@ -178,6 +253,31 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     }
   }
 
+  // Filter matches by search query and date
+  const filteredMatches = useMemo(() => {
+    let result = matches
+
+    // Apply date filter
+    if (dateFilter === 'today') {
+      result = result.filter(m => isToday(m.dtstart))
+    } else if (dateFilter === 'tomorrow') {
+      result = result.filter(m => isTomorrow(m.dtstart))
+    }
+
+    // Apply search filter (search in home/away team names, game number, and date)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      result = result.filter(m =>
+        m.home?.toLowerCase().includes(query) ||
+        m.away?.toLowerCase().includes(query) ||
+        m.gameN?.toLowerCase().includes(query) ||
+        formatDisplayDate(m.dtstart).toLowerCase().includes(query)
+      )
+    }
+
+    return result
+  }, [matches, searchQuery, dateFilter])
+
   const handleSelectMatch = (match) => {
     // Transform iCal data to MatchSetup state format
     const matchData = {
@@ -209,7 +309,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
     // Show reminder alert after modal closes
     setTimeout(() => {
-      alert(t('loadOfficialMatch.reminderAlert', 'Set the League group if present, Team colours and Team Short names'))
+      showAlert(t('loadOfficialMatch.reminderAlert', 'Set the League group if present, Team colours and Team Short names'), 'info')
     }, 100)
   }
 
@@ -220,6 +320,8 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       setLeague('')
       setMatches([])
       setError(null)
+      setSearchQuery('')
+      setDateFilter('')
     }
   }, [open])
 
@@ -306,7 +408,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               >
                 <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
                 {availableLeagues.map(l => (
-                  <option key={l.code} value={l.code}>{l.code}</option>
+                  <option key={l.code} value={l.code}>{formatLeagueDisplay(l.code, l.gender)}</option>
                 ))}
               </select>
             </div>
@@ -333,13 +435,74 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               {league && (
                 <>
                   <span style={{ color: 'rgba(255,255,255,0.4)' }}>|</span>
-                  <span style={{ fontWeight: 600 }}>{league}</span>
+                  <span style={{ fontWeight: 600 }}>{formatLeagueDisplay(league, gender)}</span>
                 </>
               )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Search and Date Filters - shown when matches are loaded */}
+      {matches.length > 0 && (
+        <div style={{
+          marginBottom: '12px',
+          display: 'flex',
+          gap: '12px',
+          alignItems: 'center',
+          flexWrap: 'wrap'
+        }}>
+          {/* Search Input */}
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                fontSize: '13px',
+                background: '#000000',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '6px',
+                color: '#ffffff',
+                outline: 'none'
+              }}
+            />
+          </div>
+
+          {/* Date Filter Buttons */}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              onClick={() => setDateFilter(dateFilter === 'today' ? '' : 'today')}
+              style={dateFilter === 'today' ? filterButtonActiveStyle : filterButtonStyle}
+            >
+              {t('loadOfficialMatch.today', 'Today')}
+            </button>
+            <button
+              onClick={() => setDateFilter(dateFilter === 'tomorrow' ? '' : 'tomorrow')}
+              style={dateFilter === 'tomorrow' ? filterButtonActiveStyle : filterButtonStyle}
+            >
+              {t('loadOfficialMatch.tomorrow', 'Tomorrow')}
+            </button>
+            {dateFilter && (
+              <button
+                onClick={() => setDateFilter('')}
+                style={{
+                  ...filterButtonStyle,
+                  padding: '6px 8px',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  borderColor: 'rgba(239, 68, 68, 0.3)'
+                }}
+                title={t('loadOfficialMatch.clearFilter', 'Clear filter')}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Matches Table */}
       <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
@@ -368,7 +531,13 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
           </div>
         )}
 
-        {!loading && !error && matches.length > 0 && (
+        {!loading && !error && matches.length > 0 && filteredMatches.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+            {t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
+          </div>
+        )}
+
+        {!loading && !error && filteredMatches.length > 0 && (
           <>
             {/* Table Header */}
             <div style={{
@@ -390,7 +559,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
             </div>
 
             {/* Table Rows */}
-            {matches.map((match, index) => (
+            {filteredMatches.map((match, index) => (
               <div
                 key={match.gameN}
                 onClick={() => handleSelectMatch(match)}

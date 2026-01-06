@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../contexts/AlertContext'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
@@ -380,6 +381,7 @@ function formatDobForSync(dob) {
 
 export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const [home, setHome] = useState('')
   // Match created popup state
   const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin, refereePin, homeTeamPin, awayTeamPin }
@@ -2804,13 +2806,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setHome(matchData.home)
     setAway(matchData.away)
 
-    // Generate short names automatically from team names (first 8 chars uppercase)
-    if (matchData.home) {
-      setHomeShortName(matchData.home.substring(0, 8).toUpperCase())
-    }
-    if (matchData.away) {
-      setAwayShortName(matchData.away.substring(0, 8).toUpperCase())
-    }
+    // Don't auto-generate short names - let user fill them in manually
   }
 
   // PDF file handlers - must be defined before conditional returns
@@ -3143,7 +3139,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← {t('common.back')}</button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-              <h1 style={{ margin: 0 }}>{t('matchSetup.matchInfo')}</h1>
+              <h1 style={{ margin: 8 }}>{t('matchSetup.matchInfo')}</h1>
               <button
                 onClick={() => setLoadOfficialMatchModal(true)}
                 style={{
@@ -3244,9 +3240,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.categoryLevel')}</h3>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.genderLevel')}</h3>
             <div className="field">
-              <label>{t('matchSetup.matchCategory')}</label>
+              <label>{t('matchSetup.matchGender')}</label>
               <select className="w-120" value={type2} onChange={e=>setType2(e.target.value)}>
                 <option value="men">{t('matchSetup.men')}</option>
                 <option value="women">{t('matchSetup.women')}</option>
@@ -3493,7 +3489,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <button
                   onClick={async () => {
                     if (!notificationEmail || !notificationEmail.includes('@')) {
-                      alert(t('matchSetup.invalidEmail') || 'Please enter a valid email address')
+                      showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
                       return
                     }
                     try {
@@ -3518,13 +3514,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       })
                       const data = await res.json()
                       if (data.success) {
-                        alert(t('matchSetup.emailSent') || 'Email sent successfully!')
+                        showAlert(t('matchSetup.emailSent') || 'Email sent successfully!', 'success')
                       } else {
-                        alert(data.error || t('matchSetup.emailFailed') || 'Failed to send email')
+                        showAlert(data.error || t('matchSetup.emailFailed') || 'Failed to send email', 'error')
                       }
                     } catch (err) {
                       console.error('Failed to send email:', err)
-                      alert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.')
+                      showAlert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.', 'error')
                     }
                   }}
                   style={{
@@ -3559,7 +3555,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 e.preventDefault()
                 const tooltip = getMissingFieldsTooltip()
                 if (tooltip) {
-                  alert(tooltip)
+                  showAlert(tooltip, 'info')
                 }
               } else {
                 confirmMatchInfo()

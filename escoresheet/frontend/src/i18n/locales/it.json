@@ -20,6 +20,12 @@
     "notSet": "Non impostato",
     "options": "Opzioni"
   },
+  "alert": {
+    "error": "Errore",
+    "success": "Successo",
+    "warning": "Avviso",
+    "info": "Info"
+  },
   "coinToss": {
     "title": "Coin Toss",
     "teamA": "Squadra A",
@@ -188,7 +194,7 @@
     "national": "Nazionale",
     "international": "Internazionale",
     "categoryLevel": "Categoria e livello",
-    "matchCategory": "Categoria",
+    "gender": "Sesso",
     "men": "Maschile",
     "women": "Femminile",
     "matchLevel": "Livello",
@@ -1026,7 +1032,12 @@
     "backendNotAvailable": "Server backend non disponibile",
     "reminderAlert": "Imposta il gruppo di lega se presente, i colori e i nomi brevi delle squadre",
     "loading": "Caricamento partite...",
-    "selectFilters": "Seleziona sesso e lega per vedere le partite"
+    "selectFilters": "Seleziona sesso e lega per vedere le partite",
+    "searchPlaceholder": "Cerca...",
+    "today": "Oggi",
+    "tomorrow": "Domani",
+    "clearFilter": "Cancella filtro",
+    "noMatchesForFilter": "Nessuna partita trovata per questo filtro"
   },
   "livescore": {
     "title": "Punteggio Live",
