@@ -3504,17 +3504,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           email: notificationEmail,
-                          gameN: match.gameN,
+                          gameN: gameN,
                           gamePin: match.gamePin,
-                          home: match.home,
-                          homeShortName: match.homeShortName,
-                          away: match.away,
-                          awayShortName: match.awayShortName,
-                          date: match.date,
-                          time: match.time,
-                          hall: match.hall,
-                          city: match.city,
-                          league: match.league
+                          home: home,
+                          homeShortName: homeShortName,
+                          away: away,
+                          awayShortName: awayShortName,
+                          date: date,
+                          time: time,
+                          hall: hall,
+                          city: city,
+                          league: league
                         })
                       })
                       const data = await res.json()

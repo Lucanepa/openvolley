@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.10',
+    date: '06.01.26',
+    changes: [
+      'Fix email: use state variables instead of match object properties'
+    ]
+  },
+  {
     version: '0.19.9',
     date: '06.01.26',
     changes: [
