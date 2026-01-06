@@ -38,7 +38,7 @@ async function sendViaResend(to, subject, text) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      from: 'eScoresheet <onboarding@resend.dev>',
+      from: process.env.RESEND_FROM || 'eScoresheet <noreply@openvolley.app>',
       to: [to],
       subject: subject,
       text: text
