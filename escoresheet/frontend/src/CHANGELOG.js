@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.8',
+    date: '06.01.26',
+    changes: [
+      'Add 'sending' translation for email button loading state'
+    ]
+  },
+  {
     version: '0.19.7',
     date: '06.01.26',
     changes: [

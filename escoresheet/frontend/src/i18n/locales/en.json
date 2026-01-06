@@ -210,6 +210,7 @@
     "gamePinDescription": "Auto-generated PIN to open this match in a new session",
     "notificationEmail": "Send PIN by email",
     "send": "Send",
+    "sending": "Sending...",
     "emailSent": "Email sent successfully!",
     "emailFailed": "Failed to send email. Check server connection.",
     "invalidEmail": "Please enter a valid email address",

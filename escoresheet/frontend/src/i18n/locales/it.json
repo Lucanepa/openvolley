@@ -210,6 +210,7 @@
     "gamePinDescription": "PIN auto-generato per aprire questa partita in una nuova sessione",
     "notificationEmail": "Invia PIN via email",
     "send": "Invia",
+    "sending": "Invio...",
     "emailSent": "Email inviata con successo!",
     "emailFailed": "Invio fallito. Controlla la connessione al server.",
     "invalidEmail": "Inserisci un indirizzo email valido",

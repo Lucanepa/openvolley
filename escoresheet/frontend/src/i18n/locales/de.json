@@ -210,6 +210,7 @@
     "gamePinDescription": "Auto-generierter PIN um dieses Spiel in einer neuen Sitzung zu öffnen",
     "notificationEmail": "PIN per E-Mail senden",
     "send": "Senden",
+    "sending": "Wird gesendet...",
     "emailSent": "E-Mail erfolgreich gesendet!",
     "emailFailed": "Senden fehlgeschlagen. Serververbindung prüfen.",
     "invalidEmail": "Bitte geben Sie eine gültige E-Mail-Adresse ein",
