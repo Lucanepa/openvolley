@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.5',
+    date: '06.01.26',
+    changes: [
+      'Add SMTP debug logging to diagnose email config issues'
+    ]
+  },
+  {
     version: '0.19.4',
     date: '06.01.26',
     changes: [
