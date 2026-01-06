@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.16',
+    date: '06.01.26',
+    changes: [
+      'Remove unused volleyball_simple.png image from the project'
+    ]
+  },
+  {
     version: '0.19.15',
     date: '06.01.26',
     changes: [
