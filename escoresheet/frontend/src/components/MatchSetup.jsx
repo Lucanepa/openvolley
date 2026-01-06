@@ -3142,22 +3142,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← {t('common.back')}</button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h2 style={{ margin: 0 }}>{t('matchSetup.matchInfo')}</h2>
-            <button
-              onClick={() => setLoadOfficialMatchModal(true)}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-                color: '#60a5fa',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('loadOfficialMatch.button')}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+              <h1 style={{ margin: 0 }}>{t('matchSetup.matchInfo')}</h1>
+              <button
+                onClick={() => setLoadOfficialMatchModal(true)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                  color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('loadOfficialMatch.button')}
+              </button>
+            </div>
           </div>
           <div style={{ width: 80 }}></div>
         </div>

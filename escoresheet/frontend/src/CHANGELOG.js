@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.3',
+    date: '06.01.26',
+    changes: [
+      'Refactor league handling and UI components for improved match selection'
+    ]
+  },
+  {
     version: '0.19.2',
     date: '06.01.26',
     changes: [

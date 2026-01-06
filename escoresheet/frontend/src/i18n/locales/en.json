@@ -187,8 +187,8 @@
     "regional": "Regional",
     "national": "National",
     "international": "International",
-    "categoryLevel": "Category & Level",
-    "matchCategory": "Match Category",
+    "genderLevel": "Gender & Level",
+    "matchGender": "Match Gender",
     "men": "Men",
     "women": "Women",
     "matchLevel": "Match Level",
@@ -1035,7 +1035,7 @@
     "backendNotAvailable": "Backend server not available",
     "reminderAlert": "Set the League group if present, Team colours and Team Short names",
     "loading": "Loading matches...",
-    "selectFilters": "Select federation, gender, and league to view matches"
+    "selectFilters": "Select gender and league to view matches"
   },
   "livescore": {
     "title": "Live Scoring",

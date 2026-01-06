@@ -128,12 +128,12 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                 </div>
             </div>
             
-            {/* Category Block */}
+            {/* Gender Block */}
             <div className="border-r border-black p-1 min-w-0 overflow-hidden">
                 <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
                          <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.category === 'men' || match?.match_type_2 === 'men') && (
+                             {(match?.gender === 'men' || match?.match_type_2 === 'men') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
                          </div>
@@ -157,7 +157,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                      </div>
                      <div className="flex items-center gap-0.5">
                          <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.category === 'women' || match?.match_type_2 === 'women') && (
+                             {(match?.gender === 'women' || match?.match_type_2 === 'women') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
                          </div>
