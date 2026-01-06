@@ -1016,8 +1016,8 @@
     "gamePin": "Spiel-PIN"
   },
   "loadOfficialMatch": {
-    "title": "Offizielles Spiel laden",
-    "button": "Offizielles Spiel laden",
+    "title": "Spiel aus dem Spielplan laden",
+    "button": "Spiel aus dem Spielplan laden",
     "federation": "Verband",
     "selectFederation": "Auswählen...",
     "gender": "Geschlecht",

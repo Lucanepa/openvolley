@@ -1016,8 +1016,8 @@
     "gamePin": "PIN Partita"
   },
   "loadOfficialMatch": {
-    "title": "Carica Partita Ufficiale",
-    "button": "Carica Partita Ufficiale",
+    "title": "Carica Partita dal Calendario",
+    "button": "Carica Partita dal Calendario",
     "federation": "Federazione",
     "selectFederation": "Seleziona...",
     "gender": "Sesso",

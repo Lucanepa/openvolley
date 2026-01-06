@@ -349,7 +349,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         zIndex: 10
       }}>
         <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
-          {t('loadOfficialMatch.title', 'Load Official Match')}
+          {t('loadOfficialMatch.title', 'Load Match from Schedule')}
         </h2>
         <button
           onClick={onClose}
