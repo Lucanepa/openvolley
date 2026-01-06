@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../contexts/AlertContext'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
 import SignaturePad from './SignaturePad'
@@ -109,6 +110,7 @@ const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
 export default function CoinToss({ matchId, onConfirm, onBack }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
 
   // Check if compact mode
   const isCompact = useCompactMode()
@@ -1422,7 +1424,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               onClick: async () => {
                 try {
                   if (!match) {
-                    alert(t('coinToss.noMatchData'))
+                    showAlert(t('coinToss.noMatchData'), 'error')
                     return
                   }
 
@@ -1449,11 +1451,11 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
 
                   if (!scoresheetWindow) {
-                    alert(t('coinToss.allowPopups'))
+                    showAlert(t('coinToss.allowPopups'), 'warning')
                   }
                 } catch (error) {
                   console.error('Error opening scoresheet:', error)
-                  alert(t('coinToss.failedToOpenScoresheet', { error: error.message || 'Unknown error' }))
+                  showAlert(t('coinToss.failedToOpenScoresheet', { error: error.message || 'Unknown error' }), 'error')
                 }
               }
             }
@@ -1954,7 +1956,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 <button className="secondary" onClick={() => setAddPlayerModal(null)}>{t('common.cancel')}</button>
                 <button onClick={() => {
                   if (!last || !first) {
-                    alert(t('roster.enterNames'))
+                    showAlert(t('roster.enterNames'), 'warning')
                     return
                   }
                   const newPlayer = { number: num ? Number(num) : null, lastName: last, firstName: first, dob, libero, isCaptain: captain }

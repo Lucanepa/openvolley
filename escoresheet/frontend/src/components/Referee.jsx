@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../contexts/AlertContext'
 import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
@@ -157,6 +158,7 @@ function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isS
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
@@ -1565,7 +1567,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         setIsFullscreen(true)
         reEnableWakeLock()
         // Show a helpful tip
-        alert('Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.')
+        showAlert('Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.', 'info')
       } else {
         document.body.classList.remove('ios-fullscreen')
         setIsFullscreen(false)

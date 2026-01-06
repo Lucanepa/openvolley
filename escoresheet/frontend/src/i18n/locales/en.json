@@ -20,6 +20,12 @@
     "notSet": "Not set",
     "options": "Options"
   },
+  "alert": {
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info"
+  },
   "coinToss": {
     "title": "Coin Toss",
     "teamA": "Team A",
@@ -1035,7 +1041,12 @@
     "backendNotAvailable": "Backend server not available",
     "reminderAlert": "Set the League group if present, Team colours and Team Short names",
     "loading": "Loading matches...",
-    "selectFilters": "Select gender and league to view matches"
+    "selectFilters": "Select gender and league to view matches",
+    "searchPlaceholder": "Search...",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "clearFilter": "Clear filter",
+    "noMatchesForFilter": "No matches found for this filter"
   },
   "livescore": {
     "title": "Live Scoring",

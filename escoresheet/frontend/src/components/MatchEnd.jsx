@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
+import { useAlert } from '../contexts/AlertContext'
 import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -229,6 +230,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
     }
   }, [matchId])
 
+  const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
   const [isApproved, setIsApproved] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -639,7 +641,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
     try {
       // Only check signatures for official matches
       if (!match.test && !allSignaturesDone) {
-        alert('Please complete all signatures before approving.')
+        showAlert('Please complete all signatures before approving.', 'warning')
         setIsSaving(false)
         return
       }
@@ -676,7 +678,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
       setShowCloseConfirm(true)
     } catch (error) {
       console.error('Error approving match:', error)
-      alert('Error approving match: ' + error.message)
+      showAlert('Error approving match: ' + error.message, 'error')
       setIsSaving(false)
     }
   }

@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.4',
+    date: '06.01.26',
+    changes: [
+      'Add AlertProvider to main entry points and update alert handling in components'
+    ]
+  },
+  {
     version: '0.19.3',
     date: '06.01.26',
     changes: [
