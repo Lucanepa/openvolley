@@ -408,6 +408,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
   const [notificationEmail, setNotificationEmail] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
 
   // Match info confirmation state - other sections are disabled until confirmed
   const [matchInfoConfirmed, setMatchInfoConfirmed] = useState(false)
@@ -3488,12 +3489,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 />
                 <button
                   type="button"
+                  disabled={sendingEmail}
                   onClick={async () => {
                     console.log('[Email] Button clicked, email:', notificationEmail)
                     if (!notificationEmail || !notificationEmail.includes('@')) {
                       showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
                       return
                     }
+                    setSendingEmail(true)
                     try {
                       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
                       const res = await fetch(`${backendUrl}/api/match/send-info`, {
@@ -3523,6 +3526,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     } catch (err) {
                       console.error('Failed to send email:', err)
                       showAlert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.', 'error')
+                    } finally {
+                      setSendingEmail(false)
                     }
                   }}
                   style={{
@@ -3530,13 +3535,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     fontSize: '14px',
                     borderRadius: '6px',
                     border: 'none',
-                    background: 'var(--primary, #4a90d9)',
+                    background: sendingEmail ? 'var(--muted, #666)' : 'var(--primary, #4a90d9)',
                     color: 'white',
-                    cursor: 'pointer',
-                    fontWeight: 600
+                    cursor: sendingEmail ? 'wait' : 'pointer',
+                    fontWeight: 600,
+                    opacity: sendingEmail ? 0.7 : 1
                   }}
                 >
-                  {t('matchSetup.send') || 'Send'}
+                  {sendingEmail ? (t('matchSetup.sending') || 'Sending...') : (t('matchSetup.send') || 'Send')}
                 </button>
               </div>
             </div>

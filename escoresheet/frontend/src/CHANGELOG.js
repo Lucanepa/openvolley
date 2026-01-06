@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.7',
+    date: '06.01.26',
+    changes: [
+      'Add loading state to email button and reduce SMTP timeout to 10s'
+    ]
+  },
+  {
     version: '0.19.6',
     date: '06.01.26',
     changes: [
