@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.9',
+    date: '06.01.26',
+    changes: [
+      'Add Resend API support for email (HTTPS fallback when SMTP blocked)'
+    ]
+  },
+  {
     version: '0.19.8',
     date: '06.01.26',
     changes: [
