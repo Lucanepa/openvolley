@@ -2807,7 +2807,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setHome(matchData.home)
     setAway(matchData.away)
 
-    // Don't auto-generate short names - let user fill them in manually
+    // Clear short names - user must fill them in manually for official matches
+    setHomeShortName('')
+    setAwayShortName('')
   }
 
   // PDF file handlers - must be defined before conditional returns

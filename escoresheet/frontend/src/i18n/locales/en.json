@@ -1025,8 +1025,8 @@
     "gamePin": "Game PIN"
   },
   "loadOfficialMatch": {
-    "title": "Load Official Match",
-    "button": "Load Official Match",
+    "title": "Load Match from Schedule",
+    "button": "Load Match from Schedule",
     "federation": "Federation",
     "selectFederation": "Select...",
     "gender": "Gender",

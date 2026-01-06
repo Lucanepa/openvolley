@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.14',
+    date: '06.01.26',
+    changes: [
+      'Clear short names when loading official match'
+    ]
+  },
+  {
     version: '0.19.13',
     date: '06.01.26',
     changes: [

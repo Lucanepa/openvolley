@@ -1016,8 +1016,8 @@
     "gamePin": "PIN du match"
   },
   "loadOfficialMatch": {
-    "title": "Charger Match Officiel",
-    "button": "Charger Match Officiel",
+    "title": "Charger Match depuis le calendrier",
+    "button": "Charger Match depuis le calendrier",
     "federation": "Fédération",
     "selectFederation": "Sélectionner...",
     "gender": "Genre",
