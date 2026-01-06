@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.13',
+    date: '06.01.26',
+    changes: [
+      'Use escoresheet@openvolley.app as sender'
+    ]
+  },
+  {
     version: '0.19.12',
     date: '06.01.26',
     changes: [
