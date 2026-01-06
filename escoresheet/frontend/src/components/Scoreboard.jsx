@@ -3360,7 +3360,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           // Prepare match data in the format expected by fillPdfForm
           const fillableData = {
             match_type_1: match.matchType || match.match_type_1 || 'championship',
-            match_type_2: match.category || match.match_type_2 || '',
+            match_type_2: match.gender || match.match_type_2 || '',
             league: match.league || '',
             gameNumber: match.gameNumber || match.externalId || '',
             homeTeam: data?.homeTeam?.name || '',

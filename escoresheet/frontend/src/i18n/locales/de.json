@@ -1026,7 +1026,7 @@
     "backendNotAvailable": "Backend-Server nicht verfügbar",
     "reminderAlert": "Ligagruppe falls vorhanden, Teamfarben und Kurznamen einstellen",
     "loading": "Lade Spiele...",
-    "selectFilters": "Wähle Verband, Geschlecht und Liga um Spiele anzuzeigen"
+    "selectFilters": "Wähle Geschlecht und Liga um Spiele anzuzeigen"
   },
   "livescore": {
     "title": "Live-Ergebnis",

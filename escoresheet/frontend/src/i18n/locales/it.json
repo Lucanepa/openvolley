@@ -1013,7 +1013,7 @@
     "button": "Carica Partita Ufficiale",
     "federation": "Federazione",
     "selectFederation": "Seleziona...",
-    "gender": "Genere",
+    "gender": "Sesso",
     "selectGender": "Seleziona...",
     "league": "Lega",
     "selectLeague": "Seleziona...",
@@ -1026,7 +1026,7 @@
     "backendNotAvailable": "Server backend non disponibile",
     "reminderAlert": "Imposta il gruppo di lega se presente, i colori e i nomi brevi delle squadre",
     "loading": "Caricamento partite...",
-    "selectFilters": "Seleziona federazione, genere e lega per vedere le partite"
+    "selectFilters": "Seleziona sesso e lega per vedere le partite"
   },
   "livescore": {
     "title": "Punteggio Live",

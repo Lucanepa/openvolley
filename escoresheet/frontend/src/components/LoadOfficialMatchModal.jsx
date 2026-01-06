@@ -1,35 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getApiUrl } from '../utils/backendConfig'
 
-// League configuration - must match backend ICAL_FEEDS
-const FEDERATIONS = {
-  SV: {
-    label: 'Swiss Volley (National)',
-    leagues: {
-      men: ['1LM'],
-      women: ['1LD']
-    }
-  },
-  SVRZ: {
-    label: 'SVRZ (Regional)',
-    leagues: {
-      men: ['2LM', '3LM', '4LM', 'U23M', 'ZCM'],
-      women: ['2LD', '3LD', '4LD', '5LD', 'U23D-1', 'U23D-2', 'U23D-3', 'ZCD']
-    }
-  }
-}
-
 // Styles
 const selectStyle = {
-  width: '100%',
-  padding: '10px 12px',
+  width: 'auto',
+  minWidth: '80px',
+  padding: '10px 32px 10px 12px',
   fontSize: '14px',
-  background: 'rgba(255,255,255,0.1)',
-  border: '1px solid rgba(255,255,255,0.2)',
+  background: '#000000',
+  border: '1px solid rgba(255,255,255,0.3)',
   borderRadius: '8px',
-  color: 'var(--text)',
+  color: '#ffffff',
   cursor: 'pointer',
   appearance: 'none',
   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
@@ -94,8 +77,11 @@ function toLocalTime(isoString) {
 export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
 
-  // Filter state
-  const [federation, setFederation] = useState('')
+  // Dynamic leagues from backend
+  const [allLeagues, setAllLeagues] = useState([])
+  const [loadingConfig, setLoadingConfig] = useState(false)
+
+  // Filter state (simplified: just gender and league)
   const [gender, setGender] = useState('')
   const [league, setLeague] = useState('')
 
@@ -104,19 +90,44 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // Derived: available leagues based on federation + gender
-  const availableLeagues = federation && gender
-    ? FEDERATIONS[federation]?.leagues[gender] || []
-    : []
-
-  // Reset downstream selections when upstream changes
+  // Fetch available leagues when modal opens
   useEffect(() => {
-    setGender('')
-    setLeague('')
-    setMatches([])
-    setError(null)
-  }, [federation])
+    if (!open) return
+    fetchLeaguesConfig()
+  }, [open])
 
+  const fetchLeaguesConfig = async () => {
+    setLoadingConfig(true)
+    setError(null)
+    try {
+      const apiUrl = getApiUrl('/api/official-matches/leagues')
+      if (!apiUrl) {
+        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
+        setLoadingConfig(false)
+        return
+      }
+      const response = await fetch(apiUrl)
+      const data = await response.json()
+      if (data.success) {
+        setAllLeagues(data.leagues || [])
+      } else {
+        setError(data.error || 'Failed to load leagues')
+      }
+    } catch (err) {
+      console.error('Failed to fetch leagues config:', err)
+      setError(t('loadOfficialMatch.fetchError', 'Failed to load matches. Check your connection.'))
+    } finally {
+      setLoadingConfig(false)
+    }
+  }
+
+  // Derive available leagues for selected gender
+  const availableLeagues = useMemo(() => {
+    if (!gender) return []
+    return allLeagues.filter(l => l.gender === gender)
+  }, [allLeagues, gender])
+
+  // Reset league when gender changes
   useEffect(() => {
     setLeague('')
     setMatches([])
@@ -125,16 +136,20 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
   // Fetch matches when league is selected
   useEffect(() => {
-    if (!federation || !league) return
+    if (!league) return
     fetchMatches()
   }, [league])
 
   const fetchMatches = async () => {
+    // Find the league info to get federation
+    const leagueInfo = allLeagues.find(l => l.code === league)
+    if (!leagueInfo) return
+
     setLoading(true)
     setError(null)
 
     try {
-      const apiUrl = getApiUrl(`/api/official-matches?federation=${federation}&league=${league}`)
+      const apiUrl = getApiUrl(`/api/official-matches?federation=${leagueInfo.federation}&league=${league}`)
 
       if (!apiUrl) {
         setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
@@ -201,7 +216,6 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   // Reset state when modal closes
   useEffect(() => {
     if (!open) {
-      setFederation('')
       setGender('')
       setLeague('')
       setMatches([])
@@ -255,58 +269,76 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         </button>
       </div>
 
-      {/* Filters */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr 1fr',
-        gap: '12px',
-        marginBottom: '16px'
-      }}>
-        {/* Federation Dropdown */}
-        <div>
-          <label style={labelStyle}>{t('loadOfficialMatch.federation', 'Federation')}</label>
-          <select
-            value={federation}
-            onChange={e => setFederation(e.target.value)}
-            style={selectStyle}
-          >
-            <option value="">{t('loadOfficialMatch.selectFederation', 'Select...')}</option>
-            {Object.entries(FEDERATIONS).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
-            ))}
-          </select>
-        </div>
+      {/* Filters - 2 Dropdowns */}
+      <div style={{ marginBottom: '16px' }}>
+        {loadingConfig ? (
+          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
+            {t('loadOfficialMatch.loading', 'Loading...')}
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            alignItems: 'flex-end'
+          }}>
+            {/* Gender Dropdown */}
+            <div>
+              <label style={labelStyle}>{t('loadOfficialMatch.gender', 'Gender')}</label>
+              <select
+                value={gender}
+                onChange={e => setGender(e.target.value)}
+                style={selectStyle}
+              >
+                <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
+                <option value="men">{t('matchSetup.men', 'Men')} ♂</option>
+                <option value="women">{t('matchSetup.women', 'Women')} ♀</option>
+              </select>
+            </div>
 
-        {/* Gender Dropdown */}
-        <div>
-          <label style={labelStyle}>{t('loadOfficialMatch.gender', 'Gender')}</label>
-          <select
-            value={gender}
-            onChange={e => setGender(e.target.value)}
-            style={{ ...selectStyle, opacity: federation ? 1 : 0.5 }}
-            disabled={!federation}
-          >
-            <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
-            <option value="men">{t('matchSetup.men', 'Men')}</option>
-            <option value="women">{t('matchSetup.women', 'Women')}</option>
-          </select>
-        </div>
+            {/* League Dropdown */}
+            <div>
+              <label style={labelStyle}>{t('loadOfficialMatch.league', 'League')}</label>
+              <select
+                value={league}
+                onChange={e => setLeague(e.target.value)}
+                style={{ ...selectStyle, opacity: gender ? 1 : 0.5 }}
+                disabled={!gender}
+              >
+                <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
+                {availableLeagues.map(l => (
+                  <option key={l.code} value={l.code}>{l.code}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
-        {/* League Dropdown */}
-        <div>
-          <label style={labelStyle}>{t('loadOfficialMatch.league', 'League')}</label>
-          <select
-            value={league}
-            onChange={e => setLeague(e.target.value)}
-            style={{ ...selectStyle, opacity: gender ? 1 : 0.5 }}
-            disabled={!gender}
-          >
-            <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
-            {availableLeagues.map(l => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
-        </div>
+        {/* Selection Path - shown when selections are made */}
+        {gender && (
+          <div style={{
+            borderTop: '1px solid rgba(255,255,255,0.2)',
+            marginTop: '12px',
+            paddingTop: '10px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '13px',
+              color: 'rgba(255,255,255,0.8)'
+            }}>
+              <span>
+                {gender === 'men' ? `${t('matchSetup.men', 'Men')} ♂` : `${t('matchSetup.women', 'Women')} ♀`}
+              </span>
+              {league && (
+                <>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>|</span>
+                  <span style={{ fontWeight: 600 }}>{league}</span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Matches Table */}
@@ -398,12 +430,6 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               </div>
             ))}
           </>
-        )}
-
-        {!loading && !error && !league && (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.4)' }}>
-            {t('loadOfficialMatch.selectFilters', 'Select federation, gender, and league to view matches')}
-          </div>
         )}
       </div>
     </Modal>

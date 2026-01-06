@@ -1026,7 +1026,7 @@
     "backendNotAvailable": "Serveur backend non disponible",
     "reminderAlert": "Définir le groupe de ligue si présent, les couleurs et les noms courts des équipes",
     "loading": "Chargement des matchs...",
-    "selectFilters": "Sélectionnez fédération, genre et ligue pour voir les matchs"
+    "selectFilters": "Sélectionnez genre et ligue pour voir les matchs"
   },
   "livescore": {
     "title": "Score en direct",
