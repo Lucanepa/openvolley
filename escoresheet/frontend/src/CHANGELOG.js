@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.12',
+    date: '06.01.26',
+    changes: [
+      'Use openvolley.app domain for Resend emails'
+    ]
+  },
+  {
     version: '0.19.10',
     date: '06.01.26',
     changes: [
