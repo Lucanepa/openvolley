@@ -2848,7 +2848,7 @@ const handlePrint = () => {
                         }}
                     >
                         <img
-                            src="/openvolley_no_bg.png"
+                            src="/ball.png"
                             alt="Openvolley"
                             style={{
                                 width: '97px',

@@ -188,6 +188,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [liberoRotationModal, setLiberoRotationModal] = useState(null) // { team: 'home'|'away', position: 'IV', liberoNumber: number, playerNumber: number } | null
   const [exchangeLiberoDropdown, setExchangeLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', liberoNumber: number, element: HTMLElement } | null
   const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string, availableLiberos: [{number, type, label}], selectedLiberoIndex: number } | null
+  const [liberoSuggestionDismissedForExit, setLiberoSuggestionDismissedForExit] = useState({ home: null, away: null }) // Track which libero_exit event (by timestamp) was dismissed to avoid repeated suggestions
   const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string, reason: 'declared'|'injury'|'expulsion'|'disqualification' } | null
   const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, reason?: 'declared'|'injury' } | null
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
@@ -2057,7 +2058,33 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const ensureActiveSet = useCallback(async () => {
     if (!matchId) return
 
-    console.log('[ensureActiveSet] 🔍 Checking for active set...')
+    console.log('[SET_END_DEBUG] [ensureActiveSet] 🔍 Checking for active set... matchId=', matchId)
+
+    // GUARD 1: Check if match is over by status
+    const match = await db.matches.get(matchId)
+    console.log('[SET_END_DEBUG] [ensureActiveSet] Match status:', match?.status)
+    if (match?.status === 'ended' || match?.status === 'approved' || match?.status === 'final') {
+      console.log('[SET_END_DEBUG] [ensureActiveSet] 🏁 Match status is', match.status, '- STOPPING, not creating new set')
+      return
+    }
+
+    // GUARD 2: Check if match is over by sets won (3 sets = match over)
+    const allSetsForGuard = await db.sets.where('matchId').equals(matchId).toArray()
+    const finishedSetsForGuard = allSetsForGuard.filter(s => s.finished)
+    const homeSetsWon = finishedSetsForGuard.filter(s => s.homePoints > s.awayPoints).length
+    const awaySetsWon = finishedSetsForGuard.filter(s => s.awayPoints > s.homePoints).length
+    console.log('[SET_END_DEBUG] [ensureActiveSet] Sets:', JSON.stringify({
+      total: allSetsForGuard.length,
+      finished: finishedSetsForGuard.length,
+      homeSetsWon,
+      awaySetsWon,
+      allSets: allSetsForGuard.map(s => ({ id: s.id, index: s.index, finished: s.finished }))
+    }))
+    if (homeSetsWon >= 3 || awaySetsWon >= 3) {
+      console.log('[SET_END_DEBUG] [ensureActiveSet] 🏆 Match is over (sets won:', homeSetsWon, '-', awaySetsWon, ') - STOPPING, not creating new set')
+      return
+    }
+
     const existing = await db.sets
       .where('matchId')
       .equals(matchId)
@@ -2065,7 +2092,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       .first()
 
     if (existing) {
-      console.log('[ensureActiveSet] ✅ Active set exists:', { id: existing.id, index: existing.index })
+      console.log('[SET_END_DEBUG] [ensureActiveSet] ✅ Active set exists:', JSON.stringify({ id: existing.id, index: existing.index }))
       return
     }
 
@@ -2105,9 +2132,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       awayPoints: 0,
       finished: false
     })
-    
-    // Get match to check if it's a test match
-    const match = await db.matches.get(matchId)
+
+    // Use match from guard check above (already fetched)
     const isTest = match?.test || false
 
     // Only sync official matches (not test matches)
@@ -4553,7 +4579,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               const willSetEnd = (homePoints >= pointsToWinLibero && homePoints - awayPoints >= 2) ||
                                  (awayPoints >= pointsToWinLibero && awayPoints - homePoints >= 2)
 
-              if (liberoEntrySuggestion && !willSetEnd) {
+              // Check if this specific libero exit was already dismissed (don't repeat suggestion)
+              const dismissedForThisExit = liberoSuggestionDismissedForExit[otherTeamKey] === lastLiberoExit.ts
+
+              if (liberoEntrySuggestion && !willSetEnd && !dismissedForThisExit) {
                 setLiberoReentryModal({
                   team: otherTeamKey,
                   position: 'I',
@@ -4887,11 +4916,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
     console.log('═══════════════════════════════════════════════════════════════')
-    console.log('[SET_END] 🏁 confirmSetEndTime STARTED')
+    console.log('[SET_END_DEBUG] 🏁 STEP 1: confirmSetEndTime STARTED at', new Date().toISOString())
     console.log('═══════════════════════════════════════════════════════════════')
 
     if (!setEndTimeModal || !data?.match || !data?.set) {
-      console.log('[SET_END] ❌ Early return - missing data:', {
+      console.log('[SET_END_DEBUG] ❌ STEP 1 FAILED - missing data:', {
         hasModal: !!setEndTimeModal,
         hasMatch: !!data?.match,
         hasSet: !!data?.set
@@ -4901,16 +4930,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
 
-    console.log('[SET_END] 📊 Set End Modal Data:', {
+    console.log('[SET_END_DEBUG] 📊 STEP 2: Modal data:', JSON.stringify({
       setIndex,
       winner,
       homePoints,
       awayPoints,
-      endTime: time
-    })
+      endTime: time,
+      currentSetId: data.set.id,
+      currentSetIndex: data.set.index,
+      matchId: matchId,
+      matchStatus: data.match.status
+    }))
 
     // Close modal immediately to prevent multiple confirmations
     setSetEndTimeModal(null)
+
+    // Reset libero suggestion dismissed state for new set
+    setLiberoSuggestionDismissedForExit({ home: null, away: null })
 
     // Determine team labels (A or B) based on coin toss
     const teamAKey = data.match.coinTossTeamA || 'home'
@@ -4919,19 +4955,10 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       ? (teamAKey === 'home' ? 'A' : 'B')
       : (teamAKey === 'away' ? 'A' : 'B')
 
-    console.log('[SET_END] 🏷️ Team Labels:', {
-      teamAKey,
-      teamBKey,
-      winner,
-      winnerLabel,
-      teamAName: data.match.homeName,
-      teamBName: data.match.awayName
-    })
-
     // Get start time from current set
     const startTime = data.set.startTime
 
-    console.log('[SET_END] 📝 Logging set_end event...')
+    console.log('[SET_END_DEBUG] 📝 STEP 3: Logging set_end event...')
     // Log set win with start and end times
     await logEvent('set_end', {
       team: winner,
@@ -4942,7 +4969,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       startTime: startTime,
       endTime: time
     })
-    console.log('[SET_END] ✅ set_end event logged')
+    console.log('[SET_END_DEBUG] ✅ STEP 3 DONE: set_end event logged')
 
     // Debug log: set end
     debugLogger.log('SET_END', {
@@ -4955,30 +4982,79 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       endTime: time
     }, getStateSnapshot())
 
-    // Update set with end time and finished status
-    console.log('[SET_END] 💾 Updating set in DB:', {
-      setId: data.set.id,
-      finished: true,
+    // STEP 4: Update set with end time and finished status
+    // CRITICAL FIX: Find set by matchId + setIndex to avoid updating wrong set if duplicates exist
+    const allSetsBeforeUpdate = await db.sets.where('matchId').equals(matchId).toArray()
+    console.log('[SET_END_DEBUG] 🔍 STEP 4: All sets BEFORE update:', JSON.stringify(allSetsBeforeUpdate.map(s => ({
+      id: s.id,
+      index: s.index,
+      finished: s.finished,
+      homePoints: s.homePoints,
+      awayPoints: s.awayPoints
+    }))))
+
+    // Find the UNFINISHED set with this index (the one we're actually playing)
+    const setToUpdate = allSetsBeforeUpdate.find(s => s.index === setIndex && !s.finished)
+    const setIdToUpdate = setToUpdate?.id || data.set.id // Fallback to data.set.id if not found
+
+    console.log('[SET_END_DEBUG] 💾 STEP 4: About to update set:', JSON.stringify({
+      setIdFromData: data.set.id,
+      setIdToUpdate: setIdToUpdate,
+      usingCorrectSet: setIdToUpdate === setToUpdate?.id,
+      setIndex: setIndex,
+      willSetFinished: true,
       homePoints,
       awayPoints,
       endTime: time
-    })
-    await db.sets.update(data.set.id, { finished: true, homePoints, awayPoints, endTime: time })
-    console.log('[SET_END] ✅ Set updated in DB')
+    }))
 
-    // Sync set update to Supabase (if not a test match)
+    if (setIdToUpdate !== data.set.id) {
+      console.warn('[SET_END_DEBUG] ⚠️ WARNING: data.set.id differs from the unfinished set! Using correct set id:', setIdToUpdate)
+    }
+
+    const updateResult = await db.sets.update(setIdToUpdate, { finished: true, homePoints, awayPoints, endTime: time })
+    console.log('[SET_END_DEBUG] 📝 STEP 4: Update result (rows affected):', updateResult)
+
+    // STEP 5: Verify the update actually worked
+    const verifySet = await db.sets.get(setIdToUpdate)
+    console.log('[SET_END_DEBUG] ✅ STEP 5: Verification - set after update:', JSON.stringify({
+      id: verifySet?.id,
+      index: verifySet?.index,
+      finished: verifySet?.finished,
+      homePoints: verifySet?.homePoints,
+      awayPoints: verifySet?.awayPoints
+    }))
+
+    if (!verifySet?.finished) {
+      console.error('[SET_END_DEBUG] ❌ STEP 5 FAILED: Set was NOT marked as finished! This is a bug.')
+    } else {
+      console.log('[SET_END_DEBUG] ✅ STEP 5 SUCCESS: Set is marked as finished=true')
+    }
+
+    // Also verify all sets after update to catch any issues
+    const allSetsAfterUpdate = await db.sets.where('matchId').equals(matchId).toArray()
+    console.log('[SET_END_DEBUG] 🔍 STEP 5: All sets AFTER update:', JSON.stringify(allSetsAfterUpdate.map(s => ({
+      id: s.id,
+      index: s.index,
+      finished: s.finished
+    }))))
+
+    // STEP 6: Sync set update to Supabase (if not a test match)
     const setMatch = await db.matches.get(matchId)
+    console.log('[SET_END_DEBUG] 🔍 STEP 6: Match info:', JSON.stringify({
+      matchId,
+      isTest: setMatch?.test,
+      seed_key: setMatch?.seed_key,
+      currentStatus: setMatch?.status
+    }))
     if (setMatch?.test !== true && setMatch?.seed_key) {
-      console.log('[SET_END] 📤 Queueing set update for Supabase:', {
-        external_id: String(data.set.id),
-        home_points: homePoints,
-        away_points: awayPoints
-      })
+      console.log('[SET_END_DEBUG] 📤 STEP 6: Queueing set update for Supabase')
+      // Use setIdToUpdate (the correct set we updated locally) not data.set.id
       await db.sync_queue.add({
         resource: 'set',
         action: 'update',
         payload: {
-          external_id: String(data.set.id),
+          external_id: String(setIdToUpdate),
           home_points: homePoints,
           away_points: awayPoints,
           finished: true,
@@ -4987,41 +5063,52 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         ts: new Date().toISOString(),
         status: 'queued'
       })
+      console.log('[SET_END_DEBUG] ✅ STEP 6 DONE: Set update queued for set id:', setIdToUpdate)
+    } else {
+      console.log('[SET_END_DEBUG] ⏭️ STEP 6 SKIPPED: Test match or no seed_key')
     }
 
-    // Get all sets and calculate sets won by each team
+    // STEP 7: Get all sets and calculate sets won by each team
     const sets = await db.sets.where({ matchId }).toArray()
     const finishedSets = sets.filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-    console.log('[SET_END] 📊 Sets Summary:', {
+    console.log('[SET_END_DEBUG] 📊 STEP 7: Sets Summary:', JSON.stringify({
       totalSets: sets.length,
-      finishedSets: finishedSets.length,
+      finishedSetsCount: finishedSets.length,
       allSets: sets.map(s => ({ index: s.index, home: s.homePoints, away: s.awayPoints, finished: s.finished })),
       homeSetsWon,
       awaySetsWon
-    })
+    }))
 
-    // Check if either team has won 3 sets (match win)
+    // STEP 8: Check if either team has won 3 sets (match win)
     const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
-    console.log('[SET_END] 🏆 Match End Check:', { isMatchEnd, homeSetsWon, awaySetsWon })
+    console.log('[SET_END_DEBUG] 🏆 STEP 8: Match End Check:', JSON.stringify({ isMatchEnd, homeSetsWon, awaySetsWon }))
 
     // Get match record for both branches (test check, cloud backup)
     const matchRecord = await db.matches.get(matchId)
+    console.log('[SET_END_DEBUG] 🔍 STEP 8: Match record status BEFORE any changes:', matchRecord?.status)
 
     if (isMatchEnd) {
+      console.log('[SET_END_DEBUG] 🏁 STEP 9: MATCH END BRANCH - isMatchEnd=true')
       // IMPORTANT: When match ends, preserve ALL data in database:
       // - All sets remain in db.sets
       // - All events remain in db.events
       // - All players remain in db.players
       // - All teams remain in db.teams
-      // - Keep status as 'live' - only MatchEnd component will set to 'final' after approval
-      // DO NOT set status to 'final' here - that happens in MatchEnd after signatures and approval
-      // We just mark that match has ended by checking if a team won 3 sets
+      // - Set status to 'ended' - MatchEnd component will set to 'approved' after approval
+      // Status flow: live -> ended -> approved
 
-      // Add match update to sync queue with results BUT keep status as 'live'
-      // The final status will be set by MatchEnd component after approval
+      // Update local match status to 'ended'
+      console.log('[SET_END_DEBUG] 🏁 STEP 9: Setting match status to "ended"...')
+      await db.matches.update(matchId, { status: 'ended' })
+
+      // Verify the status was updated
+      const matchAfterStatusUpdate = await db.matches.get(matchId)
+      console.log('[SET_END_DEBUG] ✅ STEP 9: Match status after update:', matchAfterStatusUpdate?.status)
+
+      // Add match update to sync queue with results and 'ended' status
       if (matchRecord?.test !== true && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
@@ -5032,12 +5119,20 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
         const finalScore = `${homeSetsWon}-${awaySetsWon}`
 
+        console.log('[SET_END_DEBUG] 📤 STEP 10: Queueing match update for Supabase:', JSON.stringify({
+          id: matchRecord.seed_key,
+          status: 'ended',
+          setResults,
+          winner,
+          finalScore
+        }))
+
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
           payload: {
             id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-            // Keep status as 'live' - MatchEnd will set 'final' after approval
+            status: 'ended', // Match ended, awaiting approval
             set_results: setResults,
             winner,
             final_score: finalScore,
@@ -5046,6 +5141,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           ts: new Date().toISOString(),
           status: 'queued'
         })
+        console.log('[SET_END_DEBUG] ✅ STEP 10: Match update queued')
+      } else {
+        console.log('[SET_END_DEBUG] ⏭️ STEP 10 SKIPPED: Test match or no seed_key')
       }
       
       // Notify server to delete match from matchDataStore (since it's now final)
@@ -5075,8 +5173,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       // Only call onFinishSet for match end, not between sets
       // (Scoreboard now handles set creation internally)
+      console.log('[SET_END_DEBUG] 🎬 STEP 11: Calling onFinishSet callback with set:', JSON.stringify({
+        setId: data.set.id,
+        setIndex: data.set.index
+      }))
       if (onFinishSet) onFinishSet(data.set)
+      console.log('[SET_END_DEBUG] ✅ STEP 11: onFinishSet callback completed')
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('[SET_END_DEBUG] 🏁 MATCH END FLOW COMPLETE')
+      console.log('═══════════════════════════════════════════════════════════════')
     } else {
+      console.log('[SET_END_DEBUG] ➡️ STEP 9: SET END BRANCH (not match end) - continuing to next set')
       // Trigger event backup for Safari/Firefox (set end)
       onTriggerEventBackup?.('set_end')
 
@@ -9357,8 +9464,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       newLineup: finalLineup
     }, getStateSnapshot())
 
+    // Clear dismissed state since libero is entering - allow suggestion again if they exit
+    setLiberoSuggestionDismissedForExit(prev => ({
+      ...prev,
+      [team]: null
+    }))
+
     setLiberoReentryModal(null)
-    
+
     // Check if captain is on court after libero reentry (playerOut is leaving)
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
     const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
@@ -9379,8 +9492,26 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   const cancelLiberoReentry = useCallback(() => {
+    // Track that we dismissed the suggestion for this specific libero exit
+    // so we don't show it again until a new libero exit happens
+    if (liberoReentryModal) {
+      const team = liberoReentryModal.team
+      const exitEvent = data.events.filter(e =>
+        e.type === 'libero_exit' &&
+        e.payload?.team === team &&
+        e.setIndex === data.set.index &&
+        e.payload?.reason === 'rotation_to_front_row'
+      ).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+
+      if (exitEvent) {
+        setLiberoSuggestionDismissedForExit(prev => ({
+          ...prev,
+          [team]: exitEvent.ts
+        }))
+      }
+    }
     setLiberoReentryModal(null)
-  }, [])
+  }, [liberoReentryModal, data?.events, data?.set?.index])
 
   // Handle libero out
   const handleLiberoOut = useCallback(async (side) => {
@@ -12296,9 +12427,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                                 alt="Serving team"
                                 style={{
-                                  width: 24,
-                                  height: 24,
-                                  objectFit: 'contain'
+                                  width: '8vmin',
+                                  height: '8vmin'
                                 }}
                               />
                             </>
@@ -12315,9 +12445,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                                 alt="Serving team"
                                 style={{
-                                  width: 24,
-                                  height: 24,
-                                  objectFit: 'contain'
+                                  width: '8vmin',
+                                  height: '8vmin'
                                 }}
                               />
                               <div style={{
@@ -13734,8 +13863,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
-                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
+                        width: '8vmin',
+                        height: '8vmin'
                       }}
                     />
                   )
@@ -13780,8 +13909,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
-                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
+                        width: '8vmin',
+                        height: '8vmin'
                       }}
                     />
                   </>
@@ -13854,8 +13983,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
-                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
+                        width: '8vmin',
+                        height: '8vmin'
                       }}
                     />
                   )
@@ -13867,8 +13996,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
-                        width: isVeryCompact ? 24 : isCompactMode ? 32 : 48,
-                        height: isVeryCompact ? 24 : isCompactMode ? 32 : 48
+                        width: '8vmin',
+                        height: '8vmin'
                       }}
                     />
                     <div style={{
@@ -13892,8 +14021,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         fontSize: isVeryCompact ? '22px' : isCompactMode ? '32px' : '56px',
                         fontWeight: 700,
                         color: 'var(--accent)',
-                        width: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
-                        height: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
+                        width: '8vmin',
+                        height: '8vmin',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -14357,11 +14486,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             alt="Volleyball"
                             style={{
                               position: 'absolute',
-                              left: '-40px',
+                              left: '-6vmin',
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              width: '30px',
-                              height: '30px',
+                              width: '5vmin',
+                              height: '5vmin',
                               zIndex: 5
                             }}
                           />
@@ -14894,11 +15023,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             alt="Volleyball" 
                             style={{
                               position: 'absolute',
-                              right: '-40px',
+                              right: '-6vmin',
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              width: '30px',
-                              height: '30px',
+                              width: '5vmin',
+                              height: '5vmin',
                               zIndex: 5
                             }}
                           />
@@ -15375,9 +15504,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                               alt="Serving team"
                               style={{
-                                width: 32,
-                                height: 32,
-                                objectFit: 'contain'
+                                width: '5vmin',
+                                height: '5vmin',
                               }}
                             />
                           </>
@@ -15394,8 +15522,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                               alt="Serving team"
                               style={{
-                                width: 32,
-                                height: 32,
+                                width: '5vmin',
+                                height: '5vmin',
                                 objectFit: 'contain'
                               }}
                             />
@@ -25303,8 +25431,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                         alt="Serving team"
                         style={{
-                          width: '28px',
-                          height: '28px',
+                          width: '5vmin',
+                          height: '5vmin',
+                          objectFit: 'contain',
                           filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
                           marginTop: '8px'
                         }}
@@ -25334,8 +25463,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                         alt="Serving team"
                         style={{
-                          width: '28px',
-                          height: '28px',
+                          width: '5vmin',
+                          height: '5vmin',
+                          objectFit: 'contain',
                           filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
                           marginTop: '8px'
                         }}

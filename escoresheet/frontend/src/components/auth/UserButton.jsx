@@ -17,36 +17,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
   const [showDropdown, setShowDropdown] = useState(false)
 
   if (loading) {
-    // Show placeholder while loading
-    if (fullWidth) {
-      return (
-        <div style={{
-          width: '400px',
-          padding: '10px 20px',
-          fontSize: '20px',
-          background: 'rgba(255, 255, 255, 0.05)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '8px',
-          height: 48,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'rgba(255, 255, 255, 0.5)',
-          ...style
-        }}>
-          ...
-        </div>
-      )
-    }
-    return (
-      <div style={{
-        width: 40,
-        height: 40,
-        borderRadius: '50%',
-        background: '#1f2937',
-        ...style
-      }} />
-    )
+    return null
   }
 
   const getInitials = () => {
@@ -139,7 +110,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
     : user?.email?.split('@')[0] || t('auth.user', 'User')
 
   const loggedInButtonStyle = fullWidth ? {
-    width: '400px',
+    width: 'auto',
     padding: '10px 20px',
     fontSize: '20px',
     fontWeight: 600,

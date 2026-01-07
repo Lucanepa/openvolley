@@ -29,6 +29,7 @@ export function AuthProvider({ children }) {
     }
 
     setProfile(data)
+    console.log('Profile fetched:', data)
     // Cache profile in localStorage for offline auto-fill
     localStorage.setItem('cachedProfile', JSON.stringify(data))
     return data

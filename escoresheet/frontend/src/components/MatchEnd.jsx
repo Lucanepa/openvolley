@@ -193,7 +193,7 @@ function MatchEndPageView({ children }) {
   return <div className="setup" style={setupViewStyle}>{children}</div>
 }
 
-export default function MatchEnd({ matchId, onGoHome }) {
+export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
     if (!match) return null
@@ -238,6 +238,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
   const [isApproved, setIsApproved] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false)
 
   // Prevent accidental navigation away before approval
   useEffect(() => {
@@ -730,6 +731,78 @@ export default function MatchEnd({ matchId, onGoHome }) {
     }
   }
 
+  // Handle reopening the last set for corrections
+  const handleReopenLastSet = async () => {
+    setShowReopenConfirm(false)
+
+    try {
+      // Find the last (highest index) set
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      if (allSets.length === 0) {
+        showAlert('No sets found to reopen', 'error')
+        return
+      }
+      const lastSet = allSets.reduce((a, b) => (a.index > b.index ? a : b))
+
+      console.log('[MatchEnd] Reopening last set:', { id: lastSet.id, index: lastSet.index })
+
+      // Mark the last set as not finished
+      await db.sets.update(lastSet.id, { finished: false })
+
+      // Set match status back to 'live' and clear all signature fields
+      await db.matches.update(matchId, {
+        status: 'live',
+        approved: false,
+        approvedAt: null,
+        // Clear all signature fields - they must be re-collected after changes
+        captainSignatureHomePost: null,
+        captainSignatureAwayPost: null,
+        assistantScorerSignature: null,
+        scorerSignature: null,
+        referee2Signature: null,
+        referee1Signature: null
+      })
+
+      // Queue sync to Supabase for the set update
+      if (match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'set',
+          action: 'update',
+          payload: {
+            external_id: String(lastSet.id),
+            finished: false
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+
+        // Queue sync for match status update
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            status: 'live'
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      showAlert(`Set ${lastSet.index} reopened for corrections`, 'success')
+
+      // Navigate back to Scoreboard
+      if (onReopenLastSet) {
+        onReopenLastSet()
+      } else if (onGoHome) {
+        onGoHome()
+      }
+    } catch (error) {
+      console.error('[MatchEnd] Error reopening last set:', error)
+      showAlert('Error reopening last set: ' + error.message, 'error')
+    }
+  }
+
   return (
     <MatchEndPageView>
       {/* Header */}
@@ -850,22 +923,34 @@ export default function MatchEnd({ matchId, onGoHome }) {
 
       {/* Action Buttons */}
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {!isApproved && !showCloseConfirm && (
-          <button
-            onClick={handleApprove}
-            disabled={isSaving || (!match.test && !allSignaturesDone)}
-            className="primary"
-            style={{
-              flex: 1,
-              minWidth: '150px',
-              padding: '14px',
-              fontSize: '15px',
-              opacity: (isSaving || (!match.test && !allSignaturesDone)) ? 0.5 : 1,
-              cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {isSaving ? 'Downloading...' : 'Confirm and Approve'}
-          </button>
+        {!isApproved && !showCloseConfirm && !showReopenConfirm && (
+          <>
+            <button
+              onClick={handleApprove}
+              disabled={isSaving || (!match.test && !allSignaturesDone)}
+              className="primary"
+              style={{
+                flex: 1,
+                minWidth: '150px',
+                padding: '14px',
+                fontSize: '15px',
+                opacity: (isSaving || (!match.test && !allSignaturesDone)) ? 0.5 : 1,
+                cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isSaving ? 'Downloading...' : 'Confirm and Approve'}
+            </button>
+            <button
+              onClick={() => setShowReopenConfirm(true)}
+              className="secondary"
+              style={{
+                padding: '14px 20px',
+                fontSize: '15px'
+              }}
+            >
+              Reopen Last Set
+            </button>
+          </>
         )}
 
         <MenuList
@@ -922,6 +1007,55 @@ export default function MatchEnd({ matchId, onGoHome }) {
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
                 No, Manual Adjustments
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reopen Last Set Confirmation Modal */}
+      {showReopenConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: 'var(--bg-secondary)',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '450px',
+            width: '90%',
+            textAlign: 'center'
+          }}>
+            <h3 style={{ margin: '0 0 16px 0' }}>Reopen Last Set?</h3>
+            <p style={{ margin: '0 0 16px 0', color: 'var(--muted)' }}>
+              This will reopen the last set for corrections and allow you to continue scoring.
+            </p>
+            <p style={{ margin: '0 0 24px 0', color: 'var(--warning)', fontSize: '14px' }}>
+              Warning: All collected signatures will be cleared and must be collected again after approval.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleReopenLastSet}
+                className="primary"
+                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+              >
+                Yes, Reopen Set
+              </button>
+              <button
+                onClick={() => setShowReopenConfirm(false)}
+                className="secondary"
+                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+              >
+                Cancel
               </button>
             </div>
           </div>

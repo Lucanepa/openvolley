@@ -31,14 +31,10 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                 <img
                     src={openvolleyLogo}
                     alt="Openvolley eScoresheet"
-                    className="h-8 object-contain mx-auto"
+                    style={{ aspectRatio: '1/1', height:'45px' }}
                     onError={() => setImageError(true)}
                 />
-            ) : (
-                <div className="flex flex-col items-center select-none text-[10px] font-bold text-gray-600">
-                  Swiss Volley
-                </div>
-            )}
+            ) : null}
         </div>
         
         <div className="flex-1 w-full md:w-auto grid grid-cols-1 md:grid-cols-4 gap-0.5 text-xs min-w-0 overflow-hidden">
@@ -213,7 +209,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                 <img
                     src={openvolleyLogo}
                     alt="Openvolley"
-                    className="h-8 object-contain mx-0"
+                    style={{ aspectRatio: '1/1', height:'45px' }}
                     onError={() => setFaviconImageError(true)}
                 />
             ) : (

@@ -1249,7 +1249,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         {/* Team A */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamA')}</h1>
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
+          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', width: '100%' }}>
             <div
               style={{
                 background: teamAInfo.color,
@@ -1282,12 +1282,12 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           </div>
 
           {/* Team A Signatures */}
-          <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '200px' }}>
+          <div style={{ marginTop: isCompact ? 16 : 20, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%' }}>
               <button
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 className={`sign ${teamACoachSig && teamACaptainSig ? 'signed' : ''}`}
-                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%' }}
+                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 {t('coinToss.signA')} {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
               </button>
@@ -1301,14 +1301,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   <button
                     onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
                     className={`sign ${teamACoachSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.coach')} {teamACoachSig ? '✓' : ''}
                   </button>
                   <button
                     onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
                     className={`sign ${teamACaptainSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.captain')} {teamACaptainSig ? '✓' : ''}
                   </button>
@@ -1335,7 +1335,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         {/* Team B */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamB')}</h1>
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', maxWidth: '350px', minWidth: '350px' }}>
+          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', width: '100%' }}>
             <div
               style={{
                 background: teamBInfo.color,
@@ -1343,7 +1343,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                 fontWeight: 600, border: 'none', borderRadius: '8px',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                minWidth: 0, cursor: 'default'
+                cursor: 'default'
               }}
               title={teamBInfo.name}
             >
@@ -1368,12 +1368,12 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           </div>
 
           {/* Team B Signatures */}
-          <div style={{ marginTop: isCompact ? 16 : 20, paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: isCompact ? '100px' : '200px' }}>
+          <div style={{ marginTop: isCompact ? 16 : 20, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%' }}>
               <button
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 className={`sign ${teamBCoachSig && teamBCaptainSig ? 'signed' : ''}`}
-                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%' }}
+                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 {t('coinToss.signB')} {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
               </button>
@@ -1387,14 +1387,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   <button
                     onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
                     className={`sign ${teamBCoachSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.coach')} {teamBCoachSig ? '✓' : ''}
                   </button>
                   <button
                     onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
                     className={`sign ${teamBCaptainSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%' }}
+                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.captain')} {teamBCaptainSig ? '✓' : ''}
                   </button>
