@@ -151,6 +151,7 @@ export function useSyncQueue() {
 
       if (job.resource === 'match' && job.action === 'delete') {
         const { id } = job.payload
+        console.log('[SyncQueue] 🗑️ Starting match delete for external_id:', id)
 
         // First, look up the match to get its UUID
         const { data: matchData, error: lookupError } = await supabase
@@ -171,59 +172,90 @@ export function useSyncQueue() {
         }
 
         const matchUuid = matchData.id
+        console.log('[SyncQueue] 🔍 Found match UUID:', matchUuid)
+
+        // Count records before deletion for debugging
+        const { count: eventsCountBefore } = await supabase
+          .from('events')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: setsCountBefore } = await supabase
+          .from('sets')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: liveStateCountBefore } = await supabase
+          .from('match_live_state')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        console.log('[SyncQueue] 📊 Records before delete:', {
+          events: eventsCountBefore,
+          sets: setsCountBefore,
+          match_live_state: liveStateCountBefore
+        })
 
         // Delete events for this match
-        const { error: eventsError } = await supabase
+        console.log('[SyncQueue] 🗑️ Deleting events...')
+        const { error: eventsError, count: eventsDeleted } = await supabase
           .from('events')
           .delete()
           .eq('match_id', matchUuid)
+          .select('*', { count: 'exact', head: true })
         if (eventsError) {
           console.warn('[SyncQueue] Events delete error (continuing):', eventsError)
+        } else {
+          console.log('[SyncQueue] ✅ Events deleted')
         }
 
         // Delete sets for this match
+        console.log('[SyncQueue] 🗑️ Deleting sets...')
         const { error: setsError } = await supabase
           .from('sets')
           .delete()
           .eq('match_id', matchUuid)
         if (setsError) {
           console.warn('[SyncQueue] Sets delete error (continuing):', setsError)
+        } else {
+          console.log('[SyncQueue] ✅ Sets deleted')
         }
 
-        // Delete match_live_state for this match (foreign key constraint - MUST succeed)
-        // First check if it exists
-        const { data: existingLiveState } = await supabase
+        // Delete match_live_state for this match
+        console.log('[SyncQueue] 🗑️ Deleting match_live_state...')
+        const { error: liveStateError } = await supabase
           .from('match_live_state')
-          .select('id')
+          .delete()
           .eq('match_id', matchUuid)
-          .maybeSingle()
-
-        if (existingLiveState) {
-          const { error: liveStateError } = await supabase
-            .from('match_live_state')
-            .delete()
-            .eq('match_id', matchUuid)
-          if (liveStateError) {
-            console.error('[SyncQueue] match_live_state delete error (blocking):', liveStateError)
-            return false
-          }
-
-          // Verify it's actually deleted
-          const { data: stillExists } = await supabase
-            .from('match_live_state')
-            .select('id')
-            .eq('match_id', matchUuid)
-            .maybeSingle()
-          if (stillExists) {
-            console.error('[SyncQueue] match_live_state still exists after delete (RLS issue?):', matchUuid)
-            return false
-          }
-          console.log('[SyncQueue] match_live_state deleted for match:', matchUuid)
+        if (liveStateError) {
+          console.warn('[SyncQueue] match_live_state delete error (continuing):', liveStateError)
         } else {
-          console.log('[SyncQueue] No match_live_state found for match (ok):', matchUuid)
+          console.log('[SyncQueue] ✅ match_live_state deleted')
+        }
+
+        // Verify all related records are deleted before deleting match
+        const { count: eventsCountAfter } = await supabase
+          .from('events')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: setsCountAfter } = await supabase
+          .from('sets')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: liveStateCountAfter } = await supabase
+          .from('match_live_state')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        console.log('[SyncQueue] 📊 Records after delete:', {
+          events: eventsCountAfter,
+          sets: setsCountAfter,
+          match_live_state: liveStateCountAfter
+        })
+
+        // If any records remain, warn but continue
+        if (eventsCountAfter > 0 || setsCountAfter > 0 || liveStateCountAfter > 0) {
+          console.warn('[SyncQueue] ⚠️ Some records were not deleted (RLS issue?). Attempting match delete anyway...')
         }
 
         // Delete the match
+        console.log('[SyncQueue] 🗑️ Deleting match...')
         const { error: matchError } = await supabase
           .from('matches')
           .delete()
@@ -233,7 +265,7 @@ export function useSyncQueue() {
           return false
         }
 
-        console.log('[SyncQueue] Deleted match and related records from Supabase:', id)
+        console.log('[SyncQueue] ✅ Deleted match and related records from Supabase:', id)
         return true
       }
 

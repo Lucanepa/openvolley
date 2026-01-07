@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.18',
+    date: '07.01.26',
+    changes: [
+      'Update image sources in scoresheet PDF and header components; modify match status handling in App component; enhance CoinToss and MatchEnd components with improved layout and functionality; adjust scoreboard visuals for better responsiveness.'
+    ]
+  },
+  {
     version: '0.19.17',
     date: '07.01.26',
     changes: [

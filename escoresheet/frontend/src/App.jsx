@@ -1488,8 +1488,8 @@ export default function App() {
       // - All events remain in db.events
       // - All players remain in db.players
       // - All teams remain in db.teams
-      // - Keep status as 'live' - MatchEnd component will set to 'final' after approval
-      // DO NOT set status to 'final' here
+      // - Set status to 'ended' - MatchEnd component will set to 'approved' after approval
+      // Status flow: live -> ended -> approved
 
       // Unlock session when match ends
       try {
@@ -1498,8 +1498,10 @@ export default function App() {
         console.error('Error unlocking session:', error)
       }
 
+      // Update local match status to 'ended' (may already be set by Scoreboard)
+      await db.matches.update(cur.matchId, { status: 'ended' })
+
       // Only sync official matches with seed_key
-      // Keep status as 'live' - MatchEnd will set 'final' after approval
       if (!isTestMatch && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
@@ -1515,7 +1517,7 @@ export default function App() {
           action: 'update',
           payload: {
             id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-            // Keep status as 'live' - MatchEnd will set 'final' after approval
+            status: 'ended', // Match ended, awaiting approval
             set_results: setResults,
             winner,
             final_score: finalScore,
@@ -2131,9 +2133,15 @@ export default function App() {
     // Get match before deleting to check status and seed_key
     const matchToDelete = await db.matches.get(matchIdToDelete)
     const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key
+    console.log('[Delete Match] 🗑️ Preparing to delete match:', {
+      matchId: matchIdToDelete,
+      status: matchToDelete?.status,
+      seed_key: matchToDelete?.seed_key,
+      shouldDeleteFromSupabase
+    })
 
     await db.transaction('rw', db.matches, db.sets, db.events, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
-      console.log('[Delete Match] Starting deletion of match:', matchIdToDelete)
+      console.log('[Delete Match] Starting local deletion of match:', matchIdToDelete)
 
       // Delete sets
       const sets = await db.sets.where('matchId').equals(matchIdToDelete).toArray()
@@ -2209,9 +2217,12 @@ export default function App() {
           ts: new Date().toISOString(),
           status: 'queued'
         })
+        console.log('[Delete Match] ✅ Queued Supabase delete for seed_key:', matchToDelete.seed_key)
       } catch (err) {
         console.error('[App] Error queuing Supabase match deletion:', err)
       }
+    } else {
+      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status or no seed_key)')
     }
 
     setDeleteMatchModal(null)
@@ -3059,6 +3070,10 @@ export default function App() {
             matchId={matchId}
             onGoHome={() => {
               setMatchId(null)
+              setShowMatchEnd(false)
+            }}
+            onReopenLastSet={() => {
+              // Just hide MatchEnd - Scoreboard will show for the same matchId
               setShowMatchEnd(false)
             }}
           />
