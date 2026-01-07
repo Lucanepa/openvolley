@@ -23,7 +23,9 @@ export default function UpdateBanner() {
     }
   }, [needRefresh])
 
+  // Don't show banner if no refresh needed or if versions are the same
   if (!needRefresh) return null
+  if (newVersion && newVersion === currentVersion) return null
 
   return (
     <div style={{

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
 import changelog from '../CHANGELOG'
+import UserButton from './auth/UserButton'
 
 
 const FlagBox = ({ children }) => (
@@ -795,7 +796,11 @@ export default function MainHeader({
       }}>
         {/* Compact Mode: Collapsible Actions Menu */}
         {isCompactMode ? (
-          <div style={{ position: 'relative' }}>
+          <>
+            {/* User Button - hidden in offline mode */}
+            {!offlineMode && <UserButton />}
+
+            <div style={{ position: 'relative' }}>
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -1113,6 +1118,7 @@ export default function MainHeader({
               </div>
             )}
           </div>
+          </>
         ) : (
           /* Desktop Mode: Show all actions inline */
           <>
@@ -1148,6 +1154,9 @@ export default function MainHeader({
                 <span>{t('common.home')}</span>
               </button>
             )}
+
+            {/* User Button - hidden in offline mode */}
+            {!offlineMode && <UserButton />}
 
             {/* Viewport Size Display - Editable (hidden by default) */}
             {showViewportSize && (

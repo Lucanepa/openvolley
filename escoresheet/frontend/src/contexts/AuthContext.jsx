@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 const AuthContext = createContext(null)
@@ -8,31 +8,61 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   // Only show loading if supabase is configured (otherwise show sign-in immediately)
   const [loading, setLoading] = useState(!!supabase)
+  // Prevent duplicate profile fetches
+  const fetchingProfile = useRef(false)
 
   // Fetch user profile from profiles table
   const fetchProfile = useCallback(async (userId) => {
+    console.log('[AuthContext] fetchProfile called with userId:', userId)
     if (!supabase || !userId) {
+      console.log('[AuthContext] No supabase or userId, setting profile to null')
       setProfile(null)
       return null
     }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single()
-
-    if (error) {
-      console.warn('Failed to fetch profile:', error.message)
-      setProfile(null)
+    // Prevent duplicate concurrent fetches
+    if (fetchingProfile.current) {
+      console.log('[AuthContext] Already fetching profile, skipping duplicate request')
       return null
     }
 
-    setProfile(data)
-    console.log('Profile fetched:', data)
-    // Cache profile in localStorage for offline auto-fill
-    localStorage.setItem('cachedProfile', JSON.stringify(data))
-    return data
+    try {
+      fetchingProfile.current = true
+      console.log('[AuthContext] Fetching profile from Supabase...')
+
+      // Add timeout to detect hanging queries (15s to allow for Supabase cold starts)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Profile query timed out after 15s')), 15000)
+      )
+
+      const queryPromise = supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
+
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise])
+
+      console.log('[AuthContext] Profile query result:', { data, error })
+
+      if (error) {
+        console.warn('[AuthContext] Failed to fetch profile:', error.message, error)
+        setProfile(null)
+        return null
+      }
+
+      setProfile(data)
+      console.log('[AuthContext] Profile set successfully:', data)
+      // Cache profile in localStorage for offline auto-fill
+      localStorage.setItem('cachedProfile', JSON.stringify(data))
+      return data
+    } catch (err) {
+      console.error('[AuthContext] Profile fetch error:', err.message, err)
+      setProfile(null)
+      return null
+    } finally {
+      fetchingProfile.current = false
+    }
   }, [])
 
   // Initialize auth state
@@ -47,31 +77,35 @@ export function AuthProvider({ children }) {
       setLoading(false)
     }, 3000)
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      clearTimeout(loadingTimeout)
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
+    // Listen for auth changes FIRST (this is the reliable way to get auth state)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[AuthContext] onAuthStateChange:', event, session?.user?.id)
+        clearTimeout(loadingTimeout)
+        setUser(session?.user ?? null)
+
+        // Only fetch profile on events where we know auth is fully ready
+        // SIGNED_IN fires during session recovery before token refresh - skip it here
+        // (signIn function calls fetchProfile directly for fresh sign-ins)
+        if (session?.user && (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
+          await fetchProfile(session.user.id)
+        } else if (!session?.user) {
+          setProfile(null)
+        }
+        setLoading(false)
       }
-      setLoading(false)
+    )
+
+    // Get initial session (triggers onAuthStateChange with INITIAL_SESSION event)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[AuthContext] getSession result:', session?.user?.id)
+      // Don't call fetchProfile here - let onAuthStateChange handle it
+      // This prevents duplicate fetches
     }).catch((err) => {
       clearTimeout(loadingTimeout)
       console.error('Failed to get auth session:', err)
       setLoading(false)
     })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await fetchProfile(session.user.id)
-        } else {
-          setProfile(null)
-        }
-      }
-    )
 
     return () => {
       clearTimeout(loadingTimeout)

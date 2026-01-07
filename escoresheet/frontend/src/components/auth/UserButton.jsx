@@ -125,8 +125,8 @@ export default function UserButton({ style = {}, fullWidth = false }) {
     gap: 10,
     minHeight: 48
   } : {
-    width: 40,
-    height: 40,
+    width: 30,
+    height: 30,
     borderRadius: '50%',
     background: '#3b82f6',
     color: '#fff',
