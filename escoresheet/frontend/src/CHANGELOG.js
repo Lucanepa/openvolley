@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.19',
+    date: '07.01.26',
+    changes: [
+      'Add UserButton component to MainHeader; enhance UpdateBanner logic to prevent unnecessary display; improve ProfileModal data loading and error handling; optimize profile fetching in AuthContext with duplicate request prevention.'
+    ]
+  },
+  {
     version: '0.19.18',
     date: '07.01.26',
     changes: [

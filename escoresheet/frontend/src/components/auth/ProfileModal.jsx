@@ -30,9 +30,19 @@ export default function ProfileModal({ open, onClose }) {
   // Track if form has been initialized to avoid resetting on profile refetch
   const formInitialized = useRef(false)
 
-  // Load profile data only when modal opens (not on profile refetch)
+  // Load profile data when modal opens OR when profile arrives (for late-loading profiles)
   useEffect(() => {
+    console.log('[ProfileModal] useEffect triggered:', { open, profile, formInitialized: formInitialized.current })
+
+    // Reset initialization flag when modal closes
+    if (!open) {
+      formInitialized.current = false
+      return
+    }
+
+    // If modal is open and we have profile data, populate the form
     if (open && profile && !formInitialized.current) {
+      console.log('[ProfileModal] Loading profile data into form:', profile)
       setFirstName(profile.first_name || '')
       setLastName(profile.last_name || '')
       setCountry(profile.country || 'CHE')
@@ -49,10 +59,8 @@ export default function ProfileModal({ open, onClose }) {
       setDeleteEmailInput('')
       setDeleteError('')
       formInitialized.current = true
-    }
-    // Reset initialization flag when modal closes
-    if (!open) {
-      formInitialized.current = false
+    } else if (open && !profile) {
+      console.warn('[ProfileModal] Modal opened but profile is null/undefined - will update when profile loads')
     }
   }, [open, profile])
 
