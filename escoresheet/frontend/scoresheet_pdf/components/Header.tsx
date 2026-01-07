@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import swissvolleyLogo from './swissvolleylogo.jpg';
-import favicon from '../../src/favicon.png';
+// Logo for white background (scoresheet PDF)
+const openvolleyLogo = '/openvolley_no_bg.png';
 import { formatTimeLocal } from '../../src/utils/timeUtils';
 
 interface HeaderProps {
@@ -28,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             {/* Swiss Volley Logo Section with Fallback */}
             {!imageError ? (
                 <img
-                    src={favicon}
+                    src={openvolleyLogo}
                     alt="Openvolley eScoresheet"
                     className="h-8 object-contain mx-auto"
                     onError={() => setImageError(true)}
@@ -207,11 +208,11 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
         </div>
 
         <div className="flex items-center justify-center min-w-[120px]">
-            {/* favicon Logo Section with Fallback */}
+            {/* Openvolley Logo Section with Fallback */}
             {!faviconImageError ? (
                 <img
-                    src={favicon}
-                    alt="favicon"
+                    src={openvolleyLogo}
+                    alt="Openvolley"
                     className="h-8 object-contain mx-0"
                     onError={() => setFaviconImageError(true)}
                 />

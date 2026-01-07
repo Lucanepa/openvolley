@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.17',
+    date: '07.01.26',
+    changes: [
+      'Update favicon to use .ico format and replace all instances of favicon.png with openvolley_no_bg.png; remove unused favicon.png files and backup JSON data.'
+    ]
+  },
+  {
     version: '0.19.16',
     date: '06.01.26',
     changes: [

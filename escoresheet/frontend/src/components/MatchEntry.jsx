@@ -3,6 +3,9 @@ import { getMatchData, updateMatchData } from '../utils/serverDataSync'
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
 import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 
@@ -1117,7 +1120,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         }}
                       >
                         {shouldShowBall && (
-                          <img src={mikasaVolleyball} alt="Serve" style={{
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{
                             position: 'absolute',
                             left: teamSide === 'left' ? '-28px' : 'auto',
                             right: teamSide === 'left' ? 'auto' : '-28px',
@@ -1199,7 +1202,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         }}
                       >
                         {shouldShowBall && (
-                          <img src={mikasaVolleyball} alt="Serve" style={{
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{
                             position: 'absolute',
                             left: teamSide === 'left' ? '-28px' : 'auto',
                             right: teamSide === 'left' ? 'auto' : '-28px',

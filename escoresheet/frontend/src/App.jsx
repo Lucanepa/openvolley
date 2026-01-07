@@ -18,7 +18,12 @@ import { useSyncQueue } from './hooks/useSyncQueue'
 import useAutoBackup from './hooks/useAutoBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import mikasaVolleyball from './mikasa_v200w.png'
-import favicon from './favicon.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
+
+// Logo for dark background (HomePage)
+const openvolleyLogo = '/openvolley_dark_bg.png'
 import {
   TEST_REFEREE_SEED_DATA,
   TEST_SCORER_SEED_DATA,
@@ -229,10 +234,12 @@ export default function App() {
     }
   }, [wakeLockActive, reEnableWakeLock])
 
-  // Preload assets that are used later (e.g., coin toss volleyball image)
+  // Preload assets that are used later (e.g., coin toss volleyball image, logo)
   useEffect(() => {
     const assetsToPreload = [
-      mikasaVolleyball
+      ballImage,
+      mikasaVolleyball,
+      openvolleyLogo
     ]
 
     assetsToPreload.forEach(src => {
@@ -850,25 +857,31 @@ export default function App() {
 
   const restoredRef = useRef(false)
 
-  // Preload volleyball image when app loads
+  // Preload ball and logo images when app loads
   useEffect(() => {
-    // Preload the image
-    const img = new Image()
-    img.src = mikasaVolleyball
-    
-    // Also add a preload link to the document head for early loading
-    const link = document.createElement('link')
-    link.rel = 'preload'
-    link.as = 'image'
-    link.href = mikasaVolleyball
-    document.head.appendChild(link)
-    
+    const imagesToPreload = [ballImage, mikasaVolleyball, openvolleyLogo]
+
+    imagesToPreload.forEach(src => {
+      // Preload the image
+      const img = new Image()
+      img.src = src
+
+      // Also add a preload link to the document head for early loading
+      const link = document.createElement('link')
+      link.rel = 'preload'
+      link.as = 'image'
+      link.href = src
+      document.head.appendChild(link)
+    })
+
     return () => {
-      // Cleanup: remove preload link if component unmounts
-      const existingLink = document.querySelector(`link[href="${mikasaVolleyball}"]`)
-      if (existingLink) {
-        document.head.removeChild(existingLink)
-      }
+      // Cleanup: remove preload links if component unmounts
+      imagesToPreload.forEach(src => {
+        const existingLink = document.querySelector(`link[href="${src}"]`)
+        if (existingLink) {
+          document.head.removeChild(existingLink)
+        }
+      })
     }
   }, [])
 
@@ -3053,7 +3066,7 @@ export default function App() {
           <>
             <UpdateBanner showClearDataOption={true} />
             <HomePage
-            favicon={favicon}
+            favicon={openvolleyLogo}
             newMatchMenuOpen={newMatchMenuOpen}
             setNewMatchMenuOpen={setNewMatchMenuOpen}
             createNewOfficialMatch={createNewOfficialMatch}

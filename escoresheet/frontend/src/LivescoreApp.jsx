@@ -5,6 +5,9 @@ import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import mikasaVolleyball from './mikasa_v200w.png'
 
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
+
 /**
  * Simplified Livescore App
  * - Subscribes to match_live_state table
@@ -241,7 +244,7 @@ export default function LivescoreApp() {
             {/* Left Ball */}
             <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
               {servingTeam === 'left' && (
-                <img src={mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
               )}
             </div>
 
@@ -273,7 +276,7 @@ export default function LivescoreApp() {
             {/* Right Ball */}
             <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
               {servingTeam === 'right' && (
-                <img src={mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
               )}
             </div>
           </div>
@@ -430,7 +433,7 @@ export default function LivescoreApp() {
           </div>
         ) : liveGames.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
-            <img src={mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
+            <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
             <div>{t('livescore.noActiveGame', 'No live games')}</div>
           </div>
         ) : (
@@ -486,7 +489,7 @@ export default function LivescoreApp() {
                         gap: '6px'
                       }}>
                         {servingTeam === 'left' && (
-                          <img src={mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
                         )}
                         {leftName}
                       </div>
@@ -515,7 +518,7 @@ export default function LivescoreApp() {
                       }}>
                         {rightName}
                         {servingTeam === 'right' && (
-                          <img src={mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
                         )}
                       </div>
                     </div>

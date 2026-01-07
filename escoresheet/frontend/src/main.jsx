@@ -5,15 +5,18 @@ import './styles.css'
 import { initLogger } from './utils/logger'
 import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
+import { AuthProvider } from './contexts/AuthContext'
 
 // Initialize logger to capture console output
 initLogger()
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AlertProvider>
-      <App />
-    </AlertProvider>
+    <AuthProvider>
+      <AlertProvider>
+        <App />
+      </AlertProvider>
+    </AuthProvider>
   </React.StrictMode>
 )
 

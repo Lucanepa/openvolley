@@ -5,6 +5,9 @@ import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
 import WsDebugOverlay from './WsDebugOverlay'
@@ -2270,7 +2273,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Serve ball indicator */}
         {shouldShowBall && (
           <img
-            src={mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
             alt="Ball"
             style={{
               position: 'absolute',
@@ -2992,7 +2995,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 }}>
                   {leftServing && (
                     <img
-                      src={mikasaVolleyball}
+                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                       alt="Serving"
                       style={{
                         width: 'clamp(24px, 6vw, 50px)',
@@ -3057,7 +3060,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 }}>
                   {rightServing && (
                     <img
-                      src={mikasaVolleyball}
+                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                       alt="Serving"
                       style={{
                         width: 'clamp(24px, 6vw, 50px)',
@@ -3785,7 +3788,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </div>
             ) : (
               <img
-                src="/favicon.png"
+                src="/openvolley_dark_bg.png"
                 alt="OpenVolley"
                 style={{
                   width: '100%',

@@ -78,9 +78,9 @@ function createIndexHtml(config) {
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/favicon.png" />
-    <link rel="icon" type="image/png" sizes="128x128 256x256" href="/favicon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
+    <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="${config.themeColor}" />
     <meta name="description" content="${config.description}" />
@@ -132,7 +132,7 @@ async function buildSubdomain(subdomain) {
         react(),
         VitePWA({
           registerType: 'prompt',
-          includeAssets: ['favicon.png'],
+          includeAssets: ['openvolley_no_bg.png'],
           workbox: {
             skipWaiting: false,
             clientsClaim: true,
@@ -179,8 +179,8 @@ async function buildSubdomain(subdomain) {
             background_color: '#ffffff',
             theme_color: config.themeColor,
             icons: [
-              { src: 'favicon.png', sizes: '192x192', type: 'image/png' },
-              { src: 'favicon.png', sizes: '512x512', type: 'image/png' }
+              { src: 'openvolley_no_bg.png', sizes: '192x192', type: 'image/png' },
+              { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
             ]
           }
         })

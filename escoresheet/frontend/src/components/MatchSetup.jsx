@@ -2,12 +2,16 @@ import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
+import { useAuth } from '../contexts/AuthContext'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
@@ -382,6 +386,7 @@ function formatDobForSync(dob) {
 export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const { user, profile, getCachedProfile } = useAuth()
   const [home, setHome] = useState('')
   // Match created popup state
   const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin, refereePin, homeTeamPin, awayTeamPin }
@@ -1363,7 +1368,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled === true)
     setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled === true)
   }, [matchId, match?.refereeConnectionEnabled, match?.benchConnectionEnabled, match?.homeTeamConnectionEnabled, match?.awayTeamConnectionEnabled])
-  
+
+  // Auto-fill scorer fields from logged-in user profile
+  // Only applies when scorer fields are empty (new match or scorer not yet set)
+  useEffect(() => {
+    // Get profile from context or fall back to cached profile for offline use
+    const userProfile = profile || getCachedProfile()
+    if (!userProfile) return
+
+    // Only auto-fill if scorer fields are currently empty
+    // This ensures we don't overwrite data loaded from an existing match
+    if (scorerFirst || scorerLast) return
+
+    // Auto-fill scorer info from user profile
+    if (userProfile.first_name) setScorerFirst(userProfile.first_name)
+    if (userProfile.last_name) setScorerLast(userProfile.last_name)
+    if (userProfile.country) setScorerCountry(userProfile.country)
+    if (userProfile.dob) {
+      // Convert ISO date (YYYY-MM-DD) to DD.MM.YYYY format used by the app
+      const dobParts = userProfile.dob.split('-')
+      if (dobParts.length === 3) {
+        setScorerDob(`${dobParts[2]}.${dobParts[1]}.${dobParts[0]}`)
+      }
+    }
+  }, [profile, scorerFirst, scorerLast])
 
   // Server management - Only check in Electron
   useEffect(() => {
@@ -2402,6 +2430,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         ts: new Date().toISOString(),
         status: 'queued'
       })
+
+    // Associate user with this match if logged in
+    if (user && supabase) {
+      try {
+        await supabase.from('user_matches').upsert({
+          user_id: user.id,
+          match_external_id: seedKey,
+          role: 'scorer'
+        }, { onConflict: 'user_id,match_external_id,role' })
+        console.log('[MatchSetup] Associated user with match:', seedKey)
+      } catch (err) {
+        // Don't fail match creation if user_matches insert fails
+        console.warn('[MatchSetup] Failed to associate user with match:', err)
+      }
+    }
 
     // Add players to local Dexie (still needed for local functionality)
     if (homeRoster.length) {

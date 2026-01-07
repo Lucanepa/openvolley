@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
+import UserButton from '../auth/UserButton'
 
 export default function HomePage({
   favicon,
@@ -24,9 +25,17 @@ export default function HomePage({
   return (
     <div className="home-view">
       <div className="home-content">
-        <h1 className="home-title" style={{ width: 'auto' }}>{t('home.title')}</h1>
+        {/* Header with title */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: '8px'
+        }}>
+          <h1 className="home-title" style={{ width: 'auto', margin: 0 }}>{t('home.title')}</h1>
+        </div>
         <div className="home-logo">
-          <img src={favicon} alt="Openvolley" />
+          <img src={'/openvolley_no_bg.png'} alt="Openvolley" />
         </div>
 
         <div className="home-match-section" style={{ margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
@@ -240,10 +249,15 @@ export default function HomePage({
               </div>
             </div>
           )}
+
           </div>
         </div>
-
+        <div style={{ marginTop: '50px' }}>
+        <UserButton fullWidth />
+        </div>
         <div style={{ marginTop: '50px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          
+
           <button
             onClick={onOpenSettings}
             style={{

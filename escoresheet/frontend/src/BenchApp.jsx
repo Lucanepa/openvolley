@@ -7,6 +7,9 @@ import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import mikasaVolleyball from './mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { supabase } from './lib/supabaseClient'
 
 // Connection modes
@@ -570,7 +573,7 @@ export default function BenchApp() {
           textAlign: 'center'
         }}>
           <img
-            src={mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
             alt="Volleyball"
             style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
@@ -700,7 +703,7 @@ export default function BenchApp() {
           textAlign: 'center'
         }}>
           <img
-            src={mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
             alt="Volleyball"
             style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
@@ -847,7 +850,7 @@ export default function BenchApp() {
           textAlign: 'center'
         }}>
           <img
-            src={mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
             alt="Volleyball"
             style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
@@ -1046,7 +1049,7 @@ export default function BenchApp() {
         textAlign: 'center'
       }}>
         <img
-          src={mikasaVolleyball}
+          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
           alt="Volleyball"
           style={{ width: '80px', height: '80px', marginBottom: '20px' }}
         />
