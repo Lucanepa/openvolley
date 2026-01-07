@@ -5,6 +5,9 @@ import { useAlert } from '../contexts/AlertContext'
 import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 
@@ -732,7 +735,7 @@ export default function MatchEnd({ matchId, onGoHome }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img src={mikasaVolleyball} alt="Volleyball" style={{ width: '32px', height: '32px' }} />
+          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '32px', height: '32px' }} />
           <h2 style={{ margin: 0 }}>Match Complete</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

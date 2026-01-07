@@ -13,6 +13,9 @@ import ConnectionSetupModal from './options/ConnectionSetupModal'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { supabase } from '../lib/supabaseClient'
 import { exportMatchData } from '../utils/backupManager'
@@ -12290,7 +12293,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                                 SERVE
                               </div>
                               <img
-                                src={mikasaVolleyball}
+                                src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                                 alt="Serving team"
                                 style={{
                                   width: 24,
@@ -12309,7 +12312,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                           {!serveOnLeft && (
                             <>
                               <img
-                                src={mikasaVolleyball}
+                                src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                                 alt="Serving team"
                                 style={{
                                   width: 24,
@@ -13727,7 +13730,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 if (!servingPlayer || !servingPlayer.number) {
                   return (
                     <img
-                      src={mikasaVolleyball}
+                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
@@ -13773,7 +13776,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       </div>
                     </div>
                     <img
-                      src={mikasaVolleyball}
+                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
@@ -13847,7 +13850,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 if (!servingPlayer || !servingPlayer.number) {
                   return (
                     <img
-                      src={mikasaVolleyball}
+                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
@@ -13860,7 +13863,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 return (
                   <>
                     <img
-                      src={mikasaVolleyball}
+                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                       alt="Serving team"
                       style={{
                         ...serveBallBaseStyle,
@@ -14350,7 +14353,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       >
                         {shouldShowBall && (
                           <img
-                            src={mikasaVolleyball}
+                            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                             alt="Volleyball"
                             style={{
                               position: 'absolute',
@@ -14887,7 +14890,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       >
                         {shouldShowBall && (
                           <img 
-                            src={mikasaVolleyball} 
+                            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} 
                             alt="Volleyball" 
                             style={{
                               position: 'absolute',
@@ -15369,7 +15372,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               SERVE
                             </div>
                             <img
-                              src={mikasaVolleyball}
+                              src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                               alt="Serving team"
                               style={{
                                 width: 32,
@@ -15388,7 +15391,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {!serveOnLeft && (
                           <>
                             <img
-                              src={mikasaVolleyball}
+                              src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                               alt="Serving team"
                               style={{
                                 width: 32,
@@ -15464,7 +15467,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             minWidth: '200px'
                           }}
                         >
-                          <img src={mikasaVolleyball} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
                           {t('scoreboard.buttons.switchServe')}
                         </button>
                         <button
@@ -25297,7 +25300,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     {/* Serve ball underneath if serving */}
                     {leftIsServing && (
                       <img
-                        src={mikasaVolleyball}
+                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                         alt="Serving team"
                         style={{
                           width: '28px',
@@ -25328,7 +25331,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     {/* Serve ball underneath if serving */}
                     {rightIsServing && (
                       <img
-                        src={mikasaVolleyball}
+                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                         alt="Serving team"
                         style={{
                           width: '28px',

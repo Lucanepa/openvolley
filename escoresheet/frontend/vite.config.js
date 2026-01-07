@@ -180,7 +180,7 @@ export default defineConfig({
     },
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.png'],
+      includeAssets: ['openvolley_no_bg.png'],
       workbox: {
         // Disable workbox console logs in production
         mode: 'production',
@@ -253,8 +253,8 @@ export default defineConfig({
         background_color: '#ffffff',
         theme_color: '#111827',
         icons: [
-          { src: 'favicon.png', sizes: '192x192', type: 'image/png' },
-          { src: 'favicon.png', sizes: '512x512', type: 'image/png' }
+          { src: 'openvolley_no_bg.png', sizes: '192x192', type: 'image/png' },
+          { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
         ]
       }
     }),

@@ -4,12 +4,15 @@ import BenchApp from './BenchApp'
 import './styles.css'
 import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
+import { AuthProvider } from './contexts/AuthContext'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AlertProvider>
-      <BenchApp />
-    </AlertProvider>
+    <AuthProvider>
+      <AlertProvider>
+        <BenchApp />
+      </AlertProvider>
+    </AuthProvider>
   </React.StrictMode>,
 )
 

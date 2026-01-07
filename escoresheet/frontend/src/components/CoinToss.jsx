@@ -8,6 +8,9 @@ import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = '/ball.png'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 
@@ -1208,7 +1211,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       alignItems: 'center', justifyContent: 'center', flexShrink: 0
     }}>
       <img
-        src={mikasaVolleyball}
+        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
         alt="Volleyball"
         style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
       />
