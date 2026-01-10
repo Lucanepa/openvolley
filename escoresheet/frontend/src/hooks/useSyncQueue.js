@@ -2,12 +2,52 @@ import { useEffect, useCallback, useRef, useState } from 'react'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
 
+/**
+ * ============================================================================
+ * SYNC ARCHITECTURE: IndexedDB + Supabase
+ * ============================================================================
+ *
+ * This app uses a TWO-PATH write architecture:
+ *
+ * PATH 1: QUEUED SYNC (this hook)
+ * --------------------------------
+ * Used for: Events, Sets, Match metadata
+ * Flow: IndexedDB write (immediate) → sync_queue → Supabase (async)
+ *
+ * Why queued?
+ * - Offline-first: Works without internet, syncs when back online
+ * - Dependency ordering: Matches must exist in Supabase before sets/events
+ * - Retry safety: external_id enables idempotent upserts (no duplicates on retry)
+ * - JSONB merging: Multiple components write different fields safely
+ *
+ * PATH 2: DIRECT SUPABASE (bypasses this queue)
+ * --------------------------------
+ * Used for: match_live_state table only
+ * Flow: Direct Supabase upsert (no local queue)
+ *
+ * Why direct?
+ * - Real-time latency: Spectators need sub-second updates
+ * - Queuing adds 1000ms+ delay (polling interval)
+ * - Acceptable tradeoff: live_state is ephemeral, can be reconstructed
+ *
+ * KEY DESIGN DECISIONS:
+ * - external_id: Stable identifier across retries (immutable, unlike game_n)
+ * - JSONB merging: Fetch existing + merge on update to prevent field overwrites
+ * - Dependency retries: Jobs retry up to MAX_DEPENDENCY_RETRIES times
+ * - Connection caching: Only recheck Supabase every 30 seconds
+ *
+ * See also:
+ * - db.js: sync_queue table schema
+ * - Scoreboard.jsx: Event logging + live_state direct writes
+ * ============================================================================
+ */
+
 // Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error'
 
-// Resource processing order - matches must be synced before sets/events
+// Resource processing order - matches must be synced before sets/events (FK dependency)
 const RESOURCE_ORDER = ['match', 'set', 'event']
 
-// Max retries for jobs waiting on dependencies
+// Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
 
 export function useSyncQueue() {

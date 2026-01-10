@@ -11,6 +11,8 @@ import MenuList from './MenuList'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import ConnectionSetupModal from './options/ConnectionSetupModal'
 import { useSyncQueue } from '../hooks/useSyncQueue'
+import { useSequentialSync } from '../hooks/useSequentialSync'
+import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
@@ -21,11 +23,32 @@ import { supabase } from '../lib/supabaseClient'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
+import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
+
+/**
+ * SYNC ARCHITECTURE NOTE:
+ * -----------------------
+ * This component uses TWO write paths to Supabase (see useSyncQueue.js for full docs):
+ *
+ * 1. QUEUED: Events, sets, match metadata → db.sync_queue → processed async
+ *    Used for: All scoring events, substitutions, timeouts, sanctions
+ *    Why: Offline-first, dependency ordering, retry-safe
+ *
+ * 2. DIRECT: match_live_state → supabase.upsert() immediately
+ *    Used for: Real-time spectator display (lineup, scores, serving team)
+ *    Why: Sub-second latency needed for live viewing - queue adds 1s+ delay
+ *
+ * The eventInProgressRef mutex serializes event creation to prevent race
+ * conditions (e.g., rapid clicks causing duplicate sets).
+ */
 
 export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
+  const { syncState, syncSetEnd, resetSyncState } = useSequentialSync()
+  const [syncModalOpen, setSyncModalOpen] = useState(false)
+  const syncProceedCallbackRef = useRef(null)
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -86,6 +109,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const saved = localStorage.getItem('setIntervalDuration')
     return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
   })
+  // Score/countdown font: 'default' | 'orbitron'
+  const [scoreFont, setScoreFont] = useState(() => {
+    const saved = localStorage.getItem('scoreFont')
+    return saved || 'default'
+  })
   // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
@@ -110,7 +138,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [accidentalPointConfirmModal, setAccidentalPointConfirmModal] = useState(null) // { team: 'home'|'away', onConfirm: function } | null
   const lastPointAwardedTimeRef = useRef(null) // Track when last point was awarded
   const rallyStartTimeRef = useRef(null) // Track when rally started
-  const eventInProgressRef = useRef(false) // Mutex to prevent race conditions in event logging
+  // MUTEX: Serializes event creation to prevent race conditions (e.g., rapid clicks creating duplicate sets)
+  // See architecture note at top of file. All event-creating functions acquire this lock.
+  const eventInProgressRef = useRef(false)
   const eventQueueRef = useRef([]) // Queue for serializing event creation
   const confirmingTimeoutRef = useRef(false) // Prevent double-click on timeout confirmation
   const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
@@ -158,6 +188,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const [duplicateTimeoutConfirm, setDuplicateTimeoutConfirm] = useState(null) // { team: 'home'|'away' } - confirmation for duplicate TO
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
+  const setEndModalDismissedRef = useRef(null) // Track setIndex where set end modal was dismissed via undo
   const timeoutStartTimestampRef = useRef(null) // Timestamp when timeout started
   const timeoutInitialCountdownRef = useRef(30) // Initial timeout duration
   const betweenSetsStartTimestampRef = useRef(null) // Timestamp when between-sets interval started
@@ -1860,7 +1891,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         setScoreB: snapshot.setScoreB
       })
 
-      // Run both Supabase writes in parallel for better performance
+      // DIRECT SUPABASE WRITE (bypasses sync_queue) - see architecture note at top of file
+      // Reason: match_live_state needs sub-second latency for real-time spectator display.
+      // Queuing would add 1s+ delay from the polling interval in useSyncQueue.
       const [liveStateResult, matchResult] = await Promise.all([
         supabase.from('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }),
         supabase.from('matches').update({ current_set: nextSetIndex }).eq('id', supabaseMatchId)
@@ -2058,6 +2091,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const ensureActiveSet = useCallback(async () => {
     if (!matchId) return
 
+    // Set lock immediately to prevent race conditions
+    setCreationInProgressRef.current = true
+
     console.log('[SET_END_DEBUG] [ensureActiveSet] 🔍 Checking for active set... matchId=', matchId)
 
     // GUARD 1: Check if match is over by status
@@ -2065,6 +2101,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     console.log('[SET_END_DEBUG] [ensureActiveSet] Match status:', match?.status)
     if (match?.status === 'ended' || match?.status === 'approved' || match?.status === 'final') {
       console.log('[SET_END_DEBUG] [ensureActiveSet] 🏁 Match status is', match.status, '- STOPPING, not creating new set')
+      setCreationInProgressRef.current = false
       return
     }
 
@@ -2082,6 +2119,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     }))
     if (homeSetsWon >= 3 || awaySetsWon >= 3) {
       console.log('[SET_END_DEBUG] [ensureActiveSet] 🏆 Match is over (sets won:', homeSetsWon, '-', awaySetsWon, ') - STOPPING, not creating new set')
+      setCreationInProgressRef.current = false
       return
     }
 
@@ -2093,6 +2131,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     if (existing) {
       console.log('[SET_END_DEBUG] [ensureActiveSet] ✅ Active set exists:', JSON.stringify({ id: existing.id, index: existing.index }))
+      setCreationInProgressRef.current = false
       return
     }
 
@@ -2113,6 +2152,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     const duplicate = allSets.find(s => s.index === nextIndex)
     if (duplicate) {
       console.log('[ensureActiveSet] ⛔ Duplicate detected! Set', nextIndex, 'already exists:', duplicate.id)
+      setCreationInProgressRef.current = false
       return
     }
 
@@ -2121,8 +2161,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       const previousSet = allSets.find(s => s.index === nextIndex - 1)
       if (!previousSet || !previousSet.finished) {
         console.log('[ensureActiveSet] ⛔ Cannot create set', nextIndex, '- previous set', (nextIndex - 1), 'is not finished:', previousSet)
+        setCreationInProgressRef.current = false
         return
       }
+    }
+
+    // CRITICAL VALIDATION 3: Fresh duplicate check right before creation (race condition guard)
+    const freshDuplicateCheck = await db.sets.where({ matchId }).and(s => s.index === nextIndex).first()
+    if (freshDuplicateCheck) {
+      console.log('[ensureActiveSet] ⛔ Fresh duplicate check failed! Set', nextIndex, 'was created by another process:', freshDuplicateCheck.id)
+      setCreationInProgressRef.current = false
+      return
     }
 
     const setId = await db.sets.add({
@@ -2155,6 +2204,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         status: 'queued'
       })
     }
+
+    // Release the lock after successful creation
+    setCreationInProgressRef.current = false
   }, [matchId])
 
   useEffect(() => {
@@ -2163,7 +2215,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     ensuringSetRef.current = true
     ensureActiveSet()
       .catch(err => {
-        // Silently handle error
+        // Silently handle error, but ensure lock is released
+        setCreationInProgressRef.current = false
       })
       .finally(() => {
         ensuringSetRef.current = false
@@ -2647,18 +2700,77 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
 
-  // Format countdown time: ' and '' (no ' when less than a minute)
+  // Check if set has ended on page load/refresh (score indicates set over but modal not shown)
+  useEffect(() => {
+    // Don't run if set creation is in progress (prevents race condition)
+    if (setCreationInProgressRef.current) return
+    if (!data?.set || setEndTimeModal || data.set.finished) return
+
+    // Don't re-show if user dismissed via undo for this set
+    if (setEndModalDismissedRef.current === data.set.index) return
+
+    const homePoints = data.set.homePoints || 0
+    const awayPoints = data.set.awayPoints || 0
+    const is5thSet = data.set.index === 5
+    const pointsToWin = is5thSet ? 15 : 25
+
+    // Check if score indicates set should have ended
+    const homeWon = homePoints >= pointsToWin && homePoints - awayPoints >= 2
+    const awayWon = awayPoints >= pointsToWin && awayPoints - homePoints >= 2
+
+    if (homeWon || awayWon) {
+      // Set should have ended - show modal
+      const winner = homeWon ? 'home' : 'away'
+
+      // Calculate if this is match end
+      const finishedSets = data.sets?.filter(s => s.finished) || []
+      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+      const isMatchEnd = winner === 'home' ? (homeSetsWon + 1) >= 3 : (awaySetsWon + 1) >= 3
+
+      setSetEndTimeModal({
+        setIndex: data.set.index,
+        winner,
+        homePoints,
+        awayPoints,
+        defaultTime: new Date().toISOString(),
+        isMatchEnd
+      })
+    } else {
+      // Score no longer indicates set end - clear the dismissed flag so modal can show again if needed
+      if (setEndModalDismissedRef.current === data.set.index) {
+        setEndModalDismissedRef.current = null
+      }
+    }
+  }, [data?.set, data?.sets, setEndTimeModal])
+
+  // Format countdown time: mm:ss format, but only seconds when < 60
   const formatCountdown = useCallback((seconds) => {
     if (seconds < 60) {
-      return `${seconds}''`
+      return String(seconds)
     }
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
-    if (remainingSeconds === 0) {
-      return `${minutes}'`
-    }
-    return `${minutes}' ${remainingSeconds}''`
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
   }, [])
+
+  // Format timeout: always just seconds
+  const formatTimeout = useCallback((seconds) => {
+    return String(seconds)
+  }, [])
+
+  // Get font family based on scoreFont setting
+  const getScoreFont = useCallback(() => {
+    const fonts = {
+      'default': 'inherit',
+      'orbitron': "'Orbitron', monospace",
+      'roboto-mono': "'Roboto Mono', monospace",
+      'jetbrains-mono': "'JetBrains Mono', monospace",
+      'space-mono': "'Space Mono', monospace",
+      'ibm-plex-mono': "'IBM Plex Mono', monospace"
+    }
+    return fonts[scoreFont] || 'inherit'
+  }, [scoreFont])
 
   const stopBetweenSetsCountdown = useCallback(() => {
     setBetweenSetsCountdown(null)
@@ -2962,11 +3074,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamCaptain = players?.find(p => p.isCaptain || p.captain)
         const captainOnCourt = teamCaptain && currentLineup && Object.values(currentLineup).some(num => String(num) === String(teamCaptain.number))
         const isCourtCaptain = !captainOnCourt && hasPlayerNumber && courtCaptainNum && String(courtCaptainNum) === String(playerNumber)
-
-        // Debug logging for court captain
-        if (courtCaptainNum && String(courtCaptainNum) === String(playerNumber)) {
-          console.log(`[buildOnCourt DEBUG] Player #${playerNumber} courtCaptainNum=${courtCaptainNum}, captainOnCourt=${captainOnCourt}, isCourtCaptain=${isCourtCaptain}`)
-        }
 
         const playerData = {
           id: player?.id ?? `placeholder-${idx}`,
@@ -4073,6 +4180,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             marginRight: isCompactMode ? '24px' : isLaptopMode ? '32px' : '40px',
             fontVariantNumeric: 'tabular-nums',
             fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+            fontFamily: getScoreFont(),
             lineHeight: 1,
             letterSpacing: 0,
             minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
@@ -4084,6 +4192,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             left: '50%',
             transform: 'translateX(-50%)',
             fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+            fontFamily: getScoreFont(),
             lineHeight: 1,
             letterSpacing: 0
           }}>:</span>
@@ -4094,6 +4203,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             marginLeft: isCompactMode ? '24px' : isLaptopMode ? '32px' : '40px',
             fontVariantNumeric: 'tabular-nums',
             fontSize: isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+            fontFamily: getScoreFont(),
             lineHeight: 1,
             letterSpacing: 0,
             minWidth: isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
@@ -4945,6 +5055,14 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Close modal immediately to prevent multiple confirmations
     setSetEndTimeModal(null)
 
+    // Show sync progress modal
+    setSyncModalOpen(true)
+
+    // CRITICAL: Acquire lock IMMEDIATELY to prevent ensureActiveSet from creating duplicate sets
+    // This must happen BEFORE we mark the current set as finished
+    setCreationInProgressRef.current = true
+    console.log('[SET_END] 🔒 Set creation lock acquired EARLY (before marking set finished)')
+
     // Reset libero suggestion dismissed state for new set
     setLiberoSuggestionDismissedForExit({ home: null, away: null })
 
@@ -4995,7 +5113,29 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     // Find the UNFINISHED set with this index (the one we're actually playing)
     const setToUpdate = allSetsBeforeUpdate.find(s => s.index === setIndex && !s.finished)
-    const setIdToUpdate = setToUpdate?.id || data.set.id // Fallback to data.set.id if not found
+
+    // SAFE FALLBACK: Only use data.set.id if it has the correct index
+    let setIdToUpdate = setToUpdate?.id
+    if (!setIdToUpdate) {
+      // No unfinished set with matching index found - check if data.set has correct index
+      if (data.set.index === setIndex) {
+        setIdToUpdate = data.set.id
+        console.warn('[SET_END] ⚠️ Fallback to data.set.id - set may already be finished but index matches:', setIdToUpdate)
+      } else {
+        // CRITICAL: Cannot find correct set to update - abort to prevent data corruption
+        console.error('[SET_END] ❌ CRITICAL: Cannot find set with index', setIndex, 'to update.')
+        console.error('[SET_END] data.set has index', data.set.index, '- aborting to prevent wrong set update')
+        console.error('[SET_END] Available sets:', allSetsBeforeUpdate.map(s => ({ id: s.id, index: s.index, finished: s.finished })))
+        setSetEndTimeModal(null)
+        setSyncModalOpen(false)
+        resetSyncState()
+        showAlert('Error: Could not find the correct set to update. Please refresh and try again.', 'error')
+        // Release lock before aborting
+        setCreationInProgressRef.current = false
+        console.log('[SET_END] 🔓 Lock released due to abort')
+        return
+      }
+    }
 
     console.log('[SET_END_DEBUG] 💾 STEP 4: About to update set:', JSON.stringify({
       setIdFromData: data.set.id,
@@ -5039,42 +5179,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       finished: s.finished
     }))))
 
-    // STEP 6: Sync set update to Supabase (if not a test match)
-    const setMatch = await db.matches.get(matchId)
-    console.log('[SET_END_DEBUG] 🔍 STEP 6: Match info:', JSON.stringify({
-      matchId,
-      isTest: setMatch?.test,
-      seed_key: setMatch?.seed_key,
-      currentStatus: setMatch?.status
-    }))
-    if (setMatch?.test !== true && setMatch?.seed_key) {
-      console.log('[SET_END_DEBUG] 📤 STEP 6: Queueing set update for Supabase')
-      // Use setIdToUpdate (the correct set we updated locally) not data.set.id
-      await db.sync_queue.add({
-        resource: 'set',
-        action: 'update',
-        payload: {
-          external_id: String(setIdToUpdate),
-          home_points: homePoints,
-          away_points: awayPoints,
-          finished: true,
-          end_time: time
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-      console.log('[SET_END_DEBUG] ✅ STEP 6 DONE: Set update queued for set id:', setIdToUpdate)
-    } else {
-      console.log('[SET_END_DEBUG] ⏭️ STEP 6 SKIPPED: Test match or no seed_key')
-    }
-
-    // STEP 7: Get all sets and calculate sets won by each team
+    // STEP 6: Get all sets and calculate sets won by each team (moved up for sync payload)
     const sets = await db.sets.where({ matchId }).toArray()
     const finishedSets = sets.filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-    console.log('[SET_END_DEBUG] 📊 STEP 7: Sets Summary:', JSON.stringify({
+    console.log('[SET_END_DEBUG] 📊 STEP 6: Sets Summary:', JSON.stringify({
       totalSets: sets.length,
       finishedSetsCount: finishedSets.length,
       allSets: sets.map(s => ({ index: s.index, home: s.homePoints, away: s.awayPoints, finished: s.finished })),
@@ -5082,16 +5193,81 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       awaySetsWon
     }))
 
-    // STEP 8: Check if either team has won 3 sets (match win)
+    // STEP 7: Check if either team has won 3 sets (match win)
     const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
-    console.log('[SET_END_DEBUG] 🏆 STEP 8: Match End Check:', JSON.stringify({ isMatchEnd, homeSetsWon, awaySetsWon }))
+    console.log('[SET_END_DEBUG] 🏆 STEP 7: Match End Check:', JSON.stringify({ isMatchEnd, homeSetsWon, awaySetsWon }))
 
     // Get match record for both branches (test check, cloud backup)
     const matchRecord = await db.matches.get(matchId)
-    console.log('[SET_END_DEBUG] 🔍 STEP 8: Match record status BEFORE any changes:', matchRecord?.status)
+    console.log('[SET_END_DEBUG] 🔍 STEP 7: Match info:', JSON.stringify({
+      matchId,
+      isTest: matchRecord?.test,
+      seed_key: matchRecord?.seed_key,
+      currentStatus: matchRecord?.status
+    }))
+
+    // STEP 8: Sequential sync to Supabase (if not a test match)
+    // This shows a progress modal and waits for each step to complete
+    if (matchRecord?.test !== true && matchRecord?.seed_key) {
+      console.log('[SET_END_DEBUG] 📤 STEP 8: Starting sequential sync to Supabase')
+
+      // Prepare set update payload
+      const setPayload = {
+        external_id: String(setIdToUpdate),
+        home_points: homePoints,
+        away_points: awayPoints,
+        finished: true,
+        end_time: time
+      }
+
+      // Prepare match payload if match end
+      let matchPayload = null
+      if (isMatchEnd) {
+        const setResults = finishedSets
+          .sort((a, b) => a.index - b.index)
+          .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
+        const matchWinner = homeSetsWon > awaySetsWon ? 'home' : 'away'
+        const finalScore = `${homeSetsWon}-${awaySetsWon}`
+
+        matchPayload = {
+          id: matchRecord.seed_key,
+          status: 'ended',
+          set_results: setResults,
+          winner: matchWinner,
+          final_score: finalScore,
+          sanctions: matchRecord?.sanctions || null
+        }
+      }
+
+      // Execute sequential sync (shows progress modal)
+      const syncResult = await syncSetEnd({
+        lastPointPayload: null, // Last point already synced by logEvent
+        setPayload,
+        matchPayload
+      })
+
+      console.log('[SET_END_DEBUG] ✅ STEP 8 DONE: Sequential sync completed:', syncResult)
+
+      // Wait for sync modal to complete (auto-proceed on success, user click on error)
+      // SyncProgressModal handles the timing (1s for success, 1.5s for warning, button for error)
+      await new Promise((resolve) => {
+        syncProceedCallbackRef.current = () => {
+          setSyncModalOpen(false)
+          resetSyncState()
+          resolve()
+        }
+      })
+    } else {
+      console.log('[SET_END_DEBUG] ⏭️ STEP 8 SKIPPED: Test match or no seed_key')
+      // For test matches, close sync modal immediately
+      setSyncModalOpen(false)
+      resetSyncState()
+    }
+
+    console.log('[SET_END_DEBUG] 🔍 STEP 9: Match record status BEFORE any changes:', matchRecord?.status)
 
     if (isMatchEnd) {
-      console.log('[SET_END_DEBUG] 🏁 STEP 9: MATCH END BRANCH - isMatchEnd=true')
+      console.log('[SET_END_DEBUG] 🏁 STEP 10: MATCH END BRANCH - isMatchEnd=true')
       // IMPORTANT: When match ends, preserve ALL data in database:
       // - All sets remain in db.sets
       // - All events remain in db.events
@@ -5101,51 +5277,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       // Status flow: live -> ended -> approved
 
       // Update local match status to 'ended'
-      console.log('[SET_END_DEBUG] 🏁 STEP 9: Setting match status to "ended"...')
+      console.log('[SET_END_DEBUG] 🏁 STEP 10: Setting match status to "ended"...')
       await db.matches.update(matchId, { status: 'ended' })
 
       // Verify the status was updated
       const matchAfterStatusUpdate = await db.matches.get(matchId)
-      console.log('[SET_END_DEBUG] ✅ STEP 9: Match status after update:', matchAfterStatusUpdate?.status)
+      console.log('[SET_END_DEBUG] ✅ STEP 10: Match status after update:', matchAfterStatusUpdate?.status)
 
-      // Add match update to sync queue with results and 'ended' status
-      if (matchRecord?.test !== true && matchRecord?.seed_key) {
-        // Build set results array
-        const setResults = finishedSets
-          .sort((a, b) => a.index - b.index)
-          .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
+      // NOTE: Match update sync is now done in STEP 8 (sequential sync) above
 
-        // Determine winner
-        const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
-        const finalScore = `${homeSetsWon}-${awaySetsWon}`
-
-        console.log('[SET_END_DEBUG] 📤 STEP 10: Queueing match update for Supabase:', JSON.stringify({
-          id: matchRecord.seed_key,
-          status: 'ended',
-          setResults,
-          winner,
-          finalScore
-        }))
-
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-            status: 'ended', // Match ended, awaiting approval
-            set_results: setResults,
-            winner,
-            final_score: finalScore,
-            sanctions: matchRecord?.sanctions || null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
-        console.log('[SET_END_DEBUG] ✅ STEP 10: Match update queued')
-      } else {
-        console.log('[SET_END_DEBUG] ⏭️ STEP 10 SKIPPED: Test match or no seed_key')
-      }
-      
       // Notify server to delete match from matchDataStore (since it's now final)
       const currentWs = wsRef.current
       if (currentWs && currentWs.readyState === WebSocket.OPEN) {
@@ -5179,9 +5319,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       }))
       if (onFinishSet) onFinishSet(data.set)
       console.log('[SET_END_DEBUG] ✅ STEP 11: onFinishSet callback completed')
+
+      // Release lock for match end path (no new set to create)
+      setCreationInProgressRef.current = false
+      console.log('[SET_END] 🔓 Lock released (match end - no new set needed)')
+
       console.log('═══════════════════════════════════════════════════════════════')
       console.log('[SET_END_DEBUG] 🏁 MATCH END FLOW COMPLETE')
       console.log('═══════════════════════════════════════════════════════════════')
+      return // Exit early for match end - don't fall through to new set creation
     } else {
       console.log('[SET_END_DEBUG] ➡️ STEP 9: SET END BRANCH (not match end) - continuing to next set')
       // Trigger event backup for Safari/Firefox (set end)
@@ -5260,9 +5406,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         startTimestamp: Date.now()
       })
 
-      // Prevent ensureActiveSet from creating duplicate sets while we're creating the next set
-      setCreationInProgressRef.current = true
-      console.log('[SET_END] 🔒 Set creation lock acquired')
+      // Lock was already acquired early in confirmSetEndTime (line ~5034)
+      // Verify it's still held (should be true)
+      console.log('[SET_END] 🔒 Set creation lock still held:', setCreationInProgressRef.current)
 
       try {
       // If set 4 just ended, prepare for Set 5 inline setup (no modal)
@@ -5442,11 +5588,30 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           console.log('[SET_END] 🔓 Set creation lock released')
         }, 200)
       }
+      // Upload scoresheet to cloud (async, non-blocking)
+      const matchForScoresheet = await db.matches.get(matchId)
+      const allSetsForScoresheet = await db.sets.where('matchId').equals(matchId).sortBy('index')
+      const allEventsForScoresheet = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      const homePlayersForScoresheet = await db.players.where('teamId').equals(matchForScoresheet?.homeTeamId || '').toArray()
+      const awayPlayersForScoresheet = await db.players.where('teamId').equals(matchForScoresheet?.awayTeamId || '').toArray()
+      const homeTeamForScoresheet = matchForScoresheet?.homeTeamId ? await db.teams.get(matchForScoresheet.homeTeamId) : null
+      const awayTeamForScoresheet = matchForScoresheet?.awayTeamId ? await db.teams.get(matchForScoresheet.awayTeamId) : null
+
+      uploadScoresheetAsync({
+        match: matchForScoresheet,
+        homeTeam: homeTeamForScoresheet,
+        awayTeam: awayTeamForScoresheet,
+        homePlayers: homePlayersForScoresheet,
+        awayPlayers: awayPlayersForScoresheet,
+        sets: allSetsForScoresheet,
+        events: allEventsForScoresheet
+      })
+
       console.log('═══════════════════════════════════════════════════════════════')
       console.log('[SET_END] ✅ confirmSetEndTime COMPLETED')
       console.log('═══════════════════════════════════════════════════════════════')
     }
-  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup])
+  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState])
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
   const confirmSet5SideService = useCallback(async (leftTeam, firstServe, inlineMode = false) => {
@@ -6263,6 +6428,13 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
     setReplayRallyConfirm(null)
   }, [replayRallyConfirm, data?.set, data?.events, matchId, getNextSeq, handleReplayRally])
+
+  // Auto-execute undo when triggered from set end modal (selectedOption === 'undo')
+  useEffect(() => {
+    if (replayRallyConfirm?.selectedOption === 'undo') {
+      handleReplayRally()
+    }
+  }, [replayRallyConfirm, handleReplayRally])
 
   const handleTimeout = useCallback(
     side => {
@@ -7782,19 +7954,23 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
     // Calculate center of the circle
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
-    
+
     // Calculate radius (half the width/height)
     const radius = rect.width / 2
-    
+
+    // Determine if this is the right side team (menu should open to the left)
+    const isRightTeam = teamKey === (leftIsHome ? 'away' : 'home')
+
     // Offset to move menu from the circle
-    const offset = radius + 30 // Add 30px extra spacing
-    
+    // Positive for left team (opens right), negative for right team (opens left)
+    const offset = isRightTeam ? -(radius + 30) : (radius + 30)
+
     // Close menu if it's already open for this player
     if (playerActionMenu?.playerNumber === playerNumber && playerActionMenu?.position === position) {
       setPlayerActionMenu(null)
       return
     }
-    
+
     // Check if clicked player is a libero currently on court
     const isLiberoOnCourt = isLibero && liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(playerNumber)
 
@@ -7806,6 +7982,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       element,
       x: centerX + offset,
       y: centerY,
+      side: isRightTeam ? 'right' : 'left',
       canSubstitute,
       canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero,
       isLiberoOnCourt,
@@ -8233,8 +8410,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           reason: 'injury'
         }, { skipMutex: true })
         // Check if redesignation is needed and prompt user
+        // Use isLiberoUnable to properly check events, not just database field
         const activeLiberos = teamPlayers?.filter(p =>
-          p.libero && p.libero !== 'unable' && p.number !== playerOut
+          p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerOut)
         ) || []
         if (activeLiberos.length === 0) {
           // Use setTimeout to allow state to update first
@@ -8256,17 +8434,22 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, teamAKey, checkLiberoRedesignation, sendActionToReferee])
 
   // Common modal position - all modals use the same position
-  const getCommonModalPosition = useCallback((element, menuX, menuY) => {
+  // For left side teams, menu opens to the right
+  // For right side teams, menu opens to the left
+  const getCommonModalPosition = useCallback((element, menuX, menuY, side) => {
     const rect = element?.getBoundingClientRect?.()
+    const isRightSide = side === 'right'
     if (rect) {
       return {
-        x: rect.right + 30,
-        y: rect.top + rect.height / 2
+        x: isRightSide ? rect.left - 30 : rect.right + 30,
+        y: rect.top + rect.height / 2,
+        side
       }
     }
     return {
-      x: menuX + 30,
-      y: menuY
+      x: isRightSide ? menuX - 30 : menuX + 30,
+      y: menuY,
+      side
     }
   }, [])
 
@@ -8274,70 +8457,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
   const openSubstitutionFromMenu = useCallback(() => {
     if (!playerActionMenu) return
     const { team, position, playerNumber } = playerActionMenu
-    
+
     // Defensive check: ensure player can still be substituted
     if (!canPlayerBeSubstituted(team, playerNumber)) {
       showAlert('This player cannot be substituted (already completed a substitution cycle)', 'warning')
       setPlayerActionMenu(null)
       return
     }
-    
-    const { element } = playerActionMenu
-    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y)
-    setSubstitutionDropdown({
-      team,
-      position,
-      playerNumber,
-      element,
-      x: pos.x,
-      y: pos.y
-    })
-    setPlayerActionMenu(null)
-  }, [playerActionMenu, getCommonModalPosition, canPlayerBeSubstituted])
 
-  // Open libero modal from action menu
-  const openLiberoFromMenu = useCallback(() => {
-    if (!playerActionMenu) return
-    const { team, position, playerNumber, element } = playerActionMenu
-    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y)
-    setLiberoDropdown({
-      team,
-      position,
-      playerNumber,
-      element,
-      x: pos.x,
-      y: pos.y
-    })
-    setPlayerActionMenu(null)
-  }, [playerActionMenu, getCommonModalPosition])
-
-  // Open sanction modal from action menu
-  const openSanctionFromMenu = useCallback(() => {
-    if (!playerActionMenu) return
-    const { team, position, playerNumber, element } = playerActionMenu
-    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y)
-    setSanctionDropdown({
-      team,
-      type: 'player',
-      playerNumber,
-      position,
-      element,
-      x: pos.x,
-      y: pos.y
-    })
-    setPlayerActionMenu(null)
-  }, [playerActionMenu, getCommonModalPosition])
-
-  // Open injury - same logic as expulsion/disqualification
-  const openInjuryFromMenu = useCallback(async () => {
-    if (!playerActionMenu || !data?.set) return
-    const { team, position, playerNumber, element } = playerActionMenu
-    
-    // First, check if a legal substitution is possible (not exceptional)
-    const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
-    if (legalSubstitutes.length > 0) {
-      // Legal substitution is possible - show substitution dropdown
-    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y)
+    const { element, side } = playerActionMenu
+    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y, side)
     setSubstitutionDropdown({
       team,
       position,
@@ -8345,6 +8474,64 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       element,
       x: pos.x,
       y: pos.y,
+      side: pos.side
+    })
+    setPlayerActionMenu(null)
+  }, [playerActionMenu, getCommonModalPosition, canPlayerBeSubstituted])
+
+  // Open libero modal from action menu
+  const openLiberoFromMenu = useCallback(() => {
+    if (!playerActionMenu) return
+    const { team, position, playerNumber, element, side } = playerActionMenu
+    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y, side)
+    setLiberoDropdown({
+      team,
+      position,
+      playerNumber,
+      element,
+      x: pos.x,
+      y: pos.y,
+      side: pos.side
+    })
+    setPlayerActionMenu(null)
+  }, [playerActionMenu, getCommonModalPosition])
+
+  // Open sanction modal from action menu
+  const openSanctionFromMenu = useCallback(() => {
+    if (!playerActionMenu) return
+    const { team, position, playerNumber, element, side } = playerActionMenu
+    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y, side)
+    setSanctionDropdown({
+      team,
+      type: 'player',
+      playerNumber,
+      position,
+      element,
+      x: pos.x,
+      y: pos.y,
+      side: pos.side
+    })
+    setPlayerActionMenu(null)
+  }, [playerActionMenu, getCommonModalPosition])
+
+  // Open injury - same logic as expulsion/disqualification
+  const openInjuryFromMenu = useCallback(async () => {
+    if (!playerActionMenu || !data?.set) return
+    const { team, position, playerNumber, element, side } = playerActionMenu
+
+    // First, check if a legal substitution is possible (not exceptional)
+    const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
+    if (legalSubstitutes.length > 0) {
+      // Legal substitution is possible - show substitution dropdown
+    const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y, side)
+    setSubstitutionDropdown({
+      team,
+      position,
+      playerNumber,
+      element,
+      x: pos.x,
+      y: pos.y,
+      side: pos.side,
       isInjury: true
     })
     setPlayerActionMenu(null)
@@ -8647,8 +8834,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         setSanctionConfirmModal(null)
 
         // Check if redesignation is needed and prompt user
+        // Use isLiberoUnable to properly check events, not just database field
         const activeLiberos = teamPlayers?.filter(p =>
-          p.libero && p.libero !== 'unable' && p.number !== playerNumber
+          p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
         ) || []
         if (activeLiberos.length === 0) {
           setTimeout(() => {
@@ -8760,8 +8948,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             reason: sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
           })
           // Check if redesignation is needed and prompt user
+          // Use isLiberoUnable to properly check events, not just database field
           const activeLiberos = teamPlayers?.filter(p =>
-            p.libero && p.libero !== 'unable' && p.number !== playerNumber
+            p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
           ) || []
           if (activeLiberos.length === 0) {
             setTimeout(() => {
@@ -12155,7 +12344,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             playerNumber: p.number,
                             element: null,
                             x: window.innerWidth / 2,
-                            y: window.innerHeight / 2
+                            y: window.innerHeight / 2,
+                            side: 'left'
                           })
                         }}
                         style={{
@@ -12344,9 +12534,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       fontWeight: 700,
                       color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
-                      fontFamily: 'monospace'
+                      fontFamily: getScoreFont()
                     }}>
-                      {formatCountdown(timeoutModal.countdown)}
+                      {formatTimeout(timeoutModal.countdown)}
                     </div>
                     {/* Progress bar */}
                     <div style={{
@@ -12363,9 +12553,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       <div style={{
                         width: `${(timeoutModal.countdown / 30) * 100}%`,
                         height: '100%',
-                        background: 'var(--accent)',
+                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
-                        transition: 'width 1s linear',
+                        transition: 'width 1s linear, background 0.3s',
                         marginLeft: 'auto'
                       }} />
                     </div>
@@ -12467,9 +12657,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       fontWeight: 700,
                       color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
-                      fontFamily: 'monospace'
+                      fontFamily: getScoreFont()
                     }}>
-                      {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
+                      {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
                     </div>
                     {/* Progress bar */}
                     <div style={{
@@ -12486,9 +12676,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       <div style={{
                         width: `${(betweenSetsCountdown.countdown / setIntervalDuration) * 100}%`,
                         height: '100%',
-                        background: 'var(--accent)',
+                        background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
-                        transition: 'width 1s linear',
+                        transition: 'width 1s linear, background 0.3s',
                         marginLeft: 'auto'
                       }} />
                     </div>
@@ -12805,7 +12995,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                             playerNumber: p.number,
                             element: null,
                             x: window.innerWidth / 2,
-                            y: window.innerHeight / 2
+                            y: window.innerHeight / 2,
+                            side: 'right'
                           })
                         }}
                         style={{
@@ -13249,6 +13440,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               element: e.currentTarget,
                               x: rect.right - 8,
                               y: rect.top - 8,
+                              side: 'left',
                               canSubstitute: canSubBenchPlayer,
                               courtPlayerToSwapWith: courtPlayerToSwapWith,
                               neverPlayed: neverPlayed
@@ -13849,9 +14041,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: isVeryCompact ? '2px' : isCompactMode ? '4px' : '8px',
-              paddingRight: isVeryCompact ? '4px' : isCompactMode ? '8px' : '16px'
+              justifyContent: 'flex-start',
+              gap: '2vmin',
+              paddingRight: '2vmin'
             }}>
               {leftServing && (() => {
                 const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
@@ -13880,7 +14072,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       pointerEvents: 'none'
                     }}>
                       <div style={{
-                        fontSize: isVeryCompact ? '14px' : isCompactMode ? '20px' : '36px',
+                        fontSize: '3vmin',
                         fontWeight: 700,
                         color: 'var(--text)',
                         textTransform: 'uppercase',
@@ -13889,11 +14081,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         SERVE
                       </div>
                       <div style={{
-                        fontSize: isVeryCompact ? '22px' : isCompactMode ? '32px' : '56px',
+                        fontSize: '6vmin',
                         fontWeight: 700,
                         color: 'var(--accent)',
-                        width: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
-                        height: isVeryCompact ? '36px' : isCompactMode ? '50px' : '80px',
+                        width: '8vmin',
+                        height: '8vmin',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -13904,15 +14096,6 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         {servingPlayer.number}
                       </div>
                     </div>
-                    <img
-                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                      alt="Serving team"
-                      style={{
-                        ...serveBallBaseStyle,
-                        width: '8vmin',
-                        height: '8vmin'
-                      }}
-                    />
                   </>
                 )
               })()}
@@ -13926,11 +14109,11 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               paddingRight: isVeryCompact ? '8px' : isCompactMode ? '16px' : '24px'
             }}>
               <span style={{
-                fontVariantNumeric: 'tabular-nums',
-                fontSize: isVeryCompact ? '40px' : isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
-                fontWeight: 700,
+                fontFamily: getScoreFont(),
+                fontSize: 'min(11vw, 11vh)',
+                fontWeight: 500,
                 lineHeight: 1,
-                minWidth: isVeryCompact ? '45px' : isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
+                minWidth: '2ch',
                 textAlign: 'right'
               }}>{pointsBySide.left}</span>
             </div>
@@ -13942,7 +14125,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               justifyContent: 'center'
             }}>
               <span style={{
-                fontSize: isVeryCompact ? '40px' : isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
+                fontFamily: getScoreFont(),
+                fontSize: 'min(11vw, 11vh)',
                 fontWeight: 700,
                 lineHeight: 1
               }}>:</span>
@@ -13953,15 +14137,16 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              paddingLeft: isVeryCompact ? '8px' : isCompactMode ? '16px' : '24px'
+              paddingLeft: '2vmin'
             }}>
               <span style={{
+                fontFamily: getScoreFont(),
                 fontVariantNumeric: 'tabular-nums',
-                fontSize: isVeryCompact ? '40px' : isCompactMode ? '52px' : isLaptopMode ? '75px' : '95px',
-                fontWeight: 700,
+                fontSize: 'min(11vw, 11vh)',
+                fontWeight: 500,
                 lineHeight: 1,
-                minWidth: isVeryCompact ? '45px' : isCompactMode ? '60px' : isLaptopMode ? '85px' : '110px',
-                textAlign: 'left'
+                textAlign: 'left',
+                minWidth: '2ch'
               }}>{pointsBySide.right}</span>
             </div>
 
@@ -13969,9 +14154,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'flex-start',
-              gap: isVeryCompact ? '2px' : isCompactMode ? '4px' : '8px',
-              paddingLeft: isVeryCompact ? '4px' : isCompactMode ? '8px' : '16px'
+              justifyContent: 'flex-end',
+              gap: '2vmin',
+              paddingLeft: '2vmin'
             }}>
               {rightServing && (() => {
                 const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
@@ -13991,15 +14176,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                 }
                 return (
                   <>
-                    <img
-                      src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                      alt="Serving team"
-                      style={{
-                        ...serveBallBaseStyle,
-                        width: '8vmin',
-                        height: '8vmin'
-                      }}
-                    />
+                    
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -14009,7 +14186,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                       pointerEvents: 'none'
                     }}>
                       <div style={{
-                        fontSize: isVeryCompact ? '14px' : isCompactMode ? '20px' : '36px',
+                        fontSize: '3vmin',
                         fontWeight: 700,
                         color: 'var(--text)',
                         textTransform: 'uppercase',
@@ -14018,7 +14195,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         SERVE
                       </div>
                       <div style={{
-                        fontSize: isVeryCompact ? '22px' : isCompactMode ? '32px' : '56px',
+                        fontSize: '6vmin',
                         fontWeight: 700,
                         color: 'var(--accent)',
                         width: '8vmin',
@@ -15426,9 +15603,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     fontWeight: 700,
                     color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                     textAlign: 'center',
-                    fontFamily: 'monospace'
+                    fontFamily: getScoreFont()
                   }}>
-                    {formatCountdown(timeoutModal.countdown)}
+                    {formatTimeout(timeoutModal.countdown)}
                   </div>
                   {/* Progress bar */}
                   <div style={{
@@ -15445,9 +15622,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                     <div style={{
                       width: `${(timeoutModal.countdown / 30) * 100}%`,
                       height: '100%',
-                      background: 'var(--accent)',
+                      background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                       borderRadius: '4px',
-                      transition: 'width 1s linear',
+                      transition: 'width 1s linear, background 0.3s',
                       marginLeft: 'auto'
                     }} />
                   </div>
@@ -15544,6 +15721,36 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                   {data?.set?.index === 5 && !set5SetupConfirmed ? (
                     <>
                       <div style={{
+                        fontSize: '49px',
+                        fontWeight: 700,
+                        color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                        textAlign: 'center',
+                        fontFamily: getScoreFont()
+                      }}>
+                        {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{
+                        width: '60%',
+                        height: '8px',
+                        background: 'rgba(255, 255, 255, 0.15)',
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        marginTop: '8px',
+                        marginBottom: '16px',
+                        marginLeft: 'auto',
+                        marginRight: 'auto'
+                      }}>
+                        <div style={{
+                          width: `${(betweenSetsCountdown.countdown / setIntervalDuration) * 100}%`,
+                          height: '100%',
+                          background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                          borderRadius: '4px',
+                          transition: 'width 1s linear, background 0.3s',
+                          marginLeft: 'auto'
+                        }} />
+                      </div>
+                      <div style={{
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
@@ -15626,9 +15833,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         fontWeight: 700,
                         color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                         textAlign: 'center',
-                        fontFamily: 'monospace'
+                        fontFamily: getScoreFont()
                       }}>
-                        {betweenSetsCountdown.countdown <= 0 ? "0''" : formatCountdown(betweenSetsCountdown.countdown)}
+                        {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
                       </div>
                       {/* Progress bar */}
                       <div style={{
@@ -15645,9 +15852,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                         <div style={{
                           width: `${(betweenSetsCountdown.countdown / setIntervalDuration) * 100}%`,
                           height: '100%',
-                          background: 'var(--accent)',
+                          background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                           borderRadius: '4px',
-                          transition: 'width 1s linear',
+                          transition: 'width 1s linear, background 0.3s',
                           marginLeft: 'auto'
                         }} />
                       </div>
@@ -16305,8 +16512,9 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
                               team: teamKey,
                               playerNumber: player.number,
                               element: e.currentTarget,
-                              x: rect.right - 8,
+                              x: rect.left + 8,
                               y: rect.top - 8,
+                              side: 'right',
                               canSubstitute: canSubBenchPlayer,
                               courtPlayerToSwapWith: courtPlayerToSwapWith,
                               neverPlayed: neverPlayed
@@ -17376,6 +17584,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           setLiberoEntrySuggestion,
           setIntervalDuration,
           setSetIntervalDuration,
+          scoreFont,
+          setScoreFont,
           keybindingsEnabled,
           setKeybindingsEnabled
         }}
@@ -21165,11 +21375,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {playerActionMenu && (() => {
         // Get element position - use stored coordinates if available
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = playerActionMenu.side === 'right'
         let menuStyle
         if (playerActionMenu.x !== undefined && playerActionMenu.y !== undefined) {
           menuStyle = {
             position: 'fixed',
-            left: `${playerActionMenu.x}px`,
+            left: isRightSide ? undefined : `${playerActionMenu.x}px`,
+            right: isRightSide ? `${window.innerWidth - playerActionMenu.x}px` : undefined,
             top: `${playerActionMenu.y}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -21178,7 +21392,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const rect = playerActionMenu.element?.getBoundingClientRect?.()
           menuStyle = rect ? {
             position: 'fixed',
-            left: `${rect.right + 30}px`,
+            left: isRightSide ? undefined : `${rect.right + 30}px`,
+            right: isRightSide ? `${window.innerWidth - rect.left + 30}px` : undefined,
             top: `${rect.top + rect.height / 2}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -21900,11 +22115,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const isDisqualified = playerSanctions.some(s => s.payload?.type === 'disqualification')
         
         // Get element position - use stored coordinates if available, otherwise try to find element
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = substitutionDropdown.side === 'right'
         let dropdownStyle
         if (substitutionDropdown.x !== undefined && substitutionDropdown.y !== undefined) {
           dropdownStyle = {
             position: 'fixed',
-            left: `${substitutionDropdown.x}px`,
+            left: isRightSide ? undefined : `${substitutionDropdown.x}px`,
+            right: isRightSide ? `${window.innerWidth - substitutionDropdown.x}px` : undefined,
             top: `${substitutionDropdown.y}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -21922,7 +22141,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const rect = element?.getBoundingClientRect?.()
           dropdownStyle = rect ? {
             position: 'fixed',
-            left: `${rect.right + 30}px`,
+            left: isRightSide ? undefined : `${rect.right + 30}px`,
+            right: isRightSide ? `${window.innerWidth - rect.left + 30}px` : undefined,
             top: `${rect.top + rect.height / 2}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22035,7 +22255,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const teamKey = liberoDropdown.team
         const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
         const allLiberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
-        
+
         // Check if a libero is already on court
         const liberoOnCourt = getLiberoOnCourt(teamKey)
         // If a libero is already on court, filter out all liberos (can't have two liberos on court)
@@ -22043,13 +22263,17 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
         const liberos = liberoOnCourt ? [] : allLiberos.filter(libero => {
           return !isLiberoUnable(teamKey, libero.number)
         })
-        
+
         // Get element position - use stored coordinates if available, otherwise try to find element
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = liberoDropdown.side === 'right'
         let dropdownStyle
         if (liberoDropdown.x !== undefined && liberoDropdown.y !== undefined) {
           dropdownStyle = {
             position: 'fixed',
-            left: `${liberoDropdown.x}px`,
+            left: isRightSide ? undefined : `${liberoDropdown.x}px`,
+            right: isRightSide ? `${window.innerWidth - liberoDropdown.x}px` : undefined,
             top: `${liberoDropdown.y}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22067,7 +22291,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const rect = element?.getBoundingClientRect?.()
           dropdownStyle = rect ? {
             position: 'fixed',
-            left: `${rect.right + 30}px`,
+            left: isRightSide ? undefined : `${rect.right + 30}px`,
+            right: isRightSide ? `${window.innerWidth - rect.left + 30}px` : undefined,
             top: `${rect.top + rect.height / 2}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22175,7 +22400,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {liberoInDropdown && (() => {
         const teamKey = liberoInDropdown.team
         const { playersOnCourt } = getTeamLineupState(teamKey)
-        
+
         // Get eligible players (I if not serving, II, III)
         const currentServe = getCurrentServe()
         const teamServes = currentServe === teamKey
@@ -22183,11 +22408,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           if (p.position === 'I') return !teamServes // Position I only if not serving
           return p.position === 'II' || p.position === 'III'
         })
-        
+
         // Get dropdown position
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = liberoInDropdown.side === 'right'
         const dropdownStyle = {
           position: 'fixed',
-          left: `${liberoInDropdown.x}px`,
+          left: isRightSide ? undefined : `${liberoInDropdown.x}px`,
+          right: isRightSide ? `${window.innerWidth - liberoInDropdown.x}px` : undefined,
           top: `${liberoInDropdown.y}px`,
           transform: 'translateX(-50%)',
           zIndex: 1000
@@ -22285,11 +22514,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       
       {sanctionDropdown && (() => {
         // Get element position - use stored coordinates if available
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = sanctionDropdown.side === 'right'
         let dropdownStyle
         if (sanctionDropdown.x !== undefined && sanctionDropdown.y !== undefined) {
           dropdownStyle = {
             position: 'fixed',
-            left: `${sanctionDropdown.x}px`,
+            left: isRightSide ? undefined : `${sanctionDropdown.x}px`,
+            right: isRightSide ? `${window.innerWidth - sanctionDropdown.x}px` : undefined,
             top: `${sanctionDropdown.y}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22298,7 +22531,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const rect = sanctionDropdown.element?.getBoundingClientRect?.()
           dropdownStyle = rect ? {
             position: 'fixed',
-            left: `${rect.right + 30}px`,
+            left: isRightSide ? undefined : `${rect.right + 30}px`,
+            right: isRightSide ? `${window.innerWidth - rect.left + 30}px` : undefined,
             top: `${rect.top + rect.height / 2}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22535,11 +22769,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
       {/* Bench Player Action Menu */}
       {benchPlayerActionMenu && (() => {
         // Get element position - use stored coordinates if available
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = benchPlayerActionMenu.side === 'right'
         let menuStyle
         if (benchPlayerActionMenu.x !== undefined && benchPlayerActionMenu.y !== undefined) {
           menuStyle = {
             position: 'fixed',
-            left: `${benchPlayerActionMenu.x}px`,
+            left: isRightSide ? undefined : `${benchPlayerActionMenu.x}px`,
+            right: isRightSide ? `${window.innerWidth - benchPlayerActionMenu.x}px` : undefined,
             top: `${benchPlayerActionMenu.y}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22548,7 +22786,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const rect = benchPlayerActionMenu.element?.getBoundingClientRect?.()
           menuStyle = rect ? {
             position: 'fixed',
-            left: `${rect.right + 30}px`,
+            left: isRightSide ? undefined : `${rect.right + 30}px`,
+            right: isRightSide ? `${window.innerWidth - rect.left + 30}px` : undefined,
             top: `${rect.top + rect.height / 2}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22958,11 +23197,15 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
 
       {injuryDropdown && (() => {
         // Get element position - use stored coordinates if available
+        // For left side teams, menu opens to the right (use left CSS)
+        // For right side teams, menu opens to the left (use right CSS)
+        const isRightSide = injuryDropdown.side === 'right'
         let dropdownStyle
         if (injuryDropdown.x !== undefined && injuryDropdown.y !== undefined) {
           dropdownStyle = {
             position: 'fixed',
-            left: `${injuryDropdown.x}px`,
+            left: isRightSide ? undefined : `${injuryDropdown.x}px`,
+            right: isRightSide ? `${window.innerWidth - injuryDropdown.x}px` : undefined,
             top: `${injuryDropdown.y}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -22971,7 +23214,8 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           const rect = injuryDropdown.element?.getBoundingClientRect?.()
           dropdownStyle = rect ? {
             position: 'fixed',
-            left: `${rect.right + 30}px`,
+            left: isRightSide ? undefined : `${rect.right + 30}px`,
+            right: isRightSide ? `${window.innerWidth - rect.left + 30}px` : undefined,
             top: `${rect.top + rect.height / 2}px`,
             transform: 'translateY(-50%)',
             zIndex: 1000
@@ -24851,12 +25095,56 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           awayTeamName={data?.awayTeam?.name || 'Away'}
           onConfirm={confirmSetEndTime}
           onUndoLastPoint={async () => {
-            // Close the modal and undo the last point via replay
+            // Track that user dismissed via undo to prevent re-showing
+            setEndModalDismissedRef.current = setEndTimeModal.setIndex
+
+            // Find the last point event directly and undo it
+            if (data?.events && data?.set) {
+              const currentSetEvents = data.events
+                .filter(e => e.setIndex === data.set.index)
+                .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+              // Find the point event (could be the last event or parent of a sub-event)
+              let pointEvent = null
+              const lastEvent = currentSetEvents[0]
+              if (lastEvent?.type === 'point') {
+                pointEvent = lastEvent
+              } else if (lastEvent) {
+                const lastSeq = lastEvent.seq || 0
+                const isSubEvent = lastSeq !== Math.floor(lastSeq)
+                if (isSubEvent) {
+                  const baseSeq = Math.floor(lastSeq)
+                  pointEvent = currentSetEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
+                }
+              }
+
+              if (pointEvent) {
+                // Set the replay confirm state and trigger the undo
+                setReplayRallyConfirm({ event: pointEvent, description: 'Undo point', selectedOption: 'undo' })
+              }
+            }
+
+            // Close the set end modal
             setSetEndTimeModal(null)
-            await handleReplay()
           }}
         />
       )}
+
+      {/* Sync Progress Modal - shown during set end sync */}
+      <SyncProgressModal
+        open={syncModalOpen}
+        steps={syncState?.steps || []}
+        errorMessage={syncState?.hasError ? t('scoreboard.sync.syncError', 'Sync failed. Data saved locally.') : null}
+        onProceed={() => {
+          if (syncProceedCallbackRef.current) {
+            syncProceedCallbackRef.current()
+            syncProceedCallbackRef.current = null
+          }
+        }}
+        isComplete={syncState?.isComplete || false}
+        hasError={syncState?.hasError || false}
+        hasWarning={syncState?.hasWarning || false}
+      />
 
       {toSubDetailsModal && (
         <ToSubDetailsModal
@@ -24864,7 +25152,7 @@ export default function Scoreboard({ matchId, onFinishSet, onOpenSetup, onOpenMa
           side={toSubDetailsModal.side}
           timeoutDetails={toSubDetailsModal.type === 'timeout' ? getTimeoutDetails(toSubDetailsModal.side) : null}
           substitutionDetails={toSubDetailsModal.type === 'substitution' ? getSubstitutionDetails(toSubDetailsModal.side) : null}
-          teamName={toSubDetailsModal.side === 'left' 
+          teamName={toSubDetailsModal.side === 'left'
             ? (leftIsHome ? (data?.homeTeam?.name || 'Left Team') : (data?.awayTeam?.name || 'Left Team'))
             : (leftIsHome ? (data?.awayTeam?.name || 'Right Team') : (data?.homeTeam?.name || 'Right Team'))}
           onClose={() => setToSubDetailsModal(null)}

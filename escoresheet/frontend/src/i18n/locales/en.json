@@ -344,6 +344,16 @@
       "replay": "Replay Rally",
       "decisionChange": "Decision Change"
     },
+    "sync": {
+      "syncing": "Syncing...",
+      "syncingLastPoint": "Syncing last point...",
+      "syncingSetCompletion": "Syncing set completion...",
+      "done": "Done!",
+      "syncError": "Sync failed. Data saved locally and will retry.",
+      "offlineWarning": "Offline. Data saved locally.",
+      "proceedAnyway": "Proceed Anyway",
+      "proceed": "Continue"
+    },
     "modals": {
       "confirmRallyStart": "Confirm Rally Start",
       "confirmPoint": "Confirm Point",
@@ -637,6 +647,9 @@
     "liberoEntrySuggestionInfo": "Show suggestion modal to substitute libero for player rotating to back row",
     "setIntervalDuration": "Set 2-3 Interval Duration",
     "setIntervalDurationInfo": "Duration of break between sets 2 and 3",
+    "scoreFont": "Score/Countdown Font",
+    "scoreFontInfo": "Choose font style for score display and countdown timers",
+    "fontDefault": "Default",
     "keyboardShortcuts": "Keyboard Shortcuts",
     "keyboardShortcutsInfo": "Use keyboard keys to control scoring and actions (configure in Scoreboard)",
     "displayMode": "Display Mode",

@@ -165,6 +165,22 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
+  // Score/countdown font from settings
+  const [scoreFont, setScoreFont] = useState(() => {
+    const saved = localStorage.getItem('scoreFont')
+    return saved || 'default'
+  })
+  const getScoreFont = () => {
+    const fonts = {
+      'default': 'inherit',
+      'orbitron': "'Orbitron', monospace",
+      'roboto-mono': "'Roboto Mono', monospace",
+      'jetbrains-mono': "'JetBrains Mono', monospace",
+      'space-mono': "'Space Mono', monospace",
+      'ibm-plex-mono': "'IBM Plex Mono', monospace"
+    }
+    return fonts[scoreFont] || 'inherit'
+  }
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
@@ -3006,6 +3022,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </div>
               <span style={{
+                  fontFamily: getScoreFont(),
                   fontSize: '17vmin',
             fontWeight: 600,
                   lineHeight: 1,
@@ -3015,7 +3032,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </span>
             </div>
           </div>
-          
+
             {/* Colon - fixed width, perfectly centered */}
             <div style={{
               flex: '0 0 auto',
@@ -3024,8 +3041,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              
-              <span style={{ fontSize: '7vmin', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
+
+              <span style={{ fontFamily: getScoreFont(), fontSize: '7vmin', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
               </div>
 
             {/* Right team side */}
@@ -3044,6 +3061,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 gap: 'clamp(6px, 2vw, 20px)'
             }}>
               <span style={{
+                  fontFamily: getScoreFont(),
                   fontSize: '17vmin',
                 fontWeight: 600,
                   lineHeight: 1,
@@ -3772,7 +3790,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '20px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>TIMEOUT</div>
                 <DonutCountdown current={timeoutModal.countdown} total={30} size={130} strokeWidth={6}>
-                  <div style={{ fontSize: 'clamp(24px, 8vw, 40px)', fontWeight: 600, color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)', lineHeight: 1 }}>
+                  <div style={{ fontSize: 'clamp(24px, 8vw, 40px)', fontFamily: getScoreFont(), fontWeight: 600, color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)', lineHeight: 1 }}>
                     {timeoutModal.countdown}"
                   </div>
                 </DonutCountdown>
@@ -3781,7 +3799,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>INTERVAL</div>
                 <DonutCountdown current={betweenSetsCountdown.countdown} total={setIntervalDuration} size={90} strokeWidth={5}>
-                  <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
+                  <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontFamily: getScoreFont(), fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
                     {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
                   </div>
                 </DonutCountdown>

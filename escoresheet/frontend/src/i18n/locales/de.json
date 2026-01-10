@@ -344,6 +344,16 @@
       "replay": "Ballwechsel wiederholen",
       "decisionChange": "Entscheidungsänderung"
     },
+    "sync": {
+      "syncing": "Synchronisiere...",
+      "syncingLastPoint": "Synchronisiere letzten Punkt...",
+      "syncingSetCompletion": "Synchronisiere Satzabschluss...",
+      "done": "Fertig!",
+      "syncError": "Synchronisierung fehlgeschlagen. Daten lokal gespeichert.",
+      "offlineWarning": "Offline. Daten lokal gespeichert.",
+      "proceedAnyway": "Trotzdem fortfahren",
+      "proceed": "Weiter"
+    },
     "modals": {
       "confirmRallyStart": "Ballwechsel-Start bestätigen",
       "confirmPoint": "Punkt bestätigen",
@@ -636,6 +646,9 @@
     "liberoEntrySuggestionInfo": "Vorschlagen den Libero fur den Spieler in der Hinterzone einzuwechseln",
     "setIntervalDuration": "Pause zwischen Satz 2-3",
     "setIntervalDurationInfo": "Dauer der Pause zwischen Satz 2 und 3",
+    "scoreFont": "Spielstand/Countdown-Schriftart",
+    "scoreFontInfo": "Schriftart für Spielstand und Countdown-Timer wählen",
+    "fontDefault": "Standard",
     "keyboardShortcuts": "Tastaturkurzel",
     "keyboardShortcutsInfo": "Tastatur zur Steuerung von Punktestand und Aktionen verwenden",
     "displayMode": "Anzeigemodus",

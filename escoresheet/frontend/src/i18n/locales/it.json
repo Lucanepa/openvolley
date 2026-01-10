@@ -344,6 +344,16 @@
       "replay": "Ripeti scambio",
       "decisionChange": "Cambio decisione"
     },
+    "sync": {
+      "syncing": "Sincronizzazione...",
+      "syncingLastPoint": "Sincronizzazione ultimo punto...",
+      "syncingSetCompletion": "Sincronizzazione completamento set...",
+      "done": "Fatto!",
+      "syncError": "Sincronizzazione fallita. Dati salvati localmente.",
+      "offlineWarning": "Offline. Dati salvati localmente.",
+      "proceedAnyway": "Procedi comunque",
+      "proceed": "Continua"
+    },
     "modals": {
       "confirmRallyStart": "Conferma inizio scambio",
       "confirmPoint": "Conferma punto",
@@ -636,6 +646,9 @@
     "liberoEntrySuggestionInfo": "Suggerisci di sostituire il giocatore in zona difesa con il libero",
     "setIntervalDuration": "Durata pausa set 2-3",
     "setIntervalDurationInfo": "Durata della pausa tra il set 2 e 3",
+    "scoreFont": "Font punteggio/conto alla rovescia",
+    "scoreFontInfo": "Scegli lo stile del carattere per il punteggio e i timer",
+    "fontDefault": "Predefinito",
     "keyboardShortcuts": "Scorciatoie tastiera",
     "keyboardShortcutsInfo": "Usa la tastiera per controllare il punteggio e le azioni",
     "displayMode": "Modalita display",

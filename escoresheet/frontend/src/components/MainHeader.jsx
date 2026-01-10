@@ -346,15 +346,13 @@ export default function MainHeader({
               try {
                 const date = new Date(matchData.match.scheduledAt)
                 // Display as UTC (no timezone conversion) since we store time as-entered
-                return date.toLocaleDateString('en-CH', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false,
-                  timeZone: 'UTC'
-                })
+                // Explicitly format as dd/mm/yyyy HH:mm
+                const day = String(date.getUTCDate()).padStart(2, '0')
+                const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+                const year = date.getUTCFullYear()
+                const hours = String(date.getUTCHours()).padStart(2, '0')
+                const minutes = String(date.getUTCMinutes()).padStart(2, '0')
+                return `${day}/${month}/${year}, ${hours}:${minutes}`
               } catch {
                 return matchData.match.scheduledAt
               }
@@ -381,6 +379,9 @@ export default function MainHeader({
   }
 
   const renderMatchInfoButton = (match) => {
+    // Hide button if no match exists or no valid match number (unless it's a test match)
+    if (!match || (!match.test && !match.gameNumber && !match.game_n)) return null
+
     const isTest = match?.test
     const matchNumber = match?.gameNumber || match?.game_n || 'N/A'
     const buttonText = isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
@@ -1048,7 +1049,6 @@ export default function MainHeader({
                       e.currentTarget.style.background = 'transparent'
                     }}
                   >
-                    <span>🏠</span>
                     <span>{t('common.home')}</span>
                   </button>
                 )}
@@ -1150,7 +1150,6 @@ export default function MainHeader({
                   e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
                 }}
               >
-                <span>🏠</span>
                 <span>{t('common.home')}</span>
               </button>
             )}

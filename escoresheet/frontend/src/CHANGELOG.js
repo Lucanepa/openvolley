@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.20',
+    date: '10.01.26',
+    changes: [
+      'Enhance scoresheet functionality by adding support for PDF blob generation and cloud uploads; introduce font selection for score display; update package dependencies including bootstrap-icons; improve layout and responsiveness in various components.'
+    ]
+  },
+  {
     version: '0.19.19',
     date: '07.01.26',
     changes: [

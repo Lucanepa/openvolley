@@ -45,6 +45,147 @@ window.addEventListener('unhandledrejection', (event) => {
   sendErrorToParent(error);
 });
 
+// Check if we're loading from storage URL parameters
+const getStorageParams = () => {
+  const params = new URLSearchParams(window.location.search);
+  const date = params.get('date');
+  const game = params.get('game');
+  if (date && game) {
+    return { date, game };
+  }
+  return null;
+};
+
+// Check if we should show the list view
+const shouldShowList = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.has('list') || window.location.pathname.includes('/storage');
+};
+
+// Scoresheet item type for the list
+interface ScoresheetItem {
+  date: string;
+  game: string;
+  path: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  finalScore?: string;
+  uploadedAt?: string;
+}
+
+// Fetch scoresheet data from Supabase storage
+const fetchFromStorage = async (date: string, game: string): Promise<any | null> => {
+  try {
+    // Import supabase client dynamically to avoid circular dependencies
+    const { supabase } = await import('../src/lib/supabaseClient');
+    if (!supabase) {
+      console.error('Supabase client not available');
+      return null;
+    }
+
+    const storagePath = `${date}/game${game}.json`;
+    console.log('[Scoresheet] Fetching from storage:', storagePath);
+
+    const { data, error } = await supabase.storage
+      .from('scoresheets')
+      .download(storagePath);
+
+    if (error) {
+      console.error('[Scoresheet] Storage fetch error:', error);
+      return null;
+    }
+
+    const text = await data.text();
+    return JSON.parse(text);
+  } catch (error) {
+    console.error('[Scoresheet] Error fetching from storage:', error);
+    return null;
+  }
+};
+
+// Fetch all scoresheets from storage
+const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
+  try {
+    const { supabase } = await import('../src/lib/supabaseClient');
+    if (!supabase) {
+      console.error('Supabase client not available');
+      return [];
+    }
+
+    // List all folders (dates) in the scoresheets bucket
+    const { data: folders, error: foldersError } = await supabase.storage
+      .from('scoresheets')
+      .list('', { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+
+    if (foldersError) {
+      console.error('[Scoresheet] Error listing folders:', foldersError);
+      return [];
+    }
+
+    const scoresheets: ScoresheetItem[] = [];
+
+    // For each date folder, list the game files
+    for (const folder of folders || []) {
+      if (!folder.name || folder.name.startsWith('.')) continue;
+
+      const { data: files, error: filesError } = await supabase.storage
+        .from('scoresheets')
+        .list(folder.name, { limit: 50 });
+
+      if (filesError) {
+        console.error(`[Scoresheet] Error listing files in ${folder.name}:`, filesError);
+        continue;
+      }
+
+      for (const file of files || []) {
+        if (!file.name.endsWith('.json')) continue;
+
+        // Extract game number from filename (game123.json -> 123)
+        const gameMatch = file.name.match(/game(\d+)\.json/);
+        if (!gameMatch) continue;
+
+        scoresheets.push({
+          date: folder.name,
+          game: gameMatch[1],
+          path: `${folder.name}/${file.name}`
+        });
+      }
+    }
+
+    // Fetch metadata for each scoresheet (team names, score)
+    // Do this in parallel but limit concurrency
+    const enrichedScoresheets = await Promise.all(
+      scoresheets.slice(0, 50).map(async (item) => {
+        try {
+          const { data, error } = await supabase.storage
+            .from('scoresheets')
+            .download(item.path);
+
+          if (error || !data) return item;
+
+          const text = await data.text();
+          const json = JSON.parse(text);
+
+          return {
+            ...item,
+            homeTeam: json.homeTeam?.name || json.match?.homeTeamName || 'Team A',
+            awayTeam: json.awayTeam?.name || json.match?.awayTeamName || 'Team B',
+            finalScore: json.match?.final_score || '',
+            uploadedAt: json.uploadedAt
+          };
+        } catch {
+          return item;
+        }
+      })
+    );
+
+    return enrichedScoresheets;
+  } catch (error) {
+    console.error('[Scoresheet] Error fetching scoresheets:', error);
+    return [];
+  }
+};
+
 // Load match data from sessionStorage (for initial load and fallback)
 const loadMatchData = () => {
   try {
@@ -62,11 +203,11 @@ const loadMatchData = () => {
   }
 };
 
-// Get action from URL parameters (preview, print, save)
-const getActionFromUrl = (): 'preview' | 'print' | 'save' => {
+// Get action from URL parameters (preview, print, save, getBlob)
+const getActionFromUrl = (): 'preview' | 'print' | 'save' | 'getBlob' => {
   const params = new URLSearchParams(window.location.search);
   const action = params.get('action');
-  if (action === 'print' || action === 'save') {
+  if (action === 'print' || action === 'save' || action === 'getBlob') {
     return action;
   }
   return 'preview';
@@ -75,7 +216,7 @@ const getActionFromUrl = (): 'preview' | 'print' | 'save' => {
 const initialAction = getActionFromUrl();
 
 // Live scoresheet component that updates in real-time from IndexedDB
-const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'print' | 'save' }> = ({ initialMatchData, action }) => {
+const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ initialMatchData, action }) => {
   const matchId = initialMatchData?.match?.id;
 
   // Use live queries to get real-time data from IndexedDB
@@ -176,10 +317,307 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
 };
 
 // Static scoresheet component (fallback when no matchId available)
-const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' | 'save' }> = ({ matchData, action }) => {
+const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ matchData, action }) => {
   return <App matchData={matchData} autoAction={action} />;
 };
 
+// Storage scoresheet component - fetches from Supabase storage
+const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ date, game, action }) => {
+  const [matchData, setMatchData] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await fetchFromStorage(date, game);
+        if (data) {
+          setMatchData(data);
+        } else {
+          setError(`Scoresheet not found: ${date}/game${game}.json`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load scoresheet');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [date, game]);
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheet from storage...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '20px',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+          Scoresheet Not Found
+        </div>
+        <div style={{ color: '#666' }}>{error}</div>
+      </div>
+    );
+  }
+
+  return <App matchData={matchData} autoAction={action} />;
+};
+
+// Scoresheet list component - shows all available scoresheets
+const ScoresheetList: React.FC = () => {
+  const [scoresheets, setScoresheets] = React.useState<ScoresheetItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const loadList = async () => {
+      try {
+        const items = await fetchAllScoresheets();
+        setScoresheets(items);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load scoresheets');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadList();
+  }, []);
+
+  const handleView = (item: ScoresheetItem) => {
+    window.location.href = `?date=${item.date}&game=${item.game}`;
+  };
+
+  const handleDownload = async (item: ScoresheetItem) => {
+    // Open in new tab with save action
+    window.open(`?date=${item.date}&game=${item.game}&action=save`, '_blank');
+  };
+
+  // Group scoresheets by date
+  const groupedByDate = scoresheets.reduce((acc, item) => {
+    if (!acc[item.date]) acc[item.date] = [];
+    acc[item.date].push(item);
+    return acc;
+  }, {} as Record<string, ScoresheetItem[]>);
+
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr + 'T12:00:00');
+      return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheets...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '20px',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+          Error Loading Scoresheets
+        </div>
+        <div style={{ color: '#666' }}>{error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#f8fafc',
+      fontFamily: 'system-ui, sans-serif',
+      padding: '20px'
+    }}>
+      <div style={{
+        maxWidth: '800px',
+        margin: '0 auto'
+      }}>
+        <h1 style={{
+          fontSize: '28px',
+          fontWeight: 'bold',
+          color: '#1e293b',
+          marginBottom: '8px'
+        }}>
+          Scoresheets
+        </h1>
+        <p style={{ color: '#64748b', marginBottom: '24px' }}>
+          {scoresheets.length} scoresheet{scoresheets.length !== 1 ? 's' : ''} available
+        </p>
+
+        {scoresheets.length === 0 ? (
+          <div style={{
+            textAlign: 'center',
+            padding: '60px 20px',
+            background: 'white',
+            borderRadius: '12px',
+            border: '1px solid #e2e8f0'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+            <div style={{ fontSize: '18px', color: '#64748b' }}>
+              No scoresheets uploaded yet
+            </div>
+          </div>
+        ) : (
+          Object.entries(groupedByDate)
+            .sort(([a], [b]) => b.localeCompare(a)) // Sort dates descending
+            .map(([date, items]) => (
+              <div key={date} style={{ marginBottom: '24px' }}>
+                <h2 style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#475569',
+                  marginBottom: '12px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px solid #e2e8f0'
+                }}>
+                  {formatDate(date)}
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {items
+                    .sort((a, b) => parseInt(a.game) - parseInt(b.game))
+                    .map((item) => (
+                      <div
+                        key={item.path}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '16px',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '1px solid #e2e8f0',
+                          transition: 'box-shadow 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            marginBottom: '4px'
+                          }}>
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              color: '#3b82f6',
+                              background: '#eff6ff',
+                              padding: '2px 8px',
+                              borderRadius: '4px'
+                            }}>
+                              Game {item.game}
+                            </span>
+                            {item.finalScore && (
+                              <span style={{
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                color: '#059669'
+                              }}>
+                                {item.finalScore}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            fontSize: '15px',
+                            fontWeight: '500',
+                            color: '#1e293b'
+                          }}>
+                            {item.homeTeam || 'Team A'} vs {item.awayTeam || 'Team B'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => handleView(item)}
+                            style={{
+                              padding: '8px 16px',
+                              fontSize: '14px',
+                              fontWeight: '500',
+                              background: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => handleDownload(item)}
+                            style={{
+                              padding: '8px 16px',
+                              fontSize: '14px',
+                              fontWeight: '500',
+                              background: '#f1f5f9',
+                              color: '#475569',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '6px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Download PDF
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+const storageParams = getStorageParams();
+const showList = shouldShowList();
 const initialMatchData = loadMatchData();
 
 const rootElement = document.getElementById('root');
@@ -268,7 +706,30 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-if (initialMatchData) {
+// Priority: 1. Storage params (?date=...&game=...), 2. List view (?list), 3. sessionStorage, 4. No data
+if (storageParams) {
+  // Load from Supabase storage
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <StorageScoresheet
+          date={storageParams.date}
+          game={storageParams.game}
+          action={initialAction}
+        />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+} else if (showList) {
+  // Show list of all scoresheets
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ScoresheetList />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+} else if (initialMatchData) {
   try {
     // Check if we have a matchId for live updates
     const hasMatchId = initialMatchData?.match?.id;

@@ -5,6 +5,8 @@ import { useAlert } from '../contexts/AlertContext'
 import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import JSZip from 'jszip'
+import { supabase } from '../lib/supabaseClient'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = '/ball.png'
@@ -239,6 +241,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const [isSaving, setIsSaving] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState(null) // { json: boolean, pdf: boolean }
 
   // Prevent accidental navigation away before approval
   useEffect(() => {
@@ -650,7 +653,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         return
       }
 
-      // Export data first (download)
+      // Show download progress
+      setDownloadProgress({ json: false, pdf: false })
+
+      // Prepare export data
       const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
       const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
 
@@ -664,25 +670,99 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       }
 
       const dataStr = JSON.stringify(exportData, null, 2)
-      const dataBlob = new Blob([dataStr], { type: 'application/json' })
-      const dataLink = document.createElement('a')
       const matchDate = match.scheduledAt
         ? new Date(match.scheduledAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }).replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
-      const dataFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.json`
-      dataLink.download = dataFilename
-      dataLink.href = URL.createObjectURL(dataBlob)
-      dataLink.click()
+      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.json`
 
-      // Also save the scoresheet PDF
-      handleShowScoresheet('save')
+      // Mark JSON as ready
+      setDownloadProgress(prev => ({ ...prev, json: true }))
 
-      // Show confirmation dialog after download
+      // Generate PDF via scoresheet window with postMessage
+      const scoresheetData = {
+        match,
+        homeTeam,
+        awayTeam,
+        homePlayers,
+        awayPlayers,
+        sets,
+        events
+      }
+      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+
+      // Create a promise that resolves when we receive the PDF blob
+      const pdfPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          window.removeEventListener('message', handler)
+          reject(new Error('PDF generation timed out'))
+        }, 30000) // 30 second timeout
+
+        const handler = (event) => {
+          if (event.data?.type === 'pdfBlob') {
+            clearTimeout(timeout)
+            window.removeEventListener('message', handler)
+            const blob = new Blob([event.data.arrayBuffer], { type: 'application/pdf' })
+            resolve({ blob, filename: event.data.filename })
+          }
+        }
+        window.addEventListener('message', handler)
+      })
+
+      // Open scoresheet window with getBlob action
+      window.open('/scoresheet?action=getBlob', '_blank', 'width=1600,height=1200')
+
+      // Wait for PDF blob
+      const pdfResult = await pdfPromise
+      setDownloadProgress(prev => ({ ...prev, pdf: true }))
+
+      // Create ZIP with both files
+      const zip = new JSZip()
+      zip.file(jsonFilename, dataStr)
+      zip.file(pdfResult.filename, pdfResult.blob)
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.zip`
+
+      // Upload PDF to Supabase storage "scoresheets" bucket
+      // Path format: {scheduled_date}/game{n}.pdf
+      if (supabase && !match?.test) {
+        try {
+          const scheduledDate = match.scheduledAt
+            ? new Date(match.scheduledAt).toISOString().slice(0, 10) // YYYY-MM-DD
+            : new Date().toISOString().slice(0, 10)
+          const gameNumber = match.gameNumber || match.externalId || match.game_n || 'unknown'
+          const storagePath = `${scheduledDate}/game${gameNumber}.pdf`
+
+          const { error: uploadError } = await supabase.storage
+            .from('scoresheets')
+            .upload(storagePath, pdfResult.blob, {
+              contentType: 'application/pdf',
+              upsert: true
+            })
+          if (uploadError) {
+            console.warn('Failed to upload scoresheet to cloud:', uploadError)
+          } else {
+            console.log('Scoresheet uploaded to cloud:', storagePath)
+          }
+        } catch (uploadErr) {
+          console.warn('Error uploading scoresheet:', uploadErr)
+        }
+      }
+
+      // Download ZIP
+      const zipLink = document.createElement('a')
+      zipLink.download = zipFilename
+      zipLink.href = URL.createObjectURL(zipBlob)
+      zipLink.click()
+
+      // Show confirmation dialog after downloads complete
+      setDownloadProgress(null)
       setIsSaving(false)
       setShowCloseConfirm(true)
     } catch (error) {
       console.error('Error approving match:', error)
       showAlert('Error approving match: ' + error.message, 'error')
+      setDownloadProgress(null)
       setIsSaving(false)
     }
   }
@@ -967,6 +1047,48 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         />
       </div>
 
+      {/* Download Progress Modal */}
+      {downloadProgress && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: '#111827',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            textAlign: 'center'
+          }}>
+            <h3 style={{ margin: '0 0 16px 0' }}>Preparing Match Export...</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                <span style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
+                <span style={{ color: downloadProgress.json ? '#22c55e' : 'var(--muted)' }}>Match Data (JSON)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                <span style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
+                <span style={{ color: downloadProgress.pdf ? '#22c55e' : 'var(--muted)' }}>Generating Scoresheet (PDF)</span>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
+              {downloadProgress.json && downloadProgress.pdf
+                ? 'Creating ZIP and uploading to cloud...'
+                : 'Please wait while files are being prepared...'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Close Match Confirmation Modal */}
       {showCloseConfirm && (
         <div style={{
@@ -982,7 +1104,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
           zIndex: 9999
         }}>
           <div style={{
-            background: 'var(--bg-secondary)',
+            background: '#111827',
             borderRadius: '12px',
             padding: '24px',
             maxWidth: '400px',
@@ -999,14 +1121,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
                 className="primary"
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
-                Yes, Close Match
+                Close Match
               </button>
               <button
                 onClick={() => handleConfirmClose(false)}
                 className="secondary"
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
-                No, Manual Adjustments
+                Manual Adjustments
               </button>
             </div>
           </div>
