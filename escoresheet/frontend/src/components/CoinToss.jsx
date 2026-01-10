@@ -13,6 +13,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 const ballImage = '/ball.png'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 
 // Helper to generate short name from team name (e.g., "VBC Zürich" -> "VBC")
 function generateShortName(name) {
@@ -936,6 +937,20 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       console.log('[CoinToss] Verification skipped (offline or no Supabase), proceeding with local status')
     }
 
+    // Upload scoresheet to cloud (async, non-blocking)
+    const updatedMatchForScoresheet = await db.matches.get(matchId)
+    const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+    const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+    uploadScoresheetAsync({
+      match: updatedMatchForScoresheet,
+      homeTeam: { name: home, shortName: homeShortName },
+      awayTeam: { name: away, shortName: awayShortName },
+      homePlayers: homeRoster,
+      awayPlayers: awayRoster,
+      sets: allSets,
+      events: allEvents
+    })
+
     // Success!
     setInitModal({ status: 'success', message: t('coinToss.matchInitialized', 'Match initialized!') })
 
@@ -1184,8 +1199,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     : { name: away, shortName: awayShortName, color: awayColor, roster: awayRoster, bench: benchAway }
 
   // Get display name - use short name if name is too long
-  const getDisplayName = (name, shortName) => {
-    if (name && name.length > 15 && shortName) return shortName
+  const getDisplayName = (name) => {
     return name
   }
 
@@ -1261,7 +1275,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               }}
               title={teamAInfo.name}
             >
-              {getDisplayName(teamAInfo.name, teamAInfo.shortName)}
+              {getDisplayName(teamAInfo.name)}
             </div>
           </div>
 
@@ -1347,7 +1361,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               }}
               title={teamBInfo.name}
             >
-              {getDisplayName(teamBInfo.name, teamBInfo.shortName)}
+              {getDisplayName(teamBInfo.name)}
             </div>
           </div>
 

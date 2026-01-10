@@ -25,7 +25,6 @@ export default function HomePage({
   return (
     <div className="home-view">
       <div className="home-content">
-        {/* Header with title */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -251,9 +250,6 @@ export default function HomePage({
           )}
 
           </div>
-        </div>
-        <div style={{ marginTop: '50px' }}>
-        <UserButton fullWidth />
         </div>
         <div style={{ marginTop: '50px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
           

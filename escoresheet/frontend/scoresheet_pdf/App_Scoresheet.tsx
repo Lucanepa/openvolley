@@ -21,7 +21,7 @@ interface AppScoresheetProps {
     events: any[];
     sanctions?: SanctionRecord[];
   };
-  autoAction?: 'preview' | 'print' | 'save';
+  autoAction?: 'preview' | 'print' | 'save' | 'getBlob';
 }
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
@@ -2338,7 +2338,7 @@ const handlePrint = () => {
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  const handleSavePdf = async () => {
+  const handleSavePdf = async (returnBlob = false): Promise<{ blob: Blob; filename: string } | void> => {
     if (!containerRef.current || isGeneratingPdf) return;
 
     setIsGeneratingPdf(true);
@@ -2388,12 +2388,20 @@ const handlePrint = () => {
       // Add canvas as full-page image
       pdf.addImage(imgData, 'PNG', 0, 0, 420, 297);
 
-      // Save PDF
-      pdf.save(filename);
+      if (returnBlob) {
+        // Return blob instead of saving
+        const pdfBlob = pdf.output('blob');
+        return { blob: pdfBlob, filename };
+      } else {
+        // Save PDF
+        pdf.save(filename);
+      }
 
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try the Print/PDF option instead.');
+      if (!returnBlob) {
+        alert('Failed to generate PDF. Please try the Print/PDF option instead.');
+      }
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -2411,6 +2419,20 @@ const handlePrint = () => {
         handlePrint();
       } else if (autoAction === 'save') {
         handleSavePdf();
+      } else if (autoAction === 'getBlob') {
+        // Generate PDF blob and send to parent window
+        const result = await handleSavePdf(true);
+        if (result && window.opener) {
+          // Convert blob to ArrayBuffer for postMessage
+          const arrayBuffer = await result.blob.arrayBuffer();
+          window.opener.postMessage({
+            type: 'pdfBlob',
+            arrayBuffer,
+            filename: result.filename
+          }, '*');
+          // Close this window after sending
+          window.close();
+        }
       }
     }, 500);
 
@@ -2630,7 +2652,7 @@ const handlePrint = () => {
 
           {/* Save PDF button (one-click, no dialog) */}
           <button
-            onClick={handleSavePdf}
+            onClick={() => handleSavePdf()}
             disabled={isGeneratingPdf}
             className={`${isGeneratingPdf ? 'bg-purple-400 cursor-wait' : 'bg-purple-500 hover:bg-purple-700'} text-white px-3 py-1 rounded text-sm shadow`}
             title="Save as PDF (one-click download)"

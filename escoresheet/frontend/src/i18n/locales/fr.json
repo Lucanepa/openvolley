@@ -344,6 +344,16 @@
       "replay": "Rejouer l'échange",
       "decisionChange": "Changement de décision"
     },
+    "sync": {
+      "syncing": "Synchronisation...",
+      "syncingLastPoint": "Synchronisation du dernier point...",
+      "syncingSetCompletion": "Synchronisation de la fin du set...",
+      "done": "Terminé!",
+      "syncError": "Échec de la synchronisation. Données sauvegardées localement.",
+      "offlineWarning": "Hors ligne. Données sauvegardées localement.",
+      "proceedAnyway": "Continuer quand même",
+      "proceed": "Continuer"
+    },
     "modals": {
       "confirmRallyStart": "Confirmer le début de l'échange",
       "confirmPoint": "Confirmer le point",
@@ -636,6 +646,9 @@
     "liberoEntrySuggestionInfo": "Suggérer le remplacement du joueur arrière par le Libéro",
     "setIntervalDuration": "Pause entre les sets",
     "setIntervalDurationInfo": "Durée de l'intervalle entre les sets",
+    "scoreFont": "Police score/compte à rebours",
+    "scoreFontInfo": "Choisir la police pour l'affichage du score et des minuteries",
+    "fontDefault": "Par défaut",
     "keyboardShortcuts": "Raccourcis clavier",
     "keyboardShortcutsInfo": "Utiliser le clavier pour gérer le score",
     "displayMode": "Affichage",

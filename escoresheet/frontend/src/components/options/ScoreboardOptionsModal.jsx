@@ -184,6 +184,7 @@ export default function ScoreboardOptionsModal({
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
+  const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
   const [showCloudBackups, setShowCloudBackups] = useState(false)
   const [cloudBackups, setCloudBackups] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
@@ -292,6 +293,8 @@ export default function ScoreboardOptionsModal({
     setLiberoEntrySuggestion,
     setIntervalDuration,
     setSetIntervalDuration,
+    scoreFont,
+    setScoreFont,
     keybindingsEnabled,
     setKeybindingsEnabled
   } = matchOptions
@@ -623,6 +626,106 @@ export default function ScoreboardOptionsModal({
                 localStorage.setItem('setIntervalDuration', String(newVal))
               }}
             />
+          </Row>
+
+          <Row style={{ marginBottom: '12px', flexDirection: 'column', alignItems: 'stretch', gap: '0' }}>
+            {(() => {
+              const fontOptions = [
+                { value: 'default', label: t('options.fontDefault'), fontFamily: 'inherit', preview: '12:25' },
+                { value: 'orbitron', label: 'Orbitron', fontFamily: "'Orbitron', monospace", preview: '12:25' },
+                { value: 'roboto-mono', label: 'Roboto Mono', fontFamily: "'Roboto Mono', monospace", preview: '12:25' },
+                { value: 'jetbrains-mono', label: 'JetBrains Mono', fontFamily: "'JetBrains Mono', monospace", preview: '12:25' },
+                { value: 'space-mono', label: 'Space Mono', fontFamily: "'Space Mono', monospace", preview: '12:25' },
+                { value: 'ibm-plex-mono', label: 'IBM Plex Mono', fontFamily: "'IBM Plex Mono', monospace", preview: '12:25' }
+              ]
+              const currentFont = fontOptions.find(f => f.value === scoreFont) || fontOptions[0]
+              return (
+                <>
+                  <button
+                    onClick={() => setFontSelectorOpen(!fontSelectorOpen)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 14px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      color: 'var(--text)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      width: '100%'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.scoreFont')}</div>
+                      <InfoDot title={t('options.scoreFontInfo')} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{
+                        fontFamily: currentFont.fontFamily,
+                        fontSize: '18px',
+                        fontWeight: 700,
+                        color: 'var(--accent)',
+                        letterSpacing: '1px'
+                      }}>
+                        {currentFont.preview}
+                      </span>
+                      <span style={{
+                        fontSize: '12px',
+                        color: 'rgba(255,255,255,0.5)',
+                        transition: 'transform 0.2s',
+                        transform: fontSelectorOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                      }}>
+                        ▼
+                      </span>
+                    </div>
+                  </button>
+                  {fontSelectorOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', paddingLeft: '8px', paddingRight: '8px' }}>
+                      {fontOptions.map(option => (
+                        <button
+                          key={option.value}
+                          onClick={() => {
+                            setScoreFont(option.value)
+                            localStorage.setItem('scoreFont', option.value)
+                            setFontSelectorOpen(false)
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 14px',
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            background: scoreFont === option.value ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                            color: 'var(--text)',
+                            border: scoreFont === option.value ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <span style={{ fontSize: '13px' }}>{option.label}</span>
+                          <span style={{
+                            fontFamily: option.fontFamily,
+                            fontSize: '20px',
+                            fontWeight: 700,
+                            color: scoreFont === option.value ? '#3b82f6' : 'var(--accent)',
+                            letterSpacing: '1px'
+                          }}>
+                            {option.preview}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>

@@ -2729,7 +2729,8 @@ export default function App() {
       setMatchId(existing.id)
 
       // Determine where to continue based on status
-      if (existing.status === 'live' || existing.status === 'final') {
+      // Note: status flow is live -> ended -> final (after approval)
+      if (existing.status === 'live' || existing.status === 'ended' || existing.status === 'final') {
         // Check if match is finished (one team has won 3 sets) - go to MatchEnd
         const sets = await db.sets.where('matchId').equals(existing.id).toArray()
         const finishedSets = sets.filter(s => s.finished)
@@ -2740,7 +2741,7 @@ export default function App() {
         setShowMatchSetup(false)
         setShowCoinToss(false)
 
-        if (existing.status === 'live' && isMatchFinished && !existing.approved) {
+        if ((existing.status === 'live' || existing.status === 'ended') && isMatchFinished && !existing.approved) {
           // Match finished but not yet approved - go to MatchEnd
           setShowMatchEnd(true)
         } else {
@@ -2860,7 +2861,8 @@ export default function App() {
       }
       
       // Determine where to continue based on status
-      if (match.status === 'live' || match.status === 'final') {
+      // Note: status flow is live -> ended -> final (after approval)
+      if (match.status === 'live' || match.status === 'ended' || match.status === 'final') {
         // Check if match is finished (one team has won 3 sets) - go to MatchEnd
         const sets = await db.sets.where('matchId').equals(targetMatchId).toArray()
         const finishedSets = sets.filter(s => s.finished)
@@ -2872,7 +2874,7 @@ export default function App() {
         setShowMatchSetup(false)
         setShowCoinToss(false)
 
-        if (match.status === 'live' && isMatchFinished && !match.approved) {
+        if ((match.status === 'live' || match.status === 'ended') && isMatchFinished && !match.approved) {
           // Match finished but not yet approved - go to MatchEnd
           setShowMatchEnd(true)
         } else {

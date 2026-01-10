@@ -3,6 +3,7 @@
     "terser": "^5.44.1"
   },
   "dependencies": {
-    "animejs": "^4.2.2"
+    "animejs": "^4.2.2",
+    "bootstrap-icons": "^1.13.1"
   }
 }

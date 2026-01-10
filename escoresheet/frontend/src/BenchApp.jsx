@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
-import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
@@ -389,6 +388,7 @@ export default function BenchApp() {
       if (result.success && result.match) {
         setMatchId(result.match.id)
         setMatch(result.match)
+        setView('match') // Go directly to match view (like RefereeApp)
       } else {
         setError('Invalid PIN code. Please check and try again.')
         setPinInput('')
@@ -398,10 +398,6 @@ export default function BenchApp() {
       setError(err.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
       setPinInput('')
     }
-  }
-
-  const handleViewSelect = (viewType) => {
-    setView(viewType)
   }
 
   // Hidden test mode - 6 clicks on "No active game found"
@@ -483,7 +479,7 @@ export default function BenchApp() {
     return (
       <div style={{
         height: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
@@ -491,7 +487,7 @@ export default function BenchApp() {
         overflow: 'hidden'
       }}>
         <DashboardHeader
-          title={view === 'roster' ? t('benchDashboard.roster') : teamName}
+          title={teamName}
           subtitle={view === 'match' ? `${t('benchDashboard.game')} ${selectedMatch?.gameNumber || matchId}` : teamName}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
@@ -511,151 +507,12 @@ export default function BenchApp() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {view === 'roster' ? (
-            <RosterSetup
-              matchId={matchId}
-              team={selectedTeam}
-              onBack={handleBack}
-              embedded={true}
-              useSupabaseConnection={activeConnection === 'supabase'}
-              matchData={selectedMatch}
-            />
-          ) : (
-            <MatchEntry
-              matchId={matchId}
-              team={selectedTeam}
-              onBack={handleBack}
-              embedded={true}
-            />
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // If PIN is correct, show view selection
-  if (matchId) {
-
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <DashboardHeader
-          title={t('benchDashboard.title')}
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-          showWakeLock={true}
-          wakeLockActive={wakeLockActive}
-          onToggleWakeLock={toggleWakeLock}
-          connectionMode={connectionMode}
-          activeConnection={activeConnection}
-          onConnectionModeChange={handleConnectionModeChange}
-        />
-
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '500px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <img
-            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-            alt="Volleyball"
-            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
+          <MatchEntry
+            matchId={matchId}
+            team={selectedTeam}
+            onBack={handleBack}
+            embedded={true}
           />
-          <h1 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            marginBottom: '12px'
-          }}>
-            {t('benchDashboard.selectGame')}
-          </h1>
-          <p style={{
-            fontSize: '14px',
-            color: 'var(--muted)',
-            marginBottom: '32px'
-          }}>
-            {t('benchDashboard.selectGame')}
-          </p>
-
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-            marginBottom: '24px'
-          }}>
-            <button
-              onClick={() => handleViewSelect('roster')}
-              style={{
-                width: '100%',
-                padding: '20px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.opacity = '0.9'}
-              onMouseOut={(e) => e.target.style.opacity = '1'}
-            >
-              {t('benchDashboard.roster')}
-            </button>
-
-            <button
-              onClick={() => handleViewSelect('match')}
-              style={{
-                width: '100%',
-                padding: '20px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.opacity = '0.9'}
-              onMouseOut={(e) => e.target.style.opacity = '1'}
-            >
-              {t('benchDashboard.match')}
-            </button>
-          </div>
-
-          <button
-            onClick={handleBack}
-            style={{
-              width: '100%',
-              padding: '12px',
-              fontSize: '14px',
-              fontWeight: 500,
-              background: 'transparent',
-              color: 'var(--muted)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            {t('benchDashboard.back')}
-          </button>
-        </div>
         </div>
       </div>
     )
@@ -668,7 +525,7 @@ export default function BenchApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
@@ -815,7 +672,7 @@ export default function BenchApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
@@ -942,7 +799,7 @@ export default function BenchApp() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+      background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
       color: '#fff',
       display: 'flex',
       flexDirection: 'column',

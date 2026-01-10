@@ -38,35 +38,35 @@ export default function UserButton({ style = {}, fullWidth = false }) {
   }
 
   if (!user) {
-    // Not logged in - show sign in button
-    const buttonStyle = fullWidth ? {
-      width: 'auto',
-      padding: '10px 20px',
-      fontSize: '20px',
+    // Not logged in - show pill-shaped login button with gradient
+    const buttonStyle = {
+      height: fullWidth ? 27 : 27,
+      padding: fullWidth ? '0 14px 0 20px' : '0 4px 0 12px',
+      background: 'linear-gradient(180deg, #4da6ff 0%, #2196f3 50%, #1976d2 100%)',
+      color: '#fff',
+      border: 'none',
+      borderRadius: 50,
       fontWeight: 600,
-      background: 'rgb(0, 0, 0)',
-      color: 'var(--text)',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      borderRadius: '8px',
       cursor: 'pointer',
+      fontSize: fullWidth ? 16 : 12,
+      display: 'flex',
+      alignItems: 'center',
+      gap: fullWidth ? 10 : 6,
+      boxShadow: '0 3px 8px rgba(33, 150, 243, 0.35), inset 0 1px 0 rgba(255,255,255,0.3)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px',
+      ...style
+    }
+
+    const circleStyle = {
+      width: fullWidth ? 26 : 19,
+      height: fullWidth ? 26 : 19,
+      borderRadius: '50%',
+      background: '#fff',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
-      ...style
-    } : {
-      padding: '8px 16px',
-      background: '#3b82f6',
-      color: '#fff',
-      border: 'none',
-      borderRadius: 8,
-      fontWeight: 500,
-      cursor: 'pointer',
-      fontSize: 14,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
-      ...style
+      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
     }
 
     return (
@@ -75,12 +75,21 @@ export default function UserButton({ style = {}, fullWidth = false }) {
           onClick={() => setShowLogin(true)}
           style={buttonStyle}
         >
-          <svg width={fullWidth ? "20" : "16"} height={fullWidth ? "20" : "16"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-            <polyline points="10 17 15 12 10 7" />
-            <line x1="15" y1="12" x2="3" y2="12" />
-          </svg>
-          {t('auth.signIn', 'Sign In')}
+          {t('auth.login', 'Login')}
+          <span style={circleStyle}>
+            <svg
+              width={fullWidth ? "12" : "9"}
+              height={fullWidth ? "12" : "9"}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#2196f3"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </span>
         </button>
 
         <LoginModal
@@ -114,7 +123,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
     padding: '10px 20px',
     fontSize: '20px',
     fontWeight: 600,
-    background: 'rgba(59, 130, 246, 0.15)',
+    background:  'linear-gradient(180deg, #4da6ff 0%, #2196f3 50%, #1976d2 100%)',
     color: '#3b82f6',
     border: '1px solid rgba(59, 130, 246, 0.3)',
     borderRadius: '8px',
@@ -125,10 +134,10 @@ export default function UserButton({ style = {}, fullWidth = false }) {
     gap: 10,
     minHeight: 48
   } : {
-    width: 30,
-    height: 30,
-    borderRadius: '50%',
-    background: '#3b82f6',
+    width: 'auto',
+    height: 27,
+    borderRadius: 50,
+    background:  'linear-gradient(180deg, #4da6ff 0%, #2196f3 50%, #1976d2 100%)',
     color: '#fff',
     border: 'none',
     cursor: 'pointer',
@@ -144,7 +153,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
       <div style={{ position: 'relative', ...style }}>
         <button
           onClick={() => setShowDropdown(!showDropdown)}
-          style={loggedInButtonStyle}
+          style={{ ...loggedInButtonStyle,  }}
         >
           {fullWidth ? (
             <>

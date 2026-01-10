@@ -1,6 +1,6 @@
 {
   "name": "escoresheet",
-  "version": "0.19.19",
+  "version": "0.19.20",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -45,6 +45,7 @@
     "html2canvas": "^1.4.1",
     "i18next": "^25.7.3",
     "jspdf": "^3.0.4",
+    "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.449",
     "react": "^18.3.1",

@@ -16,7 +16,10 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamAName, teamBName, coinTossConfirmed }) => {
   const [imageError, setImageError] = useState(false);
   const [faviconImageError, setFaviconImageError] = useState(false);
-  
+
+  // Determine if home team is "A" based on coin toss result
+  const homeIsA = (match?.coinTossTeamA || 'home') === 'home';
+
   // Format date and time (display in local timezone)
   const scheduledDate = match?.scheduledAt ? new Date(match.scheduledAt) : null;
   const dateStr = scheduledDate ? scheduledDate.toISOString().split('T')[0] : '';
@@ -224,26 +227,26 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
       <div className="grid grid-cols-12 gap-0 border-t border-black text-xs">
         {/* Teams: 6 cols with A/B circles spanning both rows */}
         <div className="col-span-6 border-r border-black px-2 flex">
-            {/* Circle A column - centered vertically */}
+            {/* Circle for home team (left) - shows A or B based on coin toss */}
             <div className="flex items-center justify-center px-1">
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? 'A' : ''}</div>
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}</div>
             </div>
-            {/* Teams content - TEAMS header and team names */}
+            {/* Teams content - TEAMS header and team names (always home left, away right) */}
             <div className="flex-1 flex flex-col justify-between">
                 <div className="w-full text-center mb-0.5">
                     <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
                 </div>
                 <div className="flex items-end gap-1 mb-0.5">
-                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{coinTossConfirmed ? teamAName : (homeTeam?.name || '')}</div>
+                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{homeTeam?.name || ''}</div>
                     <div className="flex items-center h-full">
                         <span className="text-base font-bold text-gray-500 italic">VS</span>
                     </div>
-                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{coinTossConfirmed ? teamBName : (awayTeam?.name || '')}</div>
+                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{awayTeam?.name || ''}</div>
                 </div>
             </div>
-            {/* Circle B column - centered vertically */}
+            {/* Circle for away team (right) - shows B or A based on coin toss */}
             <div className="flex items-center justify-center px-1">
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? 'B' : ''}</div>
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}</div>
             </div>
         </div>
 
