@@ -998,7 +998,20 @@
     "secondReferee": "2° Arbitro",
     "screenOptions": "Schermo",
     "keepScreenOn": "Mantieni schermo acceso",
-    "exit": "Esci"
+    "exit": "Esci",
+    "lastAction": "Ultima azione",
+    "events": {
+      "point": "Punto",
+      "timeout": "Timeout",
+      "substitution": "Sost",
+      "liberoIn": "Libero entra",
+      "liberoOut": "Libero esce",
+      "liberoExchange": "Scambio libero",
+      "liberoRedesignation": "Ridesignazione libero",
+      "setEnd": "Set {{set}} terminato",
+      "sanction": "Sanzione",
+      "noAction": "—"
+    }
   },
   "connection": {
     "title": "Configurazione connessione",

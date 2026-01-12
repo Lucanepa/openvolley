@@ -245,6 +245,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [sanctionConfirm, setSanctionConfirm] = useState(null) // { side: 'left'|'right', type: 'improper_request'|'delay_warning'|'delay_penalty' } | null
   const [sanctionDropdown, setSanctionDropdown] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, element: HTMLElement, x?: number, y?: number } | null
   const [sanctionConfirmModal, setSanctionConfirmModal] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, sanctionType: 'warning'|'penalty'|'expulsion'|'disqualification' } | null
+  const [sanctionSubstitutionModal, setSanctionSubstitutionModal] = useState(null) // { team, expelledPlayer, liberoOnCourt?, availableSubs, reason: 'expulsion'|'disqualification', isExceptional: boolean, position?: string } | null
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
   const [benchPlayerActionMenu, setBenchPlayerActionMenu] = useState(null) // { team: 'home'|'away', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, courtPlayerToSwapWith?: { number: number, position: string } } | null
@@ -828,10 +829,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (setLeftTeamOverrides[setIndex] !== undefined) {
         // Override stores 'A' or 'B', not 'home'/'away'
         sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
-      } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
+      } else if (is5thSet && set5LeftTeam) {
+        // Use set5LeftTeam for Set 5 (from coin toss or manual switch)
         sideA = set5LeftTeam === 'A' ? 'left' : 'right'
       } else {
         sideA = setIndex % 2 === 1 ? 'left' : 'right'
+      }
+
+      // If Set 5 court switch at 8 points has happened, flip the sides
+      if (is5thSet && set5CourtSwitched) {
+        sideA = sideA === 'left' ? 'right' : 'left'
       }
 
       // Team names and colors
@@ -1760,9 +1767,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Determine match status from event type
       const isSetInterval = eventType === 'set_end'
       const isTimeout = eventType === 'timeout'
-      let matchStatus = 'in_progress'
-      if (isTimeout) matchStatus = 'timeout'
-      else if (isSetInterval) matchStatus = 'interval'
 
       // For set_end, we need to show the NEXT set state (interval between sets)
       // The snapshot still has the OLD set data, so we override for set_end
@@ -1780,6 +1784,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const updatedSetScoreB = isSetInterval && setWinner
         ? (setWinner === snapshot.teamBKey ? snapshot.setScoreB + 1 : snapshot.setScoreB)
         : snapshot.setScoreB
+
+      // Check if match is finished (one team won 3 sets) - don't increment current_set past the final set
+      const isMatchFinished = updatedSetScoreA >= 3 || updatedSetScoreB >= 3
+      const finalSetIndex = isSetInterval && isMatchFinished ? snapshot.currentSetIndex : nextSetIndex
+
+      // Determine match status - 'ended' takes priority over interval
+      let matchStatus = 'in_progress'
+      if (isMatchFinished) matchStatus = 'ended'
+      else if (isTimeout) matchStatus = 'timeout'
+      else if (isSetInterval) matchStatus = 'interval'
 
       // Calculate side for next set (odd sets: A on left, even sets: A on right)
       // This follows the standard volleyball alternation pattern
@@ -1860,7 +1874,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Map directly from snapshot to Supabase table
       const liveStateData = {
         match_id: supabaseMatchId,
-        current_set: nextSetIndex,
+        current_set: finalSetIndex,
         // Team A/B info (from snapshot)
         team_a_name: snapshot.teamAName,
         team_a_short: snapshot.teamAShort,
@@ -1893,7 +1907,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         last_event_team: eventTeam || null,
         last_event_data: eventData || null,
         last_event_ts: new Date().toISOString(),
-        set_interval_active: isSetInterval,
+        set_interval_active: isSetInterval && !isMatchFinished,
         set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
         timeout_active: isTimeout,
         timeout_started_at: isTimeout ? new Date().toISOString() : null,
@@ -1924,7 +1938,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Queuing would add 1s+ delay from the polling interval in useSyncQueue.
       const [liveStateResult, matchResult] = await Promise.all([
         supabase.from('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }),
-        supabase.from('matches').update({ current_set: nextSetIndex }).eq('id', supabaseMatchId)
+        supabase.from('matches').update({ current_set: finalSetIndex }).eq('id', supabaseMatchId)
       ])
 
       if (liveStateResult.error) {
@@ -3943,11 +3957,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const setLeftTeamOverrides = match?.setLeftTeamOverrides || {}
 
           // Determine which side Team A is on this set
+          // setLeftTeamOverrides stores 'A' or 'B', set5LeftTeam stores 'A' or 'B'
           let sideA // 'left' or 'right'
           if (setLeftTeamOverrides[setIndex] !== undefined) {
-            sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
+            sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
           } else if (setIndex === 5 && match?.set5CourtSwitched && match?.set5LeftTeam) {
-            sideA = match.set5LeftTeam === teamAKey ? 'left' : 'right'
+            sideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
           } else {
             // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
             sideA = setIndex % 2 === 1 ? 'left' : 'right'
@@ -4036,6 +4051,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
           } else if (type === 'court_captain_designation') {
             eventData = { playerNumber: payload?.playerNumber }
+          } else if (type === 'sanction') {
+            eventData = {
+              type: payload?.type,
+              playerType: payload?.playerType || null,
+              playerNumber: payload?.playerNumber || null,
+              role: payload?.role || null
+            }
           }
           // For events that change the lineup, don't use cached snapshot - it was captured BEFORE the event
           // was added to the database. Let syncLiveStateToSupabase fetch a fresh one.
@@ -5473,7 +5495,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         winner: winner,
         homePoints: homePoints,
         awayPoints: awayPoints,
-        countdown: setIntervalDuration
+        countdown: setIntervalDuration,
+        homeSetsWon,
+        awaySetsWon
       })
       sendActionToReferee('set_end', {
         setIndex,
@@ -5481,7 +5505,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         homePoints: homePoints,
         awayPoints: awayPoints,
         countdown: setIntervalDuration,
-        startTimestamp: Date.now()
+        startTimestamp: Date.now(),
+        homeSetsWon,
+        awaySetsWon
       })
 
       // Lock was already acquired early in confirmSetEndTime (line ~5034)
@@ -6326,12 +6352,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Go back to idle state - user can then click "Start rally" or "Undo"
       // No automatic rally start
 
+      // Sync to Supabase with fresh snapshot (data has changed)
+      syncLiveStateToSupabase('replay', null, { reason: 'point_replay', undoneTeam }, null)
+
     } catch (error) {
       // Error during replay - silently handle
     } finally {
       setReplayRallyConfirm(null)
     }
-  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq])
+  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq, syncLiveStateToSupabase])
 
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
@@ -6414,17 +6443,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
+        // Sync to Supabase with fresh snapshot (data has changed)
+        syncLiveStateToSupabase('decision_change', null, { reason: 'point_swap', fromTeam: oldTeam, toTeam: newTeam }, null)
+
       } catch (error) {
         console.error('[handleDecisionChange] Error swapping point:', error)
       }
     } else {
       // Replay rally - use existing logic
       await handleReplayRally()
-      return // handleReplayRally already closes the modal
+      return // handleReplayRally already closes the modal and syncs
     }
 
     setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, matchId, getNextSeq, handleReplayRally])
+  }, [replayRallyConfirm, data?.set, data?.events, matchId, getNextSeq, handleReplayRally, syncLiveStateToSupabase])
 
 
 
@@ -9351,8 +9383,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // First, check if a legal substitution is possible (not exceptional)
       const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
-      if (legalSubstitutes.length > 0) {
-        // Legal substitution is possible - show substitution dropdown
+      if (legalSubstitutes.length === 1) {
+        // Only one legal substitute - auto-select and show confirmation modal
+        setSubstitutionConfirm({
+          team,
+          position,
+          playerOut: playerNumber,
+          playerIn: legalSubstitutes[0].number,
+          isExpelled: sanctionType === 'expulsion',
+          isDisqualified: sanctionType === 'disqualification'
+        })
+      } else if (legalSubstitutes.length > 1) {
+        // Multiple legal substitutes - show substitution dropdown
         const courtPlayers = document.querySelectorAll('.court-player')
         let playerElement = null
         for (const el of courtPlayers) {
@@ -9408,6 +9450,81 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }, 300)
       }
     } else if (sanctionType === 'expulsion' || sanctionType === 'disqualification') {
+      // Check if this bench player is currently being replaced by a libero on court
+      // Per FIVB Casebook: libero stays on court, substitute the bench player
+      const liberoOnCourt = getLiberoOnCourt(team)
+      if (type === 'bench' && liberoOnCourt && String(liberoOnCourt.playerNumber) === String(playerNumber)) {
+        // This bench player is the one replaced by the libero
+        // Log the sanction first
+        await logEvent('sanction', {
+          team,
+          type: sanctionType,
+          playerType: type,
+          playerNumber,
+          position,
+          role
+        })
+
+        // Get legal substitutes for this player (based on their original position before libero replaced them)
+        const legalSubs = getAvailableSubstitutes(team, playerNumber, false)
+
+        if (legalSubs.length === 1) {
+          // Auto-confirm with the single legal substitute
+          setSanctionSubstitutionModal({
+            team,
+            expelledPlayer: playerNumber,
+            liberoOnCourt,
+            availableSubs: legalSubs,
+            reason: sanctionType,
+            isExceptional: false,
+            position: liberoOnCourt.position
+          })
+        } else if (legalSubs.length > 1) {
+          // Show modal to select from legal substitutes
+          setSanctionSubstitutionModal({
+            team,
+            expelledPlayer: playerNumber,
+            liberoOnCourt,
+            availableSubs: legalSubs,
+            reason: sanctionType,
+            isExceptional: false,
+            position: liberoOnCourt.position
+          })
+        } else {
+          // No legal substitutes - check for exceptional substitutes
+          const exceptionalSubs = getAvailableExceptionalSubstitutes(team, playerNumber)
+          if (exceptionalSubs.length === 1) {
+            // Auto-confirm with single exceptional substitute
+            setSanctionSubstitutionModal({
+              team,
+              expelledPlayer: playerNumber,
+              liberoOnCourt,
+              availableSubs: exceptionalSubs,
+              reason: sanctionType,
+              isExceptional: true,
+              position: liberoOnCourt.position
+            })
+          } else if (exceptionalSubs.length > 1) {
+            // Show modal for exceptional substitute selection
+            setSanctionSubstitutionModal({
+              team,
+              expelledPlayer: playerNumber,
+              liberoOnCourt,
+              availableSubs: exceptionalSubs,
+              reason: sanctionType,
+              isExceptional: true,
+              position: liberoOnCourt.position
+            })
+          } else {
+            // No substitutes at all - forfeit
+            await handleForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification')
+          }
+        }
+
+        setSanctionConfirmModal(null)
+        return
+      }
+
       // Expulsion/disqualification for bench players or officials - just log the sanction
       await logEvent('sanction', {
         team,
@@ -9494,7 +9611,69 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setSanctionConfirmModal(null)
       }
     }
-  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, handleForfait])
+  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, handleForfait, getLiberoOnCourt])
+
+  // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
+  // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
+  const handleSanctionSubstitution = useCallback(async (substituteNumber) => {
+    if (!sanctionSubstitutionModal) return
+
+    const { team, expelledPlayer, liberoOnCourt, reason, isExceptional, position } = sanctionSubstitutionModal
+
+    // Log substitution event - this is recorded on scoresheet
+    // The position is where the libero currently is (the expelled player's original position)
+    const parentSeq = await logEvent('substitution', {
+      team,
+      position: position || liberoOnCourt?.position,
+      playerOut: expelledPlayer,
+      playerIn: substituteNumber,
+      isExpelled: reason === 'expulsion',
+      isDisqualified: reason === 'disqualification',
+      isExceptional,
+      isLiberoReplacementSub: true  // Flag to indicate this special case - libero stays on court
+    })
+
+    // Update the lineup's liberoSubstitution to point to new replacement player
+    // This ensures when the libero exits, the new substitute comes to court instead of expelled player
+    const currentSetIndex = data?.set?.index
+    const lineupEvents = data?.events
+      ?.filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === currentSetIndex)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
+    if (lineupEvents?.length > 0 && liberoOnCourt) {
+      const lastLineup = lineupEvents[lineupEvents.length - 1]
+      const currentLineup = { ...lastLineup.payload.lineup }
+
+      // Update liberoSubstitution to point to new player
+      const updatedLiberoSub = lastLineup.payload.liberoSubstitution ? {
+        ...lastLineup.payload.liberoSubstitution,
+        playerNumber: substituteNumber  // New replacement player
+      } : {
+        position: liberoOnCourt.position,
+        liberoNumber: liberoOnCourt.liberoNumber,
+        liberoType: liberoOnCourt.liberoType,
+        playerNumber: substituteNumber
+      }
+
+      await logEvent('lineup', {
+        team,
+        lineup: currentLineup,
+        liberoSubstitution: updatedLiberoSub
+      }, { parentSeq })
+    }
+
+    // Add remarks if exceptional substitution
+    if (isExceptional) {
+      const remarkKey = `exceptionalSubstitution${team === 'home' ? 'Home' : 'Away'}`
+      const existingRemarks = data?.match?.[remarkKey] || ''
+      const newRemark = `Exp Sub: #${expelledPlayer}→#${substituteNumber} (${reason === 'expulsion' ? 'EXP' : 'DQ'}, libero on court)`
+      await db.matches.update(matchId, {
+        [remarkKey]: existingRemarks ? `${existingRemarks}; ${newRemark}` : newRemark
+      })
+    }
+
+    setSanctionSubstitutionModal(null)
+  }, [sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
 
   // Execute libero substitution directly (no confirmation modal needed)
   const showLiberoConfirm = useCallback(async (liberoType) => {
@@ -11099,8 +11278,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Close the modal
     setCourtSwitchModal(null)
 
-    // Note: Teams will automatically switch on next point based on leftIsHome logic
-  }, [courtSwitchModal, matchId])
+    // Sync to Supabase with fresh snapshot to update side_a and serving_team after court switch
+    syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
+  }, [courtSwitchModal, matchId, syncLiveStateToSupabase])
 
   const cancelCourtSwitch = useCallback(async () => {
     if (!courtSwitchModal || !data?.events) return
@@ -16128,8 +16308,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  marginTop: '1px',
-                  marginBottom: '5px'
+                  marginTop: '-5px',
+                  marginBottom: '7px'
                 }}>
                   <span style={{
                     fontSize: isLaptopMode ? '13px' : '16px',
@@ -25672,25 +25852,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // Track that user dismissed via undo to prevent re-showing
             setEndModalDismissedRef.current = setEndTimeModal.setIndex
 
-            // Find the last point event directly and undo it
+            // Find the last point event directly and open decision modal
             if (data?.events && data?.set) {
               const currentSetEvents = data.events
                 .filter(e => e.setIndex === data.set.index)
                 .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
-              // Find the point event (could be the last event or parent of a sub-event)
-              let pointEvent = null
-              const lastEvent = currentSetEvents[0]
-              if (lastEvent?.type === 'point') {
-                pointEvent = lastEvent
-              } else if (lastEvent) {
-                const lastSeq = lastEvent.seq || 0
-                const isSubEvent = lastSeq !== Math.floor(lastSeq)
-                if (isSubEvent) {
-                  const baseSeq = Math.floor(lastSeq)
-                  pointEvent = currentSetEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
-                }
-              }
+              // Find the last POINT event (ignoring set_end, sanctions, etc that might be after it)
+              // We need to find the actual point that caused the set end condition
+              const pointEvent = currentSetEvents.find(e => e.type === 'point')
 
               if (pointEvent) {
                 // Open decision modal (no selectedOption forces choice)
@@ -26069,7 +26239,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Court Switch Modal (5th Set at 8 points) */}
+      {/* Court Switch Modal (5th Set at 8 points) - highest priority, blocks everything */}
       {courtSwitchModal && (
         <Modal
           title={t('scoreboard.modals.courtSwitchRequired')}
@@ -26077,21 +26247,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => { }}
           width={450}
           hideCloseButton={true}
+          zIndex={2000}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
             <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
-              Set 5 — Teams must switch courts
+              {t('scoreboard.modals.teamsMustSwitchCourts')}
             </p>
-            <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-              Score: {courtSwitchModal.homePoints} - {courtSwitchModal.awayPoints}
-            </p>
-            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-              A team has reached 8 points. Teams must change courts before continuing play.
-            </p>
+            <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <span style={{ background: data?.homeTeam?.color || '#ef4444', color: isBrightColor(data?.homeTeam?.color || '#ef4444') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
+              <span>{data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'}</span>
+              <strong style={{ fontSize: '20px' }}>{courtSwitchModal.homePoints} : {courtSwitchModal.awayPoints}</strong>
+              <span>{data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'}</span>
+              <span style={{ background: data?.awayTeam?.color || '#3b82f6', color: isBrightColor(data?.awayTeam?.color || '#3b82f6') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
+            </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
                 onClick={confirmCourtSwitch}
                 style={{
+                  flex: '1 1 0',
                   padding: '12px 32px',
                   fontSize: '16px',
                   fontWeight: 600,
@@ -26102,22 +26275,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: 'pointer'
                 }}
               >
-                OK - Switch Courts
+                {t('scoreboard.buttons.switchCourts')}
               </button>
               <button
-                onClick={cancelCourtSwitch}
+                onClick={() => {
+                  // Find the last point event to open decision change modal
+                  if (data?.events && data?.set) {
+                    const currentSetEvents = data.events
+                      .filter(e => e.setIndex === data.set.index)
+                      .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+                    const pointEvent = currentSetEvents.find(e => e.type === 'point')
+                    if (pointEvent) {
+                      setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null })
+                    }
+                  }
+                  // Close court switch modal
+                  setCourtSwitchModal(null)
+                }}
                 style={{
+                  flex: '1 1 0',
                   padding: '12px 32px',
                   fontSize: '16px',
                   fontWeight: 600,
-                  background: '#ef4444',
-                  color: '#fff',
+                  background: '#facc15',
+                  color: '#000',
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
               >
-                Cancel - Undo Last Point
+                {t('scoreboard.buttons.decisionChange')}
               </button>
             </div>
           </div>
@@ -26221,6 +26409,126 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </button>
                 </div>
               )}
+            </div>
+          </Modal>
+        )
+      })()}
+
+      {/* Sanction Substitution Modal - for bench player (libero replacement) expelled/disqualified */}
+      {sanctionSubstitutionModal && (() => {
+        const { team, expelledPlayer, liberoOnCourt, availableSubs, reason, isExceptional } = sanctionSubstitutionModal
+        const teamLabel = team === teamAKey ? 'A' : 'B'
+        const teamData = team === 'home' ? data?.homeTeam : data?.awayTeam
+        const teamColor = teamData?.color || (team === 'home' ? '#ef4444' : '#3b82f6')
+        const reasonText = reason === 'expulsion' ? 'expelled' : 'disqualified'
+
+        return (
+          <Modal
+            title={isExceptional ? 'Exceptional Substitution Required' : 'Substitution Required'}
+            open={true}
+            onClose={() => { }}
+            width={450}
+            hideCloseButton={true}
+            zIndex={2000}
+          >
+            <div style={{ padding: '16px', textAlign: 'center' }}>
+              {/* Team badge */}
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                background: teamColor,
+                color: isBrightColor(teamColor) ? '#000' : '#fff',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '14px',
+                marginBottom: '16px'
+              }}>
+                Team {teamLabel}
+              </div>
+
+              <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+                Player <strong>#{expelledPlayer}</strong> has been <strong style={{ color: '#ef4444' }}>{reasonText}</strong>.
+              </p>
+
+              {liberoOnCourt && (
+                <p style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  background: 'rgba(250, 204, 21, 0.1)',
+                  border: '1px solid rgba(250, 204, 21, 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '14px'
+                }}>
+                  Libero <strong>#{liberoOnCourt.liberoNumber}</strong> remains on court at position <strong>{liberoOnCourt.position}</strong>.
+                </p>
+              )}
+
+              {isExceptional && (
+                <p style={{
+                  marginBottom: '16px',
+                  padding: '8px 12px',
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  color: '#f59e0b'
+                }}>
+                  No legal substitutes available - exceptional substitution required.
+                </p>
+              )}
+
+              <p style={{ marginBottom: '16px', fontWeight: 600, fontSize: '15px' }}>
+                Select replacement player:
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {availableSubs.map(sub => (
+                  <button
+                    key={sub.number}
+                    onClick={() => handleSanctionSubstitution(sub.number)}
+                    style={{
+                      padding: '14px 16px',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      background: 'var(--accent)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <span style={{ fontSize: '18px', fontWeight: 700 }}>#{sub.number}</span>
+                    {sub.name && <span style={{ opacity: 0.8 }}>{sub.name}</span>}
+                  </button>
+                ))}
+              </div>
+
+              {/* Cancel/Forfeit option */}
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <button
+                  onClick={async () => {
+                    await handleForfait(team, reason === 'expulsion' ? 'expulsion' : 'disqualification')
+                    setSanctionSubstitutionModal(null)
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    fontSize: '14px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Declare Forfeit Instead
+                </button>
+              </div>
             </div>
           </Modal>
         )
@@ -26403,7 +26711,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         )
       })()}
 
-      {liberoRotationModal && (() => {
+      {liberoRotationModal && !courtSwitchModal && !setEndTimeModal && (() => {
         const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
@@ -26644,94 +26952,140 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const oldTeamName = oldTeam === 'home' ? homeTeamName : awayTeamName
         const newTeamName = newTeam === 'home' ? homeTeamName : awayTeamName
 
+        // A/B labels and team colors
+        const homeLabel = teamAKey === 'home' ? 'A' : 'B'
+        const awayLabel = teamAKey === 'away' ? 'A' : 'B'
+        const oldTeamLabel = oldTeam === 'home' ? homeLabel : awayLabel
+        const homeColor = data?.homeTeam?.color || '#ef4444'
+        const awayColor = data?.awayTeam?.color || '#3b82f6'
+        const oldTeamColor = oldTeam === 'home' ? homeColor : awayColor
+
         // Determine which team has serve after each option
         // For swap: the new team gets the point, so they get/keep serve
         // For replay: no point scored, serve stays with who had it before this point
         const swapServeTeam = newTeam
         const replayServeTeam = oldTeam // The team that WAS going to have serve (sideout was reversed)
 
+        // Helper to render team with A/B badge
+        const TeamWithLabel = ({ team, name }) => (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{
+              background: 'var(--accent)',
+              color: '#000',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontWeight: 700
+            }}>{team === 'home' ? homeLabel : awayLabel}</span>
+            {name}
+          </span>
+        )
+
         return (
           <Modal
             title={t('scoreboard.modals.decisionChange')}
             open={true}
             onClose={cancelReplayRally}
-            width={450}
+            width={500}
           >
             <div style={{ padding: '24px' }}>
-              <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
-                Last point was assigned to <strong>{oldTeamName}</strong>
+              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
+                Last point was assigned to <strong><span style={{ background: oldTeamColor, color: isBrightColor(oldTeamColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
               </p>
 
-              {/* Option 1: Assign point to other team */}
-              <div
-                onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'swap' })}
-                style={{
-                  padding: '16px',
-                  marginBottom: '12px',
-                  background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+              {/* Horizontal radio buttons */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                {/* Option 1: Swap */}
+                <div
+                  onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'swap' })}
+                  style={{
+                    flex: 1,
+                    padding: '12px 16px',
+                    background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
                   <div style={{
-                    width: '20px',
-                    height: '20px',
+                    width: '18px',
+                    height: '18px',
                     borderRadius: '50%',
-                    border: selectedOption === 'swap' ? '6px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
-                    background: selectedOption === 'swap' ? '#eab308' : 'transparent'
+                    border: selectedOption === 'swap' ? '5px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: selectedOption === 'swap' ? '#eab308' : 'transparent',
+                    flexShrink: 0
                   }} />
-                  <span style={{ fontSize: '15px', fontWeight: 600 }}>Assign point to other team</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Assign to other team</span>
                 </div>
-                <div style={{ marginLeft: '32px', fontSize: '13px', color: 'var(--muted)' }}>
-                  <div style={{ marginBottom: '8px' }}>
-                    <span>Current: </span>
-                    <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
-                  </div>
-                  <div style={{ marginBottom: '8px' }}>
-                    <span>New: </span>
-                    <strong style={{ color: '#22c55e' }}>{homeTeamName} {swapHomePoints} : {swapAwayPoints} {awayTeamName}</strong>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>Serve:</span>
-                    <span style={{ fontSize: '16px' }}>🏐</span>
-                    <strong>{swapServeTeam === 'home' ? homeTeamName : awayTeamName}</strong>
-                  </div>
+
+                {/* Option 2: Replay */}
+                <div
+                  onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'replay' })}
+                  style={{
+                    flex: 1,
+                    padding: '12px 16px',
+                    background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    border: selectedOption === 'replay' ? '5px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: selectedOption === 'replay' ? '#eab308' : 'transparent',
+                    flexShrink: 0
+                  }} />
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Replay the rally</span>
                 </div>
               </div>
 
-              {/* Option 2: Replay the rally */}
-              <div
-                onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'replay' })}
-                style={{
-                  padding: '16px',
-                  marginBottom: '24px',
-                  background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '50%',
-                    border: selectedOption === 'replay' ? '6px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
-                    background: selectedOption === 'replay' ? '#eab308' : 'transparent'
-                  }} />
-                  <span style={{ fontSize: '15px', fontWeight: 600 }}>Replay the rally</span>
-                </div>
-                <div style={{ marginLeft: '32px', fontSize: '13px', color: 'var(--muted)' }}>
-                  <div style={{ marginBottom: '8px' }}>
-                    <span>New score (point deleted): </span>
-                    <strong style={{ color: '#22c55e' }}>{homeTeamName} {replayHomePoints} : {replayAwayPoints} {awayTeamName}</strong>
+              {/* Expanded details panel */}
+              <div style={{
+                padding: '16px',
+                marginBottom: '20px',
+                background: 'rgba(234, 179, 8, 0.1)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                borderRadius: '8px'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'var(--muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ width: '55px', textAlign: 'right' }}>Current:</span>
+                    <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.2)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ background: homeColor, color: isBrightColor(homeColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
+                      <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
+                      <span style={{ background: awayColor, color: isBrightColor(awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '12px', fontStyle: 'italic' }}>
-                    Click "Start rally" after confirming to replay
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ width: '55px', textAlign: 'right' }}>New:</span>
+                    <div style={{ background: 'rgba(34, 197, 94, 0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(34, 197, 94, 0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ background: homeColor, color: isBrightColor(homeColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
+                      <strong style={{ color: '#22c55e' }}>
+                        {homeTeamName} {selectedOption === 'swap' ? swapHomePoints : replayHomePoints} : {selectedOption === 'swap' ? swapAwayPoints : replayAwayPoints} {awayTeamName}
+                      </strong>
+                      <span style={{ background: awayColor, color: isBrightColor(awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ width: '55px', textAlign: 'right' }}>Serve:</span>
+                    <span style={{ fontSize: '16px' }}>🏐</span>
+                    <span style={{ background: (selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor, color: isBrightColor((selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
+                      {(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeLabel : awayLabel}
+                    </span>
+                    <strong>{(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeTeamName : awayTeamName}</strong>
                   </div>
                 </div>
               </div>

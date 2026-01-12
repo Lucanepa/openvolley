@@ -344,6 +344,7 @@
       "replay": "Replay Rally",
       "decisionChange": "Decision Change",
       "switchSides": "Switch Sides",
+      "switchCourts": "Switch Courts",
       "switchServe": "Switch Serve",
       "confirmSet5Setup": "Confirm Set 5 Setup"
     },
@@ -368,6 +369,7 @@
       "substituteWithEligible": "Substitute with any eligible player on the bench",
       "liberoRedesignation": "Libero Re-designation",
       "courtSwitchRequired": "Court Switch Required",
+      "teamsMustSwitchCourts": "Teams must switch courts",
       "set5ChooseSideService": "Set 5 - Choose Side and Service",
       "noLegalSubstitution": "No Legal Substitution Available",
       "liberoReminder": "Libero Reminder",
@@ -1007,7 +1009,20 @@
     "secondReferee": "2nd Referee",
     "screenOptions": "Screen",
     "keepScreenOn": "Keep Screen On",
-    "exit": "Exit"
+    "exit": "Exit",
+    "lastAction": "Last Action",
+    "events": {
+      "point": "Point",
+      "timeout": "Timeout",
+      "substitution": "Sub",
+      "liberoIn": "Libero in",
+      "liberoOut": "Libero out",
+      "liberoExchange": "Libero exchange",
+      "liberoRedesignation": "Libero redesignation",
+      "setEnd": "Set {{set}} ended",
+      "sanction": "Sanction",
+      "noAction": "—"
+    }
   },
   "connection": {
     "title": "Connection Setup",
