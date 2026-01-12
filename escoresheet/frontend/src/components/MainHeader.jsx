@@ -573,10 +573,8 @@ export default function MainHeader({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '4px 8px',
-                height: '32px',
-                minWidth: '32px',
-                fontSize: '16px',
+                padding: '4px 10px',
+                fontSize: 'clamp(10px, 1.2vw, 12px)',
                 fontWeight: 600,
                 background: '#ef4444', // Red
                 color: '#fff',

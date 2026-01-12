@@ -40,18 +40,16 @@ export default function UserButton({ style = {}, fullWidth = false }) {
   if (!user) {
     // Not logged in - show pill-shaped login button with gradient
     const buttonStyle = {
-      height: fullWidth ? 27 : 27,
-      padding: fullWidth ? '0 14px 0 20px' : '0 4px 0 12px',
       background: 'linear-gradient(180deg, #4da6ff 0%, #2196f3 50%, #1976d2 100%)',
       color: '#fff',
-      border: 'none',
+      border: 'none',padding: '4px 10px',
+      fontSize: 'clamp(10px, 1.2vw, 12px)',
       borderRadius: 50,
       fontWeight: 600,
       cursor: 'pointer',
-      fontSize: fullWidth ? 16 : 12,
       display: 'flex',
       alignItems: 'center',
-      gap: fullWidth ? 10 : 6,
+      gap: 6,
       boxShadow: '0 3px 8px rgba(33, 150, 243, 0.35), inset 0 1px 0 rgba(255,255,255,0.3)',
       textTransform: 'uppercase',
       letterSpacing: '0.5px',
@@ -59,8 +57,8 @@ export default function UserButton({ style = {}, fullWidth = false }) {
     }
 
     const circleStyle = {
-      width: fullWidth ? 26 : 19,
-      height: fullWidth ? 26 : 19,
+      width: 19,
+      height: 19,
       borderRadius: '50%',
       background: '#fff',
       display: 'flex',

@@ -238,6 +238,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [wakeLockActive, setWakeLockActive] = useState(false) // Track wake lock status
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown, started }
   const [showIntervalModal, setShowIntervalModal] = useState(false) // Modal visibility (separate from countdown state)
+  const [lastEvent, setLastEvent] = useState(null) // { type, team, data, timestamp }
   const intervalDismissedRef = useRef(false) // Track when interval was manually dismissed
   const setIntervalDuration = useMemo(() => {
     const saved = localStorage.getItem('setIntervalDuration')
@@ -577,17 +578,29 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         winner: actionData.winner,
         homePoints: actionData.homePoints,
         awayPoints: actionData.awayPoints,
-        countdown: actionData.countdown
+        countdown: actionData.countdown,
+        homeSetsWon: actionData.homeSetsWon,
+        awaySetsWon: actionData.awaySetsWon
       })
-      setBetweenSetsCountdown({
-        countdown: actionData.countdown || 180,
-        startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
-        initialCountdown: actionData.countdown || 180,
-        started: true,
-        setIndex: actionData.setIndex,
-        winner: actionData.winner
-      })
-      setShowIntervalModal(true) // Show the modal overlay
+
+      // Check if match is finished (one team won 3 sets) - don't show interval
+      const isMatchFinishedNow = actionData.homeSetsWon >= 3 || actionData.awaySetsWon >= 3
+      if (isMatchFinishedNow) {
+        console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
+        // Clear any existing interval state - full-screen match ended view will show
+        setBetweenSetsCountdown(null)
+        setShowIntervalModal(false)
+      } else {
+        setBetweenSetsCountdown({
+          countdown: actionData.countdown || 180,
+          startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
+          initialCountdown: actionData.countdown || 180,
+          started: true,
+          setIndex: actionData.setIndex,
+          winner: actionData.winner
+        })
+        setShowIntervalModal(true) // Show the modal overlay
+      }
     } else if (action === 'end_timeout') {
       // Scoreboard ended the timeout - clear countdown and modal
       timeoutActiveRef.current = false
@@ -760,8 +773,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }
 
           // Handle substitution - flash effect only (no modal)
+          // Note: last_event_team is 'home'/'away', not 'left'/'right', so use directly
           if (state.last_event_type === 'substitution') {
-            const team = getTeamFromSide(state.last_event_team)
+            const team = state.last_event_team // Already 'home' or 'away'
             setRecentlySubstitutedPlayers(prev => [
               ...prev,
               { team, playerNumber: state.last_event_data?.playerIn, timestamp: Date.now() }
@@ -771,8 +785,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }
 
           // Handle libero entry/exit/exchange
+          // Note: last_event_team is 'home'/'away', not 'left'/'right', so use directly
           if (['libero_entry', 'libero_exit', 'libero_exchange'].includes(state.last_event_type)) {
-            const team = getTeamFromSide(state.last_event_team)
+            const team = state.last_event_team // Already 'home' or 'away'
             const playerNumber = state.last_event_data?.liberoNumber || state.last_event_data?.playerIn
             if (playerNumber) {
               setRecentlySubstitutedPlayers(prev => [
@@ -802,15 +817,36 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               last_event_type: state.last_event_type,
               last_event_data: state.last_event_data
             })
-            setBetweenSetsCountdown({
-              countdown: 180,
-              startTimestamp: Date.now(), // Generate timestamp for Supabase path
-              initialCountdown: 180,
-              started: true,
-              setIndex: state.last_event_data?.setIndex || state.current_set,
-              winner: state.last_event_data?.winner
+
+            // Check if match is finished (one team won 3 sets) - don't show interval
+            const isMatchFinishedNow = state.sets_won_a >= 3 || state.sets_won_b >= 3
+            if (isMatchFinishedNow) {
+              console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
+              // Clear any existing interval state - full-screen match ended view will show
+              setBetweenSetsCountdown(null)
+              setShowIntervalModal(false)
+            } else {
+              setBetweenSetsCountdown({
+                countdown: 180,
+                startTimestamp: Date.now(), // Generate timestamp for Supabase path
+                initialCountdown: 180,
+                started: true,
+                setIndex: state.last_event_data?.setIndex || state.current_set,
+                winner: state.last_event_data?.winner
+              })
+              setShowIntervalModal(true) // Show the modal overlay
+            }
+          }
+
+          // Store last event for footer display (only specific event types)
+          const displayableEvents = ['point', 'timeout', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_redesignation', 'set_end', 'sanction']
+          if (state.last_event_type && displayableEvents.includes(state.last_event_type)) {
+            setLastEvent({
+              type: state.last_event_type,
+              team: state.last_event_team,
+              data: state.last_event_data,
+              timestamp: Date.now()
             })
-            setShowIntervalModal(true) // Show the modal overlay
           }
 
           // ALWAYS refetch data on ANY change - handles points, lineups, subs, libero, sanctions, undoes, replays, etc.
@@ -1136,6 +1172,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Uses same alternating pattern as Scoreboard: odd sets = Team A on left, even sets = Team A on right
   const homeOnLeftFor2ndRef = useMemo(() => {
     if (!data?.currentSet) return true
+
+    // PRIORITY 1: Live state from server (Scoreboard source of truth)
+    // side_a indicates which side Team A is on ('left' or 'right')
+    if (data?.liveState?.side_a) {
+      const sideA = data.liveState.side_a
+      return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
+    }
+
     const setIndex = data.currentSet.index
     const setLeftTeamOverrides = data?.match?.setLeftTeamOverrides || {}
     const is5thSet = setIndex === 5
@@ -1159,7 +1203,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
     // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
     return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.currentSet, data?.match?.setLeftTeamOverrides, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, teamAKey])
+  }, [data?.currentSet, data?.match?.setLeftTeamOverrides, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, teamAKey, data?.liveState?.side_a])
 
   const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
 
@@ -1217,14 +1261,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       // For bench/official sanctions, show role abbreviation
       if (playerType === 'bench' || playerType === 'official') {
         if (role) {
-          // Map common roles to abbreviations
+          // Map common roles to abbreviations (lowercase keys for case-insensitive lookup)
           const roleMap = {
-            'coach': 'C', 'head_coach': 'C', 'headCoach': 'C',
-            'assistant_coach': 'AC', 'assistantCoach': 'AC', 'assistant': 'AC',
-            'trainer': 'T', 'therapist': 'T',
-            'doctor': 'Dr', 'medical': 'Dr',
-            'manager': 'M'
+            'coach': 'C',
+            'assistant coach 1': 'AC1',
+            'assistant coach 2': 'AC2',
+            'physiotherapist': 'PH',
+            'medic': 'M'
           }
+          // Fallback: first 2 letters of role if not in map
           return roleMap[role.toLowerCase()] || role.substring(0, 2).toUpperCase()
         }
         return playerNum || 'B' // B for bench if no specific identifier
@@ -1279,18 +1324,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       id: getIdentifier(s),
       isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
     }))
-
-    // Debug: log all sanctions for this team
-    if (teamSanctions.length > 0) {
-      console.log(`[Referee] Sanctions for ${teamKey}:`, teamSanctions.map(s => ({
-        type: s.payload?.type,
-        playerType: s.payload?.playerType,
-        playerNumber: s.payload?.playerNumber,
-        role: s.payload?.role,
-        isTeamWarning: s.payload?.isTeamWarning
-      })))
-      console.log(`[Referee] Warnings for ${teamKey}:`, warnings)
-    }
 
     return {
       // Formal warning: ANY warning to ANY team member (player, bench, official) triggers this
@@ -1675,8 +1708,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return !hasSetStarted
   }, [data?.sets, data?.set, data?.events])
 
+  // Check if match has ended (from liveState status or sets won)
+  const isMatchEnded = data?.liveState?.match_status === 'ended' ||
+    (data?.liveState?.sets_won_a >= 3 || data?.liveState?.sets_won_b >= 3) ||
+    (setsWon.home >= 3 || setsWon.away >= 3)
+
   // Check if we're in set interval (from liveState or local detection)
-  const isInSetInterval = data?.liveState?.set_interval_active || isBetweenSets
+  // But NOT if match is already finished
+  const isInSetInterval = !isMatchEnded && (data?.liveState?.set_interval_active || isBetweenSets)
   // During interval, currentSet is already the NEW set (Scoreboard creates it immediately on set_end)
   // So we should use currentSet.index directly, not add +1
   // Also check liveState.current_set which is already set to the next set index
@@ -1684,18 +1723,30 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ? (data?.liveState?.current_set || data?.currentSet?.index || 1)
     : null
 
-  // During set interval, show cleared values for the NEW set
-  const leftLineup = isInSetInterval ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
-  const rightLineup = isInSetInterval ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
-  const leftStats = isInSetInterval
+  // During set interval or match ended, show cleared values
+  const leftLineup = (isInSetInterval || isMatchEnded) ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
+  const rightLineup = (isInSetInterval || isMatchEnded) ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
+  const leftStats = (isInSetInterval || isMatchEnded)
     ? { timeouts: 0, substitutions: 0 }
     : (leftTeam === 'home' ? stats.home : stats.away)
-  const rightStats = isInSetInterval
+  const rightStats = (isInSetInterval || isMatchEnded)
     ? { timeouts: 0, substitutions: 0 }
     : (rightTeam === 'home' ? stats.home : stats.away)
-  // Current set points (always points, not sets won)
-  const leftPoints = leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0
-  const rightPoints = rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0
+
+  // Get the last finished set's final score for display when match ends
+  const lastFinishedSet = useMemo(() => {
+    if (!data?.sets) return null
+    const finishedSets = data.sets.filter(s => s.finished).sort((a, b) => b.index - a.index)
+    return finishedSets[0] || null
+  }, [data?.sets])
+
+  // Current set points - when match ended, show last set's final score
+  const leftPoints = isMatchEnded && lastFinishedSet
+    ? (leftTeam === 'home' ? lastFinishedSet.homePoints : lastFinishedSet.awayPoints)
+    : (leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  const rightPoints = isMatchEnded && lastFinishedSet
+    ? (rightTeam === 'home' ? lastFinishedSet.homePoints : lastFinishedSet.awayPoints)
+    : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
 
   // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon
   const liveStateSetsWonHome = teamAKey === 'home'
@@ -1710,8 +1761,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // During interval, show sets won; during play, show current set points
   const leftDisplayScore = leftPoints
   const rightDisplayScore = rightPoints
-  // Display set index - during interval show the NEXT set
-  const displaySetIndex = isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1)
+  // Display set index - during interval show the NEXT set, but never show more than Set 5
+  const displaySetIndex = Math.min(
+    isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1),
+    5
+  )
 
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
@@ -2300,7 +2354,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '7.5vmin',
+        fontSize: '6.5vmin',
         fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0,
@@ -2452,18 +2506,18 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     )
   }
 
-  // Check if match is finished
-  const isMatchFinished = setsWon.home === 3 || setsWon.away === 3
+  // Check if match is finished - use isMatchEnded which includes liveState check
+  const isMatchFinished = isMatchEnded
 
-  // Match finished info
+  // Match finished info - use liveState sets won for accurate data
   const matchWinner = isMatchFinished && data
-    ? (setsWon.home > setsWon.away
+    ? (liveStateSetsWonHome > liveStateSetsWonAway
       ? (data.homeTeam?.name || 'Home')
       : (data.awayTeam?.name || 'Away'))
     : ''
 
   const matchResult = isMatchFinished
-    ? `3:${Math.min(setsWon.home, setsWon.away)}`
+    ? `${Math.max(liveStateSetsWonHome, liveStateSetsWonAway)}:${Math.min(liveStateSetsWonHome, liveStateSetsWonAway)}`
     : ''
 
   // Team A/B short names for Results table (always available)
@@ -2871,7 +2925,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         minHeight: 0
       }}>
 
-        {/* SECTION 2A: Set Counter Row - 10% */}
+        {/* SECTION 2A: Set Counter Row - 8% */}
         <div style={{ flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'rgba(0, 0, 0, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
           {/* Left: Team Name (centered in its space) + A/B */}
           <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
@@ -2949,7 +3003,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
         </div>
 
-        {/* SECTION 2B: Score & Serve - 20% */}
+        {/* SECTION 2B: Score & Serve - 12% */}
         <div style={{
           flex: '0 0 15%',
           padding: '4px 0',
@@ -2964,201 +3018,123 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           minHeight: 0,
           height: '100%'
         }}>
-          {/* LEFT COLUMN - Serve indicator (1/5) */}
+          {/* Score row: SERVE indicator left | Score left | : | Score right | SERVE indicator right */}
           <div style={{
-            flex: '0 0 15%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            Height: '100%',
-            minWidth: 0,
-            overflow: 'hidden'
+            width: '100%',
+            maxWidth: '100%'
           }}>
-            {leftServing && (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '2px'
-              }}>
-                <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+            {/* LEFT SERVE indicator - fixed width to keep score centered */}
+            <div style={{
+              flex: '0 0 clamp(60px, 15vw, 120px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {leftServing && (
                 <div style={{
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0.5vmin',
-                  background: 'rgba(34, 197, 94, 0.15)',
-                  border: '2px solid var(--accent)',
-                  borderRadius: '8px',
-                  aspectRatio: '1/1',
-                  minWidth: '6vmin'
+                  gap: '2px'
                 }}>
-                  <span style={{ fontSize: '8vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
-                    {typeof leftLineup?.I === 'object' ? leftLineup?.I?.number : leftLineup?.I || ''}
-                  </span>
+                  <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '1vmin',
+                    background: 'rgba(34, 197, 94, 0.15)',
+                    border: '2px solid var(--accent)',
+                    borderRadius: '8px',
+                    aspectRatio: '1/1',
+                    minWidth: '6vmin'
+                  }}>
+                    <span style={{ fontSize: '7vmin', paddingBottom: '0.5vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {typeof leftLineup?.I === 'object' ? leftLineup?.I?.number : leftLineup?.I || ''}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* MIDDLE COLUMN - Score only (3/5) */}
-          <div style={{ flex: '0 0 70%', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
-            {/* Score row - perfectly centered colon */}
+            {/* Score section - takes remaining space */}
             <div style={{
+              flex: '1 1 auto',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '100%',
-              maxWidth: '100%'
+              gap: 'clamp(4px, 1vw, 12px)'
             }}>
-              {/* Left team side */}
-              <div style={{
-                flex: '1 1 0',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                paddingRight: 'clamp(4px, 1.5vw, 12px)',
-                minWidth: 0,
-                overflow: 'hidden'
+              {/* Left Score */}
+              <span style={{
+                fontFamily: getScoreFont(),
+                fontSize: '15vmin',
+                fontWeight: 600,
+                lineHeight: 1,
+                textAlign: 'right'
               }}>
-                {/* Ball indicator (if serving) + Score */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'clamp(6px, 2vw, 20px)'
-                }}>
-                  {/* Ball indicator for serving team */}
-                  <div style={{
-                    width: 'clamp(30px, 8vw, 60px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    {leftServing && (
-                      <img
-                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                        alt="Serving"
-                        style={{
-                          width: 'clamp(24px, 6vw, 50px)',
-                          height: 'clamp(24px, 6vw, 50px)',
-                          filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-                        }}
-                      />
-                    )}
-                  </div>
-                  <span style={{
-                    fontFamily: getScoreFont(),
-                    fontSize: '17vmin',
-                    fontWeight: 600,
-                    lineHeight: 1,
-                    textAlign: 'right'
-                  }}>
-                    {leftDisplayScore}
-                  </span>
-                </div>
-              </div>
+                {leftDisplayScore}
+              </span>
 
-              {/* Colon - fixed width, perfectly centered */}
-              <div style={{
-                flex: '0 0 auto',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
+              {/* Colon */}
+              <span style={{
+                fontFamily: getScoreFont(), fontSize: '11vmin', fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: '-0.5vmin'
+              }}>:</span>
+
+              {/* Right Score */}
+              < span style={{
+                fontFamily: getScoreFont(),
+                fontSize: '15vmin',
+                fontWeight: 600,
+                lineHeight: 1,
+                textAlign: 'left'
               }}>
-
-                <span style={{ fontFamily: getScoreFont(), fontSize: '7vmin', fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>:</span>
-              </div>
-
-              {/* Right team side */}
-              <div style={{
-                flex: '1 1 0',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                paddingLeft: 'clamp(4px, 1.5vw, 12px)',
-                minWidth: 0,
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'clamp(6px, 2vw, 20px)'
-                }}>
-                  <span style={{
-                    fontFamily: getScoreFont(),
-                    fontSize: '17vmin',
-                    fontWeight: 600,
-                    lineHeight: 1,
-                    textAlign: 'left'
-                  }}>
-                    {rightDisplayScore}
-                  </span>
-                  {/* Ball indicator for serving team */}
-                  <div style={{
-                    width: 'clamp(30px, 8vw, 60px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    {rightServing && (
-                      <img
-                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                        alt="Serving"
-                        style={{
-                          width: 'clamp(24px, 6vw, 50px)',
-                          height: 'clamp(24px, 6vw, 50px)',
-                          filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              </div>
+                {rightDisplayScore}
+              </span>
             </div>
-          </div>
 
-          {/* RIGHT COLUMN - Serve indicator (1/5) */}
-          <div style={{
-            flex: '0 0 15%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            Height: '100%',
-            minWidth: 0,
-            overflow: 'hidden'
-          }}>
-            {rightServing && (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '2px'
-              }}>
-                <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+            {/* RIGHT SERVE indicator - fixed width to keep score centered */}
+            <div style={{
+              flex: '0 0 clamp(60px, 15vw, 120px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {rightServing && (
                 <div style={{
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0.5vmin',
-                  background: 'rgba(34, 197, 94, 0.15)',
-                  border: '2px solid var(--accent)',
-                  borderRadius: '8px',
-                  aspectRatio: '1/1',
-                  minWidth: '6vmin'
+                  gap: '2px'
                 }}>
-                  <span style={{ fontSize: '8vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
-                    {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
-                  </span>
+                  <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0.5vmin',
+                    background: 'rgba(34, 197, 94, 0.15)',
+                    border: '2px solid var(--accent)',
+                    borderRadius: '8px',
+                    aspectRatio: '1/1',
+                    minWidth: '6vmin'
+                  }}>
+                    <span style={{ fontSize: '8vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
+                      {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
         {/* SECTION 3: Court Area - 40% (includes advanced mode buttons) */}
         <div style={{
-          flex: '0 0 45%',
+          flex: '0 0 40%',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -3250,7 +3226,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               position: 'relative',
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
-              borderRadius: '12px',
               background: 'linear-gradient(90deg, rgba(234, 179, 8, 0.12), rgba(234, 179, 8, 0.08))',
               border: '2px solid rgba(255, 255, 255, 0.1)',
               overflow: 'hidden'
@@ -3586,7 +3561,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     borderRadius: '8px'
                   }}>
                     <div style={{
-                      fontSize: 'clamp(14px, 3vw, 20px)',
+                      fontSize: 'clamp(3vmin, 6vmin, 12vmin)',
                       fontWeight: 700,
                       color: '#22c55e',
                       textAlign: 'center'
@@ -3622,13 +3597,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* SECTION 4: Combined TO/SUB counters + Sanctions - fills remaining space */}
         <div style={{
           flex: '1 1 auto',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'grid',
           gridTemplateColumns: 'auto 1fr auto',
           alignItems: 'center',
           padding: '6px 12px',
-          background: 'rgba(0, 0, 0, 0.15)',
+          background: 'rgba(0, 0, 0, 0.06)',
           gap: '12px',
-          minHeight: 0
+          minHeight: 0,
+          overflow: 'hidden'
         }}>
           {/* Left team counters - TO SUB (vertical stacked) */}
           <div style={{
@@ -3636,7 +3613,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '10px',
-            fontSize: 'clamp(16px, 4vw, 23px)',
+            fontSize: 'clamp(16px, 4vmin, 23vmin)',
             fontWeight: 700
           }}>
             {/* TO counter */}
@@ -3648,6 +3625,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 borderRadius: '6px',
                 border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
                 minWidth: '42px',
+                aspectRatio: '1',
                 textAlign: 'center',
                 color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
               }}>{leftStats.timeouts}</span>
@@ -3658,6 +3636,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <span style={{
                 background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
                 padding: '7px 14px',
+                aspectRatio: '1',
                 borderRadius: '6px',
                 border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
                 minWidth: '42px',
@@ -3682,19 +3661,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              gap: '4px'
+              gap: '4px',
+              border: '1px solid rgba(255,255,255,0.15)',
+              padding: '4px',
+              height: '100%',
+
             }}>
               {/* Sanctions title if any sanctions exist */}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(255, 255, 255, 1)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
               )}
+              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest) && (
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '2px',
+                  gap: '4px',
                   fontSize: '11px',
                   fontWeight: 600
                 }}>
@@ -3716,6 +3700,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </div>
               )}
+              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
               {(leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0 || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty) && (
                 <div style={{
@@ -3732,20 +3717,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         fontSize: '11px',
                         fontWeight: 700,
                         background: '#fde047',
+                        width: '50px',
+                        textAlign: 'center',
                         color: '#000',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>W-{w.id}</span>
+                      }}>W - {w.id}</span>
                     ))}
                     {leftTeamSanctions.delayWarning && (
                       <span style={{
                         fontSize: '11px',
                         fontWeight: 700,
+                        width: '50px',
+                        textAlign: 'center',
                         background: '#fde047',
                         color: '#000',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>DW</span>
+                      }}>D W</span>
                     )}
                   </div>
                   {/* Column 2: Penalties (P) + Delay Penalty */}
@@ -3756,19 +3745,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         fontWeight: 700,
                         background: '#ef4444',
                         color: '#fff',
+                        width: '50px',
                         padding: '1px 4px',
+                        textAlign: 'center',
                         borderRadius: '3px'
-                      }}>P-{p.id}</span>
+                      }}>P - {p.id}</span>
                     ))}
                     {leftTeamSanctions.delayPenalty && (
                       <span style={{
                         fontSize: '11px',
                         fontWeight: 700,
                         background: '#ef4444',
-                        color: '#fff',
+                        width: '50px',
+                        color: '#000000ff',
+                        textAlign: 'center',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>DP</span>
+                      }}>D P</span>
                     )}
                   </div>
                   {/* Column 3: Expulsions (E) */}
@@ -3778,11 +3771,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         fontSize: '11px',
                         fontWeight: 700,
                         background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-                        color: '#fff',
+                        color: '#000000ff',
+                        width: '50px',
                         padding: '1px 4px',
-                        borderRadius: '3px',
-                        textShadow: '0 0 2px #000'
-                      }}>E-{e.id}</span>
+                        textAlign: 'center',
+                        borderRadius: '3px'
+                      }}>E - {e.id}</span>
                     ))}
                   </div>
                   {/* Column 4: Disqualifications (D) */}
@@ -3791,12 +3785,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <span key={`d${i}`} style={{
                         fontSize: '11px',
                         fontWeight: 700,
-                        background: 'linear-gradient(135deg, #991b1b 50%, #fde047 50%)',
-                        color: '#fff',
+                        background: 'linear-gradient(90deg, #ef4444 50%, #fde047 50%)',
+                        color: '#000000ff',
+                        width: '50px',
                         padding: '1px 4px',
-                        borderRadius: '3px',
-                        textShadow: '0 0 2px #000'
-                      }}>D-{d.id}</span>
+                        textAlign: 'center',
+                        borderRadius: '3px'
+                      }}>D - {d.id}</span>
                     ))}
                   </div>
                 </div>
@@ -3831,13 +3826,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 </div>
               ) : (
                 <img
-                  src="/openvolley_dark_bg.png"
+                  src="/openvolley_no_bg.png"
                   alt="OpenVolley"
                   style={{
                     width: '100%',
                     height: '100%',
-                    maxWidth: '80px',
-                    maxHeight: '80px',
+                    maxWidth: '20vmin',
+                    aspectRatio: '1',
                     objectFit: 'contain',
                     opacity: 0.7
                   }}
@@ -3851,19 +3846,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              gap: '4px'
+              gap: '4px',
+              border: '1px solid rgba(255,255,255,0.15)',
+              padding: '4px',
+              height: '100%',
             }}>
               {/* Sanctions title if any sanctions exist */}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
               )}
+              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest) && (
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '2px',
+                  gap: '4px',
                   fontSize: '11px',
                   fontWeight: 600
                 }}>
@@ -3885,6 +3884,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </div>
               )}
+              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
               {(rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0 || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty) && (
                 <div style={{
@@ -3903,18 +3903,22 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         background: '#fde047',
                         color: '#000',
                         padding: '1px 4px',
-                        borderRadius: '3px'
-                      }}>W-{w.id}</span>
+                        borderRadius: '3px',
+                        width: '50px',
+                        textAlign: 'center',
+                      }}>W - {w.id}</span>
                     ))}
                     {rightTeamSanctions.delayWarning && (
                       <span style={{
                         fontSize: '11px',
                         fontWeight: 700,
+                        width: '50px',
+                        textAlign: 'center',
                         background: '#fde047',
                         color: '#000',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>DW</span>
+                      }}>D W</span>
                     )}
                   </div>
                   {/* Column 2: Penalties (P) + Delay Penalty */}
@@ -3924,20 +3928,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         fontSize: '11px',
                         fontWeight: 700,
                         background: '#ef4444',
-                        color: '#fff',
+                        color: '#000000ff',
+                        width: '50px',
+                        textAlign: 'center',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>P-{p.id}</span>
+                      }}>P - {p.id}</span>
                     ))}
                     {rightTeamSanctions.delayPenalty && (
                       <span style={{
                         fontSize: '11px',
                         fontWeight: 700,
                         background: '#ef4444',
-                        color: '#fff',
+                        color: '#000000ff',
                         padding: '1px 4px',
+                        width: '50px',
+                        textAlign: 'center',
                         borderRadius: '3px'
-                      }}>DP</span>
+                      }}>D P</span>
                     )}
                   </div>
                   {/* Column 3: Expulsions (E) */}
@@ -3947,11 +3955,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         fontSize: '11px',
                         fontWeight: 700,
                         background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-                        color: '#fff',
+                        color: '#000000ff',
                         padding: '1px 4px',
+                        width: '50px',
+                        textAlign: 'center',
                         borderRadius: '3px',
-                        textShadow: '0 0 2px #000'
-                      }}>E-{e.id}</span>
+                      }}>E - {e.id}</span>
                     ))}
                   </div>
                   {/* Column 4: Disqualifications (D) */}
@@ -3960,12 +3969,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <span key={`d${i}`} style={{
                         fontSize: '11px',
                         fontWeight: 700,
-                        background: 'linear-gradient(135deg, #991b1b 50%, #fde047 50%)',
-                        color: '#fff',
+                        width: '50px',
+                        textAlign: 'center',
+                        background: 'linear-gradient(90deg,#ef4444 50%, #fde047 50%)',
+                        color: '#000000ff',
                         padding: '1px 4px',
-                        borderRadius: '3px',
-                        textShadow: '0 0 2px #000'
-                      }}>D-{d.id}</span>
+                        borderRadius: '3px'
+
+                      }}>D - {d.id}</span>
                     ))}
                   </div>
                 </div>
@@ -3979,7 +3990,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '10px',
-            fontSize: 'clamp(16px, 4vw, 23px)',
+            fontSize: 'clamp(16px, 4vmin, 23vmin)',
             fontWeight: 700
           }}>
             {/* TO counter */}
@@ -3989,6 +4000,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
                 padding: '7px 14px',
                 borderRadius: '6px',
+                aspectRatio: '1',
                 border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
                 minWidth: '42px',
                 textAlign: 'center',
@@ -4002,6 +4014,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
                 padding: '7px 14px',
                 borderRadius: '6px',
+                aspectRatio: '1',
                 border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
                 minWidth: '42px',
                 textAlign: 'center',
@@ -4011,80 +4024,165 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
         </div>
 
+        {/* SECTION 5: Footer - Last Action - 40px */}
+        <div style={{
+          flex: '0 0 40px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 12px',
+          background: 'rgba(0, 0, 0, 0.3)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          fontSize: 'clamp(11px, 2.5vw, 14px)',
+          color: 'rgba(255, 255, 255, 0.7)',
+          overflow: 'hidden',
+          minHeight: 0
+        }}>
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            <span style={{ opacity: 0.6, fontWeight: 500 }}>{t('refereeDashboard.lastAction')}:</span>
+            {lastEvent ? (
+              <>
+                <span style={{ opacity: 0.5 }}>
+                  {new Date(lastEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <span style={{ fontWeight: 600 }}>
+                  {(() => {
+                    // lastEvent.team is 'home' or 'away', need to map to display values
+                    const teamLbl = lastEvent.team === 'home' ? homeLabel : lastEvent.team === 'away' ? awayLabel : ''
+                    const teamShort = lastEvent.team === 'home' ? (data?.match?.homeShortName || data?.homeTeam?.name || 'Home') : lastEvent.team === 'away' ? (data?.match?.awayShortName || data?.awayTeam?.name || 'Away') : ''
+                    const scoreStr = `(${leftDisplayScore}-${rightDisplayScore})`
+                    const teamInfo = teamLbl ? `${teamLbl} ${teamShort} ${scoreStr}` : ''
+
+                    if (lastEvent.type === 'point') return `${t('refereeDashboard.events.point')} ${teamInfo}`
+                    if (lastEvent.type === 'timeout') return `${t('refereeDashboard.events.timeout')} ${teamInfo}`
+                    if (lastEvent.type === 'substitution') return `${t('refereeDashboard.events.substitution')} ${teamInfo}: #${lastEvent.data?.playerOut} → #${lastEvent.data?.playerIn}`
+                    if (lastEvent.type === 'libero_entry') return `${t('refereeDashboard.events.liberoIn')} ${teamInfo}`
+                    if (lastEvent.type === 'libero_exit') return `${t('refereeDashboard.events.liberoOut')} ${teamInfo}`
+                    if (lastEvent.type === 'libero_exchange') return `${t('refereeDashboard.events.liberoExchange')} ${teamInfo}`
+                    if (lastEvent.type === 'libero_redesignation') return `${t('refereeDashboard.events.liberoRedesignation')} ${teamInfo}`
+                    if (lastEvent.type === 'set_end') return t('refereeDashboard.events.setEnd', { set: lastEvent.data?.setIndex || '' })
+                    if (lastEvent.type === 'sanction') {
+                      const sanctionData = lastEvent.data || {}
+                      // Short sanction type labels
+                      const sanctionTypeShort = {
+                        'improper_request': 'IR',
+                        'delay_warning': 'DW',
+                        'delay_penalty': 'DP',
+                        'warning': 'W',
+                        'penalty': 'P',
+                        'expulsion': 'EXP',
+                        'disqualification': 'DQ'
+                      }[sanctionData.type] || sanctionData.type || ''
+
+                      // For delay and IR, no member info needed
+                      const isDelayOrIR = ['delay_warning', 'delay_penalty', 'improper_request'].includes(sanctionData.type)
+
+                      let memberInfo = ''
+                      if (!isDelayOrIR) {
+                        if (sanctionData.playerNumber) {
+                          memberInfo = `#${sanctionData.playerNumber}`
+                        } else if (sanctionData.role) {
+                          // For officials: coach, assistant coach, etc.
+                          memberInfo = sanctionData.role
+                        } else if (sanctionData.playerType) {
+                          memberInfo = sanctionData.playerType
+                        }
+                      }
+
+                      const parts = [sanctionTypeShort, teamInfo, memberInfo].filter(Boolean)
+                      return parts.join(' ')
+                    }
+                    return ''
+                  })()}
+                </span>
+              </>
+            ) : (
+              <span style={{ opacity: 0.4 }}>{t('refereeDashboard.events.noAction')}</span>
+            )}
+          </span>
+        </div>
+
       </div>{/* End main content wrapper */}
 
       {/* Test Mode Controls - only shown in test mode */}
-      {(matchId === -1 || data?.match?.test === true) && (
-        <TestModeControls
-          matchId={matchId}
-          onRefresh={async () => {
-            console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
-            // In test mode, reload from local IndexedDB
-            try {
-              const match = await db.matches.get(matchId)
-              const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
-              const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
-              const homeTeam = await db.teams.get(match?.homeTeamId)
-              const awayTeam = await db.teams.get(match?.awayTeamId)
+      {
+        (matchId === -1 || data?.match?.test === true) && (
+          <TestModeControls
+            matchId={matchId}
+            onRefresh={async () => {
+              console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
+              // In test mode, reload from local IndexedDB
+              try {
+                const match = await db.matches.get(matchId)
+                const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+                const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
+                const homeTeam = await db.teams.get(match?.homeTeamId)
+                const awayTeam = await db.teams.get(match?.awayTeamId)
 
-              console.log('[TestModeControls] Reloaded from IndexedDB:', {
-                matchId,
-                sets: sets.length,
-                events: events.length,
-                currentSet: sets.find(s => !s.finished)?.index
-              })
+                console.log('[TestModeControls] Reloaded from IndexedDB:', {
+                  matchId,
+                  sets: sets.length,
+                  events: events.length,
+                  currentSet: sets.find(s => !s.finished)?.index
+                })
 
-              // Update state with fresh local data
-              setData({
-                success: true,
-                match,
-                homeTeam,
-                awayTeam,
-                sets,
-                events
-              })
-            } catch (err) {
-              console.error('[TestModeControls] Error reloading from IndexedDB:', err)
-            }
-          }}
-        />
-      )}
+                // Update state with fresh local data
+                setData({
+                  success: true,
+                  match,
+                  homeTeam,
+                  awayTeam,
+                  sets,
+                  events
+                })
+              } catch (err) {
+                console.error('[TestModeControls] Error reloading from IndexedDB:', err)
+              }
+            }}
+          />
+        )
+      }
       {/* Scorer Attention Modal */}
-      {attentionModalOpen && (
-        <Modal
-          title="Attention Required"
-          open={true}
-          onClose={() => setAttentionModalOpen(false)}
-          width={400}
-          hideCloseButton={true}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <div style={{ marginBottom: '16px', fontSize: '48px' }}>🔔</div>
-            <p style={{ marginBottom: '8px', fontSize: '20px', fontWeight: 700, color: '#ef4444' }}>
-              Scorer Needs Attention!
-            </p>
-            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-              The scorer has triggered the alarm bell. Please check the scoresheet.
-            </p>
-            <button
-              onClick={() => setAttentionModalOpen(false)}
-              style={{
-                width: '100%',
-                padding: '16px',
-                fontSize: '18px',
-                fontWeight: 700,
-                background: '#ef4444',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
-            >
-              Acknowledge
-            </button>
-          </div>
-        </Modal>
-      )}
-    </div>
+      {
+        attentionModalOpen && (
+          <Modal
+            open={true}
+            onClose={() => setAttentionModalOpen(false)}
+            width={400}
+            hideCloseButton={true}
+          >
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              <div style={{ marginBottom: '16px', fontSize: '48px' }}>🔔</div>
+              <p style={{ marginBottom: '20px', fontSize: '3vmin', fontWeight: 700, color: '#ef4444' }}>
+                Scorer Needs Attention!
+              </p>
+              <button
+                onClick={() => setAttentionModalOpen(false)}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  background: '#ef4444',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Acknowledge
+              </button>
+            </div>
+          </Modal>
+        )
+      }
+    </div >
   )
 }

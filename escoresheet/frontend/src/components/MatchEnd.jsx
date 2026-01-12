@@ -109,11 +109,23 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
         <div style={{ display: 'flex', gap: '8px' }}>
           <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, position: 'relative', color: '#000' }}>
             A
-            {improperRequests.teamA && <span style={{ position: 'absolute', fontSize: '28px', color: '#000' }}>×</span>}
+            {improperRequests.teamA && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" style={{ display: 'block' }}>
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </div>
+            )}
           </div>
           <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, position: 'relative', color: '#000' }}>
             B
-            {improperRequests.teamB && <span style={{ position: 'absolute', fontSize: '28px', color: '#000' }}>×</span>}
+            {improperRequests.teamB && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" style={{ display: 'block' }}>
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -500,12 +512,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
   // Check if optional fields exist
   // Check if officials array has these roles
-  const hasAsstScorer = match.asstScorerSignature !== undefined || 
-    (Array.isArray(match.officials) && match.officials.some(o => 
+  const hasAsstScorer = match.asstScorerSignature !== undefined ||
+    (Array.isArray(match.officials) && match.officials.some(o =>
       o.role?.toLowerCase() === 'assistant scorer' || o.role?.toLowerCase() === 'assistant_scorer'
     ))
-  const hasRef2 = match.ref2Signature !== undefined || 
-    (Array.isArray(match.officials) && match.officials.some(o => 
+  const hasRef2 = match.ref2Signature !== undefined ||
+    (Array.isArray(match.officials) && match.officials.some(o =>
       o.role?.toLowerCase() === '2nd referee' || o.role?.toLowerCase() === '2nd_referee'
     ))
 
@@ -856,6 +868,31 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         referee1Signature: null
       })
 
+      // Delete the set_end event for this set to keep event log clean
+      // Find set_end event for this set
+      const setEndEvent = await db.events
+        .where({ matchId: matchId })
+        .filter(e => e.type === 'set_end' && e.setIndex === lastSet.index)
+        .first()
+
+      if (setEndEvent) {
+        console.log('[MatchEnd] Deleting set_end event:', setEndEvent.id)
+        await db.events.delete(setEndEvent.id)
+
+        // Also queue deletion for Supabase
+        if (match?.seed_key) {
+          await db.sync_queue.add({
+            resource: 'event',
+            action: 'delete',
+            payload: {
+              id: setEndEvent.id // Send ID to delete
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
+      }
+
       // Queue sync to Supabase for the set update
       if (match?.seed_key) {
         await db.sync_queue.add({
@@ -1169,6 +1206,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             padding: '24px',
             maxWidth: '450px',
             width: '90%',
+            background: 'rgba(0, 0, 0, 0.8)',
             textAlign: 'center'
           }}>
             <h3 style={{ margin: '0 0 16px 0' }}>Reopen Last Set?</h3>

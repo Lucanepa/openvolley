@@ -1,4 +1,4 @@
-export default function Modal({ title, open, onClose, children, width = 800, hideCloseButton = false, position = 'center', customStyle = {} }) {
+export default function Modal({ title, open, onClose, children, width = 800, hideCloseButton = false, position = 'center', customStyle = {}, zIndex = 1000 }) {
   if (!open) return null
   const widthStyle = width === 'auto' ? 'auto' : `min(95vw,${width}px)`
 
@@ -12,7 +12,7 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
   if (position === 'custom') {
     return (
       <div
-        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:1000, pointerEvents:'auto' }}
+        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex, pointerEvents:'auto' }}
         onClick={handleBackdropClick}
         onTouchStart={handleBackdropClick}
       >
@@ -43,8 +43,8 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
 
   // Regular positioning
   const overlayStyle = position === 'left' || position === 'right'
-    ? { position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'flex', alignItems:'center', justifyContent: position === 'left' ? 'flex-start' : 'flex-end', zIndex:1000, padding: '0 20px' }
-    : { position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }
+    ? { position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'flex', alignItems:'center', justifyContent: position === 'left' ? 'flex-start' : 'flex-end', zIndex, padding: '0 20px' }
+    : { position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex }
 
   return (
     <div
