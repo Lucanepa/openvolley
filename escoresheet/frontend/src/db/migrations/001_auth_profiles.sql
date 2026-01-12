@@ -30,16 +30,16 @@ END $$;
 CREATE TABLE IF NOT EXISTS user_matches (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  match_id TEXT REFERENCES matches(external_id) ON DELETE CASCADE NOT NULL,
+  match_external_id TEXT REFERENCES matches(external_id) ON DELETE CASCADE NOT NULL,
   role TEXT NOT NULL,  -- 'scorer', '1st referee', '2nd referee', 'assistant scorer'
   created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(user_id, match_id, role)
+  UNIQUE(user_id, match_external_id, role)
 );
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_matches_user_id ON user_matches(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_matches_match_id ON user_matches(match_id);
+CREATE INDEX IF NOT EXISTS idx_user_matches_match_id ON user_matches(match_external_id);
 
 -- Enable Row Level Security
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;

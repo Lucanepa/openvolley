@@ -115,7 +115,6 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <input
                             type="text"
                             className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
-                            placeholder=""
                             value={match?.championshipTypeOther || ''}
                             onChange={e => {
                                 if (typeof match === 'object' && match !== null && typeof match.setChampionshipTypeOther === 'function') {
@@ -123,6 +122,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                                 }
                             }}
                             disabled={!((match && typeof match.setChampionshipTypeOther === 'function'))}
+                            aria-label="Other championship type"
                         />
                     </div>
                 </div>
@@ -180,13 +180,13 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <input
                              type="text"
                              className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
-                             placeholder=""
                              value={match?.match_type_3_other || ''}
                              onChange={e => {
                                  if (typeof match === 'object' && match !== null && typeof match.setMatchType3Other === 'function') {
                                      match.setMatchType3Other(e.target.value);
                                  }
                              }}
+                             aria-label="Other age category"
                              disabled={!((match && typeof match.setMatchType3Other === 'function'))}
                          />
                      </div>
@@ -225,28 +225,31 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
 
       {/* Teams and Location */}
       <div className="grid grid-cols-12 gap-0 border-t border-black text-xs">
-        {/* Teams: 6 cols with A/B circles spanning both rows */}
-        <div className="col-span-6 border-r border-black px-2 flex">
-            {/* Circle for home team (left) - shows A or B based on coin toss */}
-            <div className="flex items-center justify-center px-1">
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}</div>
-            </div>
-            {/* Teams content - TEAMS header and team names (always home left, away right) */}
-            <div className="flex-1 flex flex-col justify-between">
-                <div className="w-full text-center mb-0.5">
-                    <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+        {/* Teams: 5-column grid layout with TEAMS above VS */}
+        <div className="col-span-6 border-r border-black px-2 py-1">
+            {/* 5-column grid: Circle | Home Name | TEAMS/VS | Away Name | Circle */}
+            <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-1">
+                {/* Col 1: Left circle (Home team A/B) - vertically centered */}
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
+                    {coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}
                 </div>
-                <div className="flex items-end gap-1 mb-0.5">
-                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{homeTeam?.name || ''}</div>
-                    <div className="flex items-center h-full">
-                        <span className="text-base font-bold text-gray-500 italic">VS</span>
-                    </div>
-                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{awayTeam?.name || ''}</div>
+                {/* Col 2: Home team name - vertically centered */}
+                <div className="font-bold text-[18px] uppercase text-center bg-white">
+                    {homeTeam?.name || ''}
                 </div>
-            </div>
-            {/* Circle for away team (right) - shows B or A based on coin toss */}
-            <div className="flex items-center justify-center px-1">
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}</div>
+                {/* Col 3: TEAMS label above VS */}
+                <div className="flex flex-col items-center px-2">
+                    <span className="text-[12px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+                    <span className="text-base font-bold text-gray-500 italic">VS</span>
+                </div>
+                {/* Col 4: Away team name - vertically centered */}
+                <div className="font-bold text-[18px] uppercase text-center bg-white">
+                    {awayTeam?.name || ''}
+                </div>
+                {/* Col 5: Right circle (Away team A/B) - vertically centered */}
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
+                    {coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}
+                </div>
             </div>
         </div>
 

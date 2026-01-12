@@ -5,6 +5,8 @@ export default function ConnectionStatus({
   connectionStatuses = {},
   connectionDebugInfo = {},
   onCheckStatus,
+  onRetryErrors,
+  queueStats = { pending: 0, error: 0 },
   position = 'right', // 'left' | 'right' | 'center'
   size = 'normal' // 'normal' | 'small' | 'large'
 }) {
@@ -133,14 +135,14 @@ export default function ConnectionStatus({
     // Helper to check if a status is considered "OK"
     const isStatusOk = (status) => {
       return status === 'connected' ||
-             status === 'live' ||
-             status === 'scheduled' ||
-             status === 'synced' ||
-             status === 'syncing' ||
-             status === 'test_mode' ||
-             status === 'not_applicable' ||
-             status === 'not_available' ||
-             status === 'no_match' // No match is OK - just waiting for match selection
+        status === 'live' ||
+        status === 'scheduled' ||
+        status === 'synced' ||
+        status === 'syncing' ||
+        status === 'test_mode' ||
+        status === 'not_applicable' ||
+        status === 'not_available' ||
+        status === 'no_match' // No match is OK - just waiting for match selection
     }
 
     const serverStatus = connectionStatuses.server
@@ -177,7 +179,7 @@ export default function ConnectionStatus({
     return 'connected'
   }
 
-  const overallStatus = getOverallStatus()
+  const overallStatus = queueStats.error > 0 ? 'attention' : getOverallStatus()
   const statusInfo = getStatusColor(overallStatus)
 
   const sizeStyles = {
@@ -240,15 +242,28 @@ export default function ConnectionStatus({
           background: statusInfo.dot
         }}></span>
         <span>
-          {overallStatus === 'connected' ? 'Connected' : 
-           overallStatus === 'awaiting_match' ? 'Ready' : 
-           'Error'}
+          {overallStatus === 'connected' ? (queueStats.pending > 0 ? 'Syncing...' : 'Connected') :
+            overallStatus === 'awaiting_match' ? 'Ready' :
+              'Error'}
+          {queueStats.error > 0 && (
+            <span style={{
+              background: '#ef4444',
+              color: '#fff',
+              fontSize: '9px',
+              borderRadius: '10px',
+              padding: '0px 5px',
+              marginLeft: '4px',
+              fontWeight: 800
+            }}>
+              {queueStats.error}
+            </span>
+          )}
         </span>
         <span style={{ fontSize: `${parseInt(currentSize.fontSize) - 2}px`, marginLeft: '4px' }}>
           {showConnectionMenu ? '▲' : '▼'}
         </span>
       </div>
-      
+
       {/* Connection Status Menu */}
       {showConnectionMenu && (
         <div
@@ -284,16 +299,16 @@ export default function ConnectionStatus({
           </div>
           {Object.entries(connectionStatuses).map(([key, status]) => {
             const itemStatusInfo = getStatusColor(status, key)
-            
+
             let displayText = itemStatusInfo.text
             if (key === 'match' && status !== 'no_match' && status !== 'unknown') {
               displayText = status.charAt(0).toUpperCase() + status.slice(1)
             }
-            
+
             const isConnected = status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing'
             const isReady = key === 'match' && status === 'no_match'
             const debugInfo = connectionDebugInfo[key]
-            
+
             return (
               <div key={key} style={{ position: 'relative' }} data-debug-menu>
                 <div
@@ -345,7 +360,54 @@ export default function ConnectionStatus({
                     )}
                   </div>
                 </div>
-                
+
+                {/* Queue Stats for Supabase */}
+                {key === 'supabase' && (queueStats.pending > 0 || queueStats.error > 0) && (
+                  <div style={{
+                    padding: '8px',
+                    margin: '0 8px 8px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    {queueStats.pending > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#3b82f6' }}>
+                        <span>Pending background sync:</span>
+                        <span style={{ fontWeight: 700 }}>{queueStats.pending}</span>
+                      </div>
+                    )}
+                    {queueStats.error > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ef4444' }}>
+                        <span>Synchronization errors:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 700 }}>{queueStats.error}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onRetryErrors?.()
+                            }}
+                            style={{
+                              padding: '2px 8px',
+                              background: '#ef4444',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Retry All
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Debug Menu - inline instead of absolute to avoid overflow */}
                 {!isConnected && !isReady && showDebugMenu === key && (
                   <div

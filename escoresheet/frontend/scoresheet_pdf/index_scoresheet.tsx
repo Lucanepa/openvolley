@@ -5,18 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import App from './App_Scoresheet';
 
 // Initialize Dexie database (same as main app)
-const db = new Dexie('escoresheet');
-db.version(11).stores({
-  teams: '++id,name,createdAt',
-  players: '++id,teamId,number,name,role,createdAt',
-  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
-  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
-  events: '++id,matchId,setIndex,ts,type,payload,seq',
-  sync_queue: '++id,resource,action,payload,ts,status',
-  match_setup: '++id,updatedAt',
-  referees: '++id,seedKey,lastName,createdAt',
-  scorers: '++id,seedKey,lastName,createdAt'
-});
+import { db } from '../src/db/db';
 
 // Helper function to send errors to parent window
 const sendErrorToParent = (error: Error | string, details?: string) => {

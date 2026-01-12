@@ -342,7 +342,10 @@
       "substitute": "Sostituisci",
       "undo": "Annulla",
       "replay": "Ripeti scambio",
-      "decisionChange": "Cambio decisione"
+      "decisionChange": "Cambio decisione",
+      "switchSides": "Inverti lati",
+      "switchServe": "Inverti servizio",
+      "confirmSet5Setup": "Conferma Set 5"
     },
     "sync": {
       "syncing": "Sincronizzazione...",

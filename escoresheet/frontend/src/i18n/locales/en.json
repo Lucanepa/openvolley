@@ -342,7 +342,10 @@
       "substitute": "Substitute",
       "undo": "Undo",
       "replay": "Replay Rally",
-      "decisionChange": "Decision Change"
+      "decisionChange": "Decision Change",
+      "switchSides": "Switch Sides",
+      "switchServe": "Switch Serve",
+      "confirmSet5Setup": "Confirm Set 5 Setup"
     },
     "sync": {
       "syncing": "Syncing...",

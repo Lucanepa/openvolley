@@ -19,7 +19,7 @@ import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { supabase } from '../lib/supabaseClient'
 import { generateMatchSeedKey } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
-import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
+import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -280,10 +280,10 @@ const OfficialCard = memo(function OfficialCard({
       {isExpanded && (
         <div style={{ padding: '16px' }}>
           <div className="row">
-            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="w-name capitalize" value={lastName} onChange={e=>setLastName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="w-name capitalize" value={firstName} onChange={e=>setFirstName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.country')}</label><input className="w-90" value={country} onChange={e=>setCountry(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e=>setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="w-name capitalize" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="w-name capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.country')}</label><input className="w-90" value={country} onChange={e => setCountry(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
           </div>
         </div>
       )}
@@ -338,12 +338,12 @@ const LineJudgesCard = memo(function LineJudgesCard({
       {isExpanded && (
         <div style={{ padding: '16px' }}>
           <div className="row">
-            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="w-name capitalize" value={lineJudge1} onChange={e=>setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="w-name capitalize" value={lineJudge2} onChange={e=>setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="w-name capitalize" value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="w-name capitalize" value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
           </div>
           <div className="row">
-            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="w-name capitalize" value={lineJudge3} onChange={e=>setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="w-name capitalize" value={lineJudge4} onChange={e=>setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="w-name capitalize" value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="w-name capitalize" value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
           </div>
         </div>
       )}
@@ -516,7 +516,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     { value: 'Physiotherapist', label: 'P', fullLabel: 'Physiotherapist' },
     { value: 'Medic', label: 'M', fullLabel: 'Medic' }
   ]
-  
+
   const getRoleOrder = (role) => {
     const roleMap = {
       'Coach': 0,
@@ -527,11 +527,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
     return roleMap[role] ?? 999
   }
-  
+
   const sortBenchByHierarchy = (bench) => {
     return [...bench].sort((a, b) => getRoleOrder(a.role) - getRoleOrder(b.role))
   }
-  
+
   const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
   const [benchHome, setBenchHome] = useState([
     initBench('Coach')
@@ -547,17 +547,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
   const [noticeModal, setNoticeModal] = useState(null) // { message: string, type?: 'success' | 'error' } | null
   const [testRosterConfirm, setTestRosterConfirm] = useState(null) // 'home' | 'away' | null
-  
+
   // Show both rosters in match setup
   const [showBothRosters, setShowBothRosters] = useState(false)
-  
+
   // Referee connection
   const [refereeConnectionEnabled, setRefereeConnectionEnabled] = useState(false)
   const [editPinModal, setEditPinModal] = useState(false)
   const [editPinType, setEditPinType] = useState(null) // 'referee', 'benchHome', 'benchAway'
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
-  
+
   // Bench connection - separate for each team
   const [homeTeamConnectionEnabled, setHomeTeamConnectionEnabled] = useState(false)
   const [awayTeamConnectionEnabled, setAwayTeamConnectionEnabled] = useState(false)
@@ -703,14 +703,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [awayCoachSignature, setAwayCoachSignature] = useState(null)
   const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
   const [savedSignatures, setSavedSignatures] = useState({ homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null })
-  
+
   // Check if coin toss was previously confirmed (all signatures match saved ones)
   const isCoinTossConfirmed = useMemo(() => {
     return homeCoachSignature && homeCaptainSignature && awayCoachSignature && awayCaptainSignature &&
-           homeCoachSignature === savedSignatures.homeCoach &&
-           homeCaptainSignature === savedSignatures.homeCaptain &&
-           awayCoachSignature === savedSignatures.awayCoach &&
-           awayCaptainSignature === savedSignatures.awayCaptain
+      homeCoachSignature === savedSignatures.homeCoach &&
+      homeCaptainSignature === savedSignatures.homeCaptain &&
+      awayCoachSignature === savedSignatures.awayCoach &&
+      awayCaptainSignature === savedSignatures.awayCaptain
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
 
   // Load match data if matchId is provided
@@ -752,7 +752,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         benchAway: JSON.parse(JSON.stringify(benchAway))
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView])
 
   // Clean up stale error jobs with legacy columns on mount
@@ -1026,7 +1026,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!matchId) return
     if (!match) return // Wait for match to be loaded from useLiveQuery
     if (rosterLoadedRef.current) return // Already loaded for this matchId - don't reload to preserve user edits
-    
+
     async function loadInitialData() {
       try {
         // Load teams
@@ -1034,7 +1034,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
           match.awayTeamId ? db.teams.get(match.awayTeamId) : null
         ])
-        
+
         if (homeTeam) {
           setHome(homeTeam.name)
           setHomeColor(homeTeam.color || '#ef4444')
@@ -1043,7 +1043,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           setAway(awayTeam.name)
           setAwayColor(awayTeam.color || '#3b82f6')
         }
-        
+
         const normalizeBenchMember = member => ({
           role: member?.role || '',
           firstName: member?.firstName || member?.first_name || '',
@@ -1051,41 +1051,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || ''
         })
 
-        // DEBUG: Log match bench data
-        console.log('[MatchSetup DEBUG] Match object bench_home:', match.bench_home)
-        console.log('[MatchSetup DEBUG] Match object bench_away:', match.bench_away)
-        console.log('[MatchSetup DEBUG] homeTeam.benchStaff:', homeTeam?.benchStaff)
-        console.log('[MatchSetup DEBUG] awayTeam.benchStaff:', awayTeam?.benchStaff)
-
         // For bench officials: only load if match has saved bench data
         // For brand new/empty matches, keep default (Coach only) - don't load from team.benchStaff
         const resolvedHomeBench = (() => {
           // Only load if match explicitly has bench_home data
           if (Array.isArray(match.bench_home) && match.bench_home.length > 0) {
-            console.log('[MatchSetup DEBUG] Using match.bench_home:', match.bench_home)
             return match.bench_home.map(normalizeBenchMember)
           }
           // For new/empty matches, only show Coach (don't load from team.benchStaff)
-          console.log('[MatchSetup DEBUG] No bench_home on match, using default Coach')
           return [initBench('Coach')]
         })()
 
         const resolvedAwayBench = (() => {
           // Only load if match explicitly has bench_away data
           if (Array.isArray(match.bench_away) && match.bench_away.length > 0) {
-            console.log('[MatchSetup DEBUG] Using match.bench_away:', match.bench_away)
             return match.bench_away.map(normalizeBenchMember)
           }
           // For new/empty matches, only show Coach (don't load from team.benchStaff)
-          console.log('[MatchSetup DEBUG] No bench_away on match, using default Coach')
           return [initBench('Coach')]
         })()
 
-        console.log('[MatchSetup DEBUG] Final resolvedHomeBench:', resolvedHomeBench)
-        console.log('[MatchSetup DEBUG] Final resolvedAwayBench:', resolvedAwayBench)
         setBenchHome(resolvedHomeBench)
         setBenchAway(resolvedAwayBench)
-        
+
         // Update input widths when teams are loaded - use the actual loaded team names
         setTimeout(() => {
           if (homeTeamMeasureRef.current && homeTeamInputRef.current) {
@@ -1101,7 +1089,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
           }
         }, 100)
-        
+
         // Load match info - use safe parser to handle invalid dates
         if (match.scheduledAt) {
           const parsed = safeParseScheduledAt(match.scheduledAt)
@@ -1127,29 +1115,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         }
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
-        
+
         // Generate PINs if they don't exist (for matches created before PIN feature)
         const generatePinCode = (existingPins = []) => {
           const chars = '0123456789'
           let pin = ''
           let attempts = 0
           const maxAttempts = 100
-          
+
           do {
             pin = ''
-          for (let i = 0; i < 6; i++) {
-            pin += chars.charAt(Math.floor(Math.random() * chars.length))
-          }
+            for (let i = 0; i < 6; i++) {
+              pin += chars.charAt(Math.floor(Math.random() * chars.length))
+            }
             attempts++
             if (attempts >= maxAttempts) {
               // If we can't generate a unique PIN after many attempts, just return this one
               break
             }
           } while (existingPins.includes(pin))
-          
+
           return pin
         }
-        
+
         const updates = {}
         const existingPins = []
         if (!match.refereePin) {
@@ -1221,7 +1209,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
           }
         }
-        
+
         // Load players only on initial load (when matchId changes, not when match updates)
         // Skip if roster was already loaded from draft (to preserve user edits like number/captain changes)
         if (match.homeTeamId && !rosterLoadedFromDraft.current.home) {
@@ -1248,7 +1236,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isCaptain: p.isCaptain || false
           })))
         }
-        
+
         // Load referee connection setting (default to disabled if not set)
         setRefereeConnectionEnabled(match.refereeConnectionEnabled === true)
 
@@ -1267,13 +1255,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (Object.keys(connectionUpdates).length > 0) {
           await db.matches.update(matchId, connectionUpdates)
         }
-        
+
         // Mark roster as loaded
         rosterLoadedRef.current = true
-        
+
         // Bench officials are already loaded above via resolvedHomeBench/resolvedAwayBench
         // This section is kept for backward compatibility but should not override if already set
-        
+
         // Load match officials
         if (match.officials && match.officials.length > 0) {
           const ref1 = match.officials.find(o => o.role === '1st referee')
@@ -1349,12 +1337,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     loadInitialData()
   }, [matchId, match]) // Depend on both matchId and match - but only load once per matchId due to rosterLoadedRef check
-  
+
   // Reset roster loaded flag when matchId changes
   useEffect(() => {
     rosterLoadedRef.current = false
   }, [matchId])
-  
+
   // Update effect - runs when match changes (for connection settings, etc.)
   useEffect(() => {
     if (!matchId || !match) return
@@ -1396,12 +1384,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Server management - Only check in Electron
   useEffect(() => {
     const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
-    
+
     // Only check server status in Electron mode
     if (!isElectron) {
       return
     }
-    
+
     const checkServerStatus = async () => {
       try {
         const status = await window.electronAPI.server.getStatus()
@@ -1411,7 +1399,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         setServerRunning(false)
       }
     }
-    
+
     checkServerStatus()
     const interval = setInterval(checkServerStatus, 5000)
     return () => clearInterval(interval)
@@ -1419,7 +1407,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   const handleStartServer = async () => {
     const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
-    
+
     if (!isElectron) {
       // In browser/PWA - show instructions via copy button
       try {
@@ -1444,7 +1432,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
       return
     }
-    
+
     setServerLoading(true)
     try {
       const result = await window.electronAPI.server.start({ https: true })
@@ -1467,7 +1455,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setServerLoading(true)
     try {
       const isElectron = typeof window !== 'undefined' && window.electronAPI?.server
-      
+
       if (isElectron) {
         const result = await window.electronAPI.server.stop()
         if (result.success) {
@@ -1484,13 +1472,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   const registerAsMainInstance = async () => {
     if (!serverStatus) return
-    
+
     try {
       const protocol = serverStatus.protocol || 'https'
       const host = serverStatus.localIP || serverStatus.hostname || 'escoresheet.local'
       const port = serverStatus.port || 5173
       const url = `${protocol}://${host}:${port}/api/server/register-main`
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -1498,7 +1486,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           'Content-Type': 'application/json'
         }
       })
-      
+
       if (response.ok) {
         const result = await response.json()
         if (!result.success) {
@@ -1524,7 +1512,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Load saved draft data on mount (only if no matchId)
   useEffect(() => {
     if (matchId) return // Skip draft loading if matchId is provided
-    
+
     async function loadDraft() {
       try {
         const draft = await db.match_setup.orderBy('updatedAt').last()
@@ -1642,7 +1630,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       } else {
         await db.match_setup.add(draft)
       }
-      
+
       // Also update the actual match record if matchId exists
       if (matchId) {
         let scheduledAt = match?.scheduledAt // Default to existing value
@@ -1662,7 +1650,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             console.warn('[MatchSetup] Auto-save skipping invalid date/time:', err.message)
           }
         }
-        
+
         // Build update object - only include match type fields if match info is confirmed
         // This prevents auto-save from writing default values before user has explicitly confirmed
         const matchUpdate = {
@@ -1711,7 +1699,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // Update or create teams
         let homeTeamId = match?.homeTeamId
         let awayTeamId = match?.awayTeamId
-        
+
         if (home && home.trim()) {
           if (homeTeamId) {
             // Update existing team
@@ -1734,7 +1722,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             await db.matches.update(matchId, { homeTeamId })
           }
         }
-        
+
         if (away && away.trim()) {
           if (awayTeamId) {
             // Update existing team
@@ -1758,7 +1746,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           }
         }
       }
-      
+
       return true
     } catch (error) {
       console.error('Error saving draft:', error)
@@ -1775,7 +1763,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const timeoutId = setTimeout(() => {
         saveDraft(true) // Silent auto-save
       }, 500) // Debounce 500ms
-      
+
       return () => clearTimeout(timeoutId)
     }
   }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref2First, ref2Last, ref2Country, ref2Dob, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
@@ -1800,7 +1788,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       awayTeamInputRef.current.style.width = `${Math.max(80, measuredWidth + 24)}px`
     }
   }, [away, currentView]) // Also update when view changes (e.g., going back)
-  
+
   // Set initial width when returning to main view to ensure width is correct
   useEffect(() => {
     if (currentView === 'main') {
@@ -1822,7 +1810,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       return () => clearTimeout(timeoutId)
     }
   }, [currentView, home, away])
-  
+
   // Update input widths when home/away values change (e.g., when loaded from match)
   useEffect(() => {
     if (currentView === 'main') {
@@ -2114,15 +2102,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(emailData)
         })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            console.log('[MatchSetup] Match info email sent successfully')
-          } else {
-            console.warn('[MatchSetup] Failed to send match info email:', data.error)
-          }
-        })
-        .catch(err => console.warn('[MatchSetup] Match info email failed:', err))
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              console.log('[MatchSetup] Match info email sent successfully')
+            } else {
+              console.warn('[MatchSetup] Failed to send match info email:', data.error)
+            }
+          })
+          .catch(err => console.warn('[MatchSetup] Match info email failed:', err))
       }
 
       // Cloud backup at match setup (non-blocking)
@@ -2190,7 +2178,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     })
     // Bench sorted by hierarchy: C, AC1, AC2, P, M
     const benchSorted = sortBenchByHierarchy(bench.filter(m => m.firstName || m.lastName || m.dob))
-    
+
     return { players, liberos, bench: benchSorted }
   }
 
@@ -2274,105 +2262,105 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
 
     await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
-    const homeId = await db.teams.add({ name: home, color: homeColor, shortName: homeShortName || home.substring(0, 8).toUpperCase(), benchStaff: benchHome, createdAt: new Date().toISOString() })
-    const awayId = await db.teams.add({ name: away, color: awayColor, shortName: awayShortName || away.substring(0, 8).toUpperCase(), benchStaff: benchAway, createdAt: new Date().toISOString() })
+      const homeId = await db.teams.add({ name: home, color: homeColor, shortName: homeShortName || home.substring(0, 8).toUpperCase(), benchStaff: benchHome, createdAt: new Date().toISOString() })
+      const awayId = await db.teams.add({ name: away, color: awayColor, shortName: awayShortName || away.substring(0, 8).toUpperCase(), benchStaff: benchAway, createdAt: new Date().toISOString() })
 
-    // Generate 6-digit PIN code for referee authentication
-    const generatePinCode = (existingPins = []) => {
-      const chars = '0123456789'
-      let pin = ''
-      let attempts = 0
-      const maxAttempts = 100
-      
-      do {
-        pin = ''
-      for (let i = 0; i < 6; i++) {
-        pin += chars.charAt(Math.floor(Math.random() * chars.length))
+      // Generate 6-digit PIN code for referee authentication
+      const generatePinCode = (existingPins = []) => {
+        const chars = '0123456789'
+        let pin = ''
+        let attempts = 0
+        const maxAttempts = 100
+
+        do {
+          pin = ''
+          for (let i = 0; i < 6; i++) {
+            pin += chars.charAt(Math.floor(Math.random() * chars.length))
+          }
+          attempts++
+          if (attempts >= maxAttempts) {
+            // If we can't generate a unique PIN after many attempts, just return this one
+            break
+          }
+        } while (existingPins.includes(pin))
+
+        return pin
       }
-        attempts++
-        if (attempts >= maxAttempts) {
-          // If we can't generate a unique PIN after many attempts, just return this one
-          break
+
+      // Generate match PIN code (for opening/continuing match)
+      const matchPin = prompt('Enter a PIN code to protect this match (required):')
+      if (!matchPin || matchPin.trim() === '') {
+        setNoticeModal({ message: 'Match PIN code is required. Please enter a PIN code to create the match.' })
+        return
+      }
+
+      // Auto-generate gamePin for official matches
+      const generatedGamePin = (() => {
+        const chars = '0123456789'
+        let pin = ''
+        for (let i = 0; i < 6; i++) {
+          pin += chars.charAt(Math.floor(Math.random() * chars.length))
         }
-      } while (existingPins.includes(pin))
-      
-      return pin
-    }
+        return pin
+      })()
 
-    // Generate match PIN code (for opening/continuing match)
-    const matchPin = prompt('Enter a PIN code to protect this match (required):')
-    if (!matchPin || matchPin.trim() === '') {
-      setNoticeModal({ message: 'Match PIN code is required. Please enter a PIN code to create the match.' })
-      return
-    }
+      // Generate all PINs upfront so we can display them in the modal
+      const generatedRefereePin = generatePinCode([])
+      const generatedHomeTeamPin = generatePinCode([generatedRefereePin])
+      const generatedAwayTeamPin = generatePinCode([generatedRefereePin, generatedHomeTeamPin])
 
-    // Auto-generate gamePin for official matches
-    const generatedGamePin = (() => {
-      const chars = '0123456789'
-      let pin = ''
-      for (let i = 0; i < 6; i++) {
-        pin += chars.charAt(Math.floor(Math.random() * chars.length))
-      }
-      return pin
-    })()
+      // Generate a unique seed_key for Supabase sync (stored as external_id)
+      // This is the stable unique identifier - never includes modifiable fields like gameN
+      const seedKey = generateMatchSeedKey()
 
-    // Generate all PINs upfront so we can display them in the modal
-    const generatedRefereePin = generatePinCode([])
-    const generatedHomeTeamPin = generatePinCode([generatedRefereePin])
-    const generatedAwayTeamPin = generatePinCode([generatedRefereePin, generatedHomeTeamPin])
-
-    // Generate a unique seed_key for Supabase sync (stored as external_id)
-    // This is the stable unique identifier - never includes modifiable fields like gameN
-    const seedKey = generateMatchSeedKey()
-
-    const createdMatchId = await db.matches.add({
-      homeTeamId: homeId,
-      awayTeamId: awayId,
-      status: 'live',
-      scheduledAt,
-      hall,
-      city,
-      match_type_1: type1,
-      match_type_1_other: type1 === 'other' ? type1Other : null,
-      championshipType,
-      championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
-      match_type_2: type2,
-      match_type_3: type3,
-      match_type_3_other: type3 === 'other' ? type3Other : null,
-      // Team names and colors for local access
-      homeName: home.trim(),
-      awayName: away.trim(),
-      homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
-      awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
-      homeColor: homeColor || '#ef4444',
-      awayColor: awayColor || '#3b82f6',
-      game_n: gameN ? Number(gameN) : null,
-      seed_key: seedKey, // Unique key for Supabase sync
-      league,
-      gamePin: generatedGamePin, // Game PIN for official matches (not test matches)
-      refereePin: String(generatedRefereePin).trim(),
-      homeTeamPin: String(generatedHomeTeamPin).trim(),
-      awayTeamPin: String(generatedAwayTeamPin).trim(),
-      matchPin: matchPin.trim(),
-      refereeConnectionEnabled: false,
-      homeTeamConnectionEnabled: false,
-      awayTeamConnectionEnabled: false,
-      officials: buildOfficialsArray(
-        { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-        { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-        { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-        { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-        { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
-      ),
-      bench_home: benchHome,
-      bench_away: benchAway,
-      homeCoachSignature: null,
-      homeCaptainSignature: null,
-      awayCoachSignature: null,
-      awayCaptainSignature: null,
-      coinTossConfirmed: false,  // Set to true when coin toss is confirmed
-      createdAt: new Date().toISOString()
-    })
+      const createdMatchId = await db.matches.add({
+        homeTeamId: homeId,
+        awayTeamId: awayId,
+        status: 'live',
+        scheduledAt,
+        hall,
+        city,
+        match_type_1: type1,
+        match_type_1_other: type1 === 'other' ? type1Other : null,
+        championshipType,
+        championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
+        match_type_2: type2,
+        match_type_3: type3,
+        match_type_3_other: type3 === 'other' ? type3Other : null,
+        // Team names and colors for local access
+        homeName: home.trim(),
+        awayName: away.trim(),
+        homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
+        awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
+        homeColor: homeColor || '#ef4444',
+        awayColor: awayColor || '#3b82f6',
+        game_n: gameN ? Number(gameN) : null,
+        seed_key: seedKey, // Unique key for Supabase sync
+        league,
+        gamePin: generatedGamePin, // Game PIN for official matches (not test matches)
+        refereePin: String(generatedRefereePin).trim(),
+        homeTeamPin: String(generatedHomeTeamPin).trim(),
+        awayTeamPin: String(generatedAwayTeamPin).trim(),
+        matchPin: matchPin.trim(),
+        refereeConnectionEnabled: false,
+        homeTeamConnectionEnabled: false,
+        awayTeamConnectionEnabled: false,
+        officials: buildOfficialsArray(
+          { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+          { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+          { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+          { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+        ),
+        bench_home: benchHome,
+        bench_away: benchAway,
+        homeCoachSignature: null,
+        homeCaptainSignature: null,
+        awayCoachSignature: null,
+        awayCaptainSignature: null,
+        coinTossConfirmed: false,  // Set to true when coin toss is confirmed
+        createdAt: new Date().toISOString()
+      })
 
       // Add match to sync queue - all data stored as JSONB
       await db.sync_queue.add({
@@ -2431,79 +2419,79 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         status: 'queued'
       })
 
-    // Associate user with this match if logged in
-    if (user && supabase) {
-      try {
-        await supabase.from('user_matches').upsert({
-          user_id: user.id,
-          match_external_id: seedKey,
-          role: 'scorer'
-        }, { onConflict: 'user_id,match_external_id,role' })
-        console.log('[MatchSetup] Associated user with match:', seedKey)
-      } catch (err) {
-        // Don't fail match creation if user_matches insert fails
-        console.warn('[MatchSetup] Failed to associate user with match:', err)
-      }
-    }
-
-    // Add players to local Dexie (still needed for local functionality)
-    if (homeRoster.length) {
-        await db.players.bulkAdd(
-        homeRoster.map(p => ({
-          teamId: homeId,
-          number: p.number,
-          name: `${p.lastName} ${p.firstName}`,
-          lastName: p.lastName,
-          firstName: p.firstName,
-          dob: p.dob || null,
-          libero: p.libero || '',
-          isCaptain: !!p.isCaptain,
-          role: null,
-          createdAt: new Date().toISOString()
-        }))
-      )
-    }
-    if (awayRoster.length) {
-        await db.players.bulkAdd(
-        awayRoster.map(p => ({
-          teamId: awayId,
-          number: p.number,
-          name: `${p.lastName} ${p.firstName}`,
-          lastName: p.lastName,
-          firstName: p.firstName,
-          dob: p.dob || null,
-          libero: p.libero || '',
-          isCaptain: !!p.isCaptain,
-          role: null,
-          createdAt: new Date().toISOString()
-        }))
-      )
+      // Associate user with this match if logged in
+      if (user && supabase) {
+        try {
+          await supabase.from('user_matches').upsert({
+            user_id: user.id,
+            match_external_id: seedKey,
+            role: 'scorer'
+          }, { onConflict: 'user_id,match_external_id,role' })
+          console.log('[MatchSetup] Associated user with match:', seedKey)
+        } catch (err) {
+          // Don't fail match creation if user_matches insert fails
+          console.warn('[MatchSetup] Failed to associate user with match:', err)
+        }
       }
 
-    // Don't start match yet - go to coin toss first
-    // Check if team names and short names are set
-    if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
-      setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
-      return
-    }
+      // Add players to local Dexie (still needed for local functionality)
+      if (homeRoster.length) {
+        await db.players.bulkAdd(
+          homeRoster.map(p => ({
+            teamId: homeId,
+            number: p.number,
+            name: `${p.lastName} ${p.firstName}`,
+            lastName: p.lastName,
+            firstName: p.firstName,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+      }
+      if (awayRoster.length) {
+        await db.players.bulkAdd(
+          awayRoster.map(p => ({
+            teamId: awayId,
+            number: p.number,
+            name: `${p.lastName} ${p.firstName}`,
+            lastName: p.lastName,
+            firstName: p.firstName,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            role: null,
+            createdAt: new Date().toISOString()
+          }))
+        )
+      }
 
-    if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
-      setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
-      return
-    }
+      // Don't start match yet - go to coin toss first
+      // Check if team names and short names are set
+      if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
+        setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+        return
+      }
 
-    // Show match created popup if online (has gamePin)
-    if (!offlineMode && generatedGamePin) {
-      setMatchCreatedModal({
-        matchId: createdMatchId,
-        gamePin: generatedGamePin,
-        refereePin: generatedRefereePin,
-        homeTeamPin: generatedHomeTeamPin,
-        awayTeamPin: generatedAwayTeamPin
-      })
-    } else {
-      onOpenCoinToss()
-    }
+      if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
+        setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
+        return
+      }
+
+      // Show match created popup if online (has gamePin)
+      if (!offlineMode && generatedGamePin) {
+        setMatchCreatedModal({
+          matchId: createdMatchId,
+          gamePin: generatedGamePin,
+          refereePin: generatedRefereePin,
+          homeTeamPin: generatedHomeTeamPin,
+          awayTeamPin: generatedAwayTeamPin
+        })
+      } else {
+        onOpenCoinToss()
+      }
     })
   }
 
@@ -2589,124 +2577,124 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!matchData) {
       return
     }
-    
+
     // Determine which team serves first
     const firstServeTeam = serveA ? teamA : teamB
-    
+
     // Update match with signatures (only for official matches) and coin toss result
     await db.transaction('rw', db.matches, db.players, db.sync_queue, db.events, async () => {
-    // Build update object
-    const updateData = {
-      firstServe: firstServeTeam, // 'home' or 'away'
-      coinTossTeamA: teamA, // 'home' or 'away'
-      coinTossTeamB: teamB, // 'home' or 'away'
-      coinTossServeA: serveA, // true or false
-      coinTossServeB: serveB, // true or false
-      coinTossConfirmed: true  // Mark coin toss as confirmed
-    }
+      // Build update object
+      const updateData = {
+        firstServe: firstServeTeam, // 'home' or 'away'
+        coinTossTeamA: teamA, // 'home' or 'away'
+        coinTossTeamB: teamB, // 'home' or 'away'
+        coinTossServeA: serveA, // true or false
+        coinTossServeB: serveB, // true or false
+        coinTossConfirmed: true  // Mark coin toss as confirmed
+      }
 
-    // Only save signatures for official matches
-    if (!match?.test) {
-      updateData.homeCoachSignature = homeCoachSignature
-      updateData.homeCaptainSignature = homeCaptainSignature
-      updateData.awayCoachSignature = awayCoachSignature
-      updateData.awayCaptainSignature = awayCaptainSignature
-    }
+      // Only save signatures for official matches
+      if (!match?.test) {
+        updateData.homeCoachSignature = homeCoachSignature
+        updateData.homeCaptainSignature = homeCaptainSignature
+        updateData.awayCoachSignature = awayCoachSignature
+        updateData.awayCaptainSignature = awayCaptainSignature
+      }
 
-    const updateResult = await db.matches.update(matchId, updateData)
-    
-    // Check if coin toss event already exists
-    const existingCoinTossEvent = await db.events
-      .where('matchId').equals(matchId)
-      .and(e => e.type === 'coin_toss')
-      .first()
-    
-    // Create coin_toss event with seq=1 if it doesn't exist
-    if (!existingCoinTossEvent) {
-      await db.events.add({
-        matchId: matchId,
-        setIndex: 1, // Coin toss is before set 1
-        type: 'coin_toss',
-        payload: {
-          teamA: teamA,
-          teamB: teamB,
-          serveA: serveA,
-          serveB: serveB,
-          firstServe: firstServeTeam
-        },
-        ts: new Date().toISOString(),
-        seq: 1 // Coin toss always gets seq=1
-      })
-    }
-    
-    // Add match update to sync queue (only sync if match has seed_key)
-    const updatedMatch = await db.matches.get(matchId)
-    if (updatedMatch?.seed_key) {
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'update',
-        payload: {
-          id: updatedMatch.seed_key,
-          status: 'live', // Status will be 'live' after match setup is confirmed
-          scheduled_at: updatedMatch.scheduledAt || null,
-          // JSONB columns
-          match_info: {
-            hall: updatedMatch.hall || '',
-            city: updatedMatch.city || '',
-            league: updatedMatch.league || ''
+      const updateResult = await db.matches.update(matchId, updateData)
+
+      // Check if coin toss event already exists
+      const existingCoinTossEvent = await db.events
+        .where('matchId').equals(matchId)
+        .and(e => e.type === 'coin_toss')
+        .first()
+
+      // Create coin_toss event with seq=1 if it doesn't exist
+      if (!existingCoinTossEvent) {
+        await db.events.add({
+          matchId: matchId,
+          setIndex: 1, // Coin toss is before set 1
+          type: 'coin_toss',
+          payload: {
+            teamA: teamA,
+            teamB: teamB,
+            serveA: serveA,
+            serveB: serveB,
+            firstServe: firstServeTeam
           },
-          coin_toss: {
-            team_a: teamA,
-            team_b: teamB,
-            confirmed: true,
-            first_serve: firstServeTeam
+          ts: new Date().toISOString(),
+          seq: 1 // Coin toss always gets seq=1
+        })
+      }
+
+      // Add match update to sync queue (only sync if match has seed_key)
+      const updatedMatch = await db.matches.get(matchId)
+      if (updatedMatch?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: updatedMatch.seed_key,
+            status: 'live', // Status will be 'live' after match setup is confirmed
+            scheduled_at: updatedMatch.scheduledAt || null,
+            // JSONB columns
+            match_info: {
+              hall: updatedMatch.hall || '',
+              city: updatedMatch.city || '',
+              league: updatedMatch.league || ''
+            },
+            coin_toss: {
+              team_a: teamA,
+              team_b: teamB,
+              confirmed: true,
+              first_serve: firstServeTeam
+            },
+            signatures: !updatedMatch.test ? {
+              home_coach: homeCoachSignature || '',
+              home_captain: homeCaptainSignature || '',
+              away_coach: awayCoachSignature || '',
+              away_captain: awayCaptainSignature || ''
+            } : {},
+            home_team: { name: home?.trim() || '', short_name: homeShortName || '', color: homeColor },
+            away_team: { name: away?.trim() || '', short_name: awayShortName || '', color: awayColor },
+            players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
+              number: p.number || null,
+              first_name: p.firstName || '',
+              last_name: p.lastName || '',
+              dob: p.dob || null,
+              is_captain: !!p.isCaptain,
+              libero: p.libero || null
+            })),
+            players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
+              number: p.number || null,
+              first_name: p.firstName || '',
+              last_name: p.lastName || '',
+              dob: p.dob || null,
+              is_captain: !!p.isCaptain,
+              libero: p.libero || null
+            })),
+            bench_home: benchHome || [],
+            bench_away: benchAway || [],
+            officials: updatedMatch.officials || []
           },
-          signatures: !updatedMatch.test ? {
-            home_coach: homeCoachSignature || '',
-            home_captain: homeCaptainSignature || '',
-            away_coach: awayCoachSignature || '',
-            away_captain: awayCaptainSignature || ''
-          } : {},
-          home_team: { name: home?.trim() || '', short_name: homeShortName || '', color: homeColor },
-          away_team: { name: away?.trim() || '', short_name: awayShortName || '', color: awayColor },
-          players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
-            number: p.number || null,
-            first_name: p.firstName || '',
-            last_name: p.lastName || '',
-            dob: p.dob || null,
-            is_captain: !!p.isCaptain,
-            libero: p.libero || null
-          })),
-          players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
-            number: p.number || null,
-            first_name: p.firstName || '',
-            last_name: p.lastName || '',
-            dob: p.dob || null,
-            is_captain: !!p.isCaptain,
-            libero: p.libero || null
-          })),
-          bench_home: benchHome || [],
-          bench_away: benchAway || [],
-          officials: updatedMatch.officials || []
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      // Update saved signatures to match current state
+      setSavedSignatures({
+        homeCoach: homeCoachSignature,
+        homeCaptain: homeCaptainSignature,
+        awayCoach: awayCoachSignature,
+        awayCaptain: awayCaptainSignature
       })
-    }
-    
-    // Update saved signatures to match current state
-    setSavedSignatures({
-      homeCoach: homeCoachSignature,
-      homeCaptain: homeCaptainSignature,
-      awayCoach: awayCoachSignature,
-      awayCaptain: awayCaptainSignature
-    })
-      
+
       // Update players for both teams
       if (matchData.homeTeamId && homeRoster.length) {
         // Get existing players
         const existingPlayers = await db.players.where('teamId').equals(matchData.homeTeamId).toArray()
-        
+
         // Update or add players
         for (const p of homeRoster) {
           const existingPlayer = existingPlayers.find(ep => ep.number === p.number)
@@ -2736,7 +2724,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             })
           }
         }
-        
+
         // Delete players that are no longer in the roster
         const rosterNumbers = new Set(homeRoster.map(p => p.number))
         for (const ep of existingPlayers) {
@@ -2745,11 +2733,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           }
         }
       }
-      
+
       if (matchData.awayTeamId && awayRoster.length) {
         // Get existing players
         const existingPlayers = await db.players.where('teamId').equals(matchData.awayTeamId).toArray()
-        
+
         // Update or add players
         for (const p of awayRoster) {
           const existingPlayer = existingPlayers.find(ep => ep.number === p.number)
@@ -2779,7 +2767,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             })
           }
         }
-        
+
         // Delete players that are no longer in the roster
         const rosterNumbers = new Set(awayRoster.map(p => p.number))
         for (const ep of existingPlayers) {
@@ -2789,10 +2777,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         }
       }
     })
-    
+
     // Create first set
     const firstSetId = await db.sets.add({ matchId: matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
-    
+
     // Get match to check if it's a test match
     const matchForSet = await db.matches.get(matchId)
     const isTest = matchForSet?.test || false
@@ -2809,16 +2797,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           home_points: 0,
           away_points: 0,
           finished: false,
-          start_time: new Date().toISOString()
+          start_time: roundToMinute(new Date().toISOString())
         },
-        ts: new Date().toISOString(),
+        ts: roundToMinute(new Date().toISOString()),
         status: 'queued'
       })
     }
-    
+
     // Update match status to 'live' to indicate match has started
     await db.matches.update(matchId, { status: 'live' })
-    
+
     // Ensure all roster updates are committed before navigating
     // Force a small delay to ensure database updates are fully committed
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -2970,10 +2958,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!file) return
     setHomePdfLoading(true)
     setHomePdfError('')
-    
+
     try {
       const parsedData = await parseRosterPdf(file)
-      
+
       // Replace all players with imported ones (overwrite mode)
       const mergedPlayers = parsedData.players.map(parsedPlayer => ({
         id: null,
@@ -2984,45 +2972,45 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         libero: '',
         isCaptain: false
       }))
-      
+
       setHomeRoster(mergedPlayers)
-      
+
       // Update bench officials
       const importedBenchOfficials = []
       if (parsedData.coach) {
-        importedBenchOfficials.push({ 
-          role: 'Coach', 
+        importedBenchOfficials.push({
+          role: 'Coach',
           firstName: parsedData.coach.firstName || '',
           lastName: parsedData.coach.lastName || '',
           dob: parsedData.coach.dob || ''
         })
       }
       if (parsedData.ac1) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 1', 
+        importedBenchOfficials.push({
+          role: 'Assistant Coach 1',
           firstName: parsedData.ac1.firstName || '',
           lastName: parsedData.ac1.lastName || '',
           dob: parsedData.ac1.dob || ''
         })
       }
       if (parsedData.ac2) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 2', 
+        importedBenchOfficials.push({
+          role: 'Assistant Coach 2',
           firstName: parsedData.ac2.firstName || '',
           lastName: parsedData.ac2.lastName || '',
           dob: parsedData.ac2.dob || ''
         })
       }
-      
+
       setBenchHome(importedBenchOfficials)
-      
+
       // Save to database if match exists
       if (matchId && match?.homeTeamId) {
         const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
         for (const ep of existingPlayers) {
           await db.players.delete(ep.id)
         }
-        
+
         await db.players.bulkAdd(
           mergedPlayers.map(p => ({
             teamId: match.homeTeamId,
@@ -3037,12 +3025,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             createdAt: new Date().toISOString()
           }))
         )
-        
+
         await db.matches.update(matchId, {
           bench_home: importedBenchOfficials
         })
       }
-      
+
       // Clear file input and state
       if (homeFileInputRef.current) {
         homeFileInputRef.current.value = ''
@@ -3073,10 +3061,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!file) return
     setAwayPdfLoading(true)
     setAwayPdfError('')
-    
+
     try {
       const parsedData = await parseRosterPdf(file)
-      
+
       // Replace all players with imported ones (overwrite mode)
       const mergedPlayers = parsedData.players.map(parsedPlayer => ({
         id: null,
@@ -3087,45 +3075,45 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         libero: '',
         isCaptain: false
       }))
-      
+
       setAwayRoster(mergedPlayers)
-      
+
       // Update bench officials
       const importedBenchOfficials = []
       if (parsedData.coach) {
-        importedBenchOfficials.push({ 
-          role: 'Coach', 
+        importedBenchOfficials.push({
+          role: 'Coach',
           firstName: parsedData.coach.firstName || '',
           lastName: parsedData.coach.lastName || '',
           dob: parsedData.coach.dob || ''
         })
       }
       if (parsedData.ac1) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 1', 
+        importedBenchOfficials.push({
+          role: 'Assistant Coach 1',
           firstName: parsedData.ac1.firstName || '',
           lastName: parsedData.ac1.lastName || '',
           dob: parsedData.ac1.dob || ''
         })
       }
       if (parsedData.ac2) {
-        importedBenchOfficials.push({ 
-          role: 'Assistant Coach 2', 
+        importedBenchOfficials.push({
+          role: 'Assistant Coach 2',
           firstName: parsedData.ac2.firstName || '',
           lastName: parsedData.ac2.lastName || '',
           dob: parsedData.ac2.dob || ''
         })
       }
-      
+
       setBenchAway(importedBenchOfficials)
-      
+
       // Save to database if match exists
       if (matchId && match?.awayTeamId) {
         const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
         for (const ep of existingPlayers) {
           await db.players.delete(ep.id)
         }
-        
+
         await db.players.bulkAdd(
           mergedPlayers.map(p => ({
             teamId: match.awayTeamId,
@@ -3140,12 +3128,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             createdAt: new Date().toISOString()
           }))
         )
-        
+
         await db.matches.update(matchId, {
           bench_away: importedBenchOfficials
         })
       }
-      
+
       // Clear file input and state
       if (awayFileInputRef.current) {
         awayFileInputRef.current.value = ''
@@ -3181,7 +3169,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'info') {
     return (
       <MatchSetupInfoView>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← {t('common.back')}</button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
@@ -3239,7 +3227,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <input
                 className="w-160 capitalize"
                 value={city}
-                onChange={e=>setCity(e.target.value)}
+                onChange={e => setCity(e.target.value)}
                 list="cities-zurich"
                 placeholder={t('matchSetup.enterCity')}
               />
@@ -3247,14 +3235,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {citiesZurich.map(c => <option key={c} value={c} />)}
               </datalist>
             </div>
-            <div className="field"><label>{t('matchSetup.hall')}</label><input className="w-200 capitalize" value={hall} onChange={e=>setHall(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.hall')}</label><input className="w-200 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
           </div>
 
           <div className="card">
             <h3 style={{ marginTop: 0 }}>{t('matchSetup.matchType')}</h3>
             <div className="field">
               <label>{t('matchSetup.matchType')}</label>
-              <select className="w-160 capitalize" value={type1} onChange={e=>setType1(e.target.value)}>
+              <select className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
                 <option value="championship">{t('matchSetup.championship')}</option>
                 <option value="cup">{t('matchSetup.cup')}</option>
                 <option value="friendly">{t('matchSetup.friendly')}</option>
@@ -3265,12 +3253,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {type1 === 'other' && (
               <div className="field">
                 <label>{t('matchSetup.specify')}</label>
-                <input className="w-120" value={type1Other} onChange={e=>setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                <input className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
               </div>
             )}
             <div className="field">
               <label>{t('matchSetup.championshipType')}</label>
-              <select className="w-140" value={championshipType} onChange={e=>setChampionshipType(e.target.value)}>
+              <select className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
                 <option value="regional">{t('matchSetup.regional')}</option>
                 <option value="national">{t('matchSetup.national')}</option>
                 <option value="international">{t('matchSetup.international')}</option>
@@ -3280,7 +3268,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {championshipType === 'other' && (
               <div className="field">
                 <label>{t('matchSetup.specify')}</label>
-                <input className="w-120" value={championshipTypeOther} onChange={e=>setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                <input className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
               </div>
             )}
           </div>
@@ -3289,14 +3277,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <h3 style={{ marginTop: 0 }}>{t('matchSetup.genderLevel')}</h3>
             <div className="field">
               <label>{t('matchSetup.matchGender')}</label>
-              <select className="w-120" value={type2} onChange={e=>setType2(e.target.value)}>
+              <select className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
                 <option value="men">{t('matchSetup.men')}</option>
                 <option value="women">{t('matchSetup.women')}</option>
               </select>
             </div>
             <div className="field">
               <label>{t('matchSetup.matchLevel')}</label>
-              <select className="w-90" value={type3} onChange={e=>setType3(e.target.value)}>
+              <select className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
                 <option value="senior">{t('matchSetup.senior')}</option>
                 <option value="U23">U23</option>
                 <option value="U21">U21</option>
@@ -3308,15 +3296,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {type3 === 'other' && (
               <div className="field">
                 <label>{t('matchSetup.specify')}</label>
-                <input className="w-120" value={type3Other} onChange={e=>setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
+                <input className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
               </div>
             )}
           </div>
 
           <div className="card">
             <h3 style={{ marginTop: 0 }}>{t('matchSetup.gameDetails')}</h3>
-            <div className="field"><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e=>setGameN(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e=>setLeague(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
           </div>
 
           {/* Teams Card - Full width row at bottom */}
@@ -3370,7 +3358,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: '0 0 60%', marginBottom: 0}}>
+                  <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
                       type="text"
@@ -3415,7 +3403,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
                 {/* Header row: Trikot container + Title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
-                 
+
                   {/* Title */}
                   <div
                     style={{
@@ -3432,7 +3420,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   >
                     {t('matchSetup.awayTeam').toUpperCase()}
                   </div>
-                   {/* Trikot container */}
+                  {/* Trikot container */}
                   <div
                     style={{
                       display: 'flex',
@@ -3480,13 +3468,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
                     />
                   </div>
-                  
+
                 </div>
-                
+
               </div>
-              
+
             </div>
-            
+
           </div>
         </div>
         {match && !match.test && match.gamePin && (
@@ -3511,97 +3499,97 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {t('matchSetup.gamePinDescription')}
               </div>
               {match && !match.test && match.gamePin && (
-          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-            <div className="field" style={{ maxWidth: '400px', width: '100%' }}>
-              <label style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', display: 'block' }}>
-                {t('matchSetup.notificationEmail')}
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={notificationEmail}
-                  onChange={(e) => setNotificationEmail(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    fontSize: '14px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    color: 'inherit'
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={sendingEmail}
-                  onClick={async () => {
-                    console.log('[Email] Button clicked, email:', notificationEmail)
-                    if (!notificationEmail || !notificationEmail.includes('@')) {
-                      showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
-                      return
-                    }
-                    setSendingEmail(true)
-                    try {
-                      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-                      const res = await fetch(`${backendUrl}/api/match/send-info`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          email: notificationEmail,
-                          gameN: gameN,
-                          gamePin: match.gamePin,
-                          home: home,
-                          homeShortName: homeShortName,
-                          away: away,
-                          awayShortName: awayShortName,
-                          date: date,
-                          time: time,
-                          hall: hall,
-                          city: city,
-                          league: league
-                        })
-                      })
-                      const data = await res.json()
-                      if (data.success) {
-                        showAlert(t('matchSetup.emailSent') || 'Email sent successfully!', 'success')
-                      } else {
-                        showAlert(data.error || t('matchSetup.emailFailed') || 'Failed to send email', 'error')
-                      }
-                    } catch (err) {
-                      console.error('Failed to send email:', err)
-                      showAlert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.', 'error')
-                    } finally {
-                      setSendingEmail(false)
-                    }
-                  }}
-                  style={{
-                    padding: '10px 16px',
-                    fontSize: '14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: sendingEmail ? 'var(--muted, #666)' : 'var(--primary, #4a90d9)',
-                    color: 'white',
-                    cursor: sendingEmail ? 'wait' : 'pointer',
-                    fontWeight: 600,
-                    opacity: sendingEmail ? 0.7 : 1
-                  }}
-                >
-                  {sendingEmail ? (t('matchSetup.sending') || 'Sending...') : (t('matchSetup.send') || 'Send')}
-                </button>
-              </div>
+                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+                  <div className="field" style={{ maxWidth: '400px', width: '100%' }}>
+                    <label style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', display: 'block' }}>
+                      {t('matchSetup.notificationEmail')}
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="email"
+                        placeholder="email@example.com"
+                        value={notificationEmail}
+                        onChange={(e) => setNotificationEmail(e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          fontSize: '14px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          color: 'inherit'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={sendingEmail}
+                        onClick={async () => {
+                          console.log('[Email] Button clicked, email:', notificationEmail)
+                          if (!notificationEmail || !notificationEmail.includes('@')) {
+                            showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
+                            return
+                          }
+                          setSendingEmail(true)
+                          try {
+                            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+                            const res = await fetch(`${backendUrl}/api/match/send-info`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                email: notificationEmail,
+                                gameN: gameN,
+                                gamePin: match.gamePin,
+                                home: home,
+                                homeShortName: homeShortName,
+                                away: away,
+                                awayShortName: awayShortName,
+                                date: date,
+                                time: time,
+                                hall: hall,
+                                city: city,
+                                league: league
+                              })
+                            })
+                            const data = await res.json()
+                            if (data.success) {
+                              showAlert(t('matchSetup.emailSent') || 'Email sent successfully!', 'success')
+                            } else {
+                              showAlert(data.error || t('matchSetup.emailFailed') || 'Failed to send email', 'error')
+                            }
+                          } catch (err) {
+                            console.error('Failed to send email:', err)
+                            showAlert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.', 'error')
+                          } finally {
+                            setSendingEmail(false)
+                          }
+                        }}
+                        style={{
+                          padding: '10px 16px',
+                          fontSize: '14px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: sendingEmail ? 'var(--muted, #666)' : 'var(--primary, #4a90d9)',
+                          color: 'white',
+                          cursor: sendingEmail ? 'wait' : 'pointer',
+                          fontWeight: 600,
+                          opacity: sendingEmail ? 0.7 : 1
+                        }}
+                      >
+                        {sendingEmail ? (t('matchSetup.sending') || 'Sending...') : (t('matchSetup.send') || 'Send')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
+
           </div>
-        )}
-            </div>
-            
-          </div>
-          
+
         )}
 
-        
 
-        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button
             onClick={(e) => {
               if (!canConfirmMatchInfo) {
@@ -3706,13 +3694,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'officials') {
     return (
       <MatchSetupOfficialsView>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button className="secondary" onClick={() => { restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</button>
           <h2 style={{ marginLeft: 20, marginRight: 20 }}>{t('matchSetup.matchOfficials')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <OfficialCard
             title={t('matchSetup.referee1')}
             officialKey="ref1"
@@ -3822,7 +3810,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           position={refereeSelectorPosition}
         />
 
-        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={async () => {
             // Check if any changes were made (skip sync if no changes)
             const currentOfficials = {
@@ -3908,7 +3896,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'home') {
     return (
       <MatchSetupHomeTeamView>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{home || t('matchSetup.homeTeam')}</h2>
           <div style={{ width: 80 }}></div>
@@ -4061,20 +4049,56 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               )}
               {/* Remote Upload */}
               {homeUploadMode === 'remote' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
-                  <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
-                    {match?.game_n || match?.gameNumber || gameN || 'N/A'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
-                  {match?.homeTeamUploadPin ? (
-                    <>
-                      <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
-                        {match.homeTeamUploadPin}
-                      </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
+                    <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
+                      {match?.game_n || match?.gameNumber || gameN || 'N/A'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
+                    {match?.homeTeamUploadPin ? (
+                      <>
+                        <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
+                          {match.homeTeamUploadPin}
+                        </span>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={async () => {
+                            if (!matchId) return
+                            const generatePinCode = (existingPins = []) => {
+                              const chars = '0123456789'
+                              let pin = ''
+                              let attempts = 0
+                              const maxAttempts = 100
+                              do {
+                                pin = ''
+                                for (let i = 0; i < 6; i++) {
+                                  pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                                }
+                                attempts++
+                                if (attempts >= maxAttempts) break
+                              } while (existingPins.includes(pin))
+                              return pin
+                            }
+                            const match = await db.matches.get(matchId)
+                            const existingPins = [
+                              match?.refereePin,
+                              match?.homeTeamPin,
+                              match?.awayTeamPin,
+                              match?.awayTeamUploadPin
+                            ].filter(Boolean)
+                            const newPin = generatePinCode(existingPins)
+                            await db.matches.update(matchId, { homeTeamUploadPin: newPin })
+                          }}
+                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                        >
+                          {t('matchSetup.regenerate')}
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
                         className="secondary"
@@ -4107,155 +4131,119 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         }}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
                       >
-                        {t('matchSetup.regenerate')}
+                        {t('matchSetup.generatePin')}
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={async () => {
-                        if (!matchId) return
-                        const generatePinCode = (existingPins = []) => {
-                          const chars = '0123456789'
-                          let pin = ''
-                          let attempts = 0
-                          const maxAttempts = 100
-                          do {
-                            pin = ''
-                            for (let i = 0; i < 6; i++) {
-                              pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                    )}
+                  </div>
+                  {match?.pendingHomeRoster && (
+                    <div style={{
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      background: 'rgba(15, 23, 42, 0.2)',
+                      marginTop: '12px'
+                    }}>
+                      <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px' }}>
+                          {t('matchSetup.playersCount')}: {match.pendingHomeRoster.players?.length || 0}
+                        </div>
+                        <div style={{ fontSize: '12px' }}>
+                          {t('matchSetup.benchOfficialsCount')}: {match.pendingHomeRoster.bench?.length || 0}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setRosterPreview('home')}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
+                        >
+                          {t('matchSetup.previewRoster')}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={async () => {
+                            if (!matchId || !match?.pendingHomeRoster) return
+                            const pending = match.pendingHomeRoster
+                            const importedPlayers = pending.players || []
+                            const importedBench = pending.bench || []
+
+                            // Extract signatures from pending roster
+                            const importedCoachSig = pending.coachSignature || null
+                            const importedCaptainSig = pending.captainSignature || null
+
+                            // Update state
+                            setHomeRoster(importedPlayers)
+                            setBenchHome(importedBench)
+
+                            // Also update signature states if signatures were provided
+                            if (importedCoachSig) setHomeCoachSignature(importedCoachSig)
+                            if (importedCaptainSig) setHomeCaptainSignature(importedCaptainSig)
+
+                            // Save to database immediately
+                            if (match.homeTeamId) {
+                              // Delete existing players
+                              const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
+                              for (const ep of existingPlayers) {
+                                await db.players.delete(ep.id)
+                              }
+
+                              // Add imported players
+                              if (importedPlayers.length) {
+                                await db.players.bulkAdd(
+                                  importedPlayers.map(p => ({
+                                    teamId: match.homeTeamId,
+                                    number: p.number,
+                                    name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+                                    lastName: p.lastName || '',
+                                    firstName: p.firstName || '',
+                                    dob: p.dob || null,
+                                    libero: p.libero || '',
+                                    isCaptain: !!p.isCaptain,
+                                    role: null,
+                                    createdAt: new Date().toISOString()
+                                  }))
+                                )
+                              }
+
+                              // Update match with bench officials and signatures
+                              const matchUpdate = {
+                                bench_home: importedBench,
+                                pendingHomeRoster: null
+                              }
+                              if (importedCoachSig) matchUpdate.homeCoachSignature = importedCoachSig
+                              if (importedCaptainSig) matchUpdate.homeCaptainSignature = importedCaptainSig
+
+                              await db.matches.update(matchId, matchUpdate)
+                              console.log('[MatchSetup] Accepted home roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
+                            } else {
+                              // If no teamId yet, just clear pending
+                              await db.matches.update(matchId, { pendingHomeRoster: null })
                             }
-                            attempts++
-                            if (attempts >= maxAttempts) break
-                          } while (existingPins.includes(pin))
-                          return pin
-                        }
-                        const match = await db.matches.get(matchId)
-                        const existingPins = [
-                          match?.refereePin,
-                          match?.homeTeamPin,
-                          match?.awayTeamPin,
-                          match?.awayTeamUploadPin
-                        ].filter(Boolean)
-                        const newPin = generatePinCode(existingPins)
-                        await db.matches.update(matchId, { homeTeamUploadPin: newPin })
-                      }}
-                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                    >
-                      {t('matchSetup.generatePin')}
-                    </button>
+                          }}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
+                        >
+                          {t('matchSetup.acceptRoster')}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={async () => {
+                            if (!matchId) return
+                            await db.matches.update(matchId, { pendingHomeRoster: null })
+                          }}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
+                        >
+                          {t('matchSetup.rejectRoster')}
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
-              {match?.pendingHomeRoster && (
-                <div style={{
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  background: 'rgba(15, 23, 42, 0.2)',
-                  marginTop: '12px'
-                }}>
-                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '12px' }}>
-                      {t('matchSetup.playersCount')}: {match.pendingHomeRoster.players?.length || 0}
-                    </div>
-                    <div style={{ fontSize: '12px' }}>
-                      {t('matchSetup.benchOfficialsCount')}: {match.pendingHomeRoster.bench?.length || 0}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setRosterPreview('home')}
-                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
-                    >
-                      {t('matchSetup.previewRoster')}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={async () => {
-                        if (!matchId || !match?.pendingHomeRoster) return
-                        const pending = match.pendingHomeRoster
-                        const importedPlayers = pending.players || []
-                        const importedBench = pending.bench || []
-
-                        // Extract signatures from pending roster
-                        const importedCoachSig = pending.coachSignature || null
-                        const importedCaptainSig = pending.captainSignature || null
-
-                        // Update state
-                        setHomeRoster(importedPlayers)
-                        setBenchHome(importedBench)
-
-                        // Also update signature states if signatures were provided
-                        if (importedCoachSig) setHomeCoachSignature(importedCoachSig)
-                        if (importedCaptainSig) setHomeCaptainSignature(importedCaptainSig)
-
-                        // Save to database immediately
-                        if (match.homeTeamId) {
-                          // Delete existing players
-                          const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
-                          for (const ep of existingPlayers) {
-                            await db.players.delete(ep.id)
-                          }
-
-                          // Add imported players
-                          if (importedPlayers.length) {
-                            await db.players.bulkAdd(
-                              importedPlayers.map(p => ({
-                                teamId: match.homeTeamId,
-                                number: p.number,
-                                name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-                                lastName: p.lastName || '',
-                                firstName: p.firstName || '',
-                                dob: p.dob || null,
-                                libero: p.libero || '',
-                                isCaptain: !!p.isCaptain,
-                                role: null,
-                                createdAt: new Date().toISOString()
-                              }))
-                            )
-                          }
-
-                          // Update match with bench officials and signatures
-                          const matchUpdate = {
-                            bench_home: importedBench,
-                            pendingHomeRoster: null
-                          }
-                          if (importedCoachSig) matchUpdate.homeCoachSignature = importedCoachSig
-                          if (importedCaptainSig) matchUpdate.homeCaptainSignature = importedCaptainSig
-
-                          await db.matches.update(matchId, matchUpdate)
-                          console.log('[MatchSetup] Accepted home roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
-                        } else {
-                          // If no teamId yet, just clear pending
-                          await db.matches.update(matchId, { pendingHomeRoster: null })
-                        }
-                      }}
-                      style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
-                    >
-                      {t('matchSetup.acceptRoster')}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={async () => {
-                        if (!matchId) return
-                        await db.matches.update(matchId, { pendingHomeRoster: null })
-                      }}
-                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
-                    >
-                      {t('matchSetup.rejectRoster')}
-                    </button>
-                  </div>
-                </div>
-              )}
-              </div>
               )}
             </div>
           </div>
@@ -4318,10 +4306,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{t('matchSetup.addNewPlayer')}</div>
             <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
 
-              <input className="w-num" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e=>setHomeNum(e.target.value)} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e=>setHomeLast(e.target.value)} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e=>setHomeFirst(e.target.value)} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e=>setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <input className="w-num" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
               <select className="w-90" value={homeLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
@@ -4332,19 +4320,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }}>
                 <option value=""></option>
                 {!homeRoster.some(p => p.libero === 'libero1') && (
-                <option value="libero1">{t('matchSetup.libero1')}</option>
+                  <option value="libero1">{t('matchSetup.libero1')}</option>
                 )}
                 {!homeRoster.some(p => p.libero === 'libero2') && (
-                <option value="libero2">{t('matchSetup.libero2')}</option>
+                  <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={()=>setHomeCaptain(true)} /> {t('matchSetup.captain')}</label>
+              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={() => setHomeCaptain(true)} /> {t('matchSetup.captain')}</label>
               <button type="button" className="secondary" onClick={() => {
                 if (!homeLast || !homeFirst) return
                 const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
                 setHomeRoster(list => {
                   const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                  const next = [...cleared, newPlayer].sort((a,b) => {
+                  const next = [...cleared, newPlayer].sort((a, b) => {
                     const an = a.number ?? 999
                     const bn = b.number ?? 999
                     return an - bn
@@ -4408,139 +4396,144 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
 
             return (
-            <div key={`h-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
-              <input
-                className="w-num"
-                placeholder="#"
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max="99"
-                value={p.number ?? ''}
-                style={isDuplicate ? {
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  border: '2px solid #ef4444',
-                  color: '#ef4444'
-                } : undefined}
-                title={isDuplicate ? 'Duplicate jersey number!' : undefined}
-                onKeyPress={e => {
-                  if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
-                    e.preventDefault()
-                  }
-                }}
-                onChange={e => {
-                  const val = e.target.value ? Number(e.target.value) : null
-                  if (val !== null && (val < 1 || val > 99)) return
-                  const updated = [...homeRoster]
-                  updated[i] = { ...updated[i], number: val }
-                  setHomeRoster(updated)
-                }}
-                onBlur={() => {
-                  // Sort roster by player number when done editing
-                  const sorted = [...homeRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
-                  setHomeRoster(sorted)
-                }}
-              />
-              <input
-                className="w-name capitalize"
-                placeholder="Last Name"
-                value={p.lastName || ''}
-                onChange={e => {
-                  const updated = [...homeRoster]
-                  updated[i] = { ...updated[i], lastName: e.target.value }
-                  setHomeRoster(updated)
-                }}
-              />
-              <input 
-                className="w-name capitalize" 
-                placeholder="First Name" 
-                value={p.firstName || ''} 
-                onChange={e => {
-                  const updated = [...homeRoster]
-                  updated[i] = { ...updated[i], firstName: e.target.value }
-                  setHomeRoster(updated)
-                }} 
-              />
-              <input
-                className="w-dob"
-                placeholder={t('matchSetup.dateOfBirthPlaceholder')}
-                type="date"
-                value={p.dob ? formatDateToISO(p.dob) : ''}
-                onChange={e => {
-                  const updated = [...homeRoster]
-                  updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
-                  setHomeRoster(updated)
-                }}
-              />
-              <select
-                className="w-90"
-                value={p.libero || ''}
-                onChange={async e => {
-                  const updated = [...homeRoster]
-                  const oldValue = updated[i].libero
-                  updated[i] = { ...updated[i], libero: e.target.value }
-
-                  // If L2 is selected but no L1 exists, automatically change L2 to L1
-                  if (e.target.value === 'libero2') {
-                    const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
-                    if (!hasL1) {
-                      updated[i] = { ...updated[i], libero: 'libero1' }
-                    }
-                  }
-
-                  // If L1 is being cleared and there's an L2, promote L2 to L1
-                  if (oldValue === 'libero1' && !e.target.value) {
-                    const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
-                    if (l2Idx !== -1) {
-                      updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                      // Update L2->L1 player in database if they have an ID
-                      if (updated[l2Idx].id) {
-                        await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
-                      }
-                    }
-                  }
-
-                  setHomeRoster(updated)
-
-                  // Update database immediately if player has an ID
-                  if (p.id) {
-                    await db.players.update(p.id, { libero: updated[i].libero })
-                  }
-                }}
-              >
-                <option value=""></option>
-                {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                  <option value="libero1">{t('matchSetup.libero1')}</option>
-                )}
-                {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                  <option value="libero2">{t('matchSetup.libero2')}</option>
-                )}
-              </select>
-              <label className="inline">
+              <div key={`h-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
                 <input
-                  type="radio"
-                  name="homeCaptain"
-                  checked={p.isCaptain || false}
-                  onChange={() => {
-                    const updated = homeRoster.map((player, idx) => ({
-                      ...player,
-                      isCaptain: idx === i
-                    }))
+                  className="w-num"
+                  placeholder="#"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="99"
+                  value={p.number ?? ''}
+                  style={isDuplicate ? {
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '2px solid #ef4444',
+                    color: '#ef4444'
+                  } : undefined}
+                  title={isDuplicate ? 'Duplicate jersey number!' : undefined}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onKeyPress={e => {
+                    if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                      e.preventDefault()
+                    }
+                  }}
+                  onChange={e => {
+                    const val = e.target.value ? Number(e.target.value) : null
+                    if (val !== null && (val < 1 || val > 99)) return
+                    const updated = [...homeRoster]
+                    updated[i] = { ...updated[i], number: val }
+                    setHomeRoster(updated)
+                  }}
+                  onBlur={() => {
+                    // Sort roster by player number when done editing
+                    const sorted = [...homeRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
+                    setHomeRoster(sorted)
+                  }}
+                />
+                <input
+                  className="w-name capitalize"
+                  placeholder="Last Name"
+                  value={p.lastName || ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onChange={e => {
+                    const updated = [...homeRoster]
+                    updated[i] = { ...updated[i], lastName: e.target.value }
                     setHomeRoster(updated)
                   }}
                 />
-                {t('matchSetup.captain')}
-              </label>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
-              >
-                {t('common.delete')}
-              </button>
-            </div>
-          )})}
-          </div>
+                <input
+                  className="w-name capitalize"
+                  placeholder="First Name"
+                  value={p.firstName || ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onChange={e => {
+                    const updated = [...homeRoster]
+                    updated[i] = { ...updated[i], firstName: e.target.value }
+                    setHomeRoster(updated)
+                  }}
+                />
+                <input
+                  className="w-dob"
+                  placeholder={t('matchSetup.dateOfBirthPlaceholder')}
+                  type="date"
+                  value={p.dob ? formatDateToISO(p.dob) : ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onChange={e => {
+                    const updated = [...homeRoster]
+                    updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
+                    setHomeRoster(updated)
+                  }}
+                />
+                <select
+                  className="w-90"
+                  value={p.libero || ''}
+                  onChange={async e => {
+                    const updated = [...homeRoster]
+                    const oldValue = updated[i].libero
+                    updated[i] = { ...updated[i], libero: e.target.value }
+
+                    // If L2 is selected but no L1 exists, automatically change L2 to L1
+                    if (e.target.value === 'libero2') {
+                      const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                      if (!hasL1) {
+                        updated[i] = { ...updated[i], libero: 'libero1' }
+                      }
+                    }
+
+                    // If L1 is being cleared and there's an L2, promote L2 to L1
+                    if (oldValue === 'libero1' && !e.target.value) {
+                      const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
+                      if (l2Idx !== -1) {
+                        updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                        // Update L2->L1 player in database if they have an ID
+                        if (updated[l2Idx].id) {
+                          await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
+                        }
+                      }
+                    }
+
+                    setHomeRoster(updated)
+
+                    // Update database immediately if player has an ID
+                    if (p.id) {
+                      await db.players.update(p.id, { libero: updated[i].libero })
+                    }
+                  }}
+                >
+                  <option value=""></option>
+                  {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                  )}
+                  {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                  )}
+                </select>
+                <label className="inline">
+                  <input
+                    type="radio"
+                    name="homeCaptain"
+                    checked={p.isCaptain || false}
+                    onChange={() => {
+                      const updated = homeRoster.map((player, idx) => ({
+                        ...player,
+                        isCaptain: idx === i
+                      }))
+                      setHomeRoster(updated)
+                    }}
+                  />
+                  {t('matchSetup.captain')}
+                </label>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
+                >
+                  {t('common.delete')}
+                </button>
+              </div>
+            )
+          })}
+        </div>
         <h4>{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
         {/* Bench Header Row */}
         <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
@@ -4553,8 +4546,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {sortBenchByHierarchy(benchHome).map((m, i) => {
           const originalIdx = benchHome.findIndex(b => b === m)
           return (
-            <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems:'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
-              <select className="w-220" value={m.role || 'Coach'} onChange={e=>{
+            <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems: 'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
+              <select className="w-220" value={m.role || 'Coach'} onChange={e => {
                 const newRole = e.target.value || 'Coach'
                 // Check if this role is already taken by another official
                 const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
@@ -4562,24 +4555,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   // Don't allow duplicate roles
                   return
                 }
-                setBenchHome(arr => { 
-                  const a=[...arr]; 
-                  a[originalIdx]={...a[originalIdx], role:newRole}; 
-                  return a 
+                setBenchHome(arr => {
+                  const a = [...arr];
+                  a[originalIdx] = { ...a[originalIdx], role: newRole };
+                  return a
                 })
               }}>
-                                {BENCH_ROLES.map(role => {
-                                  const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === role.value)
-                                  return (
-                                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
-                                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
-                                    </option>
-                                  )
-                                })}
+                {BENCH_ROLES.map(role => {
+                  const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === role.value)
+                  return (
+                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
+                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                    </option>
+                  )
+                })}
               </select>
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchHome(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
               <button type="button" className="secondary" onClick={() => {
                 const updated = benchHome.filter((_, idx) => idx !== originalIdx)
                 setBenchHome(updated)
@@ -4604,10 +4597,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 setBenchHome([...benchHome, initBench(availableRole.value)])
               }
             }}
-              style={{ padding: '4px 8px', fontSize: '12px' }}
-            >
-              {t('matchSetup.addBenchOfficial')}
-            </button>
+            style={{ padding: '4px 8px', fontSize: '12px' }}
+          >
+            {t('matchSetup.addBenchOfficial')}
+          </button>
         </div>
 
         {/* Signatures Section */}
@@ -4721,7 +4714,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
 
-        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={async () => {
             console.log('[MatchSetup] Home roster Confirm clicked, validating...')
 
@@ -4801,15 +4794,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 name: home,
                 color: homeColor
               })
-              
+
               // Update players with captain status
               if (homeRoster.length) {
                 const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
                 const rosterNumbers = new Set(homeRoster.map(p => p.number).filter(n => n != null))
-                
+
                 for (const rosterPlayer of homeRoster) {
                   if (!rosterPlayer.number) continue // Skip players without numbers
-                  
+
                   const existingPlayer = existingPlayers.find(ep => ep.number === rosterPlayer.number)
                   if (existingPlayer) {
                     // Update existing player
@@ -4837,7 +4830,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     })
                   }
                 }
-                
+
                 // Remove players that are no longer in the roster
                 for (const ep of existingPlayers) {
                   if (!rosterNumbers.has(ep.number)) {
@@ -4845,7 +4838,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }
                 }
               }
-              
+
               // Update match with short name, bench officials, and restore signatures (re-lock)
               const updateData = {
                 homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
@@ -4868,7 +4861,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 updateData.homeCaptainSignature = savedSignatures.homeCaptain
                 setHomeCaptainSignature(savedSignatures.homeCaptain)
               }
-              
+
               await db.matches.update(matchId, updateData)
 
               // Sync home team data to Supabase as JSONB
@@ -5200,9 +5193,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           onClose={() => setOpenSignature(null)}
           onSave={handleSignatureSave}
           title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-                 openSignature === 'home-captain' ? 'Home Captain Signature' :
-                 openSignature === 'away-coach' ? 'Away Coach Signature' :
-                 openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+            openSignature === 'home-captain' ? 'Home Captain Signature' :
+              openSignature === 'away-coach' ? 'Away Coach Signature' :
+                openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
         />
       </MatchSetupHomeTeamView>
     )
@@ -5211,7 +5204,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'away') {
     return (
       <MatchSetupAwayTeamView>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{away || t('matchSetup.awayTeam')}</h2>
           <div style={{ width: 80 }}></div>
@@ -5364,20 +5357,56 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               )}
               {/* Remote Upload */}
               {awayUploadMode === 'remote' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
-                  <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
-                    {match?.game_n || match?.gameNumber || gameN || 'N/A'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
-                  {match?.awayTeamUploadPin ? (
-                    <>
-                      <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
-                        {match.awayTeamUploadPin}
-                      </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
+                    <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
+                      {match?.game_n || match?.gameNumber || gameN || 'N/A'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
+                    {match?.awayTeamUploadPin ? (
+                      <>
+                        <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
+                          {match.awayTeamUploadPin}
+                        </span>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={async () => {
+                            if (!matchId) return
+                            const generatePinCode = (existingPins = []) => {
+                              const chars = '0123456789'
+                              let pin = ''
+                              let attempts = 0
+                              const maxAttempts = 100
+                              do {
+                                pin = ''
+                                for (let i = 0; i < 6; i++) {
+                                  pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                                }
+                                attempts++
+                                if (attempts >= maxAttempts) break
+                              } while (existingPins.includes(pin))
+                              return pin
+                            }
+                            const match = await db.matches.get(matchId)
+                            const existingPins = [
+                              match?.refereePin,
+                              match?.homeTeamPin,
+                              match?.awayTeamPin,
+                              match?.homeTeamUploadPin
+                            ].filter(Boolean)
+                            const newPin = generatePinCode(existingPins)
+                            await db.matches.update(matchId, { awayTeamUploadPin: newPin })
+                          }}
+                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                        >
+                          {t('matchSetup.regenerate')}
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
                         className="secondary"
@@ -5410,155 +5439,119 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         }}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
                       >
-                        {t('matchSetup.regenerate')}
+                        {t('matchSetup.generatePin')}
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={async () => {
-                        if (!matchId) return
-                        const generatePinCode = (existingPins = []) => {
-                          const chars = '0123456789'
-                          let pin = ''
-                          let attempts = 0
-                          const maxAttempts = 100
-                          do {
-                            pin = ''
-                            for (let i = 0; i < 6; i++) {
-                              pin += chars.charAt(Math.floor(Math.random() * chars.length))
+                    )}
+                  </div>
+                  {match?.pendingAwayRoster && (
+                    <div style={{
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      background: 'rgba(15, 23, 42, 0.2)',
+                      marginTop: '12px'
+                    }}>
+                      <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px' }}>
+                          {t('matchSetup.playersCount')}: {match.pendingAwayRoster.players?.length || 0}
+                        </div>
+                        <div style={{ fontSize: '12px' }}>
+                          {t('matchSetup.benchOfficialsCount')}: {match.pendingAwayRoster.bench?.length || 0}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setRosterPreview('away')}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
+                        >
+                          {t('matchSetup.previewRoster')}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={async () => {
+                            if (!matchId || !match?.pendingAwayRoster) return
+                            const pending = match.pendingAwayRoster
+                            const importedPlayers = pending.players || []
+                            const importedBench = pending.bench || []
+
+                            // Extract signatures from pending roster
+                            const importedCoachSig = pending.coachSignature || null
+                            const importedCaptainSig = pending.captainSignature || null
+
+                            // Update state
+                            setAwayRoster(importedPlayers)
+                            setBenchAway(importedBench)
+
+                            // Also update signature states if signatures were provided
+                            if (importedCoachSig) setAwayCoachSignature(importedCoachSig)
+                            if (importedCaptainSig) setAwayCaptainSignature(importedCaptainSig)
+
+                            // Save to database immediately
+                            if (match.awayTeamId) {
+                              // Delete existing players
+                              const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
+                              for (const ep of existingPlayers) {
+                                await db.players.delete(ep.id)
+                              }
+
+                              // Add imported players
+                              if (importedPlayers.length) {
+                                await db.players.bulkAdd(
+                                  importedPlayers.map(p => ({
+                                    teamId: match.awayTeamId,
+                                    number: p.number,
+                                    name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
+                                    lastName: p.lastName || '',
+                                    firstName: p.firstName || '',
+                                    dob: p.dob || null,
+                                    libero: p.libero || '',
+                                    isCaptain: !!p.isCaptain,
+                                    role: null,
+                                    createdAt: new Date().toISOString()
+                                  }))
+                                )
+                              }
+
+                              // Update match with bench officials and signatures
+                              const matchUpdate = {
+                                bench_away: importedBench,
+                                pendingAwayRoster: null
+                              }
+                              if (importedCoachSig) matchUpdate.awayCoachSignature = importedCoachSig
+                              if (importedCaptainSig) matchUpdate.awayCaptainSignature = importedCaptainSig
+
+                              await db.matches.update(matchId, matchUpdate)
+                              console.log('[MatchSetup] Accepted away roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
+                            } else {
+                              // If no teamId yet, just clear pending
+                              await db.matches.update(matchId, { pendingAwayRoster: null })
                             }
-                            attempts++
-                            if (attempts >= maxAttempts) break
-                          } while (existingPins.includes(pin))
-                          return pin
-                        }
-                        const match = await db.matches.get(matchId)
-                        const existingPins = [
-                          match?.refereePin,
-                          match?.homeTeamPin,
-                          match?.awayTeamPin,
-                          match?.homeTeamUploadPin
-                        ].filter(Boolean)
-                        const newPin = generatePinCode(existingPins)
-                        await db.matches.update(matchId, { awayTeamUploadPin: newPin })
-                      }}
-                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                    >
-                      {t('matchSetup.generatePin')}
-                    </button>
+                          }}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
+                        >
+                          {t('matchSetup.acceptRoster')}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={async () => {
+                            if (!matchId) return
+                            await db.matches.update(matchId, { pendingAwayRoster: null })
+                          }}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
+                        >
+                          {t('matchSetup.rejectRoster')}
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
-              {match?.pendingAwayRoster && (
-                <div style={{
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  background: 'rgba(15, 23, 42, 0.2)',
-                  marginTop: '12px'
-                }}>
-                  <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '12px' }}>
-                      {t('matchSetup.playersCount')}: {match.pendingAwayRoster.players?.length || 0}
-                    </div>
-                    <div style={{ fontSize: '12px' }}>
-                      {t('matchSetup.benchOfficialsCount')}: {match.pendingAwayRoster.bench?.length || 0}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setRosterPreview('away')}
-                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
-                    >
-                      {t('matchSetup.previewRoster')}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={async () => {
-                        if (!matchId || !match?.pendingAwayRoster) return
-                        const pending = match.pendingAwayRoster
-                        const importedPlayers = pending.players || []
-                        const importedBench = pending.bench || []
-
-                        // Extract signatures from pending roster
-                        const importedCoachSig = pending.coachSignature || null
-                        const importedCaptainSig = pending.captainSignature || null
-
-                        // Update state
-                        setAwayRoster(importedPlayers)
-                        setBenchAway(importedBench)
-
-                        // Also update signature states if signatures were provided
-                        if (importedCoachSig) setAwayCoachSignature(importedCoachSig)
-                        if (importedCaptainSig) setAwayCaptainSignature(importedCaptainSig)
-
-                        // Save to database immediately
-                        if (match.awayTeamId) {
-                          // Delete existing players
-                          const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
-                          for (const ep of existingPlayers) {
-                            await db.players.delete(ep.id)
-                          }
-
-                          // Add imported players
-                          if (importedPlayers.length) {
-                            await db.players.bulkAdd(
-                              importedPlayers.map(p => ({
-                                teamId: match.awayTeamId,
-                                number: p.number,
-                                name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-                                lastName: p.lastName || '',
-                                firstName: p.firstName || '',
-                                dob: p.dob || null,
-                                libero: p.libero || '',
-                                isCaptain: !!p.isCaptain,
-                                role: null,
-                                createdAt: new Date().toISOString()
-                              }))
-                            )
-                          }
-
-                          // Update match with bench officials and signatures
-                          const matchUpdate = {
-                            bench_away: importedBench,
-                            pendingAwayRoster: null
-                          }
-                          if (importedCoachSig) matchUpdate.awayCoachSignature = importedCoachSig
-                          if (importedCaptainSig) matchUpdate.awayCaptainSignature = importedCaptainSig
-
-                          await db.matches.update(matchId, matchUpdate)
-                          console.log('[MatchSetup] Accepted away roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
-                        } else {
-                          // If no teamId yet, just clear pending
-                          await db.matches.update(matchId, { pendingAwayRoster: null })
-                        }
-                      }}
-                      style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
-                    >
-                      {t('matchSetup.acceptRoster')}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={async () => {
-                        if (!matchId) return
-                        await db.matches.update(matchId, { pendingAwayRoster: null })
-                      }}
-                      style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
-                    >
-                      {t('matchSetup.rejectRoster')}
-                    </button>
-                  </div>
-                </div>
-              )}
-              </div>
               )}
             </div>
           </div>
@@ -5629,11 +5622,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 max="99"
                 value={awayNum}
                 onChange={e => setAwayNum(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 style={{ textAlign: 'center' }}
               />
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e=>setAwayLast(e.target.value)} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e=>setAwayFirst(e.target.value)} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e=>setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
               <select className="w-90" value={awayLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
@@ -5644,19 +5638,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }}>
                 <option value=""></option>
                 {!awayRoster.some(p => p.libero === 'libero1') && (
-                <option value="libero1">{t('matchSetup.libero1')}</option>
+                  <option value="libero1">{t('matchSetup.libero1')}</option>
                 )}
                 {!awayRoster.some(p => p.libero === 'libero2') && (
-                <option value="libero2">{t('matchSetup.libero2')}</option>
+                  <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={()=>setAwayCaptain(true)} /> {t('matchSetup.captain')}</label>
+              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={() => setAwayCaptain(true)} /> {t('matchSetup.captain')}</label>
               <button type="button" className="secondary" onClick={() => {
                 if (!awayLast || !awayFirst) return
                 const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
                 setAwayRoster(list => {
                   const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                  const next = [...cleared, newPlayer].sort((a,b) => {
+                  const next = [...cleared, newPlayer].sort((a, b) => {
                     const an = a.number ?? 999
                     const bn = b.number ?? 999
                     return an - bn
@@ -5720,139 +5714,144 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
 
             return (
-            <div key={`a-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
-              <input
-                className="w-num"
-                placeholder="#"
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max="99"
-                value={p.number ?? ''}
-                style={isDuplicate ? {
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  border: '2px solid #ef4444',
-                  color: '#ef4444'
-                } : undefined}
-                title={isDuplicate ? 'Duplicate jersey number!' : undefined}
-                onKeyPress={e => {
-                  if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
-                    e.preventDefault()
-                  }
-                }}
-                onChange={e => {
-                  const val = e.target.value ? Number(e.target.value) : null
-                  if (val !== null && (val < 1 || val > 99)) return
-                  const updated = [...awayRoster]
-                  updated[i] = { ...updated[i], number: val }
-                  setAwayRoster(updated)
-                }}
-                onBlur={() => {
-                  // Sort roster by player number when done editing
-                  const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
-                  setAwayRoster(sorted)
-                }}
-              />
-              <input
-                className="w-name capitalize"
-                placeholder="Last Name"
-                value={p.lastName || ''}
-                onChange={e => {
-                  const updated = [...awayRoster]
-                  updated[i] = { ...updated[i], lastName: e.target.value }
-                  setAwayRoster(updated)
-                }}
-              />
-              <input 
-                className="w-name capitalize" 
-                placeholder="First Name" 
-                value={p.firstName || ''} 
-                onChange={e => {
-                  const updated = [...awayRoster]
-                  updated[i] = { ...updated[i], firstName: e.target.value }
-                  setAwayRoster(updated)
-                }} 
-              />
-              <input
-                className="w-dob"
-                placeholder={t('matchSetup.dateOfBirthPlaceholder')}
-                type="date"
-                value={p.dob ? formatDateToISO(p.dob) : ''}
-                onChange={e => {
-                  const updated = [...awayRoster]
-                  updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
-                  setAwayRoster(updated)
-                }}
-              />
-              <select 
-                className="w-90" 
-                value={p.libero || ''}
-                onChange={async e => {
-                  const updated = [...awayRoster]
-                  const oldValue = updated[i].libero
-                  updated[i] = { ...updated[i], libero: e.target.value }
-
-                  // If L2 is selected but no L1 exists, automatically change L2 to L1
-                  if (e.target.value === 'libero2') {
-                    const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
-                    if (!hasL1) {
-                      updated[i] = { ...updated[i], libero: 'libero1' }
-                    }
-                  }
-
-                  // If L1 is being cleared and there's an L2, promote L2 to L1
-                  if (oldValue === 'libero1' && !e.target.value) {
-                    const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
-                    if (l2Idx !== -1) {
-                      updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                      // Update L2->L1 player in database if they have an ID
-                      if (updated[l2Idx].id) {
-                        await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
-                      }
-                    }
-                  }
-
-                  setAwayRoster(updated)
-
-                  // Update database immediately if player has an ID
-                  if (p.id) {
-                    await db.players.update(p.id, { libero: updated[i].libero })
-                  }
-                }}
-              >
-                <option value=""></option>
-                {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                  <option value="libero1">{t('matchSetup.libero1')}</option>
-                )}
-                {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                  <option value="libero2">{t('matchSetup.libero2')}</option>
-                )}
-              </select>
-              <label className="inline">
+              <div key={`a-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
                 <input
-                  type="radio"
-                  name="awayCaptain"
-                  checked={p.isCaptain || false}
-                  onChange={() => {
-                    const updated = awayRoster.map((player, idx) => ({
-                      ...player,
-                      isCaptain: idx === i
-                    }))
+                  className="w-num"
+                  placeholder="#"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="99"
+                  value={p.number ?? ''}
+                  style={isDuplicate ? {
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '2px solid #ef4444',
+                    color: '#ef4444'
+                  } : undefined}
+                  title={isDuplicate ? 'Duplicate jersey number!' : undefined}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onKeyPress={e => {
+                    if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                      e.preventDefault()
+                    }
+                  }}
+                  onChange={e => {
+                    const val = e.target.value ? Number(e.target.value) : null
+                    if (val !== null && (val < 1 || val > 99)) return
+                    const updated = [...awayRoster]
+                    updated[i] = { ...updated[i], number: val }
+                    setAwayRoster(updated)
+                  }}
+                  onBlur={() => {
+                    // Sort roster by player number when done editing
+                    const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
+                    setAwayRoster(sorted)
+                  }}
+                />
+                <input
+                  className="w-name capitalize"
+                  placeholder="Last Name"
+                  value={p.lastName || ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onChange={e => {
+                    const updated = [...awayRoster]
+                    updated[i] = { ...updated[i], lastName: e.target.value }
                     setAwayRoster(updated)
                   }}
                 />
-                {t('matchSetup.captain')}
-              </label>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
-              >
-                {t('common.delete')}
-              </button>
-            </div>
-          )})}
-          </div>
+                <input
+                  className="w-name capitalize"
+                  placeholder="First Name"
+                  value={p.firstName || ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onChange={e => {
+                    const updated = [...awayRoster]
+                    updated[i] = { ...updated[i], firstName: e.target.value }
+                    setAwayRoster(updated)
+                  }}
+                />
+                <input
+                  className="w-dob"
+                  placeholder={t('matchSetup.dateOfBirthPlaceholder')}
+                  type="date"
+                  value={p.dob ? formatDateToISO(p.dob) : ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  onChange={e => {
+                    const updated = [...awayRoster]
+                    updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
+                    setAwayRoster(updated)
+                  }}
+                />
+                <select
+                  className="w-90"
+                  value={p.libero || ''}
+                  onChange={async e => {
+                    const updated = [...awayRoster]
+                    const oldValue = updated[i].libero
+                    updated[i] = { ...updated[i], libero: e.target.value }
+
+                    // If L2 is selected but no L1 exists, automatically change L2 to L1
+                    if (e.target.value === 'libero2') {
+                      const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
+                      if (!hasL1) {
+                        updated[i] = { ...updated[i], libero: 'libero1' }
+                      }
+                    }
+
+                    // If L1 is being cleared and there's an L2, promote L2 to L1
+                    if (oldValue === 'libero1' && !e.target.value) {
+                      const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
+                      if (l2Idx !== -1) {
+                        updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
+                        // Update L2->L1 player in database if they have an ID
+                        if (updated[l2Idx].id) {
+                          await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
+                        }
+                      }
+                    }
+
+                    setAwayRoster(updated)
+
+                    // Update database immediately if player has an ID
+                    if (p.id) {
+                      await db.players.update(p.id, { libero: updated[i].libero })
+                    }
+                  }}
+                >
+                  <option value=""></option>
+                  {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
+                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                  )}
+                  {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
+                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                  )}
+                </select>
+                <label className="inline">
+                  <input
+                    type="radio"
+                    name="awayCaptain"
+                    checked={p.isCaptain || false}
+                    onChange={() => {
+                      const updated = awayRoster.map((player, idx) => ({
+                        ...player,
+                        isCaptain: idx === i
+                      }))
+                      setAwayRoster(updated)
+                    }}
+                  />
+                  {t('matchSetup.captain')}
+                </label>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
+                >
+                  {t('common.delete')}
+                </button>
+              </div>
+            )
+          })}
+        </div>
         <h4>{t('matchSetup.benchOfficials')} — {t('common.away')}</h4>
         {/* Bench Header Row */}
         <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
@@ -5865,8 +5864,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {sortBenchByHierarchy(benchAway).map((m, i) => {
           const originalIdx = benchAway.findIndex(b => b === m)
           return (
-            <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems:'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
-              <select className="w-220" value={m.role || 'Coach'} onChange={e=>{
+            <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems: 'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
+              <select className="w-220" value={m.role || 'Coach'} onChange={e => {
                 const newRole = e.target.value || 'Coach'
                 // Check if this role is already taken by another official
                 const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
@@ -5874,24 +5873,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   // Don't allow duplicate roles
                   return
                 }
-                setBenchAway(arr => { 
-                  const a=[...arr]; 
-                  a[originalIdx]={...a[originalIdx], role:newRole}; 
-                  return a 
+                setBenchAway(arr => {
+                  const a = [...arr];
+                  a[originalIdx] = { ...a[originalIdx], role: newRole };
+                  return a
                 })
               }}>
-                                {BENCH_ROLES.map(role => {
-                                  const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === role.value)
-                                  return (
-                                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
-                                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
-                                    </option>
-                                  )
-                                })}
+                {BENCH_ROLES.map(role => {
+                  const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === role.value)
+                  return (
+                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
+                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                    </option>
+                  )
+                })}
               </select>
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], lastName:e.target.value}; return a })} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], firstName:e.target.value}; return a })} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e=>setBenchAway(arr => { const a=[...arr]; a[originalIdx]={...a[originalIdx], dob:e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''}; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
               <button type="button" className="secondary" onClick={() => {
                 const updated = benchAway.filter((_, idx) => idx !== originalIdx)
                 setBenchAway(updated)
@@ -5916,10 +5915,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 setBenchAway([...benchAway, initBench(availableRole.value)])
               }
             }}
-              style={{ padding: '4px 8px', fontSize: '12px' }}
-            >
-              {t('matchSetup.addBenchOfficial')}
-            </button>
+            style={{ padding: '4px 8px', fontSize: '12px' }}
+          >
+            {t('matchSetup.addBenchOfficial')}
+          </button>
         </div>
 
         {/* Signatures Section */}
@@ -6033,7 +6032,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
 
-        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={async () => {
             console.log('[MatchSetup] Away roster Confirm clicked, validating...')
 
@@ -6113,15 +6112,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 name: away,
                 color: awayColor
               })
-              
+
               // Update players with captain status
               if (awayRoster.length) {
                 const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
                 const rosterNumbers = new Set(awayRoster.map(p => p.number).filter(n => n != null))
-                
+
                 for (const rosterPlayer of awayRoster) {
                   if (!rosterPlayer.number) continue // Skip players without numbers
-                  
+
                   const existingPlayer = existingPlayers.find(ep => ep.number === rosterPlayer.number)
                   if (existingPlayer) {
                     // Update existing player
@@ -6149,7 +6148,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     })
                   }
                 }
-                
+
                 // Remove players that are no longer in the roster
                 for (const ep of existingPlayers) {
                   if (!rosterNumbers.has(ep.number)) {
@@ -6157,7 +6156,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }
                 }
               }
-              
+
               // Update match with short name, bench officials, and restore signatures (re-lock)
               const updateData = {
                 awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
@@ -6180,7 +6179,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 updateData.awayCaptainSignature = savedSignatures.awayCaptain
                 setAwayCaptainSignature(savedSignatures.awayCaptain)
               }
-              
+
               await db.matches.update(matchId, updateData)
 
               // Sync away team data to Supabase as JSONB
@@ -6513,9 +6512,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           onClose={() => setOpenSignature(null)}
           onSave={handleSignatureSave}
           title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-                 openSignature === 'home-captain' ? 'Home Captain Signature' :
-                 openSignature === 'away-coach' ? 'Away Coach Signature' :
-                 openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+            openSignature === 'home-captain' ? 'Home Captain Signature' :
+              openSignature === 'away-coach' ? 'Away Coach Signature' :
+                openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
         />
       </MatchSetupAwayTeamView>
     )
@@ -6644,7 +6643,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       let pin = ''
       let attempts = 0
       const maxAttempts = 100
-      
+
       do {
         pin = ''
         for (let i = 0; i < 6; i++) {
@@ -6653,17 +6652,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         attempts++
         if (attempts >= maxAttempts) break
       } while (existingPins.includes(pin))
-      
+
       return pin
     }
-    
+
     // Get all existing PINs to ensure uniqueness
     const allMatches = await db.matches.toArray()
     const existingPins = allMatches
       .map(m => [m.refereePin, m.homeTeamPin, m.awayTeamPin, m.homeTeamUploadPin, m.awayTeamUploadPin])
       .flat()
       .filter(Boolean)
-    
+
     return generatePinCode(existingPins)
   }
 
@@ -6715,7 +6714,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         setTimeout(() => ws.close(), 500)
       }
 
-      ws.onerror = () => {}
+      ws.onerror = () => { }
     } catch (error) {
       console.error('[MatchSetup] Failed to sync to server:', error)
     }
@@ -7026,7 +7025,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             cursor: 'pointer',
             flexShrink: 0
           }}
-          onClick={() => onToggle(!enabled)}
+            onClick={() => onToggle(!enabled)}
           >
             <div style={{
               position: 'absolute',
@@ -7099,7 +7098,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             cursor: 'pointer',
             flexShrink: 0
           }}
-          onClick={() => onToggle(!enabled)}
+            onClick={() => onToggle(!enabled)}
           >
             <div style={{
               position: 'absolute',
@@ -7168,7 +7167,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   const handleSavePin = async () => {
     if (!matchId || !editPinType) return
-    
+
     // Validate PIN
     if (!newPin || newPin.length !== 6) {
       setPinError('PIN must be exactly 6 digits')
@@ -7178,7 +7177,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setPinError('PIN must contain only numbers')
       return
     }
-    
+
     try {
       // Ensure PIN is saved as a string (trimmed)
       const pinValue = String(newPin).trim()
@@ -7210,7 +7209,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             onClick={openScoresheet}
             style={{ padding: '6px 12px', fontSize: '13px', background: '#22c55e', color: '#000' }}
           >
-          📄 Scoresheet
+            📄 Scoresheet
           </button>
         </div>
 
@@ -7276,11 +7275,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           <div className="actions">
             {matchInfoConfirmed ? (
-              <button className="secondary" onClick={()=>setCurrentView('info')}>{t('common.edit')}</button>
+              <button className="secondary" onClick={() => setCurrentView('info')}>{t('common.edit')}</button>
             ) : (
               <button
                 className="primary"
-                onClick={()=>setCurrentView('info')}
+                onClick={() => setCurrentView('info')}
               >
                 {t('matchSetup.createMatch')}
               </button>
@@ -7318,7 +7317,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
           <div className="actions">
-            <button className="secondary" onClick={()=>setCurrentView('officials')} disabled={!matchInfoConfirmed}>{t('common.edit')}</button>
+            <button className="secondary" onClick={() => setCurrentView('officials')} disabled={!matchInfoConfirmed}>{t('common.edit')}</button>
           </div>
         </div>
       </div>
@@ -7348,7 +7347,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           />
         </div>
       </div>
-      
+
       <div className="grid-4 setup-section" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
         <div className="card" style={{ order: 1 }}>
           {/* Row 1: Status + Team Name + Sync Indicator */}
@@ -7524,108 +7523,108 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
-        <div className="card" style={{ order: 3 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <StatusBadge ready={serverRunning} />
-                <h3 style={{ margin: 0 }}>Live Server</h3>
-              </div>
-            </div>
-            {serverRunning && serverStatus ? (
-              <div style={{ marginTop: 12 }}>
-                <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', rowGap: 8, marginBottom: 2 }}>
-                  <span>Status:</span>
-                  <span style={{ color: '#10b981', fontWeight: 600 }}>● Running</span>
-                  <span>Hostname:</span>
-                  <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>{serverStatus.hostname || 'escoresheet.local'}</span>
-                  <span>IP Address:</span>
-                  <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>{serverStatus.localIP}</span>
-                  <span>Protocol:</span>
-                  <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span>
+          <div className="card" style={{ order: 3 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <StatusBadge ready={serverRunning} />
+                  <h3 style={{ margin: 0 }}>Live Server</h3>
                 </div>
-                <div style={{ 
-                  background: 'rgba(15, 23, 42, 0.5)', 
-                  padding: '12px', 
-                  borderRadius: '8px', 
-                  marginTop: '12px',
-                  fontSize: '12px'
-                }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Connection URLs:</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'monospace', fontSize: '11px' }}>
-                    <div>
-                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>Main:</div>
-                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>Referee:</div>
-                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>Bench:</div>
-                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket:</div>
-                      <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}</div>
-                    </div>
+              </div>
+              {serverRunning && serverStatus ? (
+                <div style={{ marginTop: 12 }}>
+                  <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', rowGap: 8, marginBottom: 2 }}>
+                    <span>Status:</span>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>● Running</span>
+                    <span>Hostname:</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>{serverStatus.hostname || 'escoresheet.local'}</span>
+                    <span>IP Address:</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>{serverStatus.localIP}</span>
+                    <span>Protocol:</span>
+                    <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span>
                   </div>
-                </div>
-              </div>
-            ) : (
-              <div style={{ marginTop: 12 }}>
-                <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)', marginBottom: 12 }}>
-                  Start the live server to allow referee, bench, and livescore apps to connect.
-                </p>
-                {typeof window !== 'undefined' && !window.electronAPI?.server && (
-                  <div style={{ 
-                    background: 'rgba(255, 255, 255, 0.05)', 
-                    padding: '12px', 
+                  <div style={{
+                    background: 'rgba(15, 23, 42, 0.5)',
+                    padding: '12px',
                     borderRadius: '8px',
-                    fontSize: '12px',
-                    color: 'rgba(255,255,255,0.7)',
-                    marginTop: '12px'
+                    marginTop: '12px',
+                    fontSize: '12px'
                   }}>
-                    <div style={{ marginBottom: '8px', fontWeight: 600 }}>To start from browser/PWA:</div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: '1.6' }}>
-                      Run: <span style={{ color: '#22c55e', fontWeight: 600 }}>npm run start:prod</span> in terminal
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Connection URLs:</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'monospace', fontSize: '11px' }}>
+                      <div>
+                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>Main:</div>
+                        <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>Referee:</div>
+                        <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>Bench:</div>
+                        <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket:</div>
+                        <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}</div>
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="actions">
-            {serverRunning ? (
-              typeof window !== 'undefined' && window.electronAPI?.server ? (
-                <button 
-                  className="secondary" 
-                  onClick={handleStopServer}
+                </div>
+              ) : (
+                <div style={{ marginTop: 12 }}>
+                  <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)', marginBottom: 12 }}>
+                    Start the live server to allow referee, bench, and livescore apps to connect.
+                  </p>
+                  {typeof window !== 'undefined' && !window.electronAPI?.server && (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.7)',
+                      marginTop: '12px'
+                    }}>
+                      <div style={{ marginBottom: '8px', fontWeight: 600 }}>To start from browser/PWA:</div>
+                      <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: '1.6' }}>
+                        Run: <span style={{ color: '#22c55e', fontWeight: 600 }}>npm run start:prod</span> in terminal
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="actions">
+              {serverRunning ? (
+                typeof window !== 'undefined' && window.electronAPI?.server ? (
+                  <button
+                    className="secondary"
+                    onClick={handleStopServer}
+                    disabled={serverLoading}
+                  >
+                    {serverLoading ? 'Stopping...' : 'Stop Server'}
+                  </button>
+                ) : null
+              ) : (
+                <button
+                  className="primary"
+                  onClick={handleStartServer}
                   disabled={serverLoading}
                 >
-                  {serverLoading ? 'Stopping...' : 'Stop Server'}
+                  {typeof window !== 'undefined' && window.electronAPI?.server
+                    ? (serverLoading ? 'Starting...' : 'Start Server')
+                    : '📋 Copy Start Command'
+                  }
                 </button>
-              ) : null
-            ) : (
-              <button 
-                className="primary" 
-                onClick={handleStartServer}
-                disabled={serverLoading}
-              >
-                {typeof window !== 'undefined' && window.electronAPI?.server 
-                  ? (serverLoading ? 'Starting...' : 'Start Server')
-                  : '📋 Copy Start Command'
-                }
-              </button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
         )}
 
-        
+
       </div>
 
-      <div style={{ display:'flex', justifyContent:'space-between', marginTop:1, alignItems:'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 1, alignItems: 'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
         <button
           className="secondary"
           style={{
@@ -7649,159 +7648,159 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               cursor: canProceedToCoinToss ? 'pointer' : 'not-allowed'
             }}
             onClick={async () => {
-            // Check if match has no data (no sets, no signatures)
-            if (matchId && match) {
-              const sets = await db.sets.where('matchId').equals(matchId).toArray()
-              const hasNoData = sets.length === 0 && !match.homeCoachSignature && !match.homeCaptainSignature && !match.awayCoachSignature && !match.awayCaptainSignature
+              // Check if match has no data (no sets, no signatures)
+              if (matchId && match) {
+                const sets = await db.sets.where('matchId').equals(matchId).toArray()
+                const hasNoData = sets.length === 0 && !match.homeCoachSignature && !match.homeCaptainSignature && !match.awayCoachSignature && !match.awayCaptainSignature
 
-              if (hasNoData) {
-                // Check for existing validation errors
-                if (dateError) {
-                  setNoticeModal({ message: `Invalid date: ${dateError}` })
-                  return
-                }
-                if (timeError) {
-                  setNoticeModal({ message: `Invalid time: ${timeError}` })
-                  return
-                }
+                if (hasNoData) {
+                  // Check for existing validation errors
+                  if (dateError) {
+                    setNoticeModal({ message: `Invalid date: ${dateError}` })
+                    return
+                  }
+                  if (timeError) {
+                    setNoticeModal({ message: `Invalid time: ${timeError}` })
+                    return
+                  }
 
-                // Validate date/time before going to coin toss
-                let scheduledAt
-                try {
-                  scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
-                } catch (err) {
-                  setNoticeModal({ message: `Invalid date/time: ${err.message}` })
-                  return
-                }
+                  // Validate date/time before going to coin toss
+                  let scheduledAt
+                  try {
+                    scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
+                  } catch (err) {
+                    setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+                    return
+                  }
 
-                // Update match with current data before going to coin toss
-                await db.matches.update(matchId, {
-                  hall,
-                  city,
-                  match_type_1: type1,
-                  match_type_1_other: type1 === 'other' ? type1Other : null,
-                  championshipType,
-                  championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
-                  match_type_2: type2,
-                  match_type_3: type3,
-                  match_type_3_other: type3 === 'other' ? type3Other : null,
-                  homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
-                  awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
-                  game_n: gameN ? Number(gameN) : null,
-                  gameNumber: gameN ? gameN : null,
-                  league,
-                  scheduledAt,
-                  officials: buildOfficialsArray(
-                    { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-                    { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-                    { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-                    { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-                    { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
-                  ),
-                  bench_home: benchHome,
-                  bench_away: benchAway
-                })
-
-                // Update teams if needed
-                if (match.homeTeamId) {
-                  await db.teams.update(match.homeTeamId, { name: home, color: homeColor })
-                }
-                if (match.awayTeamId) {
-                  await db.teams.update(match.awayTeamId, { name: away, color: awayColor })
-                }
-
-                // Update players
-                if (match.homeTeamId && homeRoster.length) {
-                  // Delete existing players and add new ones
-                  await db.players.where('teamId').equals(match.homeTeamId).delete()
-                  await db.players.bulkAdd(
-                    homeRoster.map(p => ({
-                      teamId: match.homeTeamId,
-                      number: p.number,
-                      name: `${p.lastName} ${p.firstName}`,
-                      lastName: p.lastName,
-                      firstName: p.firstName,
-                      dob: p.dob || null,
-                      libero: p.libero || '',
-                      isCaptain: !!p.isCaptain,
-                      role: null,
-                      createdAt: new Date().toISOString()
-                    }))
-                  )
-                }
-                if (match.awayTeamId && awayRoster.length) {
-                  // Delete existing players and add new ones
-                  await db.players.where('teamId').equals(match.awayTeamId).delete()
-                  await db.players.bulkAdd(
-                    awayRoster.map(p => ({
-                      teamId: match.awayTeamId,
-                      number: p.number,
-                      name: `${p.lastName} ${p.firstName}`,
-                      lastName: p.lastName,
-                      firstName: p.firstName,
-                      dob: p.dob || null,
-                      libero: p.libero || '',
-                      isCaptain: !!p.isCaptain,
-                      role: null,
-                      createdAt: new Date().toISOString()
-                    }))
-                  )
-                }
-
-                // Check if all 4 setup cards are ready before going to coin toss
-                const setupIssues = []
-
-                // Check Match Info
-                if (!(date || time || hall || city || league)) {
-                  setupIssues.push('Match Info (date, time, venue, etc.)')
-                }
-
-                // Check Officials - at least 1R should be set
-                if (!ref1First && !ref1Last) {
-                  setupIssues.push('Match Officials (1st Referee)')
-                }
-
-                // Check Home Team
-                if (!home || home.trim() === '' || home === 'Home') {
-                  setupIssues.push('Home Team name')
-                } else if (homeRoster.length < 6) {
-                  setupIssues.push('Home Team roster (minimum 6 players)')
-                }
-
-                // Check Away Team
-                if (!away || away.trim() === '' || away === 'Away') {
-                  setupIssues.push('Away Team name')
-                } else if (awayRoster.length < 6) {
-                  setupIssues.push('Away Team roster (minimum 6 players)')
-                }
-
-                // Check short names
-                if (!homeShortName || homeShortName.trim() === '') {
-                  setupIssues.push('Home Team short name')
-                }
-                if (!awayShortName || awayShortName.trim() === '') {
-                  setupIssues.push('Away Team short name')
-                }
-
-                if (setupIssues.length > 0) {
-                  setNoticeModal({
-                    message: `Please complete the following before proceeding to coin toss:\n\n• ${setupIssues.join('\n• ')}`
+                  // Update match with current data before going to coin toss
+                  await db.matches.update(matchId, {
+                    hall,
+                    city,
+                    match_type_1: type1,
+                    match_type_1_other: type1 === 'other' ? type1Other : null,
+                    championshipType,
+                    championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
+                    match_type_2: type2,
+                    match_type_3: type3,
+                    match_type_3_other: type3 === 'other' ? type3Other : null,
+                    homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
+                    awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
+                    game_n: gameN ? Number(gameN) : null,
+                    gameNumber: gameN ? gameN : null,
+                    league,
+                    scheduledAt,
+                    officials: buildOfficialsArray(
+                      { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+                      { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+                      { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+                      { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+                      { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+                    ),
+                    bench_home: benchHome,
+                    bench_away: benchAway
                   })
-                  return
-                }
 
-                // Go to coin toss
-                onOpenCoinToss()
+                  // Update teams if needed
+                  if (match.homeTeamId) {
+                    await db.teams.update(match.homeTeamId, { name: home, color: homeColor })
+                  }
+                  if (match.awayTeamId) {
+                    await db.teams.update(match.awayTeamId, { name: away, color: awayColor })
+                  }
+
+                  // Update players
+                  if (match.homeTeamId && homeRoster.length) {
+                    // Delete existing players and add new ones
+                    await db.players.where('teamId').equals(match.homeTeamId).delete()
+                    await db.players.bulkAdd(
+                      homeRoster.map(p => ({
+                        teamId: match.homeTeamId,
+                        number: p.number,
+                        name: `${p.lastName} ${p.firstName}`,
+                        lastName: p.lastName,
+                        firstName: p.firstName,
+                        dob: p.dob || null,
+                        libero: p.libero || '',
+                        isCaptain: !!p.isCaptain,
+                        role: null,
+                        createdAt: new Date().toISOString()
+                      }))
+                    )
+                  }
+                  if (match.awayTeamId && awayRoster.length) {
+                    // Delete existing players and add new ones
+                    await db.players.where('teamId').equals(match.awayTeamId).delete()
+                    await db.players.bulkAdd(
+                      awayRoster.map(p => ({
+                        teamId: match.awayTeamId,
+                        number: p.number,
+                        name: `${p.lastName} ${p.firstName}`,
+                        lastName: p.lastName,
+                        firstName: p.firstName,
+                        dob: p.dob || null,
+                        libero: p.libero || '',
+                        isCaptain: !!p.isCaptain,
+                        role: null,
+                        createdAt: new Date().toISOString()
+                      }))
+                    )
+                  }
+
+                  // Check if all 4 setup cards are ready before going to coin toss
+                  const setupIssues = []
+
+                  // Check Match Info
+                  if (!(date || time || hall || city || league)) {
+                    setupIssues.push('Match Info (date, time, venue, etc.)')
+                  }
+
+                  // Check Officials - at least 1R should be set
+                  if (!ref1First && !ref1Last) {
+                    setupIssues.push('Match Officials (1st Referee)')
+                  }
+
+                  // Check Home Team
+                  if (!home || home.trim() === '' || home === 'Home') {
+                    setupIssues.push('Home Team name')
+                  } else if (homeRoster.length < 6) {
+                    setupIssues.push('Home Team roster (minimum 6 players)')
+                  }
+
+                  // Check Away Team
+                  if (!away || away.trim() === '' || away === 'Away') {
+                    setupIssues.push('Away Team name')
+                  } else if (awayRoster.length < 6) {
+                    setupIssues.push('Away Team roster (minimum 6 players)')
+                  }
+
+                  // Check short names
+                  if (!homeShortName || homeShortName.trim() === '') {
+                    setupIssues.push('Home Team short name')
+                  }
+                  if (!awayShortName || awayShortName.trim() === '') {
+                    setupIssues.push('Away Team short name')
+                  }
+
+                  if (setupIssues.length > 0) {
+                    setNoticeModal({
+                      message: `Please complete the following before proceeding to coin toss:\n\n• ${setupIssues.join('\n• ')}`
+                    })
+                    return
+                  }
+
+                  // Go to coin toss
+                  onOpenCoinToss()
+                } else {
+                  // Match has data already - just go to coin toss (don't create new match)
+                  // The match already exists with data, so just navigate
+                  onOpenCoinToss()
+                }
               } else {
-                // Match has data already - just go to coin toss (don't create new match)
-                // The match already exists with data, so just navigate
-                onOpenCoinToss()
+                // No match exists - create new match
+                await createMatch()
               }
-            } else {
-              // No match exists - create new match
-              await createMatch()
-            }
-          }}>Coin toss</button>
+            }}>Coin toss</button>
         )}
       </div>
 
@@ -7825,26 +7824,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           if (b.libero === 'libero1') return 1
           return 0
         })
-        
+
         // Pad arrays to same length for alignment
         const maxPlayers = Math.max(homePlayers.length, awayPlayers.length)
         const maxLiberos = Math.max(homeLiberos.length, awayLiberos.length)
-        
+
         const paddedHomePlayers = [...homePlayers, ...Array(maxPlayers - homePlayers.length).fill(null)]
         const paddedAwayPlayers = [...awayPlayers, ...Array(maxPlayers - awayPlayers.length).fill(null)]
         const paddedHomeLiberos = [...homeLiberos, ...Array(maxLiberos - homeLiberos.length).fill(null)]
         const paddedAwayLiberos = [...awayLiberos, ...Array(maxLiberos - awayLiberos.length).fill(null)]
-        
+
         // Bench officials
         const homeBench = (benchHome || []).filter(b => b.firstName || b.lastName || b.dob)
         const awayBench = (benchAway || []).filter(b => b.firstName || b.lastName || b.dob)
         const maxBench = Math.max(homeBench.length, awayBench.length)
         const paddedHomeBench = [...homeBench, ...Array(maxBench - homeBench.length).fill(null)]
         const paddedAwayBench = [...awayBench, ...Array(maxBench - awayBench.length).fill(null)]
-        
+
         return (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
-          <div className="panel">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
+            <div className="panel">
               <h3>{home || 'Home'} Team Roster</h3>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
@@ -7875,12 +7874,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           </>
                         ) : (
                           <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                            )}
+                        )}
                       </tr>
-                        ))}
+                    ))}
                   </tbody>
                 </table>
-                    </div>
+              </div>
               {/* Liberos Section */}
               {(maxLiberos > 0) && (
                 <div style={{ marginBottom: 16 }}>
@@ -7904,7 +7903,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                                   {player.isCaptain && <span className="roster-badge captain">C</span>}
                                   <span className="roster-badge libero">
                                     {player.libero === 'libero1' ? 'L1' : 'L2'}
-                            </span>
+                                  </span>
                                 </span>
                               </td>
                               <td className="roster-name">
@@ -7916,13 +7915,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                           )}
                         </tr>
-                        ))}
+                      ))}
                     </tbody>
                   </table>
-                    </div>
-                  )}
+                </div>
+              )}
               {/* Bench Officials Section */}
-                    <div>
+              <div>
                 <strong style={{ display: 'block', marginBottom: 8 }}>Bench</strong>
                 <table className="roster-table">
                   <thead>
@@ -7943,7 +7942,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           </>
                         ) : (
                           <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                  )}
+                        )}
                       </tr>
                     ))}
                     {maxBench === 0 && (
@@ -7954,8 +7953,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </tbody>
                 </table>
               </div>
-          </div>
-          <div className="panel">
+            </div>
+            <div className="panel">
               <h3>{away || 'Away'} Team Roster</h3>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
@@ -7986,12 +7985,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           </>
                         ) : (
                           <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                            )}
+                        )}
                       </tr>
-                        ))}
+                    ))}
                   </tbody>
                 </table>
-                    </div>
+              </div>
               {/* Liberos Section */}
               {(maxLiberos > 0) && (
                 <div style={{ marginBottom: 16 }}>
@@ -8015,7 +8014,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                                   {player.isCaptain && <span className="roster-badge captain">C</span>}
                                   <span className="roster-badge libero">
                                     {player.libero === 'libero1' ? 'L1' : 'L2'}
-                            </span>
+                                  </span>
                                 </span>
                               </td>
                               <td className="roster-name">
@@ -8027,13 +8026,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
                           )}
                         </tr>
-                        ))}
+                      ))}
                     </tbody>
                   </table>
-                    </div>
-                  )}
+                </div>
+              )}
               {/* Bench Officials Section */}
-                    <div>
+              <div>
                 <strong style={{ display: 'block', marginBottom: 8 }}>Bench</strong>
                 <table className="roster-table">
                   <thead>
@@ -8054,7 +8053,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           </>
                         ) : (
                           <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                  )}
+                        )}
                       </tr>
                     ))}
                     {maxBench === 0 && (
@@ -8064,8 +8063,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )}
                   </tbody>
                 </table>
-          </div>
-        </div>
+              </div>
+            </div>
           </div>
         )
       })()}
@@ -8590,14 +8589,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </Modal>
       )}
 
-      <SignaturePad 
-        open={openSignature !== null} 
-        onClose={() => setOpenSignature(null)} 
+      <SignaturePad
+        open={openSignature !== null}
+        onClose={() => setOpenSignature(null)}
         onSave={handleSignatureSave}
-        title={openSignature === 'home-coach' ? 'Home Coach Signature' : 
-               openSignature === 'home-captain' ? 'Home Captain Signature' :
-               openSignature === 'away-coach' ? 'Away Coach Signature' :
-               openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+        title={openSignature === 'home-coach' ? 'Home Coach Signature' :
+          openSignature === 'home-captain' ? 'Home Captain Signature' :
+            openSignature === 'away-coach' ? 'Away Coach Signature' :
+              openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
       />
     </MatchSetupMainView>
   )
