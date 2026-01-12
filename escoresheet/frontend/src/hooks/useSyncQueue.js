@@ -651,5 +651,25 @@ export function useSyncQueue() {
     return () => clearInterval(interval)
   }, [isOnline, syncStatus, flush])
 
-  return { flush, syncStatus, isOnline }
+  /**
+   * Manual retry: reset all 'error' status jobs to 'queued' for immediate reprocessing
+   */
+  const retryErrors = useCallback(async () => {
+    try {
+      const errorJobs = await db.sync_queue.where('status').equals('error').toArray()
+      if (errorJobs.length === 0) return
+
+      console.log(`[SyncQueue] Retrying ${errorJobs.length} errored jobs`)
+      for (const job of errorJobs) {
+        await db.sync_queue.update(job.id, { status: 'queued', retry_count: 0 })
+      }
+
+      // Trigger a flush immediately
+      flush()
+    } catch (err) {
+      console.error('[SyncQueue] Retry errors failed:', err)
+    }
+  }, [flush])
+
+  return { flush, retryErrors, syncStatus, isOnline }
 }

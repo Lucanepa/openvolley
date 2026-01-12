@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set 5 Layout Demo - With Draft Coin Toss</title>
+    <style>
+        body {
+            background-color: #1e293b;
+            color: #fff;
+            font-family: sans-serif;
+            margin: 0;
+            overflow: hidden;
+            /* App often locks scroll */
+            height: 100vh;
+            display: flex;
+        }
+
+        .column {
+            padding: 10px;
+            box-sizing: border-box;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: auto;
+        }
+
+        .col-left {
+            width: 30%;
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        .col-center {
+            width: 40%;
+            display: flex;
+            flexDirection: column;
+            align-items: center;
+        }
+
+        .col-right {
+            width: 30%;
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        .score-board {
+            display: flex;
+            gap: 20px;
+            font-size: 40px;
+            font-weight: bold;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        /* The Court Canvas/Container */
+        .court-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .half-court {
+            background: rgba(15, 23, 42, 0.6);
+            border: 2px solid #ef4444;
+            padding: 10px;
+            width: 120px;
+            height: 120px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px;
+        }
+
+        .court-pos {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        /* 2R Indicator (Simulated) */
+        .indicator-2r {
+            position: absolute;
+            /* Simulate potential overlap cause */
+            top: 150px;
+            right: 35%;
+            background: gold;
+            color: black;
+            padding: 5px;
+            border-radius: 4px;
+            font-weight: bold;
+            z-index: 10;
+        }
+
+        /* Controls Area */
+        .controls-area {
+            width: 100%;
+            margin-top: auto;
+            /* Push to bottom */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-confirm {
+            background: var(--accent, #10b981);
+            border: none;
+            color: black;
+            font-weight: bold;
+            justify-content: center;
+            margin-top: 8px;
+            padding: 16px;
+        }
+
+        /* Fix Toggle */
+        .fix-toggle {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            z-index: 100;
+        }
+
+        /* Countdown Bar */
+        .progress-bar-container {
+            width: 60%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+            margin-bottom: 12px;
+        }
+
+        .progress-bar {
+            width: 80%;
+            height: 100%;
+            background: #eab308;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="fix-toggle">
+        <label>
+            <input type="checkbox" id="mode-check" checked> Pending Coin Toss (Set 5)
+        </label>
+        <p>Checked = Set 5 Interval, Not Confirmed</p>
+    </div>
+
+    <div class="column col-left">
+        <h3>Team A</h3>
+        <p>Roster...</p>
+    </div>
+
+    <div class="column col-center" id="center-col">
+        <div class="score-board">
+            <span style="color: #ef4444">2</span>
+            <span>-</span>
+            <span style="color: #3b82f6">2</span>
+        </div>
+
+        <div class="indicator-2r">2R</div>
+
+        <!-- Court View (Hidden in Draft Mode) -->
+        <div class="court-container" id="court-view" style="display: none;">
+            <div class="half-court" style="border-color: #ef4444">
+                <!-- Grid items -->
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+            </div>
+            <div class="half-court" style="border-color: #3b82f6">
+                <!-- Grid items -->
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+                <div class="court-pos"></div>
+            </div>
+        </div>
+
+        <div class="controls-area">
+            <!-- Countdown -->
+            <div style="font-size: 33px; font-weight: 700; color: #eab308; textAlign: center;">02:30</div>
+            <div class="progress-bar-container">
+                <div class="progress-bar"></div>
+            </div>
+
+            <!-- Coin Toss UI (Visible in Draft Mode) -->
+            <div id="coin-toss-ui">
+                <div style="text-align: center; font-size: 13px; color: #aaa; margin-bottom: 4px;"> Set 5 Coin Toss
+                    Pending </div>
+
+                <button class="btn" onclick="toggleSide()">
+                    <span id="side-left">&lt; Team A</span>
+                    <span style="font-weight: bold">SWITCH SIDES</span>
+                    <span id="side-right">Team B &gt;</span>
+                </button>
+
+                <button class="btn" onclick="toggleServe()" style="justify-content: center;">
+                    Serve: <span id="serve-team" style="font-weight: bold; color: #eab308; margin-left: 5px;">Team
+                        A</span>
+                </button>
+
+                <button class="btn btn-confirm" onclick="confirmToss()">CONFIRM COIN TOSS</button>
+            </div>
+
+            <!-- End Set Interval (Hidden in Draft Mode) -->
+            <button id="btn-end-interval" class="btn-confirm"
+                style="display: none; background: #eab308; margin-top: 0">End Set Interval</button>
+        </div>
+    </div>
+
+    <div class="column col-right">
+        <h3>Team B</h3>
+        <p>Roster...</p>
+    </div>
+
+    <script>
+        const checkbox = document.getElementById('mode-check');
+        const courtView = document.getElementById('court-view');
+        const coinTossUi = document.getElementById('coin-toss-ui');
+        const btnEndInterval = document.getElementById('btn-end-interval');
+
+        let sideA = 'left';
+        let serve = 'A';
+
+        function updateUi() {
+            const leftName = sideA === 'left' ? 'Team A' : 'Team B';
+            const rightName = sideA === 'left' ? 'Team B' : 'Team A';
+            document.getElementById('side-left').innerText = '< ' + leftName;
+            document.getElementById('side-right').innerText = rightName + ' >';
+
+            const serveName = serve === 'A' ? 'Team A' : 'Team B';
+            document.getElementById('serve-team').innerText = serveName;
+        }
+
+        window.toggleSide = () => {
+            sideA = sideA === 'left' ? 'right' : 'left';
+            updateUi();
+        };
+
+        window.toggleServe = () => {
+            serve = serve === 'A' ? 'B' : 'A';
+            updateUi();
+        }
+
+        window.confirmToss = () => {
+            checkbox.checked = false;
+            checkbox.dispatchEvent(new Event('change'));
+        }
+
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                // Draft Mode
+                courtView.style.display = 'none';
+                coinTossUi.style.display = 'block';
+                btnEndInterval.style.display = 'none';
+            } else {
+                // Confirmed Mode
+                courtView.style.display = 'flex';
+                coinTossUi.style.display = 'none';
+                btnEndInterval.style.display = 'block';
+            }
+        });
+
+        updateUi();
+    </script>
+</body>
+
+</html>

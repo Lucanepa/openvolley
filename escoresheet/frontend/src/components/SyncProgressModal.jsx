@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -24,28 +24,34 @@ export default function SyncProgressModal({
 }) {
   const { t } = useTranslation()
   const [autoProceeding, setAutoProceeding] = useState(false)
+  // Use ref for onProceed to avoid restarting the timer when the callback identity changes
+  // (e.g. parent re-renders due to clock ticks or other state changes)
+  const latestOnProceed = useRef(onProceed)
+  useEffect(() => {
+    latestOnProceed.current = onProceed
+  }, [onProceed])
 
   // Auto-proceed after success (1s delay to show "Done")
   useEffect(() => {
-    if (isComplete && !hasError && !hasWarning && onProceed && !autoProceeding) {
+    if (isComplete && !hasError && !hasWarning && !autoProceeding) {
       setAutoProceeding(true)
       const timer = setTimeout(() => {
-        onProceed()
+        if (latestOnProceed.current) latestOnProceed.current()
       }, 1000)
       return () => clearTimeout(timer)
     }
-  }, [isComplete, hasError, hasWarning, onProceed, autoProceeding])
+  }, [isComplete, hasError, hasWarning, autoProceeding])
 
   // Auto-proceed for warnings (offline) after 1.5s
   useEffect(() => {
-    if (isComplete && hasWarning && !hasError && onProceed && !autoProceeding) {
+    if (isComplete && hasWarning && !hasError && !autoProceeding) {
       setAutoProceeding(true)
       const timer = setTimeout(() => {
-        onProceed()
+        if (latestOnProceed.current) latestOnProceed.current()
       }, 1500)
       return () => clearTimeout(timer)
     }
-  }, [isComplete, hasWarning, hasError, onProceed, autoProceeding])
+  }, [isComplete, hasWarning, hasError, autoProceeding])
 
   // Reset auto-proceeding state when modal closes
   useEffect(() => {
@@ -160,8 +166,8 @@ export default function SyncProgressModal({
               </div>
               <span style={{
                 color: step.status === 'done' ? '#22c55e' :
-                       step.status === 'error' ? '#ef4444' :
-                       step.status === 'warning' ? '#f59e0b' : '#fff',
+                  step.status === 'error' ? '#ef4444' :
+                    step.status === 'warning' ? '#f59e0b' : '#fff',
                 fontSize: 16
               }}>
                 {getStepLabel(step)}

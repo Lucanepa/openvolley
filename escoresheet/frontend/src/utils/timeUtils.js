@@ -137,3 +137,20 @@ export function splitLocalDateTime(isoString) {
     return { date: '', time: '' }
   }
 }
+
+/**
+ * Round UTC ISO string to the nearest minute (seconds and ms set to zero)
+ * @param {string} isoString - ISO 8601 string
+ * @returns {string|null} Wrapped ISO string with zeroed seconds/ms
+ */
+export function roundToMinute(isoString) {
+  if (!isoString) return null
+  try {
+    const date = new Date(isoString)
+    if (isNaN(date.getTime())) return null
+    date.setUTCSeconds(0, 0)
+    return date.toISOString()
+  } catch {
+    return null
+  }
+}

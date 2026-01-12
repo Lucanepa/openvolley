@@ -244,8 +244,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const [downloadProgress, setDownloadProgress] = useState(null) // { json: boolean, pdf: boolean }
 
   // Prevent accidental navigation away before approval
+  // Skip warning during save process (isSaving) to avoid dialog during PDF generation
   useEffect(() => {
-    if (isApproved) return // Allow navigation after approval
+    if (isApproved || isSaving) return // Allow navigation after approval or during save
 
     const handleBeforeUnload = (e) => {
       e.preventDefault()
@@ -255,7 +256,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [isApproved])
+  }, [isApproved, isSaving])
 
   // Calculate set results for Results component - must be before early return to maintain hook order
   const calculateSetResults = useMemo(() => {
@@ -508,9 +509,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       o.role?.toLowerCase() === '2nd referee' || o.role?.toLowerCase() === '2nd_referee'
     ))
 
-  // Signature status checks
-  const captainASigned = homeLabel === 'A' ? !!match.homeCaptainSignature : !!match.awayCaptainSignature
-  const captainBSigned = homeLabel === 'B' ? !!match.homeCaptainSignature : !!match.awayCaptainSignature
+  // Signature status checks - use POST-GAME captain signatures (not pre-match)
+  const captainASigned = homeLabel === 'A' ? !!match.homePostGameCaptainSignature : !!match.awayPostGameCaptainSignature
+  const captainBSigned = homeLabel === 'B' ? !!match.homePostGameCaptainSignature : !!match.awayPostGameCaptainSignature
   const captainsDone = captainASigned && captainBSigned
 
   const asstScorerSigned = !hasAsstScorer || !!match.asstScorerSignature
@@ -532,8 +533,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
   const handleSaveSignature = async (role, signatureData) => {
     const fieldMap = {
-      'captain-a': homeLabel === 'A' ? 'homeCaptainSignature' : 'awayCaptainSignature',
-      'captain-b': homeLabel === 'B' ? 'homeCaptainSignature' : 'awayCaptainSignature',
+      'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+      'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
       'asst-scorer': 'asstScorerSignature',
       'scorer': 'scorerSignature',
       'ref2': 'ref2Signature',
@@ -547,8 +548,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   }
 
   const getSignatureData = (role) => {
-    if (role === 'captain-a') return homeLabel === 'A' ? match.homeCaptainSignature : match.awayCaptainSignature
-    if (role === 'captain-b') return homeLabel === 'B' ? match.homeCaptainSignature : match.awayCaptainSignature
+    if (role === 'captain-a') return homeLabel === 'A' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature
+    if (role === 'captain-b') return homeLabel === 'B' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature
     if (role === 'asst-scorer') return match.asstScorerSignature
     if (role === 'scorer') return match.scorerSignature
     if (role === 'ref2') return match.ref2Signature
@@ -773,6 +774,19 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
     if (closeMatch) {
       // Save to sync queue if official match with seed_key
       if (!match.test && match?.seed_key) {
+        // Collect all signatures for the approval JSONB field
+        const approvalData = {
+          approvedAt: new Date().toISOString(),
+          signatures: {
+            captainA: homeLabel === 'A' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
+            captainB: homeLabel === 'B' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
+            scorer: match.scorerSignature || null,
+            asstScorer: match.asstScorerSignature || null,
+            ref1: match.ref1Signature || null,
+            ref2: match.ref2Signature || null
+          }
+        }
+
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
@@ -780,8 +794,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: 'final',
             current_set: null, // Clear current_set when match is final (not_live)
-            approved: true,
-            approvedAt: new Date().toISOString()
+            approval: approvalData // JSONB field with signatures and approval timestamp
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -1039,6 +1052,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
           buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
           showArrow={true}
           position="right"
+          vertical="top"
           items={[
             { key: 'preview', label: '🔍 Preview', onClick: () => handleShowScoresheet('preview') },
             { key: 'print', label: '🖨️ Print', onClick: () => handleShowScoresheet('print') },

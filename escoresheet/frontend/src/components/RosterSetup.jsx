@@ -993,6 +993,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
                         type="number"
                         value={player.number || ''}
                         onChange={(e) => handleUpdatePlayer(index, 'number', parseInt(e.target.value) || 0)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                         style={{
                           width: '40px',
                           padding: '6px',
@@ -1010,6 +1011,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
                         type="text"
                         value={player.firstName}
                         onChange={(e) => handleUpdatePlayer(index, 'firstName', e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                         style={{
                           width: '150px',
                           padding: '6px',
@@ -1026,6 +1028,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
                         type="text"
                         value={player.lastName}
                         onChange={(e) => handleUpdatePlayer(index, 'lastName', e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                         style={{
                           width: '150px',
                           padding: '6px',
@@ -1042,6 +1045,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
                         type="text"
                         value={player.dob}
                         onChange={(e) => handleUpdatePlayer(index, 'dob', e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                         placeholder="DD/MM/YYYY"
                         style={{
                           width: '120px',
