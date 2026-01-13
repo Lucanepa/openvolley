@@ -5824,7 +5824,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Only show initial lineups as "Line-up setup"
       if (isInitial) {
-        eventDescription = `Line-up setup — ${teamName}`
+        eventDescription = `${t('scoreboard.lineupSetup', 'Line-up setup')} — ${teamName}`
       } else if (hasLiberoSub) {
         // Show libero-related lineup changes with the new lineup
         const lineup = event.payload?.lineup || {}
@@ -15083,7 +15083,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         animation: 'lineupFlash 1.5s ease-in-out infinite'
                       }}
                     >
-                      <span>Line-up</span>
+                      <span>{t('scoreboard.lineup', 'Line-up')}</span>
                       <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamALabel} - {teamAShortName}</span>
                     </button>
                   )}
@@ -15116,7 +15116,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         animation: 'lineupFlash 1.5s ease-in-out infinite'
                       }}
                     >
-                      <span>Line-up</span>
+                      <span>{t('scoreboard.lineup', 'Line-up')}</span>
                       <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamBLabel} - {teamBShortName}</span>
                     </button>
                   )}
@@ -15663,7 +15663,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         color: '#22c55e',
                         textAlign: 'center'
                       }}>
-                        Line-up set
+                        {t('scoreboard.lineupSet', 'Line-up set')}
                       </div>
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
                         <button
@@ -15683,7 +15683,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             cursor: 'pointer'
                           }}
                         >
-                          Show Line-up
+                          {t('scoreboard.showLineup', 'Show Line-up')}
                         </button>
                         <button
                           onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
@@ -15698,7 +15698,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             cursor: 'pointer'
                           }}
                         >
-                          Change Line-up
+                          {t('scoreboard.changeLineup', 'Change Line-up')}
                         </button>
                       </div>
                     </div>
@@ -16254,7 +16254,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         color: '#22c55e',
                         textAlign: 'center'
                       }}>
-                        Line-up set
+                        {t('scoreboard.lineupSet', 'Line-up set')}
                       </div>
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
                         <button
@@ -16274,7 +16274,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             cursor: 'pointer'
                           }}
                         >
-                          Show Line-up
+                          {t('scoreboard.showLineup', 'Show Line-up')}
                         </button>
                         <button
                           onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
@@ -16289,7 +16289,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             cursor: 'pointer'
                           }}
                         >
-                          Change Line-up
+                          {t('scoreboard.changeLineup', 'Change Line-up')}
                         </button>
                       </div>
                     </div>
@@ -16842,7 +16842,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                           return (
                             <div style={{ fontSize: '12px', wordBreak: 'break-word', margin: '0 auto', whiteSpace: 'normal' }}>
-                              <span className="summary-label" style={{ whiteSpace: 'normal' }}>Last action: </span>
+                              <span className="summary-label" style={{ whiteSpace: 'normal' }}>{t('scoreboard.lastAction', 'Last action:')} </span>
                               <span className="summary-value" style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
                                 {description} <span style={{ opacity: 0.5, fontSize: '10px' }}>(seq: {lastEvent.seq})</span>
                               </span>
@@ -17987,7 +17987,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setShowLogs(true)
                   setMenuModal(false)
                 }}>
-                Show Action Log
+                {t('scoreboard.menu.showActionLog', 'Show Action Log')}
               </div>
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -18009,7 +18009,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setShowSanctions(true)
                   setMenuModal(false)
                 }}>
-                Show Sanctions and Results
+                {t('scoreboard.menu.showSanctionsResults', 'Show Sanctions and Results')}
               </div>
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -18031,7 +18031,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setShowManualPanel(true)
                   setMenuModal(false)
                 }}>
-                Manual Changes
+                {t('scoreboard.menu.manualChanges', 'Manual Changes')}
               </div>
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -18053,7 +18053,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setShowRemarks(true)
                   setMenuModal(false)
                 }}>
-                Open Remarks Recording
+                {t('scoreboard.menu.openRemarksRecording', 'Open Remarks Recording')}
               </div>
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -18097,7 +18097,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setShowPinsModal(true)
                   setMenuModal(false)
                 }}>
-                Show PINs
+                {t('scoreboard.menu.showPins', 'Show PINs')}
               </div>
               {onOpenMatchSetup && (
                 <div style={{
@@ -18120,7 +18120,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     onOpenMatchSetup()
                     setMenuModal(false)
                   }}>
-                  Show Match Setup
+                  {t('scoreboard.menu.showMatchSetup', 'Show Match Setup')}
                 </div>
               )}
 
@@ -18183,7 +18183,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     showAlert('Error exporting database data. Please try again.', 'error')
                   }
                 }}>
-                📥 Download Game Data (JSON)
+                📥 {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
               </div>
               <div style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -18206,7 +18206,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={() => {
                   setShowOptionsInMenu(true)
                 }}>
-                ⚙️ {t('scoreboard.options')}
+                ⚙️ {t('scoreboard.menu.options', 'Options')}
               </div>
             </div>
           </div>
@@ -24068,19 +24068,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
             <p style={{ marginBottom: '16px', fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
-              Click on a key to change it. Press the new key to assign, or Escape to cancel.
+              {t('scoreboard.keybindings.instruction', 'Click on a key to change it. Press the new key to assign, or Escape to cancel.')}
             </p>
             {[
-              { key: 'pointLeft', label: 'Point Left Team', description: 'Award point to left team' },
-              { key: 'pointRight', label: 'Point Right Team', description: 'Award point to right team' },
-              { key: 'timeoutLeft', label: 'Timeout Left Team', description: 'Call timeout for left team' },
-              { key: 'timeoutRight', label: 'Timeout Right Team', description: 'Call timeout for right team' },
-              { key: 'exchangeLiberoLeft', label: 'Exchange Libero Left', description: 'Exchange L1/L2 for left team' },
-              { key: 'exchangeLiberoRight', label: 'Exchange Libero Right', description: 'Exchange L1/L2 for right team' },
-              { key: 'undo', label: 'Undo', description: 'Undo last action' },
-              { key: 'startRally', label: 'Start Rally / Confirm', description: 'Start rally or confirm modal' },
-              { key: 'cancel', label: 'Cancel / Close', description: 'Cancel or close menus' }
-            ].map(({ key, label, description }) => (
+              { key: 'pointLeft', labelKey: 'scoreboard.keybindings.pointLeftTeam', descKey: 'scoreboard.keybindings.pointLeftTeamDesc', label: 'Point Left Team', description: 'Award point to left team' },
+              { key: 'pointRight', labelKey: 'scoreboard.keybindings.pointRightTeam', descKey: 'scoreboard.keybindings.pointRightTeamDesc', label: 'Point Right Team', description: 'Award point to right team' },
+              { key: 'timeoutLeft', labelKey: 'scoreboard.keybindings.timeoutLeftTeam', descKey: 'scoreboard.keybindings.timeoutLeftTeamDesc', label: 'Timeout Left Team', description: 'Call timeout for left team' },
+              { key: 'timeoutRight', labelKey: 'scoreboard.keybindings.timeoutRightTeam', descKey: 'scoreboard.keybindings.timeoutRightTeamDesc', label: 'Timeout Right Team', description: 'Call timeout for right team' },
+              { key: 'exchangeLiberoLeft', labelKey: 'scoreboard.keybindings.exchangeLiberoLeft', descKey: 'scoreboard.keybindings.exchangeLiberoLeftDesc', label: 'Exchange Libero Left', description: 'Exchange L1/L2 for left team' },
+              { key: 'exchangeLiberoRight', labelKey: 'scoreboard.keybindings.exchangeLiberoRight', descKey: 'scoreboard.keybindings.exchangeLiberoRightDesc', label: 'Exchange Libero Right', description: 'Exchange L1/L2 for right team' },
+              { key: 'undo', labelKey: 'scoreboard.keybindings.undo', descKey: 'scoreboard.keybindings.undoDesc', label: 'Undo', description: 'Undo last action' },
+              { key: 'startRally', labelKey: 'scoreboard.keybindings.startRallyConfirm', descKey: 'scoreboard.keybindings.startRallyConfirmDesc', label: 'Start Rally / Confirm', description: 'Start rally or confirm modal' },
+              { key: 'cancel', labelKey: 'scoreboard.keybindings.cancelClose', descKey: 'scoreboard.keybindings.cancelCloseDesc', label: 'Cancel / Close', description: 'Cancel or close menus' }
+            ].map(({ key, labelKey, descKey, label, description }) => (
               <div
                 key={key}
                 style={{
@@ -24095,8 +24095,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{label}</div>
-                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{description}</div>
+                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{t(labelKey, label)}</div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{t(descKey, description)}</div>
                 </div>
                 <button
                   onClick={() => {
@@ -24134,7 +24134,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     textAlign: 'center'
                   }}
                 >
-                  {editingKey === key ? 'Press key...' : (
+                  {editingKey === key ? t('scoreboard.keybindings.pressKey', 'Press key...') : (
                     keyBindings[key] === ' ' ? 'Space' :
                       keyBindings[key] === 'Enter' ? 'Enter' :
                         keyBindings[key] === 'Escape' ? 'Esc' :
@@ -24165,7 +24165,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: 'pointer'
                 }}
               >
-                Reset to Defaults
+                {t('scoreboard.keybindings.resetToDefaults', 'Reset to Defaults')}
               </button>
               <button
                 onClick={() => {
@@ -24183,7 +24183,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: 'pointer'
                 }}
               >
-                Done
+                {t('scoreboard.keybindings.done', 'Done')}
               </button>
             </div>
           </div>
@@ -27216,6 +27216,7 @@ function ScoreboardCourtColumn({ children }) {
 }
 
 function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, onClose, onSave, onLineupSaved }) {
+  const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
       const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
@@ -27938,7 +27939,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             color: 'var(--muted)',
             marginBottom: '8px'
           }}>
-            Available Players:
+            {t('scoreboard.lineupModal.availablePlayers', 'Available Players:')}
           </div>
           <div style={{
             display: 'flex',
@@ -28052,7 +28053,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     e.currentTarget.style.transform = 'scale(1)'
                   }
                 }}
-                title="Click or drag to assign to a position"
+                title={t('scoreboard.lineupModal.clickOrDragTooltip', 'Click or drag to assign to a position')}
               >
                 {p.isCaptain && (
                   <span style={{
@@ -28088,7 +28089,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           marginBottom: '16px',
           fontStyle: 'italic'
         }}>
-          Please write the number, drag and drop it, or click on available player to fill each of the available positions
+          {t('scoreboard.lineupModal.dragInstruction', 'Please write the number, drag and drop it, or click on available player to fill each of the available positions')}
         </div>
 
         {/* Undo, Clear, and Rotate buttons - hidden when lineup is confirmed */}
@@ -28114,7 +28115,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   }}
                 >
                   <span style={{ fontSize: '16px' }}>↩</span>
-                  Undo last edit
+                  {t('scoreboard.lineupModal.undoLastEdit', 'Undo last edit')}
                 </button>
               )}
               {lineup.some(v => v && v.trim() !== '') && (
@@ -28132,7 +28133,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   }}
                 >
                   <span style={{ fontSize: '16px' }}>✕</span>
-                  Clear lineup
+                  {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
                 </button>
               )}
             </div>
@@ -28148,7 +28149,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 <button
                   className="secondary"
                   onClick={handleRotateClockwise}
-                  title="Rotate clockwise"
+                  title={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -28168,13 +28169,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   fontSize: '12px',
                   color: 'var(--muted)'
                 }}>
-                  Rotate
+                  {t('scoreboard.lineupModal.rotate', 'Rotate')}
                 </span>
 
                 <button
                   className="secondary"
                   onClick={handleRotateCounterClockwise}
-                  title="Rotate counterclockwise"
+                  title={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -28203,7 +28204,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             color: '#ef4444',
             fontSize: '14px'
           }}>
-            Please check: All numbers must exist in roster, not be liberos, and not be duplicated.
+            {t('scoreboard.lineupModal.validationError', 'Please check: All numbers must exist in roster, not be liberos, and not be duplicated.')}
           </div>
         )}
 
@@ -28227,7 +28228,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
           {confirmMessage === null && (
             <button onClick={handleConfirm}>
-              Confirm
+              {t('scoreboard.lineupModal.confirm', 'Confirm')}
             </button>
           )}
 
@@ -28242,7 +28243,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               }
             }}
           >
-            Close
+            {t('scoreboard.lineupModal.close', 'Close')}
           </button>
           {confirmMessage !== null && (
             <button
@@ -28256,7 +28257,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 cursor: 'point  er'
               }}
             >
-              Modify
+              {t('scoreboard.lineupModal.modify', 'Modify')}
             </button>
           )}
         </div>

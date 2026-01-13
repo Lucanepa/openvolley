@@ -41,13 +41,13 @@
     "captain": "Capitano",
     "confirmResult": "Conferma Risultato Coin Toss",
     "returnToMatch": "Torna alla partita",
-    "scoresheet": "Referto",
+    "scoresheet": "eScoresheet",
     "preview": "Anteprima",
     "print": "Stampa",
     "savePdf": "Salva PDF",
-    "allowPopups": "Consenti i popup per visualizzare il referto",
+    "allowPopups": "Consenti i popup per visualizzare l'eScoresheet",
     "noMatchData": "Nessun dato partita disponibile",
-    "failedToOpenScoresheet": "Impossibile aprire il referto: {{error}}",
+    "failedToOpenScoresheet": "Impossibile aprire l'eScoresheet: {{error}}",
     "validation": {
       "completeSignatures": "Completa tutte le firme prima di confermare il sorteggio."
     }
@@ -386,8 +386,8 @@
       "noLegalSubstitution": "Nessuna sostituzione legale disponibile",
       "liberoReminder": "Promemoria libero",
       "reopenSet": "Riapri set",
-      "scoresheetError": "Errore referto",
-      "scoresheetAlreadyOpen": "Referto già aperto",
+      "scoresheetError": "Errore eScoresheet",
+      "scoresheetAlreadyOpen": "eScoresheet già aperto",
       "remarksRecording": "Registrazione osservazioni",
       "sanctionsAndResults": "Sanzioni e risultati",
       "confirmSecondTimeout": "Confermare richiesta di {{ordinal}} timeout?",
@@ -445,7 +445,7 @@
       "areYouSureAwardPoint": "Sei sicuro che il punto debba essere assegnato a {{team}}?"
     },
     "menu": {
-      "scoresheet": "Referto",
+      "scoresheet": "eScoresheet",
       "menu": "Menu",
       "showSanctionsResults": "Mostra sanzioni e risultati",
       "gamePins": "PIN partita",
@@ -630,11 +630,11 @@
     "exitFullscreen": "Esci da schermo intero",
     "fullscreen": "Schermo intero",
     "exit": "Esci",
-    "scoresheet": "Referto",
+    "scoresheet": "eScoresheet",
     "preview": "Anteprima",
     "print": "Stampa",
     "savePdf": "Salva PDF",
-    "allowPopups": "Consenti i popup per visualizzare il referto"
+    "allowPopups": "Consenti i popup per visualizzare l'eScoresheet"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -866,7 +866,7 @@
     "referee2": "2° Arbitro",
     "referee1": "1° Arbitro",
     "allSignaturesCollected": "Tutte le firme raccolte",
-    "scoresheet": "Referto",
+    "scoresheet": "eScoresheet",
     "preview": "Anteprima",
     "print": "Stampa",
     "savePdf": "Salva PDF",
@@ -883,7 +883,7 @@
     "yesReopen": "Sì, Riapri Set",
     "cancel": "Annulla",
     "preparingExport": "Preparazione esportazione...",
-    "generatingPdf": "Generazione Referto (PDF)",
+    "generatingPdf": "Generazione eScoresheet (PDF)",
     "creatingZip": "Creazione ZIP e caricamento cloud...",
     "waitCheck": "Attendere prego...",
     "waiting": "In attesa...",
@@ -1020,10 +1020,10 @@
     "uploadSuccess": "Rosa caricata con successo!",
     "uploadError": "Salvataggio fallito. Riprova.",
     "confirmTitle": "Conferma caricamento",
-    "confirmMessage": "Questo invierà la rosa al referto per l'approvazione.",
+    "confirmMessage": "Questo invierà la rosa al eScoresheet per l'approvazione.",
     "uploading": "Caricamento",
     "uploadingMessage": "Invio della rosa in corso...",
-    "rosterSentToScoresheet": "La rosa è stata inviata al referto. Il segnapunti esaminerà e accetterà o rifiuterà la rosa."
+    "rosterSentToScoresheet": "La rosa è stata inviata al eScoresheet. Il segnapunti esaminerà e accetterà o rifiuterà la rosa."
   },
   "benchDashboard": {
     "title": "Dashboard Squadra",
@@ -1059,7 +1059,7 @@
     "exitFullscreen": "Esci",
     "fullscreen": "Schermo intero",
     "noActiveGame": "Nessuna partita attiva trovata",
-    "startMatchToConnect": "Avvia una partita sul referto principale per connetterti",
+    "startMatchToConnect": "Avvia una partita sul eScoresheet principale per connetterti",
     "selectGame": "Seleziona partita",
     "gamesAvailable": "{{count}} disponibile/i",
     "gameNumber": "Partita #{{number}}",
@@ -1090,7 +1090,7 @@
       "directDesc": "WebSocket diretto"
     },
     "awaitingCoinToss": "Awaiting Coin Toss",
-    "awaitingCoinTossDesc": "La partita inizierà una volta confermato il Coin Toss sul referto.",
+    "awaitingCoinTossDesc": "La partita inizierà una volta confermato il Coin Toss sul eScoresheet.",
     "matchHasEnded": "La partita è terminata",
     "lineupSet": "Formazione inserita",
     "showLineup": "Mostra formazione",
@@ -1194,9 +1194,9 @@
     "errors": {
       "enterGameNumber": "Inserisci un numero di partita",
       "matchNotFound": "Partita non trovata con questo numero",
-      "failedToFindMatch": "Impossibile trovare la partita. Assicurati che il referto principale sia in esecuzione.",
+      "failedToFindMatch": "Impossibile trovare la partita. Assicurati che l'eScoresheet principale sia in esecuzione.",
       "failedToLoadData": "Impossibile caricare i dati",
-      "failedToLoadDataConnection": "Impossibile caricare i dati. Assicurati che il referto principale sia in esecuzione."
+      "failedToLoadDataConnection": "Impossibile caricare i dati. Assicurati che l'eScoresheet principale sia in esecuzione."
     }
   },
   "auth": {

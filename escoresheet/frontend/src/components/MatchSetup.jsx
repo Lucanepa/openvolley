@@ -510,11 +510,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Bench
   const BENCH_ROLES = [
-    { value: 'Coach', label: 'C', fullLabel: 'Coach' },
-    { value: 'Assistant Coach 1', label: 'AC1', fullLabel: 'Assistant Coach 1' },
-    { value: 'Assistant Coach 2', label: 'AC2', fullLabel: 'Assistant Coach 2' },
-    { value: 'Physiotherapist', label: 'P', fullLabel: 'Physiotherapist' },
-    { value: 'Medic', label: 'M', fullLabel: 'Medic' }
+    { value: 'Coach', label: 'C', labelKey: 'benchRolesShort.coach', fullLabelKey: 'benchRoles.coach' },
+    { value: 'Assistant Coach 1', label: 'AC1', labelKey: 'benchRolesShort.assistantCoach1', fullLabelKey: 'benchRoles.assistantCoach1' },
+    { value: 'Assistant Coach 2', label: 'AC2', labelKey: 'benchRolesShort.assistantCoach2', fullLabelKey: 'benchRoles.assistantCoach2' },
+    { value: 'Physiotherapist', label: 'P', labelKey: 'benchRolesShort.physiotherapist', fullLabelKey: 'benchRoles.physiotherapist' },
+    { value: 'Medic', label: 'M', labelKey: 'benchRolesShort.medic', fullLabelKey: 'benchRoles.medic' }
   ]
 
   const getRoleOrder = (role) => {
@@ -4565,7 +4565,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === role.value)
                   return (
                     <option key={role.value} value={role.value} disabled={isRoleTaken}>
-                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                      {t(role.labelKey, role.label)} - {t(role.fullLabelKey)}{isRoleTaken ? ` (${t('matchSetup.alreadyAssigned', 'already assigned')})` : ''}
                     </option>
                   )
                 })}
@@ -5882,7 +5882,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === role.value)
                   return (
                     <option key={role.value} value={role.value} disabled={isRoleTaken}>
-                      {role.label} - {role.fullLabel}{isRoleTaken ? ' (already assigned)' : ''}
+                      {t(role.labelKey, role.label)} - {t(role.fullLabelKey)}{isRoleTaken ? ` (${t('matchSetup.alreadyAssigned', 'already assigned')})` : ''}
                     </option>
                   )
                 })}
@@ -6555,7 +6555,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       synced: t('matchSetup.syncStatus.synced', 'Synced'),
       syncing: t('matchSetup.syncStatus.syncing', 'Syncing...'),
       error: t('matchSetup.syncStatus.error', 'Sync Error'),
-      idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced', 'Not synced') : t('matchSetup.syncStatus.offline', 'Offline')
+      idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced') : t('matchSetup.syncStatus.offline', 'Offline')
     }
     const c = colors[status] || colors.synced
 
@@ -7058,7 +7058,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Connection Banner Component (kept for backwards compatibility)
   const ConnectionBanner = ({ team, enabled, onToggle, pin }) => {
-    const label = team === 'referee' ? 'Referee' : team === 'home' ? 'Bench Home' : 'Bench Away'
+    const label = team === 'referee' ? t('matchSetup.referee') : team === 'home' ? t('matchSetup.benchHome') : t('matchSetup.benchAway')
     return (
       <DashboardToggle
         label={label}
@@ -7085,7 +7085,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }}>
         {/* Row 1: Label and Toggle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', flex: 1 }}>Benches</span>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: enabled ? '#22c55e' : 'var(--muted)', flex: 1 }}>{t('matchSetup.benches')}</span>
           <div style={{
             position: 'relative',
             width: '40px',
@@ -7207,14 +7207,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             onClick={openScoresheet}
             style={{ padding: '6px 12px', fontSize: '13px', background: '#22c55e', color: '#000' }}
           >
-            📄 Scoresheet
+            📄 {t('matchSetup.scoresheet')}
           </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {onOpenOptions && (
             <button className="secondary" onClick={onOpenOptions}>
-              Options
+              {t('matchSetup.options')}
             </button>
           )}
         </div>
@@ -7250,7 +7250,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: '2px 0' }} title={home}>{home || t('common.notSet')}</span>
 
-              {/* Away Team row with color indicator */}
               <div
                 style={{
                   display: 'flex',

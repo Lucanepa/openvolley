@@ -3662,7 +3662,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'flex-start',
               gap: '4px',
-              border: '1px solid rgba(255,255,255,0.15)',
+              border: (leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) ? '1px solid rgba(255,255,255,0.15)' : 'none',
               padding: '4px',
               height: '100%',
 
@@ -3671,7 +3671,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
                 <div style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(255, 255, 255, 1)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
               )}
-              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              )}
               {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest) && (
                 <div style={{
@@ -3700,7 +3702,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </div>
               )}
-              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              )}
               {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
               {(leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0 || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty) && (
                 <div style={{
@@ -3847,7 +3851,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'flex-start',
               gap: '4px',
-              border: '1px solid rgba(255,255,255,0.15)',
+              border: (rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) ? '1px solid rgba(255,255,255,0.15)' : 'none',
               padding: '4px',
               height: '100%',
             }}>
@@ -3855,7 +3859,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
                 <div style={{ fontSize: '15px', fontWeight: 600, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
               )}
-              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              )}
               {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest) && (
                 <div style={{
@@ -3884,7 +3890,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </div>
               )}
-              <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+              )}
               {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
               {(rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0 || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty) && (
                 <div style={{

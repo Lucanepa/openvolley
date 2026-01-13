@@ -60,7 +60,14 @@
     "failedToOpenScoresheet": "Failed to open scoresheet: {{error}}",
     "validation": {
       "completeSignatures": "Please complete all signatures before confirming the coin toss."
-    }
+    },
+    "syncingMatch": "Syncing match data...",
+    "verifyingStatus": "Verifying match status...",
+    "statusNotLive": "Match status is not \"live\" in database. Current status: {{status}}",
+    "matchInitialized": "Match initialized!",
+    "initialized": "Match Initialized",
+    "initError": "Initialization Error",
+    "initializing": "Initializing Match"
   },
   "roster": {
     "title": "Roster",
@@ -153,6 +160,8 @@
   },
   "matchSetup": {
     "title": "Match Setup",
+    "scoresheet": "Scoresheet",
+    "options": "Options",
     "matchInfo": "Match Info",
     "matchOfficials": "Match Officials",
     "hall": "Hall",
@@ -175,7 +184,14 @@
     "createMatch": "Create Match",
     "editRoster": "Edit Roster",
     "selectColour": "Select colour",
+    "alreadyAssigned": "already assigned",
     "dashboards": "Dashboards",
+    "referee": "Referee",
+    "benches": "Benches",
+    "benchHome": "Bench Home",
+    "benchAway": "Bench Away",
+    "home": "Home",
+    "away": "Away",
     "players": "Players",
     "liberos": "o/w Libero(s)",
     "bench": "Bench",
@@ -330,7 +346,11 @@
       "reviewSetCaptainLibero": "Set captain and libero designations"
     },
     "coinToss": "Coin toss",
-    "chooseTeamColor": "Choose {{team}} Team Colour"
+    "chooseTeamColor": "Choose {{team}} Team Colour",
+    "syncStatus": {
+      "notSynced": "Not synced",
+      "offline": "Offline"
+    }
   },
   "scoreboard": {
     "set": "Set",
@@ -354,6 +374,49 @@
     "liberos": "Liberos",
     "benchOfficials": "Bench Officials",
     "returnToMatch": "Return to match",
+    "lineupSetup": "Line-up setup",
+    "lineupSet": "Line-up set",
+    "showLineup": "Show Line-up",
+    "changeLineup": "Change Line-up",
+    "lineupModal": {
+      "availablePlayers": "Available Players:",
+      "dragInstruction": "Please write the number, drag and drop it, or click on available player to fill each of the available positions",
+      "clickOrDragTooltip": "Click or drag to assign to a position",
+      "undoLastEdit": "Undo last edit",
+      "clearLineup": "Clear lineup",
+      "rotate": "Rotate",
+      "rotateClockwise": "Rotate clockwise",
+      "rotateCounterclockwise": "Rotate counterclockwise",
+      "validationError": "Please check: All numbers must exist in roster, not be liberos, and not be duplicated.",
+      "confirm": "Confirm",
+      "close": "Close",
+      "modify": "Modify"
+    },
+    "lastAction": "Last action:",
+    "keybindings": {
+      "instruction": "Click on a key to change it. Press the new key to assign, or Escape to cancel.",
+      "pointLeftTeam": "Point Left Team",
+      "pointLeftTeamDesc": "Award point to left team",
+      "pointRightTeam": "Point Right Team",
+      "pointRightTeamDesc": "Award point to right team",
+      "timeoutLeftTeam": "Timeout Left Team",
+      "timeoutLeftTeamDesc": "Call timeout for left team",
+      "timeoutRightTeam": "Timeout Right Team",
+      "timeoutRightTeamDesc": "Call timeout for right team",
+      "exchangeLiberoLeft": "Exchange Libero Left",
+      "exchangeLiberoLeftDesc": "Exchange L1/L2 for left team",
+      "exchangeLiberoRight": "Exchange Libero Right",
+      "exchangeLiberoRightDesc": "Exchange L1/L2 for right team",
+      "undo": "Undo",
+      "undoDesc": "Undo last action",
+      "startRallyConfirm": "Start Rally / Confirm",
+      "startRallyConfirmDesc": "Start rally or confirm modal",
+      "cancelClose": "Cancel / Close",
+      "cancelCloseDesc": "Cancel or close menus",
+      "pressKey": "Press key...",
+      "resetToDefaults": "Reset to Defaults",
+      "done": "Done"
+    },
     "buttons": {
       "startRally": "Start Rally",
       "startSet": "Start Set",
@@ -461,7 +524,13 @@
     "menu": {
       "scoresheet": "Scoresheet",
       "menu": "Menu",
+      "showActionLog": "Show Action Log",
       "showSanctionsResults": "Show Sanctions and Results",
+      "openRemarksRecording": "Open Remarks Recording",
+      "showPins": "Show PINs",
+      "showMatchSetup": "Show Match Setup",
+      "downloadGameData": "Download Game Data (JSON)",
+      "options": "Options",
       "gamePins": "Game PINs",
       "refereePin": "Referee PIN",
       "gameNumber": "Game Number",

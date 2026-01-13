@@ -41,13 +41,13 @@
     "captain": "Capitaine",
     "confirmResult": "Confirmer le tirage au sort",
     "returnToMatch": "Retour au match",
-    "scoresheet": "Feuille de match",
+    "scoresheet": "eScoresheet",
     "preview": "Aperçu",
     "print": "Imprimer",
     "savePdf": "Enregistrer PDF",
-    "allowPopups": "Veuillez autoriser les popups pour afficher la feuille de match",
+    "allowPopups": "Veuillez autoriser les popups pour afficher la eScoresheet",
     "noMatchData": "Aucune donnée de match disponible",
-    "failedToOpenScoresheet": "Impossible d'ouvrir la feuille de match : {{error}}",
+    "failedToOpenScoresheet": "Impossible d'ouvrir la eScoresheet : {{error}}",
     "validation": {
       "completeSignatures": "Signatures obligatoires avant de confirmer le tirage au sort."
     }
@@ -383,8 +383,8 @@
       "noLegalSubstitution": "Aucun remplacement légal disponible",
       "liberoReminder": "Rappel libéro",
       "reopenSet": "Rouvrir le set",
-      "scoresheetError": "Erreur feuille de match",
-      "scoresheetAlreadyOpen": "Feuille de match déjà ouverte",
+      "scoresheetError": "Erreur eScoresheet",
+      "scoresheetAlreadyOpen": "eScoresheet déjà ouverte",
       "remarksRecording": "Enregistrement des remarques",
       "sanctionsAndResults": "Sanctions et résultats",
       "confirmSecondTimeout": "Confirmer la demande de {{ordinal}} temps mort ?",
@@ -442,7 +442,7 @@
       "areYouSureAwardPoint": "Êtes-vous sûr que le point doit être attribué à {{team}} ?"
     },
     "menu": {
-      "scoresheet": "Feuille de match",
+      "scoresheet": "eScoresheet",
       "menu": "Menu",
       "showSanctionsResults": "Afficher sanctions et résultats",
       "gamePins": "PINs du match",
@@ -627,11 +627,11 @@
     "exitFullscreen": "Quitter le plein écran",
     "fullscreen": "Plein écran",
     "exit": "Quitter",
-    "scoresheet": "Feuille de match",
+    "scoresheet": "eScoresheet",
     "preview": "Aperçu",
     "print": "Imprimer",
     "savePdf": "Enregistrer PDF",
-    "allowPopups": "Veuillez autoriser les popups pour afficher la feuille de match"
+    "allowPopups": "Veuillez autoriser les popups pour afficher la eScoresheet"
   },
   "home": {
     "title": "Openvolley e-Feuille",
@@ -863,7 +863,7 @@
     "referee2": "2nd Arbitre",
     "referee1": "1er Arbitre",
     "allSignaturesCollected": "Toutes signatures collectées",
-    "scoresheet": "Feuille de match",
+    "scoresheet": "eScoresheet",
     "preview": "Aperçu",
     "print": "Imprimer",
     "savePdf": "Sauver PDF",
@@ -922,7 +922,7 @@
       "coinToss": "Tirage au sort",
       "scoreboard": "Scoreboard",
       "approval": "Approbation",
-      "escoresheet": "e-Feuille de match",
+      "escoresheet": "e-eScoresheet",
       "refereeDashboard": "Tableau Arbitre",
       "benchDashboard": "Tableau Équipe",
       "livescore": "Livescore",
@@ -1017,7 +1017,7 @@
     "uploadSuccess": "Effectif envoyé avec succès !",
     "uploadError": "Erreur lors de l'envoi. Veuillez réessayer.",
     "confirmTitle": "Confirmer le téléchargement",
-    "confirmMessage": "L'effectif sera envoyé à la feuille de match pour validation.",
+    "confirmMessage": "L'effectif sera envoyé à la eScoresheet pour validation.",
     "uploading": "Envoi...",
     "uploadingMessage": "Transmission en cours...",
     "rosterSentToScoresheet": "Effectif transmis. Le marqueur doit maintenant le valider."
@@ -1087,7 +1087,7 @@
       "directDesc": "WebSocket direct"
     },
     "awaitingCoinToss": "En attente du tirage au sort",
-    "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort sur la feuille de match.",
+    "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort sur la eScoresheet.",
     "matchHasEnded": "Le match est terminé",
     "lineupSet": "Composition reçue",
     "showLineup": "Afficher la composition",
@@ -1178,9 +1178,9 @@
     "errors": {
       "enterGameNumber": "Veuillez entrer un numéro de match",
       "matchNotFound": "Match non trouvé avec ce numéro",
-      "failedToFindMatch": "Impossible de trouver le match. Vérifiez que la feuille de match principale est en cours.",
+      "failedToFindMatch": "Impossible de trouver le match. Vérifiez que la eScoresheet principale est en cours.",
       "failedToLoadData": "Échec du chargement des données",
-      "failedToLoadDataConnection": "Échec du chargement des données. Vérifiez que la feuille de match principale est en cours."
+      "failedToLoadDataConnection": "Échec du chargement des données. Vérifiez que la eScoresheet principale est en cours."
     }
   },
   "auth": {
