@@ -2339,7 +2339,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ) : null
 
     const showCaptainBadge = isCaptain || isCourtCaptain // Liberos can be captains too
-    const isLiberoCaptain = isLibero && isCaptain // Special styling for libero who is also captain
+    const isLiberoCaptain = isLibero && isCaptain // Special styling for libero who is also team captain
+    const isLiberoCourtCaptain = isLibero && isCourtCaptain && !isCaptain // Libero designated as game captain
 
     return (
       <div style={{
@@ -2423,8 +2424,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </span>
         )}
 
-        {/* Bottom-left: Libero indicator (L, L1, L2) - hide if libero-captain (only show C) */}
-        {displayLiberoLabel && !isLiberoCaptain && (
+        {/* Bottom-left: Libero indicator (L, L1, L2) - hide if libero-captain or libero-court-captain (show LC instead) */}
+        {displayLiberoLabel && !isLiberoCaptain && !isLiberoCourtCaptain && (
           <span style={{
             position: 'absolute',
             bottom: '-6px',
@@ -2445,29 +2446,30 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             {displayLiberoLabel}
           </span>
         )}
-        {/* Captain badge (C) - show for captains including libero-captains */}
+        {/* Captain badge (C or LC) - show for captains including libero-captains */}
         {showCaptainBadge && (
           <span style={{
             position: 'absolute',
             bottom: '-6px',
-            // If libero but not libero-captain, position next to L badge; otherwise position at left
-            left: (isLibero && !isLiberoCaptain) ? 'calc(clamp(16px, 4vw, 22px) + 2px)' : '-6px',
+            // If libero but not libero-captain/court-captain, position next to L badge; otherwise position at left
+            left: (isLibero && !isLiberoCaptain && !isLiberoCourtCaptain) ? 'calc(clamp(16px, 4vw, 22px) + 2px)' : '-6px',
             minWidth: 'clamp(16px, 4vw, 22px)',
             height: 'clamp(16px, 4vw, 22px)',
             padding: '0 3px',
-            // Libero-captain: green C on white bg; Regular captain: black bg with green border/text; Court captain: amber
-            background: isLiberoCaptain ? '#ffffff' : 'rgba(15, 23, 42, 0.95)',
-            border: isLiberoCaptain ? '2px solid #22c55e' : (isCaptain ? '2px solid #22c55e' : '2px solid #fbbf24'),
+            // Libero-captain: white bg; Libero-court-captain: blue bg; Regular/Court captain: black bg
+            background: isLiberoCaptain ? '#ffffff' : (isLiberoCourtCaptain ? '#3b82f6' : 'rgba(15, 23, 42, 0.95)'),
+            // Libero-captain: green border; Libero-court-captain: amber border; Regular captain: green border; Court captain: amber border
+            border: isLiberoCaptain ? '2px solid #22c55e' : (isLiberoCourtCaptain ? '2px solid #fbbf24' : (isCaptain ? '2px solid #22c55e' : '2px solid #fbbf24')),
             borderRadius: '4px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 'clamp(9px, 2vw, 12px)',
+            fontSize: (isLiberoCaptain || isLiberoCourtCaptain) ? 'clamp(8px, 1.8vw, 11px)' : 'clamp(9px, 2vw, 12px)',
             fontWeight: 700,
-            // Libero-captain: green on white; Regular captain: green on black; Court captain: amber
-            color: isLiberoCaptain ? '#22c55e' : (isCaptain ? '#22c55e' : '#fbbf24')
+            // Libero-captain: green on white; Libero-court-captain: amber on blue; Regular captain: green; Court captain: amber
+            color: isLiberoCaptain ? '#22c55e' : (isLiberoCourtCaptain ? '#fbbf24' : (isCaptain ? '#22c55e' : '#fbbf24'))
           }}>
-            C
+            {(isLiberoCaptain || isLiberoCourtCaptain) ? 'LC' : 'C'}
           </span>
         )}
 

@@ -1916,7 +1916,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Match metadata (from IndexedDB match record)
         game_n: match.gameN || match.game_n || null,
         league: match.league || null,
-        gender: match.gender || null,
+        gender: match.match_type_2 || null,
         updated_at: new Date().toISOString()
       }
 
@@ -5925,6 +5925,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Show first line or first 50 characters
       const preview = remarkText.split('\n')[0].substring(0, 50)
       eventDescription = `Remark added — ${preview}${remarkText.length > 50 ? '...' : ''}`
+    } else if (event.type === 'court_captain_designation') {
+      const playerNumber = event.payload?.playerNumber || '?'
+      eventDescription = `${t('scoreboard.courtCaptainDesignation', 'Court captain designation')} — ${teamName} (#${playerNumber})`
     } else {
       eventDescription = event.type
       if (teamName) {
@@ -6836,9 +6839,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     return {
       ...baseStyle,
-      background: '#fde047',
-      border: '2px solid rgba(0, 0, 0, 0.25)',
-      color: '#0f172a',
+      background: '#0f172a',
+      border: '2px solid #fde047',
+      color: '#fde047',
       boxShadow: '0 2px 4px rgba(15, 23, 42, 0.25)'
     }
   }
@@ -15220,9 +15223,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {/* Captain indicator - show C for captain (including libero-captain) */}
                           {player.isCaptain && (() => {
                             if (player.isLibero) {
-                              // Libero-captain ON COURT: only show green C on white bg (not both L and C)
+                              // Libero-captain ON COURT: show LC on white bg with green text
                               return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
+                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
                               )
                             }
                             return <span className="court-player-captain">C</span>
@@ -15232,11 +15235,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <span
                               className="court-player-captain"
                               style={{
-                                color: '#fbbf24', // Different color (amber/yellow)
-                                borderColor: '#fbbf24'
+                                background: player.isLibero ? '#3b82f6' : undefined,
+                                color: '#fbbf24',
+                                borderColor: '#fbbf24',
+                                fontSize: player.isLibero ? '9px' : undefined
                               }}
                             >
-                              C
+                              {player.isLibero ? 'LC' : 'C'}
                             </span>
                           )}
                           {/* Libero indicator (bottom-left) - only if not captain */}
@@ -15264,8 +15269,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             return (
                               <span style={{
                                 position: 'absolute',
-                                bottom: '-8px',
-                                left: '-8px',
+                                bottom: '-6px',
+                                left: '-6px',
                                 width: '18px',
                                 height: '18px',
                                 background: '#3b82f6',
@@ -15353,7 +15358,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                               style={{
                                 position: 'absolute',
-                                bottom: '-22px',
+                                bottom: '-27px',
                                 left: '50%',
                                 transform: 'translateX(-50%)',
                                 background: 'rgba(0, 0, 0, 0.85)',
@@ -15503,9 +15508,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {/* Captain indicator - show C for captain (including libero-captain) */}
                           {player.isCaptain && (() => {
                             if (player.isLibero) {
-                              // Libero-captain ON COURT: only show green C on white bg (not both L and C)
+                              // Libero-captain ON COURT: show LC on white bg with green text
                               return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
+                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
                               )
                             }
                             return <span className="court-player-captain">C</span>
@@ -15515,11 +15520,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <span
                               className="court-player-captain"
                               style={{
-                                color: '#fbbf24', // Different color (amber/yellow)
-                                borderColor: '#fbbf24'
+                                background: player.isLibero ? '#3b82f6' : undefined,
+                                color: '#fbbf24',
+                                borderColor: '#fbbf24',
+                                fontSize: player.isLibero ? '9px' : undefined
                               }}
                             >
-                              C
+                              {player.isLibero ? 'LC' : 'C'}
                             </span>
                           )}
                           {/* Libero indicator (bottom-left) - only if not captain */}
@@ -15530,7 +15537,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             return (
                               <span style={{
                                 position: 'absolute',
-                                bottom: '-8px',
+                                bottom: '-6px',
                                 left: '-8px',
                                 width: '18px',
                                 height: '18px',
@@ -15605,7 +15612,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
                               style={{
                                 position: 'absolute',
-                                bottom: '-22px',
+                                bottom: '-27px',
                                 left: '50%',
                                 transform: 'translateX(-50%)',
                                 background: 'rgba(0, 0, 0, 0.85)',
@@ -15781,9 +15788,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {/* Bottom-left indicators: Captain C (including libero-captain) */}
                           {player.isCaptain && (() => {
                             if (player.isLibero) {
-                              // Libero-captain ON COURT: only show green C on white bg (not both L and C)
+                              // Libero-captain ON COURT: show LC on white bg with green text
                               return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
+                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
                               )
                             }
                             return <span className="court-player-captain">C</span>
@@ -15793,11 +15800,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <span
                               className="court-player-captain"
                               style={{
-                                color: '#fbbf24', // Different color (amber/yellow)
-                                borderColor: '#fbbf24'
+                                background: player.isLibero ? '#3b82f6' : undefined,
+                                color: '#fbbf24',
+                                borderColor: '#fbbf24',
+                                fontSize: player.isLibero ? '9px' : undefined
                               }}
                             >
-                              C
+                              {player.isLibero ? 'LC' : 'C'}
                             </span>
                           )}
                           {/* Libero indicator (bottom-left) - only if not captain */}
@@ -15825,7 +15834,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             return (
                               <span style={{
                                 position: 'absolute',
-                                bottom: '-8px',
+                                bottom: '-6px',
                                 left: '-8px',
                                 width: '18px',
                                 height: '18px',
@@ -15914,7 +15923,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                               style={{
                                 position: 'absolute',
-                                bottom: '-22px',
+                                bottom: '-27px',
                                 left: '50%',
                                 transform: 'translateX(-50%)',
                                 background: 'rgba(0, 0, 0, 0.85)',
@@ -16063,9 +16072,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {/* Captain indicator - show C for captain (including libero-captain) */}
                           {player.isCaptain && (() => {
                             if (player.isLibero) {
-                              // Libero-captain ON COURT: only show green C on white bg (not both L and C)
+                              // Libero-captain ON COURT: show LC on white bg with green text
                               return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981' }}>C</span>
+                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
                               )
                             }
                             return <span className="court-player-captain">C</span>
@@ -16075,11 +16084,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <span
                               className="court-player-captain"
                               style={{
-                                color: '#fbbf24', // Different color (amber/yellow)
-                                borderColor: '#fbbf24'
+                                background: player.isLibero ? '#3b82f6' : undefined,
+                                color: '#fbbf24',
+                                borderColor: '#fbbf24',
+                                fontSize: player.isLibero ? '9px' : undefined
                               }}
                             >
-                              C
+                              {player.isLibero ? 'LC' : 'C'}
                             </span>
                           )}
                           {/* Libero indicator (bottom-left) */}
@@ -16107,7 +16118,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             return (
                               <span style={{
                                 position: 'absolute',
-                                bottom: '-8px',
+                                bottom: '-6px',
                                 left: '-8px',
                                 width: '18px',
                                 height: '18px',
@@ -16196,7 +16207,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
                               style={{
                                 position: 'absolute',
-                                bottom: '-22px',
+                                bottom: '-27px',
                                 left: '50%',
                                 transform: 'translateX(-50%)',
                                 background: 'rgba(0, 0, 0, 0.85)',
