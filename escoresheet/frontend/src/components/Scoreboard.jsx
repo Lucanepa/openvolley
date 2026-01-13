@@ -6569,17 +6569,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
+    // Capture current start timestamp for the interval closure
+    const startTimestamp = timeoutStartTimestampRef.current
+    const initialCountdown = timeoutInitialCountdownRef.current
+
     // Update every 100ms for smooth visuals (instead of 1000ms)
     const timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - timeoutStartTimestampRef.current) / 1000)
-      const remaining = Math.max(0, timeoutInitialCountdownRef.current - elapsed)
+      const elapsed = Math.floor((Date.now() - startTimestamp) / 1000)
+      const remaining = Math.max(0, initialCountdown - elapsed)
 
       if (remaining <= 0) {
         setTimeoutModal(null)
         timeoutStartTimestampRef.current = null // Reset for next timeout
       } else {
         setTimeoutModal(prev => {
-          if (!prev || !prev.started) return null
+          // Keep the modal open as long as it exists and is started
+          if (!prev) return null
           return { ...prev, countdown: remaining }
         })
       }
