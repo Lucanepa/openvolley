@@ -8,6 +8,7 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "loading": "Loading...",
+    "signingIn": "Signing in...",
     "error": "Error",
     "success": "Success",
     "yes": "Yes",
@@ -18,7 +19,17 @@
     "edit": "Edit",
     "clear": "Clear",
     "notSet": "Not set",
-    "options": "Options"
+    "options": "Options",
+    "vs": "vs",
+    "tip": "Tip:",
+    "support": "Support:",
+    "noData": "No data",
+    "tbc": "TBC",
+    "na": "N/A",
+    "unknown": "Unknown",
+    "reconnect": "Reconnect",
+    "retry": "Retry",
+    "retryAll": "Retry All"
   },
   "alert": {
     "error": "Error",
@@ -46,7 +57,10 @@
     "savePdf": "Save PDF",
     "allowPopups": "Please allow popups to view the scoresheet",
     "noMatchData": "No match data available",
-    "failedToOpenScoresheet": "Failed to open scoresheet: {{error}}"
+    "failedToOpenScoresheet": "Failed to open scoresheet: {{error}}",
+    "validation": {
+      "completeSignatures": "Please complete all signatures before confirming the coin toss."
+    }
   },
   "roster": {
     "title": "Roster",
@@ -121,13 +135,15 @@
     "title": "Signature",
     "clear": "Clear",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "close": "Close"
   },
   "modal": {
     "deletePlayer": "Delete Player",
     "deletePlayerConfirm": "Are you sure you want to delete this player?",
     "birthdateWarning": "The following dates look suspicious (January 1st). Please verify they are correct:",
-    "continueAnyway": "Continue Anyway"
+    "continueAnyway": "Continue Anyway",
+    "close": "Close"
   },
   "refereeSelector": {
     "searchReferees": "Search referees...",
@@ -193,8 +209,8 @@
     "regional": "Regional",
     "national": "National",
     "international": "International",
-    "genderLevel": "Gender & Level",
-    "matchGender": "Match Gender",
+    "categoryLevel": "Gender & Level",
+    "gender": "Gender",
     "men": "Men",
     "women": "Women",
     "matchLevel": "Match Level",
@@ -272,7 +288,15 @@
       "invalidDay": "Invalid day: {{day}}",
       "invalidDate": "Invalid date",
       "invalidHour": "Invalid hour: {{hour}}",
-      "invalidMinutes": "Invalid minutes: {{minutes}}"
+      "invalidMinutes": "Invalid minutes: {{minutes}}",
+      "minPlayers": "Need at least 6 players with numbers (not liberos). Currently: {{count}}",
+      "noCaptain": "No captain selected",
+      "noCoach": "No coach set",
+      "duplicateNumbers": "Duplicate jersey numbers: {{numbers}}",
+      "invalidNumbers": "Invalid jersey numbers (must be 1-99): {{numbers}}",
+      "playersWithoutNumbers": "{{count}} player(s) without jersey numbers",
+      "fixIssues": "Please fix the following issues:\n\n• {{issues}}",
+      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}"
     },
     "modals": {
       "syncing": "Syncing",
@@ -304,7 +328,9 @@
       "reviewAddBenchOfficials": "Add any missing bench officials (Doctor, Physio, etc.)",
       "reviewVerifyDob": "Verify dates of birth are correct",
       "reviewSetCaptainLibero": "Set captain and libero designations"
-    }
+    },
+    "coinToss": "Coin toss",
+    "chooseTeamColor": "Choose {{team}} Team Colour"
   },
   "scoreboard": {
     "set": "Set",
@@ -564,16 +590,33 @@
     "dark": "Dark",
     "light": "Light",
     "sound": "Sound",
-    "vibration": "Vibration"
+    "vibration": "Vibration",
+    "backup": {
+      "restoreMatch": "Restore Match",
+      "restoreFromCloudBackup": "Restore from Cloud Backup",
+      "restoreFromCloudDesc": "Enter the match number and PIN to search for cloud backups.",
+      "gameN": "Match #",
+      "gamePin": "Game PIN",
+      "searchCloudBackups": "Search Cloud Backups",
+      "or": "or",
+      "restoreFromLocal": "Restore from Local File",
+      "selectBackupFile": "Select Backup File",
+      "restorePreview": "Restore Preview",
+      "fromDatabase": "From Database",
+      "fromLocalFile": "From Local File"
+    }
   },
   "languages": {
     "en": "English",
     "fr": "French",
     "it": "Italian",
-    "de": "German"
+    "de": "German",
+    "de-CH": "Swiss German"
   },
   "header": {
     "online": "Online",
+    "notSynced": "Not synced",
+    "supportAndFeedback": "Support & Feedback",
     "offline": "Offline",
     "switchToOnline": "Switch to Online Mode",
     "switchToOffline": "Switch to Offline Mode",
@@ -633,7 +676,9 @@
       "failedToRestoreFromFile": "Failed to restore from file",
       "enter6DigitPin": "Please enter a 6-digit Game PIN",
       "matchNotFound": "Match not found"
-    }
+    },
+    "exitFullscreen": "Exit Fullscreen",
+    "fullscreen": "Fullscreen"
   },
   "options": {
     "title": "Options",
@@ -652,6 +697,7 @@
     "liberoEntrySuggestionInfo": "Show suggestion modal to substitute libero for player rotating to back row",
     "setIntervalDuration": "Set 2-3 Interval Duration",
     "setIntervalDurationInfo": "Duration of break between sets 2 and 3",
+    "setIntervalDurationLabel": "set interval duration",
     "scoreFont": "Score/Countdown Font",
     "scoreFontInfo": "Choose font style for score display and countdown timers",
     "fontDefault": "Default",
@@ -725,6 +771,20 @@
     "lastBackup": "Last backup",
     "downloadBackupNow": "Download Backup Now",
     "backingUp": "Backing up...",
+    "restoreMatch": "Restore Match",
+    "restoreFromCloudDesc": "Restore from a specific backup point in time",
+    "restoreFromCloudBackup": "Restore from Cloud Backup",
+    "gameN": "Game N",
+    "gamePin": "Game PIN",
+    "searchCloudBackups": "Search Cloud Backups",
+    "or": "or",
+    "restoreFromLocal": "Restore from Local Backup",
+    "selectBackupFile": "Select Backup File",
+    "restorePreview": "Restore Preview",
+    "fromLocalFile": "From Local File",
+    "serving": "Serving",
+    "homeLineup": "Home Lineup",
+    "noLineupData": "No lineup data",
     "appVersion": "App Version",
     "currentVersion": "Current Version",
     "checkForUpdates": "Check for Updates",
@@ -800,6 +860,69 @@
       "failedToLoadBackupData": "Failed to load backup data",
       "failedToRestoreBackup": "Failed to restore backup: {{error}}",
       "failedToClearCache": "Failed to clear cache: {{error}}"
+    }
+  },
+  "matchEnd": {
+    "title": "Match Complete",
+    "winner": "Winner",
+    "teamLabel": "(Team {{label}})",
+    "results": "Results",
+    "sanctions": "Sanctions",
+    "remarks": "Remarks",
+    "officialSignatures": "Official Signatures",
+    "teamCaptains": "Team Captains",
+    "captainA": "Captain A - {{team}}",
+    "captainB": "Captain B - {{team}}",
+    "assistantScorer": "Assistant Scorer",
+    "scorer": "Scorer",
+    "referee2": "2nd Referee",
+    "referee1": "1st Referee",
+    "allSignaturesCollected": "All signatures collected",
+    "scoresheet": "Scoresheet",
+    "preview": "Preview",
+    "print": "Print",
+    "savePdf": "Save PDF",
+    "approveParams": "Confirm and Approve",
+    "downloading": "Downloading...",
+    "reopenLastSet": "Reopen Last Set",
+    "closeMatch": "Close Match",
+    "manualAdjustments": "Manual Adjustments",
+    "closeMatchConfirmTitle": "Close Match?",
+    "closeMatchConfirmBody": "Match data has been downloaded. Do you want to close the match?",
+    "reopenSetConfirmTitle": "Reopen Last Set?",
+    "reopenSetConfirmBody": "This will reopen the last set for corrections and allow you to continue scoring.",
+    "reopenSetWarning": "Warning: All collected signatures will be cleared and must be collected again after approval.",
+    "yesReopen": "Yes, Reopen Set",
+    "cancel": "Cancel",
+    "preparingExport": "Preparing Match Export...",
+    "generatingPdf": "Generating Scoresheet (PDF)",
+    "creatingZip": "Creating ZIP and uploading to cloud...",
+    "waitCheck": "Please wait while files are being prepared...",
+    "waiting": "Waiting...",
+    "tapToSign": "Tap to sign",
+    "noRemarks": "No remarks",
+    "noSanctions": "No sanctions",
+    "improperRequest": "Improper Request",
+    "set": "Set",
+    "time": "Time",
+    "tot": "Tot",
+    "start": "Start",
+    "end": "End",
+    "duration": "Duration",
+    "sanctionsOverflow": "Sanctions (overflow):",
+    "matchDataNotApproved": "Match data has not been approved. Are you sure you want to leave?",
+    "pleaseCompleteSignatures": "Please complete all signatures before approving.",
+    "errorApproving": "Error approving match: {{error}}",
+    "noSetsReopen": "No sets found to reopen",
+    "setReopened": "Set {{index}} reopened for corrections",
+    "errorReopening": "Error reopening last set: {{error}}",
+    "sanctionTypes": {
+      "delayWarning": "Delay Warning",
+      "delayPenalty": "Delay Penalty",
+      "warning": "Warning",
+      "penalty": "Penalty",
+      "expulsion": "Expulsion",
+      "disqualification": "Disqualification"
     }
   },
   "supportFeedback": {
@@ -1162,6 +1285,119 @@
     "title": "My Matches",
     "noMatches": "No matches yet",
     "noMatchesHint": "Matches you score will appear here",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "vs": "vs"
+  },
+  "backupTable": {
+    "noActions": "No actions",
+    "error": "Error",
+    "gameN": "Game N",
+    "set": "Set",
+    "score": "Score",
+    "lastAction": "Last Action",
+    "createdAt": "Created At",
+    "eventTypes": {
+      "point": "Point",
+      "timeout": "Timeout",
+      "substitution": "Substitution",
+      "liberoEntry": "Libero Entry",
+      "liberoExit": "Libero Exit",
+      "liberoExchange": "Libero Exchange",
+      "liberoUnable": "Libero Unable",
+      "liberoRedesignation": "Libero Redesignation",
+      "setStart": "Set Start",
+      "setEnd": "Set End",
+      "coinToss": "Coin Toss",
+      "rotation": "Rotation",
+      "sanction": "Sanction",
+      "challenge": "Challenge",
+      "decisionChange": "Decision Change"
+    }
+  },
+  "connectionStatus": {
+    "syncing": "Syncing",
+    "connected": "Connected",
+    "error": "Error",
+    "noMatch": "No Match",
+    "ready": "Ready",
+    "offline": "Offline",
+    "disconnected": "Disconnected",
+    "notConfigured": "Not Configured",
+    "naStatic": "N/A (Static)",
+    "connecting": "Connecting",
+    "testMode": "Test Mode",
+    "unknown": "Unknown",
+    "api": "API",
+    "server": "Server",
+    "webSocket": "WebSocket",
+    "scoreboard": "Scoreboard",
+    "match": "Match",
+    "database": "Database",
+    "supabase": "Supabase",
+    "syncingDots": "Syncing...",
+    "title": "Connection Status",
+    "pendingBackgroundSync": "Pending background sync:",
+    "synchronizationErrors": "Synchronization errors:",
+    "statusInformation": "Status Information",
+    "statusLabel": "Status:",
+    "messageLabel": "Message:",
+    "connectionIssueDetected": "Connection issue detected"
+  },
+  "dashboardOptions": {
+    "supabase": "Supabase",
+    "webSocket": "WebSocket",
+    "none": "None",
+    "options": "Options",
+    "connection": "Connection",
+    "fallback": "Fallback",
+    "active": "Active:",
+    "connectionType": "Connection Type",
+    "autoRecommended": "Auto (Recommended)",
+    "supabasePrimaryFallback": "Supabase primary, WebSocket fallback",
+    "supabaseOnly": "Supabase Only",
+    "databaseRealtimeOnly": "Database realtime only",
+    "webSocketOnly": "WebSocket Only",
+    "directServerConnection": "Direct server connection",
+    "clearing": "Clearing...",
+    "clearCacheAndData": "Clear Cache & Data",
+    "clearCacheConfirmation": "This will clear all cached data including match states. Are you sure?"
+  },
+  "gameList": {
+    "loadingGames": "Loading games...",
+    "noGamesAvailable": "No games available.",
+    "upcomingMatches": "Upcoming matches",
+    "selectGameToStart": "Select a game to start recording.",
+    "status": "Status:",
+    "openMatch": "Open match",
+    "deleteMatchData": "Delete match data",
+    "loadTestData": "Load test data",
+    "dateTbc": "Date TBC"
+  },
+  "guideModal": {
+    "errorLoading": "Error loading user guide. Please check the USER_GUIDE.md file.",
+    "loadingGuide": "Loading guide...",
+    "userGuide": "User Guide"
+  },
+  "matchEntry": {
+    "loading": "Loading...",
+    "matchHasEnded": "The match has ended",
+    "back": "Back",
+    "backArrow": "← Back",
+    "to": "TO",
+    "sub": "SUB",
+    "set": "Set",
+    "sanctions": "SANCTIONS",
+    "none": "None",
+    "moreCount": "+{{count}} more",
+    "noBenchData": "No bench data"
+  },
+  "officialAutocomplete": {
+    "selectFromHistory": "Select from history"
+  },
+  "connectionSetup": {
+    "lan": "LAN",
+    "internet": "Internet",
+    "refereeQRCodeAlt": "Referee QR Code",
+    "cloudQRCodeAlt": "Cloud QR Code"
   }
 }

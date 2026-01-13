@@ -6,35 +6,35 @@ import changelog from '../CHANGELOG'
 // Flag SVG components for language selector
 const FlagGB = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="42" fill="#012169"/>
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7"/>
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)"/>
-    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12"/>
-    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7"/>
+    <rect width="60" height="42" fill="#012169" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7" />
   </svg>
 )
 
 const FlagIT = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#009246"/>
-    <rect x="20" width="20" height="42" fill="#fff"/>
-    <rect x="40" width="20" height="42" fill="#CE2B37"/>
+    <rect width="20" height="42" fill="#009246" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#CE2B37" />
   </svg>
 )
 
 const FlagDE = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="14" fill="#000"/>
-    <rect y="14" width="60" height="14" fill="#DD0000"/>
-    <rect y="28" width="60" height="14" fill="#FFCE00"/>
+    <rect width="60" height="14" fill="#000" />
+    <rect y="14" width="60" height="14" fill="#DD0000" />
+    <rect y="28" width="60" height="14" fill="#FFCE00" />
   </svg>
 )
 
 const FlagFR = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#002395"/>
-    <rect x="20" width="20" height="42" fill="#fff"/>
-    <rect x="40" width="20" height="42" fill="#ED2939"/>
+    <rect width="20" height="42" fill="#002395" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#ED2939" />
   </svg>
 )
 
@@ -50,7 +50,7 @@ const languages = [
   { code: 'en', Flag: FlagGB, label: 'EN' },
   { code: 'it', Flag: FlagIT, label: 'IT' },
   { code: 'de', Flag: FlagDE, label: 'DE' },
-  { code: 'ch', Flag: FlagCH, label: 'DE' },
+  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 
@@ -431,83 +431,83 @@ export default function SimpleHeader({
 
                   {/* Version info at bottom */}
                   <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setVersionExpanded(!versionExpanded)
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          width: '100%',
-                          padding: '10px 14px',
-                          fontSize: '11px',
-                          fontWeight: 500,
-                          background: 'transparent',
-                          color: 'rgba(255, 255, 255, 0.6)',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textAlign: 'left'
-                        }}
-                      >
-                        <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>📋</span>
-                        <span style={{ flex: 1 }}>Version {currentVersion}</span>
-                        <span style={{
-                          fontSize: '8px',
-                          transform: versionExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                          transition: 'transform 0.2s'
-                        }}>▼</span>
-                      </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setVersionExpanded(!versionExpanded)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '10px 14px',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>📋</span>
+                    <span style={{ flex: 1 }}>Version {currentVersion}</span>
+                    <span style={{
+                      fontSize: '8px',
+                      transform: versionExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s'
+                    }}>▼</span>
+                  </button>
 
-                      {/* Version history */}
-                      {versionExpanded && (
-                        <div style={{
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}>
-                          {changelog.slice(0, 5).map((entry, idx) => (
-                            <div
-                              key={entry.version}
-                              style={{
-                                padding: '8px 14px 8px 44px',
-                                borderLeft: idx === 0 ? '3px solid #22c55e' : '3px solid transparent',
-                                background: idx === 0 ? 'rgba(34, 197, 94, 0.05)' : 'transparent'
-                              }}
-                            >
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                marginBottom: '2px'
-                              }}>
-                                <span style={{
-                                  fontSize: '10px',
-                                  fontWeight: 600,
-                                  color: idx === 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)'
-                                }}>
-                                  v{entry.version}
-                                </span>
-                                <span style={{ fontSize: '9px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                                  {entry.date}
-                                </span>
-                              </div>
-                              <ul style={{
-                                margin: 0,
-                                padding: '0 0 0 12px',
-                                fontSize: '10px',
-                                color: 'rgba(255, 255, 255, 0.5)',
-                                lineHeight: '1.4'
-                              }}>
-                                {entry.changes.slice(0, 2).map((change, i) => (
-                                  <li key={i}>{change}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
+                  {/* Version history */}
+                  {versionExpanded && (
+                    <div style={{
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      {changelog.slice(0, 5).map((entry, idx) => (
+                        <div
+                          key={entry.version}
+                          style={{
+                            padding: '8px 14px 8px 44px',
+                            borderLeft: idx === 0 ? '3px solid #22c55e' : '3px solid transparent',
+                            background: idx === 0 ? 'rgba(34, 197, 94, 0.05)' : 'transparent'
+                          }}
+                        >
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            marginBottom: '2px'
+                          }}>
+                            <span style={{
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              color: idx === 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)'
+                            }}>
+                              v{entry.version}
+                            </span>
+                            <span style={{ fontSize: '9px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                              {entry.date}
+                            </span>
+                          </div>
+                          <ul style={{
+                            margin: 0,
+                            padding: '0 0 0 12px',
+                            fontSize: '10px',
+                            color: 'rgba(255, 255, 255, 0.5)',
+                            lineHeight: '1.4'
+                          }}>
+                            {entry.changes.slice(0, 2).map((change, i) => (
+                              <li key={i}>{change}</li>
+                            ))}
+                          </ul>
                         </div>
-                      )}
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -542,7 +542,7 @@ export default function SimpleHeader({
               gap: '6px',
               transition: 'all 0.15s'
             }}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
           >
             {isFullscreen ? '⛶' : '⛶'}
           </button>

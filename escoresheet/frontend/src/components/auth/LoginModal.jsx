@@ -216,7 +216,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                   />
                 </div>
                 <button type="submit" style={buttonStyle} disabled={loading}>
-                  {loading ? t('auth.signingIn', 'Signing in...') : t('auth.signIn', 'Sign In')}
+                  {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign In')}
                 </button>
               </form>
 

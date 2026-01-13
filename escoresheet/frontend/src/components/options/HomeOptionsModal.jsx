@@ -551,7 +551,7 @@ export default function HomeOptionsModal({
             </div>
             <Stepper
               value={setIntervalDuration}
-              label="set interval duration"
+              label={t('options.setIntervalDurationLabel', 'set interval duration')}
               onDecrement={() => {
                 const newVal = Math.max(60, setIntervalDuration - 15)
                 setSetIntervalDuration(newVal)
@@ -1091,7 +1091,7 @@ export default function HomeOptionsModal({
             fontSize: '11px',
             color: 'rgba(255,255,255,0.7)'
           }}>
-            <strong style={{ color: '#3b82f6' }}>Tip:</strong> {t('options.environmentTip')}
+            <strong style={{ color: '#3b82f6' }}>{t('common.tip', 'Tip:')}</strong> {t('options.environmentTip')}
           </div>
         </Section>
 
@@ -1473,7 +1473,7 @@ export default function HomeOptionsModal({
           fontSize: '12px',
           color: 'var(--muted)'
         }}>
-          Support: luca.canepa@gmail.com
+          {t('common.support', 'Support:')} luca.canepa@gmail.com
         </div>
       </div>
 

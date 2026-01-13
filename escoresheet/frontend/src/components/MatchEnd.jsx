@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
@@ -15,6 +16,7 @@ import { formatTimeLocal } from '../utils/timeUtils'
 
 // Standard Results component for MatchEnd page
 const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration }) => {
+  const { t } = useTranslation()
   return (
     <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000' }}>
       {/* Header Row */}
@@ -23,7 +25,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
           <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: '#000' }}>A</div>
           <span style={{ fontWeight: 600, fontSize: '11px', color: '#000' }}>{teamAName}</span>
         </div>
-        <div style={{ textAlign: 'center', fontWeight: 600, fontSize: '10px', color: '#333' }}>Set</div>
+        <div style={{ textAlign: 'center', fontWeight: 600, fontSize: '10px', color: '#333' }}>{t('matchEnd.set', 'Set')}</div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', padding: '4px', background: '#f0f0f0', borderRadius: '4px' }}>
           <span style={{ fontWeight: 600, fontSize: '11px', color: '#000' }}>{teamBName}</span>
           <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: '#000' }}>B</div>
@@ -36,7 +38,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
           <span>T</span><span>S</span><span>W</span><span>P</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
-          <span>#</span><span>Time</span>
+          <span>#</span><span>{t('matchEnd.time', 'Time')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
           <span>P</span><span>W</span><span>S</span><span>T</span>
@@ -78,7 +80,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
           <span>{setResults?.reduce((sum, r) => sum + (r.teamAPoints ?? 0), 0) || 0}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
-          <span>Tot</span>
+          <span>{t('matchEnd.tot', 'Tot')}</span>
           <span>{matchDuration}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
@@ -91,9 +93,9 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
 
       {/* Match Time Info */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#000', marginTop: '8px', padding: '6px', background: '#f0f0f0', borderRadius: '4px' }}>
-        <span>Start: <strong>{matchStart}</strong></span>
-        <span>End: <strong>{matchEnd}</strong></span>
-        <span>Duration: <strong>{matchDuration}</strong></span>
+        <span>{t('matchEnd.start', 'Start')}: <strong>{matchStart}</strong></span>
+        <span>{t('matchEnd.end', 'End')}: <strong>{matchEnd}</strong></span>
+        <span>{t('matchEnd.duration', 'Duration')}: <strong>{matchDuration}</strong></span>
       </div>
     </div>
   )
@@ -101,11 +103,12 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
 
 // Standard Sanctions component for MatchEnd page
 const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
+  const { t } = useTranslation()
   return (
     <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000' }}>
       {/* Improper Request Row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#f0f0f0', borderRadius: '4px', marginBottom: '8px' }}>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000' }}>Improper Request</span>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000' }}>{t('matchEnd.improperRequest', 'Improper Request')}</span>
         <div style={{ display: 'flex', gap: '8px' }}>
           <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, position: 'relative', color: '#000' }}>
             A
@@ -132,7 +135,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
 
       {/* Header */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', fontSize: '10px', fontWeight: 600, textAlign: 'center', color: '#333', padding: '4px 0', borderBottom: '2px solid #000' }}>
-        <span>W</span><span>P</span><span>E</span><span>D</span><span>Team</span><span>Set</span><span>Score</span>
+        <span>W</span><span>P</span><span>E</span><span>D</span><span>Team</span><span>{t('matchEnd.set', 'Set')}</span><span>Score</span>
       </div>
 
       {/* Sanction Rows */}
@@ -149,7 +152,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
           </div>
         ))
       ) : (
-        <div style={{ textAlign: 'center', color: '#666', padding: '16px', fontSize: '11px' }}>No sanctions</div>
+        <div style={{ textAlign: 'center', color: '#666', padding: '16px', fontSize: '11px' }}>{t('matchEnd.noSanctions', 'No sanctions')}</div>
       )}
     </div>
   )
@@ -157,19 +160,20 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
 
 // Standard Remarks component for MatchEnd page
 const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
+  const { t } = useTranslation()
   const formatSanction = (sanction) => {
     const isDelay = sanction.playerNr === 'D'
     const typeLabel = sanction.type === 'warning'
-      ? (isDelay ? 'Delay Warning' : 'Warning')
+      ? (isDelay ? t('matchEnd.sanctionTypes.delayWarning', 'Delay Warning') : t('matchEnd.sanctionTypes.warning', 'Warning'))
       : sanction.type === 'penalty'
-        ? (isDelay ? 'Delay Penalty' : 'Penalty')
+        ? (isDelay ? t('matchEnd.sanctionTypes.delayPenalty', 'Delay Penalty') : t('matchEnd.sanctionTypes.penalty', 'Penalty'))
         : sanction.type === 'expulsion'
-          ? 'Expulsion'
+          ? t('matchEnd.sanctionTypes.expulsion', 'Expulsion')
           : sanction.type === 'disqualification'
-            ? 'Disqualification'
+            ? t('matchEnd.sanctionTypes.disqualification', 'Disqualification')
             : ''
     const playerInfo = !isDelay && sanction.playerNr ? `, #${sanction.playerNr}` : ''
-    return `Team ${sanction.team}, Set ${sanction.set}, ${sanction.score}, ${typeLabel}${playerInfo}`
+    return `${t('coinToss.teamA', 'Team')} ${sanction.team}, ${t('matchEnd.set', 'Set')} ${sanction.set}, ${sanction.score}, ${typeLabel}${playerInfo}`
   }
 
   const hasContent = remarks?.trim() || overflowSanctions.length > 0
@@ -181,7 +185,7 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
           {remarks?.trim() && <div style={{ marginBottom: '8px', whiteSpace: 'pre-wrap', color: '#000' }}>{remarks.trim()}</div>}
           {overflowSanctions.length > 0 && (
             <>
-              <div style={{ fontWeight: 600, marginBottom: '4px', fontSize: '11px', color: '#000' }}>Sanctions (overflow):</div>
+              <div style={{ fontWeight: 600, marginBottom: '4px', fontSize: '11px', color: '#000' }}>{t('matchEnd.sanctionsOverflow', 'Sanctions (overflow):')}</div>
               {overflowSanctions.map((sanction, idx) => (
                 <div key={idx} style={{ fontSize: '11px', color: '#000', marginBottom: '2px' }}>{formatSanction(sanction)}</div>
               ))}
@@ -189,7 +193,7 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
           )}
         </>
       ) : (
-        <div style={{ color: '#666', fontSize: '11px' }}>No remarks</div>
+        <div style={{ color: '#666', fontSize: '11px' }}>{t('matchEnd.noRemarks', 'No remarks')}</div>
       )}
     </div>
   )
@@ -246,6 +250,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       events
     }
   }, [matchId])
+  const { t } = useTranslation()
 
   const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
@@ -262,7 +267,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
     const handleBeforeUnload = (e) => {
       e.preventDefault()
-      e.returnValue = 'Match data has not been approved and saved. Are you sure you want to leave?'
+      e.returnValue = t('matchEnd.matchDataNotApproved', 'Match data has not been approved. Are you sure you want to leave?')
       return e.returnValue
     }
 
@@ -573,17 +578,19 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
     if (role === 'captain-a') {
       const team = homeLabel === 'A' ? homeTeam : awayTeam
       const captain = homeLabel === 'A' ? homeCaptain : awayCaptain
-      return `Captain A - ${team?.shortName || team?.name || 'Team A'}${captain ? ` (#${captain.number})` : ''}`
+      // return `Captain A - ${team?.shortName || team?.name || 'Team A'}${captain ? ` (#${captain.number})` : ''}`
+      return t('matchEnd.captainA', { team: team?.shortName || team?.name || 'Team A' }) + (captain ? ` (#${captain.number})` : '')
     }
     if (role === 'captain-b') {
       const team = homeLabel === 'B' ? homeTeam : awayTeam
       const captain = homeLabel === 'B' ? homeCaptain : awayCaptain
-      return `Captain B - ${team?.shortName || team?.name || 'Team B'}${captain ? ` (#${captain.number})` : ''}`
+      // return `Captain B - ${team?.shortName || team?.name || 'Team B'}${captain ? ` (#${captain.number})` : ''}`
+      return t('matchEnd.captainB', { team: team?.shortName || team?.name || 'Team B' }) + (captain ? ` (#${captain.number})` : '')
     }
-    if (role === 'asst-scorer') return 'Assistant Scorer'
-    if (role === 'scorer') return 'Scorer'
-    if (role === 'ref2') return '2nd Referee'
-    if (role === 'ref1') return '1st Referee'
+    if (role === 'asst-scorer') return t('matchEnd.assistantScorer', 'Assistant Scorer')
+    if (role === 'scorer') return t('matchEnd.scorer', 'Scorer')
+    if (role === 'ref2') return t('matchEnd.referee2', '2nd Referee')
+    if (role === 'ref1') return t('matchEnd.referee1', '1st Referee')
     return ''
   }
 
@@ -632,7 +639,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             />
           ) : (
             <div style={{ color: '#333', fontSize: '14px' }}>
-              {disabled ? 'Waiting...' : 'Tap to sign'}
+              {disabled ? t('matchEnd.waiting', 'Waiting...') : t('matchEnd.tapToSign', 'Tap to sign')}
             </div>
           )}
         </div>
@@ -661,7 +668,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
     try {
       // Only check signatures for official matches
       if (!match.test && !allSignaturesDone) {
-        showAlert('Please complete all signatures before approving.', 'warning')
+        showAlert(t('matchEnd.pleaseCompleteSignatures', 'Please complete all signatures before approving.'), 'warning')
         setIsSaving(false)
         return
       }
@@ -774,7 +781,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       setShowCloseConfirm(true)
     } catch (error) {
       console.error('Error approving match:', error)
-      showAlert('Error approving match: ' + error.message, 'error')
+      showAlert(t('matchEnd.errorApproving', { error: error.message }), 'error')
       setDownloadProgress(null)
       setIsSaving(false)
     }
@@ -844,7 +851,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       // Find the last (highest index) set
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
       if (allSets.length === 0) {
-        showAlert('No sets found to reopen', 'error')
+        showAlert(t('matchEnd.noSetsReopen', 'No sets found to reopen'), 'error')
         return
       }
       const lastSet = allSets.reduce((a, b) => (a.index > b.index ? a : b))
@@ -919,7 +926,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         })
       }
 
-      showAlert(`Set ${lastSet.index} reopened for corrections`, 'success')
+      showAlert(t('matchEnd.setReopened', { index: lastSet.index }), 'success')
 
       // Navigate back to Scoreboard
       if (onReopenLastSet) {
@@ -929,7 +936,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       }
     } catch (error) {
       console.error('[MatchEnd] Error reopening last set:', error)
-      showAlert('Error reopening last set: ' + error.message, 'error')
+      showAlert(t('matchEnd.errorReopening', { error: error.message }), 'error')
     }
   }
 
@@ -939,7 +946,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '32px', height: '32px' }} />
-          <h2 style={{ margin: 0 }}>Match Complete</h2>
+          <h2 style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <MenuList
@@ -948,9 +955,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             showArrow={true}
             position="right"
             items={[
-              { key: 'preview', label: '🔍 Preview', onClick: () => handleShowScoresheet('preview') },
-              { key: 'print', label: '🖨️ Print', onClick: () => handleShowScoresheet('print') },
-              { key: 'save', label: '💾 Save PDF', onClick: () => handleShowScoresheet('save') }
+              { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
+              { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
+              { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') }
             ]}
           />
         </div>
@@ -958,9 +965,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
       {/* Winner Card */}
       <div className="card" style={{ marginBottom: '16px', textAlign: 'center', padding: '20px' }}>
-        <div className="text-sm" style={{ marginBottom: '8px' }}>Winner</div>
+        <div className="text-sm" style={{ marginBottom: '8px' }}>{t('matchEnd.winner', 'Winner')}</div>
         <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>
-          {winner} <span className="text-sm" style={{ fontWeight: 400 }}>(Team {winnerLabel})</span>
+          {winner} <span className="text-sm" style={{ fontWeight: 400 }}>{t('matchEnd.teamLabel', { label: winnerLabel })}</span>
         </div>
         <div style={{ fontSize: '40px', fontWeight: 800, color: 'var(--accent)' }}>
           {result}
@@ -970,7 +977,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       {/* Captain Signatures - Right after winner */}
       {!isApproved && (
         <div className="card" style={{ marginBottom: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0' }}>Team Captains</h3>
+          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <SignatureBox role="captain-a" />
             <SignatureBox role="captain-b" />
@@ -982,7 +989,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
         {/* Results Card */}
         <div className="card" style={{ flex: '1 1 400px', minWidth: '300px' }}>
-          <h3 style={{ margin: '0 0 12px 0' }}>Results</h3>
+          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.results', 'Results')}</h3>
           <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333' }}>
             <ResultsTable
               teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
@@ -997,7 +1004,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
         {/* Sanctions Card */}
         <div className="card" style={{ flex: '1 1 400px', minWidth: '300px' }}>
-          <h3 style={{ margin: '0 0 12px 0' }}>Sanctions</h3>
+          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3>
           <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '150px' }}>
             <SanctionsTable
               items={sanctionsInBox}
@@ -1009,7 +1016,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
       {/* Remarks Card */}
       <div className="card" style={{ marginBottom: '16px' }}>
-        <h3 style={{ margin: '0 0 12px 0' }}>Remarks</h3>
+        <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.remarks', 'Remarks')}</h3>
         <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
           <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
         </div>
@@ -1020,13 +1027,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         <div className="card" style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div>
-              <h3 style={{ margin: 0, display: 'inline' }}>Official Signatures</h3>
+              <h3 style={{ margin: 0, display: 'inline' }}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
               <span className="text-sm" style={{ marginLeft: '12px' }}>
-                {currentStep === 'asst-scorer' && 'Assistant Scorer'}
-                {currentStep === 'scorer' && 'Scorer'}
-                {currentStep === 'ref2' && '2nd Referee'}
-                {currentStep === 'ref1' && '1st Referee'}
-                {currentStep === 'complete' && 'All signatures collected'}
+                {currentStep === 'asst-scorer' && t('matchEnd.assistantScorer', 'Assistant Scorer')}
+                {currentStep === 'scorer' && t('matchEnd.scorer', 'Scorer')}
+                {currentStep === 'ref2' && t('matchEnd.referee2', '2nd Referee')}
+                {currentStep === 'ref1' && t('matchEnd.referee1', '1st Referee')}
+                {currentStep === 'complete' && t('matchEnd.allSignaturesCollected', 'All signatures collected')}
               </span>
             </div>
           </div>
@@ -1068,7 +1075,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
                 cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
               }}
             >
-              {isSaving ? 'Downloading...' : 'Confirm and Approve'}
+              {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and Approve')}
             </button>
             <button
               onClick={() => setShowReopenConfirm(true)}
@@ -1078,7 +1085,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
                 fontSize: '15px'
               }}
             >
-              Reopen Last Set
+              {t('matchEnd.reopenLastSet', 'Reopen Last Set')}
             </button>
           </>
         )}
@@ -1091,9 +1098,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
           position="right"
           vertical="top"
           items={[
-            { key: 'preview', label: '🔍 Preview', onClick: () => handleShowScoresheet('preview') },
-            { key: 'print', label: '🖨️ Print', onClick: () => handleShowScoresheet('print') },
-            { key: 'save', label: '💾 Save PDF', onClick: () => handleShowScoresheet('save') }
+            { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
+            { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
+            { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') }
           ]}
         />
       </div>
@@ -1120,7 +1127,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             width: '90%',
             textAlign: 'center'
           }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>Preparing Match Export...</h3>
+            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing Match Export...')}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
                 <span style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
@@ -1128,13 +1135,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
                 <span style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
-                <span style={{ color: downloadProgress.pdf ? '#22c55e' : 'var(--muted)' }}>Generating Scoresheet (PDF)</span>
+                <span style={{ color: downloadProgress.pdf ? '#22c55e' : 'var(--muted)' }}>{t('matchEnd.generatingPdf', 'Generating Scoresheet (PDF)')}</span>
               </div>
             </div>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
               {downloadProgress.json && downloadProgress.pdf
-                ? 'Creating ZIP and uploading to cloud...'
-                : 'Please wait while files are being prepared...'}
+                ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
+                : t('matchEnd.waitCheck', 'Please wait while files are being prepared...')}
             </p>
           </div>
         </div>
@@ -1162,9 +1169,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             width: '90%',
             textAlign: 'center'
           }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>Close Match?</h3>
+            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.closeMatchConfirmTitle', 'Close Match?')}</h3>
             <p style={{ margin: '0 0 24px 0', color: 'var(--muted)' }}>
-              Match data has been downloaded. Do you want to close the match?
+              {t('matchEnd.closeMatchConfirmBody', 'Match data has been downloaded. Do you want to close the match?')}
             </p>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
@@ -1172,14 +1179,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
                 className="primary"
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
-                Close Match
+                {t('matchEnd.closeMatch', 'Close Match')}
               </button>
               <button
                 onClick={() => handleConfirmClose(false)}
                 className="secondary"
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
-                Manual Adjustments
+                {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
               </button>
             </div>
           </div>
@@ -1209,12 +1216,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             background: 'rgba(0, 0, 0, 0.8)',
             textAlign: 'center'
           }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>Reopen Last Set?</h3>
+            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen Last Set?')}</h3>
             <p style={{ margin: '0 0 16px 0', color: 'var(--muted)' }}>
-              This will reopen the last set for corrections and allow you to continue scoring.
+              {t('matchEnd.reopenSetConfirmBody', 'This will reopen the last set for corrections and allow you to continue scoring.')}
             </p>
             <p style={{ margin: '0 0 24px 0', color: 'var(--warning)', fontSize: '14px' }}>
-              Warning: All collected signatures will be cleared and must be collected again after approval.
+              {t('matchEnd.reopenSetWarning', 'Warning: All collected signatures will be cleared and must be collected again after approval.')}
             </p>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
@@ -1222,14 +1229,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
                 className="primary"
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
-                Yes, Reopen Set
+                {t('matchEnd.yesReopen', 'Yes, Reopen Set')}
               </button>
               <button
                 onClick={() => setShowReopenConfirm(false)}
                 className="secondary"
                 style={{ flex: 1, padding: '12px', fontSize: '15px' }}
               >
-                Cancel
+                {t('matchEnd.cancel', 'Cancel')}
               </button>
             </div>
           </div>

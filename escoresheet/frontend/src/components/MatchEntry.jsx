@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getMatchData, updateMatchData } from '../utils/serverDataSync'
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
 import { db } from '../db/db'
@@ -10,6 +11,7 @@ import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
+  const { t } = useTranslation()
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
@@ -723,7 +725,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           justifyContent: 'center',
           padding: '20px'
         }}>
-          <div>Loading...</div>
+          <div>{t('matchEntry.loading', 'Loading...')}</div>
         </div>
       )
     }
@@ -803,7 +805,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           textTransform: 'uppercase',
           letterSpacing: '2px'
         }}>
-          The match has ended
+          {t('matchEntry.matchHasEnded', 'The match has ended')}
         </div>
 
         {/* Winner and Result */}
@@ -857,7 +859,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               marginTop: '16px'
             }}
           >
-            Back
+            {t('matchEntry.back', 'Back')}
           </button>
         )}
       </div>
@@ -898,7 +900,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               cursor: 'pointer'
             }}
           >
-            ← Back
+            {t('matchEntry.backArrow', '← Back')}
           </button>
           <h1 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
             {teamInfo.name}
@@ -931,7 +933,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.1)',
             minWidth: '50px'
           }}>
-            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>TO</div>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.to', 'TO')}</div>
             <div style={{
               fontSize: '28px',
               fontWeight: 800,
@@ -952,7 +954,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid rgba(255,255,255,0.1)',
             minWidth: '50px'
           }}>
-            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>SUB</div>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.sub', 'SUB')}</div>
             <div style={{
               fontSize: '28px',
               fontWeight: 800,
@@ -1030,9 +1032,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           overflow: 'auto',
           minWidth: '100px'
         }}>
-          <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600 }}>SANCTIONS</div>
+          <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600 }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
           {allSanctionsForDisplay.length === 0 ? (
-            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>None</div>
+            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>{t('matchEntry.none', 'None')}</div>
           ) : (
             allSanctionsForDisplay.slice(0, 3).map((s, idx) => (
               <div key={idx} style={{
@@ -1054,7 +1056,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             ))
           )}
           {allSanctionsForDisplay.length > 3 && (
-            <div style={{ fontSize: '9px', color: 'var(--muted)' }}>+{allSanctionsForDisplay.length - 3} more</div>
+            <div style={{ fontSize: '9px', color: 'var(--muted)' }}>{t('matchEntry.moreCount', '+{{count}} more', { count: allSanctionsForDisplay.length - 3 })}</div>
           )}
         </div>
       </div>
@@ -1389,7 +1391,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         {/* Empty state */}
         {benchPlayersWithSanctions.length === 0 && benchLiberos.length === 0 && benchOfficials.length === 0 && (
           <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
-            No bench data
+            {t('matchEntry.noBenchData', 'No bench data')}
           </div>
         )}
       </div>

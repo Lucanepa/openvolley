@@ -5,11 +5,12 @@ import en from './locales/en.json'
 import fr from './locales/fr.json'
 import it from './locales/it.json'
 import de from './locales/de.json'
+import deCH from './locales/de-CH.json'
 
 // Get saved language or detect from browser
 const getSavedLanguage = () => {
   const saved = localStorage.getItem('language')
-  if (saved && ['en', 'fr', 'it', 'de'].includes(saved)) {
+  if (saved && ['en', 'fr', 'it', 'de', 'de-CH'].includes(saved)) {
     return saved
   }
   // Try to detect from browser
@@ -27,7 +28,8 @@ i18n
       en: { translation: en },
       fr: { translation: fr },
       it: { translation: it },
-      de: { translation: de }
+      de: { translation: de },
+      'de-CH': { translation: deCH }
     },
     lng: getSavedLanguage(),
     fallbackLng: 'en',

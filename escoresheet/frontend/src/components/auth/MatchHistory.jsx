@@ -217,7 +217,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                         {getTeamName(match.team_a)}
                       </div>
                       <div style={{ color: '#9ca3af', fontSize: 13 }}>
-                        vs
+                        {t('matchHistory.vs', 'vs')}
                       </div>
                       <div style={{ color: '#e5e7eb', fontWeight: 500 }}>
                         {getTeamName(match.team_b)}

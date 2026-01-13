@@ -3274,9 +3274,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.genderLevel')}</h3>
+            <h3 style={{ marginTop: 0 }}>{t('matchSetup.categoryLevel')}</h3>
             <div className="field">
-              <label>{t('matchSetup.matchGender')}</label>
+              <label>{t('matchSetup.gender')}</label>
               <select className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
                 <option value="men">{t('matchSetup.men')}</option>
                 <option value="women">{t('matchSetup.women')}</option>
@@ -3507,7 +3507,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input
                         type="email"
-                        placeholder="email@example.com"
+                        placeholder={t('matchSetup.notificationEmailPlaceholder')}
                         value={notificationEmail}
                         onChange={(e) => setNotificationEmail(e.target.value)}
                         style={{
@@ -4716,7 +4716,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={async () => {
-            console.log('[MatchSetup] Home roster Confirm clicked, validating...')
 
             // Check if any changes were made (skip sync if no changes)
             const hasChanges = hasRosterChanged(
@@ -4747,14 +4746,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const hasCaptain = homeRoster.some(p => p.isCaptain)
             console.log('[MatchSetup] Home has captain:', hasCaptain)
             if (!hasCaptain) {
-              validationErrors.push('No captain selected')
+              validationErrors.push(t('matchSetup.validation.noCaptain'))
             }
 
             // 3. Check coach is set
             const hasCoach = benchHome.some(b => b.role === 'Coach' && (b.lastName || b.firstName))
             console.log('[MatchSetup] Home has coach:', hasCoach)
             if (!hasCoach) {
-              validationErrors.push('No coach set')
+              validationErrors.push(t('matchSetup.validation.noCoach'))
             }
 
             // 4. Check for duplicate numbers
@@ -4762,27 +4761,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const duplicateNumbers = numbers.filter((num, idx) => numbers.indexOf(num) !== idx)
             if (duplicateNumbers.length > 0) {
               console.log('[MatchSetup] Home duplicate numbers:', duplicateNumbers)
-              validationErrors.push(`Duplicate jersey numbers: ${[...new Set(duplicateNumbers)].join(', ')}`)
+              validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
             // 5. Check for invalid numbers (must be 1-99)
             const invalidNumbers = homeRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Home invalid numbers:', invalidNumbers.map(p => p.number))
-              validationErrors.push(`Invalid jersey numbers (must be 1-99): ${invalidNumbers.map(p => p.number).join(', ')}`)
+              validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
             }
 
             // 6. Check for players without numbers
             const noNumbers = homeRoster.filter(p => p.number == null || p.number === '')
             if (noNumbers.length > 0) {
               console.log('[MatchSetup] Home players without numbers:', noNumbers.length)
-              validationErrors.push(`${noNumbers.length} player(s) without jersey numbers`)
+              validationErrors.push(t('matchSetup.validation.playersWithoutNumbers', { count: noNumbers.length }))
             }
 
             // Show validation errors if any
             if (validationErrors.length > 0) {
               console.log('[MatchSetup] Home roster validation errors:', validationErrors)
-              setNoticeModal({ message: `Please fix the following issues:\n\n• ${validationErrors.join('\n• ')}` })
+              setNoticeModal({ message: t('matchSetup.validation.fixIssues', { issues: validationErrors.join('\n• ') }) })
               return
             }
 
@@ -6034,7 +6033,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={async () => {
-            console.log('[MatchSetup] Away roster Confirm clicked, validating...')
 
             // Check if any changes were made (skip sync if no changes)
             const hasChanges = hasRosterChanged(
@@ -6058,21 +6056,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const nonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
             console.log('[MatchSetup] Away non-libero players with numbers:', nonLiberoWithNumbers.length)
             if (nonLiberoWithNumbers.length < 6) {
-              validationErrors.push(`Need at least 6 players with numbers (not liberos). Currently: ${nonLiberoWithNumbers.length}`)
+              validationErrors.push(t('matchSetup.validation.minPlayers', { count: nonLiberoWithNumbers.length }))
             }
 
             // 2. Check captain is set
             const hasCaptain = awayRoster.some(p => p.isCaptain)
             console.log('[MatchSetup] Away has captain:', hasCaptain)
             if (!hasCaptain) {
-              validationErrors.push('No captain selected')
+              validationErrors.push(t('matchSetup.validation.noCaptain'))
             }
 
             // 3. Check coach is set
             const hasCoach = benchAway.some(b => b.role === 'Coach' && (b.lastName || b.firstName))
             console.log('[MatchSetup] Away has coach:', hasCoach)
             if (!hasCoach) {
-              validationErrors.push('No coach set')
+              validationErrors.push(t('matchSetup.validation.noCoach'))
             }
 
             // 4. Check for duplicate numbers
@@ -6080,27 +6078,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const duplicateNumbers = numbers.filter((num, idx) => numbers.indexOf(num) !== idx)
             if (duplicateNumbers.length > 0) {
               console.log('[MatchSetup] Away duplicate numbers:', duplicateNumbers)
-              validationErrors.push(`Duplicate jersey numbers: ${[...new Set(duplicateNumbers)].join(', ')}`)
+              validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
             // 5. Check for invalid numbers (must be 1-99)
             const invalidNumbers = awayRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Away invalid numbers:', invalidNumbers.map(p => p.number))
-              validationErrors.push(`Invalid jersey numbers (must be 1-99): ${invalidNumbers.map(p => p.number).join(', ')}`)
+              validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
             }
 
             // 6. Check for players without numbers
             const noNumbers = awayRoster.filter(p => p.number == null || p.number === '')
             if (noNumbers.length > 0) {
               console.log('[MatchSetup] Away players without numbers:', noNumbers.length)
-              validationErrors.push(`${noNumbers.length} player(s) without jersey numbers`)
+              validationErrors.push(t('matchSetup.validation.playersWithoutNumbers', { count: noNumbers.length }))
             }
 
             // Show validation errors if any
             if (validationErrors.length > 0) {
               console.log('[MatchSetup] Away roster validation errors:', validationErrors)
-              setNoticeModal({ message: `Please fix the following issues:\n\n• ${validationErrors.join('\n• ')}` })
+              setNoticeModal({ message: t('matchSetup.validation.fixIssues', { issues: validationErrors.join('\n• ') }) })
               return
             }
 
@@ -7784,7 +7782,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
                   if (setupIssues.length > 0) {
                     setNoticeModal({
-                      message: `Please complete the following before proceeding to coin toss:\n\n• ${setupIssues.join('\n• ')}`
+                      message: t('matchSetup.validation.completeBeforeCoinToss', { issues: setupIssues.join('\n• ') })
                     })
                     return
                   }
@@ -7800,7 +7798,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 // No match exists - create new match
                 await createMatch()
               }
-            }}>Coin toss</button>
+            }}>{t('matchSetup.coinToss')}</button>
         )}
       </div>
 
@@ -7844,16 +7842,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         return (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
             <div className="panel">
-              <h3>{home || 'Home'} Team Roster</h3>
+              <h3>{t('matchSetup.teamRoster', { team: home || t('common.home') })}</h3>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
-                <strong style={{ display: 'block', marginBottom: 8 }}>Players</strong>
+                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.players')}</strong>
                 <table className="roster-table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Name</th>
-                      <th>DOB</th>
+                      <th>{t('common.name')}</th>
+                      <th>{t('common.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7883,7 +7881,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Liberos Section */}
               {(maxLiberos > 0) && (
                 <div style={{ marginBottom: 16 }}>
-                  <strong style={{ display: 'block', marginBottom: 8 }}>Liberos</strong>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.liberos')}</strong>
                   <table className="roster-table">
                     <thead>
                       <tr>
@@ -7922,13 +7920,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               )}
               {/* Bench Officials Section */}
               <div>
-                <strong style={{ display: 'block', marginBottom: 8 }}>Bench</strong>
+                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.bench')}</strong>
                 <table className="roster-table">
                   <thead>
                     <tr>
                       <th>Role</th>
-                      <th>Name</th>
-                      <th>DOB</th>
+                      <th>{t('common.name')}</th>
+                      <th>{t('common.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7947,7 +7945,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     ))}
                     {maxBench === 0 && (
                       <tr>
-                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No bench officials</td>
+                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('roster.noBenchOfficials')}</td>
                       </tr>
                     )}
                   </tbody>
@@ -7955,16 +7953,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
             </div>
             <div className="panel">
-              <h3>{away || 'Away'} Team Roster</h3>
+              <h3>{t('matchSetup.teamRoster', { team: away || t('common.away') })}</h3>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
-                <strong style={{ display: 'block', marginBottom: 8 }}>Players</strong>
+                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.players')}</strong>
                 <table className="roster-table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Name</th>
-                      <th>DOB</th>
+                      <th>{t('common.name')}</th>
+                      <th>{t('common.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7994,7 +7992,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Liberos Section */}
               {(maxLiberos > 0) && (
                 <div style={{ marginBottom: 16 }}>
-                  <strong style={{ display: 'block', marginBottom: 8 }}>Liberos</strong>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.liberos')}</strong>
                   <table className="roster-table">
                     <thead>
                       <tr>
@@ -8033,13 +8031,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               )}
               {/* Bench Officials Section */}
               <div>
-                <strong style={{ display: 'block', marginBottom: 8 }}>Bench</strong>
+                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.bench')}</strong>
                 <table className="roster-table">
                   <thead>
                     <tr>
                       <th>Role</th>
-                      <th>Name</th>
-                      <th>DOB</th>
+                      <th>{t('common.name')}</th>
+                      <th>{t('common.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -8058,7 +8056,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     ))}
                     {maxBench === 0 && (
                       <tr>
-                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No bench officials</td>
+                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('roster.noBenchOfficials')}</td>
                       </tr>
                     )}
                   </tbody>
@@ -8103,7 +8101,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
-              Choose {colorPickerModal.team === 'home' ? 'Home' : 'Away'} Team Colour
+              {t('matchSetup.chooseTeamColor', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
             </div>
             <div
               style={{

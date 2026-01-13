@@ -153,8 +153,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   }
 
   // Team info state (loaded from DB)
-  const [home, setHome] = useState('Home')
-  const [away, setAway] = useState('Away')
+  const [home, setHome] = useState(t('common.home'))
+  const [away, setAway] = useState(t('common.away'))
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
 
@@ -1152,7 +1152,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
       // Check signatures for official matches
       if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-        setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
+        setNoticeModal({ message: t('coinToss.validation.completeSignatures') })
         return
       }
     }
@@ -1259,7 +1259,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       <img
         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
         alt="Volleyball"
-        style={{ maxWidth: '100%', maxHeight: '100%'}}
+        style={{ maxWidth: '100%', maxHeight: '100%' }}
       />
     </div>
   )
@@ -1271,7 +1271,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   )
 
   if (!match) {
-    return <div className="setup"><p>Loading...</p></div>
+    return <div className="setup"><p>{t('common.loading')}</p></div>
   }
 
   return (

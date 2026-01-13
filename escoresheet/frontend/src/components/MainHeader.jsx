@@ -83,7 +83,7 @@ const languages = [
   { code: 'en', Flag: FlagGB, label: 'EN' },
   { code: 'it', Flag: FlagIT, label: 'IT' },
   { code: 'de', Flag: FlagDE, label: 'DE' },
-  { code: 'ch', Flag: FlagCH, label: 'DE' },
+  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 
@@ -320,6 +320,7 @@ export default function MainHeader({
         }}
       >
         {/* Match Number */}
+        <div style={{ fontSize: '12px', fontWeight: 500, color: '#94a3b8' }}>{t('header.notSynced')}</div>
         <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>

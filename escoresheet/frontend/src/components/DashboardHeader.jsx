@@ -6,35 +6,35 @@ import changelog from '../CHANGELOG'
 // Flag SVG components for language selector
 const FlagGB = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="42" fill="#012169"/>
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7"/>
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)"/>
-    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12"/>
-    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7"/>
+    <rect width="60" height="42" fill="#012169" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7" />
   </svg>
 )
 
 const FlagIT = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#009246"/>
-    <rect x="20" width="20" height="42" fill="#fff"/>
-    <rect x="40" width="20" height="42" fill="#CE2B37"/>
+    <rect width="20" height="42" fill="#009246" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#CE2B37" />
   </svg>
 )
 
 const FlagDE = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="14" fill="#000"/>
-    <rect y="14" width="60" height="14" fill="#DD0000"/>
-    <rect y="28" width="60" height="14" fill="#FFCE00"/>
+    <rect width="60" height="14" fill="#000" />
+    <rect y="14" width="60" height="14" fill="#DD0000" />
+    <rect y="28" width="60" height="14" fill="#FFCE00" />
   </svg>
 )
 
 const FlagFR = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#002395"/>
-    <rect x="20" width="20" height="42" fill="#fff"/>
-    <rect x="40" width="20" height="42" fill="#ED2939"/>
+    <rect width="20" height="42" fill="#002395" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#ED2939" />
   </svg>
 )
 
@@ -50,7 +50,7 @@ const languages = [
   { code: 'en', Flag: FlagGB, label: 'EN' },
   { code: 'it', Flag: FlagIT, label: 'IT' },
   { code: 'de', Flag: FlagDE, label: 'DE' },
-  { code: 'ch', Flag: FlagCH, label: 'DE' },
+  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 

@@ -14,6 +14,7 @@ const LANGUAGES = [
   { code: 'en', label: 'English', flagUrl: 'https://flagcdn.com/w20/gb.png' },
   { code: 'fr', label: 'Français', flagUrl: 'https://flagcdn.com/w20/fr.png' },
   { code: 'de', label: 'Deutsch', flagUrl: 'https://flagcdn.com/w20/de.png' },
+  { code: 'de-CH', label: 'Schweizerdeutsch', flagUrl: 'https://flagcdn.com/w20/ch.png' },
   { code: 'it', label: 'Italiano', flagUrl: 'https://flagcdn.com/w20/it.png' }
 ]
 
@@ -138,7 +139,7 @@ export function DashboardOptionsMenu({
     if (isClearing) return
 
     const confirmed = window.confirm(
-      'Clear all cached data?\n\nThis will:\n- Clear all local match data\n- Clear sync queue\n- Clear service worker caches\n- Log you out of current match\n\nThe page will reload after clearing.'
+      t('dashboardOptions.clearCacheConfirmation', 'Clear all cached data?\n\nThis will:\n- Clear all local match data\n- Clear sync queue\n- Clear service worker caches\n- Log you out of current match\n\nThe page will reload after clearing.')
     )
 
     if (!confirmed) return
@@ -189,9 +190,9 @@ export function DashboardOptionsMenu({
 
   // Get connection label
   const getConnectionLabel = () => {
-    if (activeConnection === 'supabase') return 'Supabase'
-    if (activeConnection === 'websocket') return 'WebSocket'
-    return 'None'
+    if (activeConnection === 'supabase') return t('dashboardOptions.supabase', 'Supabase')
+    if (activeConnection === 'websocket') return t('dashboardOptions.webSocket', 'WebSocket')
+    return t('dashboardOptions.none', 'None')
   }
 
   return (
@@ -240,7 +241,7 @@ export function DashboardOptionsMenu({
             fontWeight: 600,
             color: 'rgba(255, 255, 255, 0.7)'
           }}>
-            Options
+            {t('dashboardOptions.options', 'Options')}
           </div>
 
           {/* Connection status */}
@@ -255,7 +256,7 @@ export function DashboardOptionsMenu({
               marginBottom: '8px'
             }}>
               <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
-                Connection
+                {t('dashboardOptions.connection', 'Connection')}
               </span>
               <span style={{
                 display: 'flex',
@@ -271,14 +272,14 @@ export function DashboardOptionsMenu({
                   borderRadius: '50%',
                   background: getStatusColor()
                 }} />
-                {connectionStatus === CONNECTION_STATUS.FALLBACK ? 'Fallback' : connectionStatus}
+                {connectionStatus === CONNECTION_STATUS.FALLBACK ? t('dashboardOptions.fallback', 'Fallback') : connectionStatus}
               </span>
             </div>
             <div style={{
               fontSize: '11px',
               color: 'rgba(255, 255, 255, 0.5)'
             }}>
-              Active: {getConnectionLabel()}
+              {t('dashboardOptions.active', 'Active:')} {getConnectionLabel()}
             </div>
           </div>
 
@@ -293,7 +294,7 @@ export function DashboardOptionsMenu({
                 color: 'rgba(255, 255, 255, 0.6)',
                 marginBottom: '8px'
               }}>
-                Connection Type
+                {t('dashboardOptions.connectionType', 'Connection Type')}
               </div>
               <div style={{
                 display: 'flex',
@@ -301,9 +302,9 @@ export function DashboardOptionsMenu({
                 gap: '6px'
               }}>
                 {[
-                  { type: CONNECTION_TYPES.AUTO, label: 'Auto (Recommended)', desc: 'Supabase primary, WebSocket fallback' },
-                  { type: CONNECTION_TYPES.SUPABASE, label: 'Supabase Only', desc: 'Database realtime only' },
-                  { type: CONNECTION_TYPES.WEBSOCKET, label: 'WebSocket Only', desc: 'Direct server connection' }
+                  { type: CONNECTION_TYPES.AUTO, label: t('dashboardOptions.autoRecommended', 'Auto (Recommended)'), desc: t('dashboardOptions.supabasePrimaryFallback', 'Supabase primary, WebSocket fallback') },
+                  { type: CONNECTION_TYPES.SUPABASE, label: t('dashboardOptions.supabaseOnly', 'Supabase Only'), desc: t('dashboardOptions.databaseRealtimeOnly', 'Database realtime only') },
+                  { type: CONNECTION_TYPES.WEBSOCKET, label: t('dashboardOptions.webSocketOnly', 'WebSocket Only'), desc: t('dashboardOptions.directServerConnection', 'Direct server connection') }
                 ].map(({ type, label, desc }) => (
                   <button
                     key={type}
@@ -409,7 +410,7 @@ export function DashboardOptionsMenu({
                   cursor: 'pointer'
                 }}
               >
-                Reconnect
+                {t('common.reconnect', 'Reconnect')}
               </button>
             </div>
           )}
@@ -432,7 +433,7 @@ export function DashboardOptionsMenu({
                 opacity: isClearing ? 0.6 : 1
               }}
             >
-              {isClearing ? 'Clearing...' : 'Clear Cache & Data'}
+              {isClearing ? t('dashboardOptions.clearing', 'Clearing...') : t('dashboardOptions.clearCacheAndData', 'Clear Cache & Data')}
             </button>
             {clearResult && !clearResult.success && (
               <div style={{
