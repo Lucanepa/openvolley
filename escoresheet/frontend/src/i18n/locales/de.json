@@ -28,7 +28,7 @@
     "info": "Info"
   },
   "coinToss": {
-    "title": "Coin Toss",
+    "title": "Auslosung",
     "teamA": "Team A",
     "teamB": "Team B",
     "showRoster": "Roster anzeigen",
@@ -39,7 +39,7 @@
     "signB": "Unterschrift B",
     "coach": "Coach",
     "captain": "Capitan",
-    "confirmResult": "Coin Toss bestatigen",
+    "confirmResult": "Auslosung bestatigen",
     "returnToMatch": "Zuruck zum Spiel",
     "scoresheet": "eMatchblatt",
     "preview": "Vorschau",
@@ -294,7 +294,7 @@
       "matchId": "Spiel-ID",
       "connectionPins": "Verbindungs-PINs",
       "saveInfoToRecover": "Bitte speichern Sie diese Informationen, um das Spiel bei Bedarf wiederherzustellen.",
-      "continueToCoinToss": "Weiter zum Münzwurf",
+      "continueToCoinToss": "Weiter zum Auslosung",
       "matchCreatedSyncing": "Spiel erstellt! Synchronisierung...",
       "matchUpdatedSyncing": "Spielinfo aktualisiert! Synchronisierung...",
       "matchSynced": "Spiel synchronisiert!",
@@ -317,7 +317,7 @@
       "reviewVerifyDob": "Überprüfen Sie, ob die Geburtsdaten korrekt sind",
       "reviewSetCaptainLibero": "Kapitän- und Libero-Bezeichnungen festlegen"
     },
-    "coinToss": "Münzwurf",
+    "coinToss": "Auslosung",
     "chooseTeamColor": "Farbe für Team {{team}} wählen"
   },
   "scoreboard": {
@@ -383,7 +383,7 @@
       "noLegalSubstitution": "Keine regelkonforme Auswechslung verfügbar",
       "liberoReminder": "Libero-Erinnerung",
       "reopenSet": "Satz wieder öffnen",
-      "scoresheetError": "Spielberichtsfehler",
+      "scoresheetError": "eScoresheetsfehler",
       "scoresheetAlreadyOpen": "eMatchblatt bereits geöffnet",
       "remarksRecording": "Bemerkungsaufzeichnung",
       "sanctionsAndResults": "Sanktionen und Ergebnisse",
@@ -485,8 +485,8 @@
       "editAllSetsDesc": "Punktestände beliebiger Sätze manuell anpassen.",
       "setNumber": "Satz {{number}}:",
       "finished": "Beendet:",
-      "editCoinToss": "Münzwurf bearbeiten",
-      "editCoinTossDesc": "Ergebnis des Münzwurfs manuell anpassen.",
+      "editCoinToss": "Auslosung bearbeiten",
+      "editCoinTossDesc": "Ergebnis des Auslosung manuell anpassen.",
       "teamALabel": "Team A:",
       "teamBColon": "(B: {{team}})",
       "firstServe": "Erster Aufschlag:",
@@ -1017,10 +1017,10 @@
     "uploadSuccess": "Kader erfolgreich hochgeladen!",
     "uploadError": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
     "confirmTitle": "Upload bestätigen",
-    "confirmMessage": "Dies sendet den Kader zur Genehmigung an den Spielberichtsbogen.",
+    "confirmMessage": "Dies sendet den Kader zur Genehmigung an den eScoresheetsbogen.",
     "uploading": "Hochladen",
     "uploadingMessage": "Kader wird gesendet...",
-    "rosterSentToScoresheet": "Der Kader wurde an den Spielberichtsbogen gesendet. Der Anschreiber wird den Kader überprüfen und akzeptieren oder ablehnen."
+    "rosterSentToScoresheet": "Der Kader wurde an den eScoresheetsbogen gesendet. Der Anschreiber wird den Kader überprüfen und akzeptieren oder ablehnen."
   },
   "benchDashboard": {
     "title": "Team-Dashboard",
@@ -1056,7 +1056,7 @@
     "exitFullscreen": "Beenden",
     "fullscreen": "Vollbild",
     "noActiveGame": "Kein aktives Spiel gefunden",
-    "startMatchToConnect": "Starten Sie ein Spiel auf dem Hauptspielberichtsbogen um sich zu verbinden",
+    "startMatchToConnect": "Starten Sie ein Spiel auf dem HaupteScoresheetsbogen um sich zu verbinden",
     "selectGame": "Spiel auswählen",
     "gamesAvailable": "{{count}} verfügbar",
     "gameNumber": "Spiel #{{number}}",
@@ -1086,8 +1086,8 @@
       "directOnly": "Nur direkt",
       "directDesc": "WebSocket direkt"
     },
-    "awaitingCoinToss": "Awaiting Coin Toss",
-    "awaitingCoinTossDesc": "Das Spiel beginnt, sobald der Coin Toss auf dem Spielberichtsbogen bestätigt wurde.",
+    "awaitingCoinToss": "Awaiting Auslosung",
+    "awaitingCoinTossDesc": "Das Spiel beginnt, sobald der Auslosung auf dem eScoresheetsbogen bestätigt wurde.",
     "matchHasEnded": "Das Spiel ist beendet",
     "lineupSet": "Aufstellung gesetzt",
     "showLineup": "Aufstellung anzeigen",
@@ -1178,9 +1178,9 @@
     "errors": {
       "enterGameNumber": "Bitte geben Sie eine Spielnummer ein",
       "matchNotFound": "Spiel mit dieser Nummer nicht gefunden",
-      "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stellen Sie sicher, dass der Hauptspielbericht läuft.",
+      "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stellen Sie sicher, dass der HaupteScoresheet läuft.",
       "failedToLoadData": "Daten konnten nicht geladen werden",
-      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stellen Sie sicher, dass der Hauptspielbericht läuft."
+      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stellen Sie sicher, dass der HaupteScoresheet läuft."
     }
   },
   "auth": {
