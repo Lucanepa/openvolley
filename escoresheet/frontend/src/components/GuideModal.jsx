@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 
 export default function GuideModal({ open, onClose }) {
+  const { t } = useTranslation()
   const [guideContent, setGuideContent] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -18,7 +20,7 @@ export default function GuideModal({ open, onClose }) {
       
       const tryFetch = async (pathIndex) => {
         if (pathIndex >= paths.length) {
-          setGuideContent('Error loading user guide. Please check the USER_GUIDE.md file.')
+          setGuideContent(t('guideModal.errorLoading', 'Error loading user guide. Please check the USER_GUIDE.md file.'))
           setLoading(false)
           return
         }
@@ -111,7 +113,7 @@ export default function GuideModal({ open, onClose }) {
 
   return (
     <Modal
-      title="User Guide"
+      title={t('guideModal.userGuide', 'User Guide')}
       open={open}
       onClose={onClose}
       width={900}
@@ -119,7 +121,7 @@ export default function GuideModal({ open, onClose }) {
       <div style={{ padding: '24px', maxHeight: '80vh', overflow: 'auto' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-            Loading guide...
+            {t('guideModal.loadingGuide', 'Loading guide...')}
           </div>
         ) : (
           <div 

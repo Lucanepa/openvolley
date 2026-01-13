@@ -71,7 +71,7 @@ const languages = [
   { code: 'en', Flag: FlagGB, label: 'EN' },
   { code: 'it', Flag: FlagIT, label: 'IT' },
   { code: 'de', Flag: FlagDE, label: 'DE' },
-  { code: 'ch', Flag: FlagCH, label: 'DE' },
+  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 

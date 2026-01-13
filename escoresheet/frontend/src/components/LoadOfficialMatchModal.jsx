@@ -593,7 +593,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                   fontSize: '12px'
                 }}>
                   <span style={{ fontWeight: 600 }}>{match.home}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.5)', margin: '0 6px' }}>vs</span>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', margin: '0 6px' }}>{t('common.vs', 'vs')}</span>
                   <span style={{ fontWeight: 600 }}>{match.away}</span>
                 </span>
               </div>

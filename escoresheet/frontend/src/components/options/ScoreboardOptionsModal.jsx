@@ -614,7 +614,7 @@ export default function ScoreboardOptionsModal({
             </div>
             <Stepper
               value={setIntervalDuration}
-              label="set interval duration"
+              label={t('options.setIntervalDurationLabel', 'set interval duration')}
               onDecrement={() => {
                 const newVal = Math.max(60, setIntervalDuration - 15)
                 setSetIntervalDuration(newVal)

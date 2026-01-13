@@ -1,27 +1,28 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { loadCloudBackup } from '../utils/logger'
 import { formatBackupDateTime } from '../utils/dateFormatter'
 
 /**
  * Format event type for display
  */
-function formatEventType(type) {
+function formatEventType(type, t) {
   const typeMap = {
-    'point': 'Point',
-    'timeout': 'Timeout',
-    'substitution': 'Substitution',
-    'libero_entry': 'Libero Entry',
-    'libero_exit': 'Libero Exit',
-    'libero_exchange': 'Libero Exchange',
-    'libero_unable': 'Libero Unable',
-    'libero_redesignation': 'Libero Redesignation',
-    'set_start': 'Set Start',
-    'set_end': 'Set End',
-    'coin_toss': 'Coin Toss',
-    'rotation': 'Rotation',
-    'sanction': 'Sanction',
-    'challenge': 'Challenge',
-    'decision_change': 'Decision Change'
+    'point': t('backupTable.eventTypes.point', 'Point'),
+    'timeout': t('backupTable.eventTypes.timeout', 'Timeout'),
+    'substitution': t('backupTable.eventTypes.substitution', 'Substitution'),
+    'libero_entry': t('backupTable.eventTypes.liberoEntry', 'Libero Entry'),
+    'libero_exit': t('backupTable.eventTypes.liberoExit', 'Libero Exit'),
+    'libero_exchange': t('backupTable.eventTypes.liberoExchange', 'Libero Exchange'),
+    'libero_unable': t('backupTable.eventTypes.liberoUnable', 'Libero Unable'),
+    'libero_redesignation': t('backupTable.eventTypes.liberoRedesignation', 'Libero Redesignation'),
+    'set_start': t('backupTable.eventTypes.setStart', 'Set Start'),
+    'set_end': t('backupTable.eventTypes.setEnd', 'Set End'),
+    'coin_toss': t('backupTable.eventTypes.coinToss', 'Coin Toss'),
+    'rotation': t('backupTable.eventTypes.rotation', 'Rotation'),
+    'sanction': t('backupTable.eventTypes.sanction', 'Sanction'),
+    'challenge': t('backupTable.eventTypes.challenge', 'Challenge'),
+    'decision_change': t('backupTable.eventTypes.decisionChange', 'Decision Change')
   }
   return typeMap[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')
 }
@@ -31,7 +32,7 @@ function formatEventType(type) {
  * Filters out sub-events (decimal seq), rally_start, and replay events
  * Returns the most recent main event type
  */
-function extractLastAction(events) {
+function extractLastAction(events, t) {
   if (!events || events.length === 0) return null
 
   // Filter and sort events
@@ -47,7 +48,7 @@ function extractLastAction(events) {
     })
     .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
 
-  return lastEvent ? formatEventType(lastEvent.type) : null
+  return lastEvent ? formatEventType(lastEvent.type, t) : null
 }
 
 /**
@@ -62,6 +63,7 @@ export default function BackupTable({
   loadingBackupPath = null,
   restoreButtonText = 'Restore'
 }) {
+  const { t } = useTranslation()
   const [lastActions, setLastActions] = useState({})
   const [loadingActions, setLoadingActions] = useState({})
 
@@ -85,13 +87,13 @@ export default function BackupTable({
           try {
             const backupData = await loadCloudBackup(backup.path)
             if (backupData && backupData.events) {
-              actions[backup.path] = extractLastAction(backupData.events)
+              actions[backup.path] = extractLastAction(backupData.events, t)
             } else {
-              actions[backup.path] = 'No actions'
+              actions[backup.path] = t('backupTable.noActions', 'No actions')
             }
           } catch (err) {
             console.error(`Failed to load backup ${backup.path}:`, err)
-            actions[backup.path] = 'Error'
+            actions[backup.path] = t('backupTable.error', 'Error')
           }
         })
       )
@@ -101,7 +103,7 @@ export default function BackupTable({
     }
 
     fetchLastActions()
-  }, [backups])
+  }, [backups, t])
 
   if (backups.length === 0) {
     return null
@@ -126,11 +128,11 @@ export default function BackupTable({
         marginBottom: '2px',
         alignItems: 'center'
       }}>
-        <span style={{ textAlign: 'center' }}>Game N</span>
-        <span style={{ textAlign: 'center' }}>Set</span>
-        <span style={{ textAlign: 'center' }}>Score</span>
-        <span >Last Action</span>
-        <span style={{ textAlign: 'right' }}>Created At</span>
+        <span style={{ textAlign: 'center' }}>{t('backupTable.gameN', 'Game N')}</span>
+        <span style={{ textAlign: 'center' }}>{t('backupTable.set', 'Set')}</span>
+        <span style={{ textAlign: 'center' }}>{t('backupTable.score', 'Score')}</span>
+        <span >{t('backupTable.lastAction', 'Last Action')}</span>
+        <span style={{ textAlign: 'right' }}>{t('backupTable.createdAt', 'Created At')}</span>
         {showRestoreButton && <span></span>}
       </div>
 
@@ -141,8 +143,8 @@ export default function BackupTable({
           : (backup.created_at ? new Date(backup.created_at).toLocaleString() : 'Unknown')
 
         const lastAction = loadingActions[backup.path]
-          ? 'Loading...'
-          : (lastActions[backup.path] || 'Unknown')
+          ? t('common.loading', 'Loading...')
+          : (lastActions[backup.path] || t('common.unknown', 'Unknown'))
 
         const isDisabled = loading || loadingBackupPath === backup.path
 

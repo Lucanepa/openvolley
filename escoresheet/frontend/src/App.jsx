@@ -3057,7 +3057,7 @@ export default function App() {
                 console.error('Failed to trigger alarm:', err)
               }
             }}
-            alarmEnabled={dashboardServerEnabled || !!(currentMatch?.gamePin)}
+            alarmEnabled={currentMatch?.refereeConnectionEnabled === true}
           />
           <div className="container" style={{
             minHeight: 0,
@@ -3222,7 +3222,7 @@ export default function App() {
                         cursor: 'pointer'
                       }}
                     >
-                      Delete
+                      {t('deleteMatch.delete')}
                     </button>
                     <button
                       onClick={cancelDeleteMatch}
@@ -3237,7 +3237,7 @@ export default function App() {
                         cursor: 'pointer'
                       }}
                     >
-                      Cancel
+                      {t('deleteMatch.cancel')}
                     </button>
                   </div>
                 </div>
@@ -3247,7 +3247,7 @@ export default function App() {
             {/* Restore Match Modal */}
             {restoreMatchModal && (
               <Modal
-                title="Restore Match"
+                title={t('settings.backup.restoreMatch')}
                 open={true}
                 onClose={() => {
                   setRestoreMatchModal(false)
@@ -3266,15 +3266,15 @@ export default function App() {
                   {!offlineMode && (
                     <div style={{ marginBottom: '24px' }}>
                       <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
-                        Restore from Cloud Backup
+                        {t('settings.backup.restoreFromCloudBackup')}
                       </h3>
                       <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
-                        Restore from a specific backup point in time
+                        {t('settings.backup.restoreFromCloudDesc')}
                       </p>
                       <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
                         <div style={{ flex: 1 }}>
                           <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                            Game N:
+                            {t('settings.backup.gameN')}:
                           </label>
                           <input
                             type="text"
@@ -3303,7 +3303,7 @@ export default function App() {
                         </div>
                         <div style={{ flex: 1.5 }}>
                           <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                            Game PIN:
+                            {t('settings.backup.gamePin')}:
                           </label>
                           <input
                             type="text"
@@ -3368,7 +3368,7 @@ export default function App() {
                           cursor: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'not-allowed' : 'pointer'
                         }}
                       >
-                        {cloudBackupLoading ? 'Searching...' : 'Search Cloud Backups'}
+                        {cloudBackupLoading ? t('common.loading') : t('settings.backup.searchCloudBackups')}
                       </button>
                       {cloudBackupError && (
                         <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '8px', marginBottom: '0' }}>{cloudBackupError}</p>
@@ -3417,14 +3417,14 @@ export default function App() {
                     marginBottom: '24px'
                   }}>
                     <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>or</span>
+                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>{t('settings.backup.or')}</span>
                     <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
                   </div>
 
                   {/* Offline/File restore */}
                   <div>
                     <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
-                      Restore from Local Backup
+                      {t('settings.backup.restoreFromLocal')}
                     </h3>
                     <button
                       onClick={async () => {
@@ -3457,7 +3457,7 @@ export default function App() {
                         cursor: restoreLoading ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {restoreLoading ? 'Loading...' : 'Select Backup File'}
+                      {restoreLoading ? t('common.loading') : t('settings.backup.selectBackupFile')}
                     </button>
                   </div>
                 </div>
@@ -3467,7 +3467,7 @@ export default function App() {
             {/* Restore Preview Modal */}
             {restorePreviewData && (
               <Modal
-                title="Restore Preview"
+                title={t('settings.backup.restorePreview')}
                 open={true}
                 onClose={() => setRestorePreviewData(null)}
                 width={700}
@@ -3566,8 +3566,8 @@ export default function App() {
                             fontSize: '12px',
                             fontWeight: 600
                           }}>
-                            {restorePreviewData.source === 'database' ? 'From Database' :
-                              restorePreviewData.source === 'cloud' ? 'From Cloud Backup' : 'From Local File'}
+                            {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From Database') :
+                              restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
                           </span>
                           {restorePreviewData.backupName && (
                             <span style={{
@@ -3936,7 +3936,7 @@ export default function App() {
             {/* Alert Modal */}
             {alertModal && (
               <Modal
-                title="Alert"
+                title={t('alert.info', 'Alert')}
                 open={true}
                 onClose={() => setAlertModal(null)}
                 width={400}
@@ -3960,7 +3960,7 @@ export default function App() {
                         cursor: 'pointer'
                       }}
                     >
-                      OK
+                      {t('common.ok', 'OK')}
                     </button>
                   </div>
                 </div>
@@ -3970,7 +3970,7 @@ export default function App() {
             {/* Confirm Modal */}
             {confirmModal && (
               <Modal
-                title="Confirm"
+                title={t('common.confirm', 'Confirm')}
                 open={true}
                 onClose={confirmModal.onCancel}
                 width={400}
@@ -3994,7 +3994,7 @@ export default function App() {
                         cursor: 'pointer'
                       }}
                     >
-                      Yes
+                      {t('common.yes', 'Yes')}
                     </button>
                     <button
                       onClick={confirmModal.onCancel}
@@ -4009,7 +4009,7 @@ export default function App() {
                         cursor: 'pointer'
                       }}
                     >
-                      Cancel
+                      {t('common.cancel', 'Cancel')}
                     </button>
                   </div>
                 </div>

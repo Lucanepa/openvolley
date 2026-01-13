@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '0.19.23',
+    date: '13.01.26',
+    changes: [
+      'feat(i18n): add Swiss German (de-CH) localization'
+    ]
+  },
+  {
     version: '0.19.22',
     date: '12.01.26',
     changes: [

@@ -112,7 +112,7 @@ export default function ConnectionSetupModal({
           }}
         >
           <div style={{ fontSize: 32, marginBottom: 8 }}>📶</div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>LAN</div>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>{t('connectionSetup.lan', 'LAN')}</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>{t('connection.sameWifi')}</div>
         </button>
 
@@ -133,7 +133,7 @@ export default function ConnectionSetupModal({
           disabled={!cloudBackendUrl}
         >
           <div style={{ fontSize: 32, marginBottom: 8 }}>🌐</div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>Internet</div>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>{t('connectionSetup.internet', 'Internet')}</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
             {cloudBackendUrl ? t('connection.cloudRelay') : t('connection.notConfigured')}
           </div>
@@ -259,7 +259,7 @@ export default function ConnectionSetupModal({
           <div style={{ marginTop: 16, textAlign: 'center' }}>
             <img
               src={generateQRCodeUrl(refereeUrl, 150)}
-              alt="Referee QR Code"
+              alt={t('connectionSetup.refereeQRCodeAlt', 'Referee QR Code')}
               style={{ background: '#fff', padding: 8, borderRadius: 8 }}
             />
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>
@@ -521,7 +521,7 @@ export default function ConnectionSetupModal({
             <div style={{ marginTop: 16, textAlign: 'center' }}>
               <img
                 src={generateQRCodeUrl(cloudUrls.referee, 150)}
-                alt="Cloud QR Code"
+                alt={t('connectionSetup.cloudQRCodeAlt', 'Cloud QR Code')}
                 style={{ background: '#fff', padding: 8, borderRadius: 8 }}
               />
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>
