@@ -1,0 +1,11 @@
+{
+  "name": "openvolley-scoresheet",
+  "version": "1.0.10",
+  "private": true,
+  "scripts": {
+    "start": "npx serve . -s -l $PORT"
+  },
+  "dependencies": {
+    "serve": "^14.2.5"
+  }
+}

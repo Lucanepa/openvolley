@@ -14470,6 +14470,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             onTouchStart={(e) => (canSubBenchPlayer || isSubstitutedByLibero) && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, type: 'bench', isLibero: false })}
                             onTouchMove={handleTouchMove}
                             onTouchEnd={handleTouchEnd}
+                            onTouchCancel={handleTouchCancel}
                             onClick={(e) => {
                               if (rallyStatus === 'idle' && !touchDragState.isDragging) {
                                 const rect = e.currentTarget.getBoundingClientRect()
@@ -14724,6 +14725,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onTouchStart={(e) => canDragLibero && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, type: 'bench', isLibero: true })}
                               onTouchMove={handleTouchMove}
                               onTouchEnd={handleTouchEnd}
+                              onTouchCancel={handleTouchCancel}
                               onClick={(e) => {
                                 if (rallyStatus === 'idle' && !isUnable && !touchDragState.isDragging) {
                                   // Open action menu for libero on bench
@@ -15461,6 +15463,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onTouchStart={(e) => canSubstitute && !player.isLibero && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
                               onTouchMove={handleTouchMove}
                               onTouchEnd={handleTouchEnd}
+                              onTouchCancel={handleTouchCancel}
                               style={{
                                 cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
                                 opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
@@ -15727,6 +15730,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onTouchStart={(e) => canDragCourtPlayer && handleTouchDragStart(e, { team: leftTeamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
                               onTouchMove={handleTouchMove}
                               onTouchEnd={handleTouchEnd}
+                              onTouchCancel={handleTouchCancel}
                               style={{
                                 position: 'relative',
                                 cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
@@ -16291,6 +16295,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onTouchStart={(e) => canDragCourtPlayer && handleTouchDragStart(e, { team: rightTeamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
                               onTouchMove={handleTouchMove}
                               onTouchEnd={handleTouchEnd}
+                              onTouchCancel={handleTouchCancel}
                               style={{
                                 position: 'relative',
                                 cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
@@ -17601,6 +17606,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             onTouchStart={(e) => (canSubBenchPlayer || isSubstitutedByLibero) && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, type: 'bench', isLibero: false })}
                             onTouchMove={handleTouchMove}
                             onTouchEnd={handleTouchEnd}
+                            onTouchCancel={handleTouchCancel}
                             onClick={(e) => {
                               if (rallyStatus === 'idle' && !touchDragState.isDragging) {
                                 const rect = e.currentTarget.getBoundingClientRect()
