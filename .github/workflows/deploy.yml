@@ -63,7 +63,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add escoresheet/frontend/dist-*/
+          git add -f escoresheet/frontend/dist-*/
           git diff --staged --quiet || git commit -m "Build subdomains [skip ci]"
           git push
 
