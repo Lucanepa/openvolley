@@ -3,18 +3,13 @@
 
 export const changelog = [
   {
-    version: '0.20.2',
+    version: '1.0.2',
     date: '14.01.26',
     changes: [
-      'v1.0 Release: Enhanced Scoreboard & Reliability Fixes'
+      'release 1.0 setup with wiki and automation'
     ]
   },
   {
-    version: '0.20.1',
-    date: '13.01.26',
-    changes: [
-      'Commit'
-    ]
   },
 ]
 

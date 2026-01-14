@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
 import Modal from './Modal'
-import GuideModal from './GuideModal'
+
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
@@ -183,7 +183,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return defaultKeyBindings
   })
   const [editingKey, setEditingKey] = useState(null) // Which key binding is being edited
-  const [scoreboardGuideModal, setScoreboardGuideModal] = useState(false)
+
   const [serverRunning, setServerRunning] = useState(false)
   const [serverStatus, setServerStatus] = useState(null)
   const [serverLoading, setServerLoading] = useState(false)
@@ -15209,1349 +15209,1349 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Hide court area during Set 5 setup until confirmation */}
             {!(data?.set?.index === 5 && !set5SetupConfirmed) && (
               <>
-            {/* Game Captain Buttons + 1R row - above court */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              width: '100%',
-              marginBottom: '1px'
-            }}>
-              {/* Left Game Captain Button */}
-              {leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt ? (
-                <button
-                  onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'home' : 'away' })}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    background: 'rgba(251, 191, 36, 0.2)',
-                    color: '#fbbf24',
-                    border: '1px solid rgba(251, 191, 36, 0.4)',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
-                </button>
-              ) : <div style={{ width: '80px' }} />}
-
-              {/* 1R in center - only show in non-compact mode */}
-              {!isCompactMode && (() => {
-                const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
-                const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
-                if (!ref1Name) return <div style={{ flex: 1 }} />
-                return (
-                  <span style={{
-                    fontSize: isLaptopMode ? '13px' : '16px',
-                    color: 'var(--muted)',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    1R: {ref1Name}
-                  </span>
-                )
-              })()}
-
-              {/* Right Game Captain Button */}
-              {rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt ? (
-                <button
-                  onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'away' : 'home' })}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    background: 'rgba(251, 191, 36, 0.2)',
-                    color: '#fbbf24',
-                    border: '1px solid rgba(251, 191, 36, 0.4)',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
-                </button>
-              ) : <div style={{ width: '80px' }} />}
-            </div>
-
-            <div className="court" style={{ marginTop: isCompactMode ? '4px' : '2px', marginBottom: isCompactMode ? '2px' : '1px' }}>
-              <div className="court-attack-line court-attack-left" />
-              <div className="court-attack-line court-attack-right" />
-              {rallyStatus === 'idle' && isFirstRally && (
-                <>
-                  {!leftTeamLineupSet && (
-                    <button
-                      className="lineup-button lineup-button-left"
-                      onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
-                      style={{
-                        position: 'absolute',
-                        left: '25%',
-                        top: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        zIndex: 100,
-                        width: '40%',
-                        height: '80%',
-                        padding: '0',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        fontSize: 'clamp(20px, 4vw, 32px)',
-                        fontWeight: 700,
-                        background: 'var(--accent)',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        animation: 'lineupFlash 1.5s ease-in-out infinite'
-                      }}
-                    >
-                      <span>{t('scoreboard.lineup', 'Line-up')}</span>
-                      <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamALabel} - {teamAShortName}</span>
-                    </button>
-                  )}
-                  {!rightTeamLineupSet && (
-                    <button
-                      className="lineup-button lineup-button-right"
-                      onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
-                      style={{
-                        position: 'absolute',
-                        left: '75%',
-                        top: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        zIndex: 100,
-                        width: '40%',
-                        height: '80%',
-                        padding: '0',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        fontSize: 'clamp(20px, 4vw, 32px)',
-                        fontWeight: 700,
-                        background: 'var(--accent)',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        animation: 'lineupFlash 1.5s ease-in-out infinite'
-                      }}
-                    >
-                      <span>{t('scoreboard.lineup', 'Line-up')}</span>
-                      <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamBLabel} - {teamBShortName}</span>
-                    </button>
-                  )}
-                </>
-              )}
-              <div className="court-side court-side-left">
-                <div className="court-team court-team-left">
-                  <div className="court-row court-row-front">
-                    {leftTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
-                      const teamKey = leftIsHome ? 'home' : 'away'
-                      const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-                      const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
-                      const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
-
-                      // Check if this player was recently substituted in
-                      const isRecentlySub = recentlySubstitutedPlayers.some(
-                        sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
-                      )
-
-                      // Get sanctions for this player
-                      const sanctions = getPlayerSanctions(teamKey, player.number)
-                      const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                      const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                      const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                      const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-
-                      const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
-                      const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
-
-                      // Check if this position is a valid touch drop target
-                      const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
-                        t.type === 'court' && t.team === teamKey && t.position === player.position
-                      )
-                      // Check if this is an invalid drop zone during touch drag (wrong team or position)
-                      const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === teamKey && !isTouchDropTargetCourt
-
-                      return (
-                        <div
-                          key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
-                          data-court-position={player.position}
-                          data-team={teamKey}
-                          data-player-number={player.number}
-                          className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
-                          draggable={canSubstitute && !player.isLibero}
-                          onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
-                          onDragEnd={handleCourtDragEnd}
-                          onClick={(e) => !touchDragState.isDragging && handlePlayerClick(teamKey, player.position, player.number, e)}
-                          onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
-                          onDragLeave={handleCourtDragLeave}
-                          onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
-                          onTouchStart={(e) => canSubstitute && !player.isLibero && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
-                          onTouchMove={handleTouchMove}
-                          onTouchEnd={handleTouchEnd}
-                          style={{
-                            cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
-                            opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
-                            transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                            touchAction: canSubstitute && !player.isLibero ? 'none' : undefined,
-                            background: isTouchDropTargetCourt
-                              ? 'rgba(74, 222, 128, 0.5)'  // Bright green for valid touch target
-                              : isInvalidTouchDropZone
-                                ? 'rgba(239, 68, 68, 0.2)'  // Red tint for invalid
-                                : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : player.isLibero ? '#FFF8E7' : undefined,
-                            color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
-                            position: 'relative',
-                            animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
-                            fontWeight: isRecentlySub ? 900 : undefined,
-                            border: isTouchDropTargetCourt
-                              ? '3px solid #22c55e'
-                              : isInvalidTouchDropZone
-                                ? '2px dashed rgba(239, 68, 68, 0.5)'
-                                : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #f97316' : undefined,
-                            boxShadow: isTouchDropTargetCourt
-                              ? '0 0 16px rgba(74, 222, 128, 0.6)'
-                              : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isDropTarget && !isTouchDropTargetCourt) {
-                              e.currentTarget.style.transform = 'scale(1.05)'
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isDropTarget && !isTouchDropTargetCourt) {
-                              e.currentTarget.style.transform = 'scale(1)'
-                              e.currentTarget.style.boxShadow = 'none'
-                            }
-                          }}
-                        >
-                          {replacementNumber && (
-                            <span style={getReplacementBadgeStyle(player)}>
-                              {replacementNumber}
-                            </span>
-                          )}
-                          <span className="court-player-position">{player.position}</span>
-                          {/* Captain indicator - show C for captain (including libero-captain) */}
-                          {player.isCaptain && (() => {
-                            if (player.isLibero) {
-                              // Libero-captain ON COURT: show LC on white bg with green text
-                              return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
-                              )
-                            }
-                            return <span className="court-player-captain">C</span>
-                          })()}
-                          {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
-                          {player.isCourtCaptain && (
-                            <span
-                              className="court-player-captain"
-                              style={{
-                                background: player.isLibero ? '#3b82f6' : undefined,
-                                color: '#fbbf24',
-                                borderColor: '#fbbf24',
-                                fontSize: player.isLibero ? '9px' : undefined
-                              }}
-                            >
-                              {player.isLibero ? 'LC' : 'C'}
-                            </span>
-                          )}
-                          {/* Libero indicator (bottom-left) - only if not captain */}
-                          {player.isLibero && !player.isCaptain && (() => {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoType = player.liberoType
-                            const isUnable = liberoType === 'unable'
-                            const isRedesignated = liberoType === 'redesignated'
-
-                            // Determine base label
-                            let baseLabel = ''
-                            if (liberoCount === 1) {
-                              baseLabel = 'L'
-                            } else if (liberoType === 'libero1') {
-                              baseLabel = 'L1'
-                            } else if (liberoType === 'libero2') {
-                              baseLabel = 'L2'
-                            } else if (isRedesignated) {
-                              baseLabel = 'L'
-                            } else {
-                              baseLabel = 'L'
-                            }
-
-                            return (
-                              <span style={{
-                                position: 'absolute',
-                                bottom: '-6px',
-                                left: '-6px',
-                                width: '18px',
-                                height: '18px',
-                                background: '#3b82f6',
-                                border: '2px solid rgba(255, 255, 255, 0.4)',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                color: '#fff',
-                                zIndex: 5,
-                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
-                              }}>
-                                <span style={{ position: 'relative', display: 'inline-block' }}>
-                                  {baseLabel}
-                                  {isRedesignated}
-                                  {isUnable && (
-                                    <span style={{
-                                      position: 'absolute',
-                                      top: '50%',
-                                      left: '50%',
-                                      transform: 'translate(-50%, -50%)',
-                                      fontSize: '1.2em',
-                                      color: '#ef4444',
-                                      fontWeight: 900
-                                    }}>✕</span>
-                                  )}
-                                </span>
-                              </span>
-                            )
-                          })()}
-                          {player.number}
-
-                          {/* Sanction cards indicator */}
-                          {sanctions.length > 0 && (
-                            <div style={{
-                              position: 'absolute',
-                              bottom: '-3px',
-                              right: '-6px',
-                              zIndex: 10
-                            }}>
-                              {hasExpulsion ? (
-                                // Expulsion: overlapping rotated cards
-                                <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                                  <div className="sanction-card yellow" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    left: '0',
-                                    top: '1px',
-                                    transform: 'rotate(-8deg)',
-                                    zIndex: 1,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                  <div className="sanction-card red" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    right: '0',
-                                    top: '1px',
-                                    transform: 'rotate(8deg)',
-                                    zIndex: 2,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                </div>
-                              ) : (
-                                // Other sanctions: separate cards
-                                <div style={{ display: 'flex', gap: '1px' }}>
-                                  {(hasWarning || hasDisqualification) && (
-                                    <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                  {(hasPenalty || hasDisqualification) && (
-                                    <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {/* Player name rectangle - clickable to expand/collapse full name */}
-                          {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
-                            <div
-                              onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
-                              style={{
-                                position: 'absolute',
-                                bottom: '-27px',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                background: 'rgba(0, 0, 0, 0.85)',
-                                border: '1px solid rgba(255, 255, 255, 0.3)',
-                                borderRadius: '3px',
-                                padding: '1px 4px',
-                                fontSize: '9px',
-                                fontWeight: 600,
-                                color: '#fff',
-                                whiteSpace: 'nowrap',
-                                minWidth: '68px',
-                                zIndex: 10,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.3px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '2px'
-                              }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-                                {expandedPlayerName === `${teamKey}-${player.number}`
-                                  ? `#${player.number}`
-                                  : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
-                              </div>
-                              {expandedPlayerName === `${teamKey}-${player.number}` && (
-                                <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                  <div>{player.firstName}</div>
-                                  <div>{player.lastName}</div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="court-row court-row-back">
-                    {leftTeam.playersOnCourt.slice(3, 6).map((player, idx) => {
-                      const leftTeamKey = leftIsHome ? 'home' : 'away'
-                      const currentServe = getCurrentServe()
-                      const leftTeamServes = currentServe === leftTeamKey
-                      const shouldShowBall = player.position === 'I' && leftTeamServes
-                      const teamSubstitutions = substitutionsUsed?.[leftTeamKey] || 0
-                      const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
-                      const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
-
-                      // Check if this player was recently substituted in
-                      const isRecentlySub = recentlySubstitutedPlayers.some(
-                        sub => sub.team === leftTeamKey && String(sub.playerNumber) === String(player.number)
-                      )
-
-                      // Get sanctions for this player
-                      const sanctions = getPlayerSanctions(leftTeamKey, player.number)
-                      const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                      const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                      const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                      const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-
-                      const isDropTarget = dropTargetPosition?.team === leftTeamKey && dropTargetPosition?.position === player.position
-                      const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === leftTeamKey && draggedPlayer?.position === player.position
-                      // For liberos on court, they can be dragged back to libero bench
-                      const canDragCourtPlayer = canSubstitute || (rallyStatus === 'idle' && player.isLibero)
-
-                      // Check if this position is a valid touch drop target
-                      const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
-                        t.type === 'court' && t.team === leftTeamKey && t.position === player.position
-                      )
-                      const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === leftTeamKey && !isTouchDropTargetCourt
-
-                      return (
-                        <div
-                          key={`${leftTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
-                          ref={player.position === 'V' ? leftCourtPositionVRef : undefined}
-                          data-court-position={player.position}
-                          data-team={leftTeamKey}
-                          data-player-number={player.number}
-                          className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
-                          draggable={canDragCourtPlayer}
-                          onDragStart={(e) => canDragCourtPlayer && handleCourtDragStart(e, leftTeamKey, player.position, player.number, player.isLibero)}
-                          onDragEnd={handleCourtDragEnd}
-                          onTouchStart={(e) => canDragCourtPlayer && handleTouchDragStart(e, { team: leftTeamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
-                          onTouchMove={handleTouchMove}
-                          onTouchEnd={handleTouchEnd}
-                          style={{
-                            position: 'relative',
-                            cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
-                            opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
-                            transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                            touchAction: canDragCourtPlayer ? 'none' : undefined,
-                            background: isTouchDropTargetCourt
-                              ? 'rgba(74, 222, 128, 0.5)'
-                              : isInvalidTouchDropZone
-                                ? 'rgba(239, 68, 68, 0.2)'
-                                : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
-                            color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
-                            animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
-                            fontWeight: isRecentlySub ? 900 : undefined,
-                            border: isTouchDropTargetCourt
-                              ? '3px solid #22c55e'
-                              : isInvalidTouchDropZone
-                                ? '2px dashed rgba(239, 68, 68, 0.5)'
-                                : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
-                            boxShadow: isTouchDropTargetCourt
-                              ? '0 0 16px rgba(74, 222, 128, 0.6)'
-                              : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
-                          }}
-                          onClick={(e) => !touchDragState.isDragging && handlePlayerClick(leftTeamKey, player.position, player.number, e)}
-                          onDragOver={(e) => handleCourtDragOver(e, leftTeamKey, player.position)}
-                          onDragLeave={handleCourtDragLeave}
-                          onDrop={(e) => handleCourtDrop(e, leftTeamKey, player.position, player.number)}
-                          onMouseEnter={(e) => {
-                            if (player.number && player.number !== '' && !isDropTarget && !isTouchDropTargetCourt) {
-                              e.currentTarget.style.transform = 'scale(1.05)'
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (player.number && player.number !== '' && !isDropTarget && !isTouchDropTargetCourt) {
-                              e.currentTarget.style.transform = 'scale(1)'
-                              e.currentTarget.style.boxShadow = 'none'
-                            }
-                          }}
-                        >
-                          {shouldShowBall && (
-                            <img
-                              src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                              alt="Volleyball"
-                              style={{
-                                position: 'absolute',
-                                left: '-6vmin',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                width: '5vmin',
-                                height: '5vmin',
-                                zIndex: 5
-                              }}
-                            />
-                          )}
-                          {replacementNumber && (
-                            <span style={getReplacementBadgeStyle(player)}>
-                              {replacementNumber}
-                            </span>
-                          )}
-                          <span className="court-player-position">{player.position}</span>
-                          {/* Captain indicator - show C for captain (including libero-captain) */}
-                          {player.isCaptain && (() => {
-                            if (player.isLibero) {
-                              // Libero-captain ON COURT: show LC on white bg with green text
-                              return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
-                              )
-                            }
-                            return <span className="court-player-captain">C</span>
-                          })()}
-                          {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
-                          {player.isCourtCaptain && (
-                            <span
-                              className="court-player-captain"
-                              style={{
-                                background: player.isLibero ? '#3b82f6' : undefined,
-                                color: '#fbbf24',
-                                borderColor: '#fbbf24',
-                                fontSize: player.isLibero ? '9px' : undefined
-                              }}
-                            >
-                              {player.isLibero ? 'LC' : 'C'}
-                            </span>
-                          )}
-                          {/* Libero indicator (bottom-left) - only if not captain */}
-                          {player.isLibero && !player.isCaptain && (() => {
-                            const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
-                            return (
-                              <span style={{
-                                position: 'absolute',
-                                bottom: '-6px',
-                                left: '-8px',
-                                width: '18px',
-                                height: '18px',
-                                background: '#3b82f6',
-                                border: '2px solid rgba(255, 255, 255, 0.4)',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                color: '#fff',
-                                zIndex: 5,
-                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
-                              }}>
-                                {liberoLabel}
-                              </span>
-                            )
-                          })()}
-                          {player.number}
-
-                          {/* Sanction cards indicator */}
-                          {sanctions.length > 0 && (
-                            <div style={{
-                              position: 'absolute',
-                              bottom: '-3px',
-                              right: '-6px',
-                              zIndex: 10
-                            }}>
-                              {hasExpulsion ? (
-                                // Expulsion: overlapping rotated cards
-                                <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                                  <div className="sanction-card yellow" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    left: '0',
-                                    top: '1px',
-                                    transform: 'rotate(-8deg)',
-                                    zIndex: 1,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                  <div className="sanction-card red" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    right: '0',
-                                    top: '1px',
-                                    transform: 'rotate(8deg)',
-                                    zIndex: 2,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                </div>
-                              ) : (
-                                // Other sanctions: separate cards
-                                <div style={{ display: 'flex', gap: '1px' }}>
-                                  {(hasWarning || hasDisqualification) && (
-                                    <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                  {(hasPenalty || hasDisqualification) && (
-                                    <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {/* Player name rectangle - clickable to expand/collapse full name */}
-                          {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
-                            <div
-                              onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
-                              style={{
-                                position: 'absolute',
-                                bottom: '-27px',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                background: 'rgba(0, 0, 0, 0.85)',
-                                border: '1px solid rgba(255, 255, 255, 0.3)',
-                                borderRadius: '3px',
-                                padding: '1px 4px',
-                                fontSize: '9px',
-                                fontWeight: 600,
-                                color: '#fff',
-                                whiteSpace: 'nowrap',
-                                minWidth: '68px',
-                                zIndex: 10,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.3px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '2px'
-                              }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-                                {expandedPlayerName === `${leftTeamKey}-${player.number}`
-                                  ? `#${player.number}`
-                                  : getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
-                              </div>
-                              {expandedPlayerName === `${leftTeamKey}-${player.number}` && (
-                                <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                  <div>{player.firstName}</div>
-                                  <div>{player.lastName}</div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
-                  {leftTeamLineupSet && !rightTeamLineupSet && isFirstRally && !peekingLineup.left && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'rgba(0, 0, 0, 0.7)',
-                      backdropFilter: 'blur(8px)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '12px',
-                      zIndex: 50,
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{
-                        fontSize: 'clamp(16px, 3vw, 24px)',
-                        fontWeight: 700,
-                        color: '#22c55e',
-                        textAlign: 'center'
-                      }}>
-                        {t('scoreboard.lineupSet', 'Line-up set')}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        <button
-                          onMouseDown={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
-                          onMouseUp={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
-                          onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
-                          onTouchStart={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
-                          onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: 'clamp(11px, 2vw, 14px)',
-                            fontWeight: 600,
-                            background: 'rgba(59, 130, 246, 0.3)',
-                            color: '#fff',
-                            border: '1px solid rgba(59, 130, 246, 0.5)',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('scoreboard.showLineup', 'Show Line-up')}
-                        </button>
-                        <button
-                          onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: 'clamp(11px, 2vw, 14px)',
-                            fontWeight: 600,
-                            background: 'rgba(251, 191, 36, 0.3)',
-                            color: '#fbbf24',
-                            border: '1px solid rgba(251, 191, 36, 0.5)',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('scoreboard.changeLineup', 'Change Line-up')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="court-net" />
-              <div className="court-side court-side-right">
-                <div className="court-team court-team-right">
-                  <div className="court-row court-row-front">
-                    {rightTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
-                      const teamKey = leftIsHome ? 'away' : 'home'
-                      const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-                      const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
-                      const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
-
-                      // Get sanctions for this player
-                      const sanctions = getPlayerSanctions(teamKey, player.number)
-                      const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                      const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                      const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                      const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-
-                      // Check if this player was recently substituted in
-                      const isRecentlySub = recentlySubstitutedPlayers.some(
-                        sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
-                      )
-
-                      const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
-                      const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
-
-                      return (
-                        <div
-                          key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
-                          ref={player.position === 'II' ? rightCourtPositionIIRef : undefined}
-                          className="court-player"
-                          draggable={canSubstitute && !player.isLibero}
-                          onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
-                          onDragEnd={handleCourtDragEnd}
-                          onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
-                          onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
-                          onDragLeave={handleCourtDragLeave}
-                          onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
-                          style={{
-                            cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
-                            opacity: isDragging ? 0.5 : undefined,
-                            transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                            background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
-                            color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
-                            animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
-                            fontWeight: isRecentlySub ? 900 : undefined,
-                            border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
-                            boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
-                            position: 'relative'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isDropTarget) {
-                              e.currentTarget.style.transform = 'scale(1.05)'
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isDropTarget) {
-                              e.currentTarget.style.transform = 'scale(1)'
-                              e.currentTarget.style.boxShadow = 'none'
-                            }
-                          }}
-                        >
-                          {replacementNumber && (
-                            <span style={getReplacementBadgeStyle(player)}>
-                              {replacementNumber}
-                            </span>
-                          )}
-                          <span className="court-player-position">{player.position}</span>
-                          {/* Bottom-left indicators: Captain C (including libero-captain) */}
-                          {player.isCaptain && (() => {
-                            if (player.isLibero) {
-                              // Libero-captain ON COURT: show LC on white bg with green text
-                              return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
-                              )
-                            }
-                            return <span className="court-player-captain">C</span>
-                          })()}
-                          {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
-                          {player.isCourtCaptain && (
-                            <span
-                              className="court-player-captain"
-                              style={{
-                                background: player.isLibero ? '#3b82f6' : undefined,
-                                color: '#fbbf24',
-                                borderColor: '#fbbf24',
-                                fontSize: player.isLibero ? '9px' : undefined
-                              }}
-                            >
-                              {player.isLibero ? 'LC' : 'C'}
-                            </span>
-                          )}
-                          {/* Libero indicator (bottom-left) - only if not captain */}
-                          {player.isLibero && !player.isCaptain && (() => {
-                            const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoType = player.liberoType
-                            const isUnable = liberoType === 'unable'
-                            const isRedesignated = liberoType === 'redesignated'
-
-                            // Determine base label
-                            let baseLabel = ''
-                            if (liberoCount === 1) {
-                              baseLabel = 'L'
-                            } else if (liberoType === 'libero1') {
-                              baseLabel = 'L1'
-                            } else if (liberoType === 'libero2') {
-                              baseLabel = 'L2'
-                            } else if (isRedesignated) {
-                              baseLabel = 'L'
-                            } else {
-                              baseLabel = 'L'
-                            }
-
-                            return (
-                              <span style={{
-                                position: 'absolute',
-                                bottom: '-6px',
-                                left: '-8px',
-                                width: '18px',
-                                height: '18px',
-                                background: '#3b82f6',
-                                border: '2px solid rgba(255, 255, 255, 0.4)',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                color: '#fff',
-                                zIndex: 5,
-                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
-                              }}>
-                                <span style={{ position: 'relative', display: 'inline-block' }}>
-                                  {baseLabel}
-                                  {isRedesignated}
-                                  {isUnable && (
-                                    <span style={{
-                                      position: 'absolute',
-                                      top: '50%',
-                                      left: '50%',
-                                      transform: 'translate(-50%, -50%)',
-                                      fontSize: '1.2em',
-                                      color: '#ef4444',
-                                      fontWeight: 900
-                                    }}>✕</span>
-                                  )}
-                                </span>
-                              </span>
-                            )
-                          })()}
-                          {player.number}
-
-                          {/* Sanction cards indicator */}
-                          {sanctions.length > 0 && (
-                            <div style={{
-                              position: 'absolute',
-                              bottom: '-3px',
-                              right: '-6px',
-                              zIndex: 10
-                            }}>
-                              {hasExpulsion ? (
-                                // Expulsion: overlapping rotated cards
-                                <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                                  <div className="sanction-card yellow" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    left: '0',
-                                    top: '1px',
-                                    transform: 'rotate(-8deg)',
-                                    zIndex: 1,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                  <div className="sanction-card red" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    right: '0',
-                                    top: '1px',
-                                    transform: 'rotate(8deg)',
-                                    zIndex: 2,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                </div>
-                              ) : (
-                                // Other sanctions: separate cards
-                                <div style={{ display: 'flex', gap: '1px' }}>
-                                  {(hasWarning || hasDisqualification) && (
-                                    <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                  {(hasPenalty || hasDisqualification) && (
-                                    <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {/* Player name rectangle - clickable to expand/collapse full name */}
-                          {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
-                            <div
-                              onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
-                              style={{
-                                position: 'absolute',
-                                bottom: '-27px',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                background: 'rgba(0, 0, 0, 0.85)',
-                                border: '1px solid rgba(255, 255, 255, 0.3)',
-                                borderRadius: '3px',
-                                padding: '1px 4px',
-                                fontSize: '9px',
-                                fontWeight: 600,
-                                color: '#fff',
-                                whiteSpace: 'nowrap',
-                                minWidth: '68px',
-                                zIndex: 10,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.3px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '2px'
-                              }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-                                {expandedPlayerName === `${teamKey}-${player.number}`
-                                  ? `#${player.number}`
-                                  : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
-                              </div>
-                              {expandedPlayerName === `${teamKey}-${player.number}` && (
-                                <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                  <div>{player.firstName}</div>
-                                  <div>{player.lastName}</div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="court-row court-row-back">
-                    {rightTeam.playersOnCourt.slice(3, 6).map((player, idx) => {
-                      const rightTeamKey = leftIsHome ? 'away' : 'home'
-                      const currentServe = getCurrentServe()
-                      const rightTeamServes = currentServe === rightTeamKey
-                      const shouldShowBall = player.position === 'I' && rightTeamServes
-                      const teamSubstitutions = substitutionsUsed?.[rightTeamKey] || 0
-                      const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
-                      const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
-
-                      // Get sanctions for this player
-                      const sanctions = getPlayerSanctions(rightTeamKey, player.number)
-                      const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                      const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                      const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                      const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-
-                      // Check if this player was recently substituted in
-                      const isRecentlySub = recentlySubstitutedPlayers.some(
-                        sub => sub.team === rightTeamKey && String(sub.playerNumber) === String(player.number)
-                      )
-
-                      const isDropTarget = dropTargetPosition?.team === rightTeamKey && dropTargetPosition?.position === player.position
-                      const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === rightTeamKey && draggedPlayer?.position === player.position
-                      // For liberos on court, they can be dragged back to libero bench
-                      const canDragCourtPlayer = canSubstitute || (rallyStatus === 'idle' && player.isLibero)
-
-                      // Check if this position is a valid touch drop target (RIGHT TEAM BACK ROW)
-                      const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
-                        t.type === 'court' && t.team === rightTeamKey && t.position === player.position
-                      )
-                      const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === rightTeamKey && !isTouchDropTargetCourt
-
-                      return (
-                        <div
-                          key={`${rightTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
-                          data-court-position={player.position}
-                          data-team={rightTeamKey}
-                          data-player-number={player.number}
-                          className="court-player"
-                          draggable={canDragCourtPlayer}
-                          onDragStart={(e) => canDragCourtPlayer && handleCourtDragStart(e, rightTeamKey, player.position, player.number, player.isLibero)}
-                          onDragEnd={handleCourtDragEnd}
-                          onTouchStart={(e) => canDragCourtPlayer && handleTouchDragStart(e, { team: rightTeamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
-                          onTouchMove={handleTouchMove}
-                          onTouchEnd={handleTouchEnd}
-                          style={{
-                            position: 'relative',
-                            cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
-                            opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
-                            transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                            touchAction: canDragCourtPlayer ? 'none' : undefined,
-                            background: isTouchDropTargetCourt
-                              ? 'rgba(74, 222, 128, 0.5)'
-                              : isInvalidTouchDropZone
-                                ? 'rgba(239, 68, 68, 0.2)'
-                                : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
-                            color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
-                            animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
-                            fontWeight: isRecentlySub ? 900 : undefined,
-                            border: isTouchDropTargetCourt
-                              ? '3px solid #22c55e'
-                              : isInvalidTouchDropZone
-                                ? '2px dashed rgba(239, 68, 68, 0.5)'
-                                : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
-                            boxShadow: isTouchDropTargetCourt
-                              ? '0 0 16px rgba(74, 222, 128, 0.6)'
-                              : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
-                          }}
-                          onClick={(e) => !touchDragState.isDragging && handlePlayerClick(rightTeamKey, player.position, player.number, e)}
-                          onDragOver={(e) => handleCourtDragOver(e, rightTeamKey, player.position)}
-                          onDragLeave={handleCourtDragLeave}
-                          onDrop={(e) => handleCourtDrop(e, rightTeamKey, player.position, player.number)}
-                          onMouseEnter={(e) => {
-                            if (player.number && player.number !== '' && !isDropTarget) {
-                              e.currentTarget.style.transform = 'scale(1.05)'
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (player.number && player.number !== '' && !isDropTarget) {
-                              e.currentTarget.style.transform = 'scale(1)'
-                              e.currentTarget.style.boxShadow = 'none'
-                            }
-                          }}
-                        >
-                          {shouldShowBall && (
-                            <img
-                              src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                              alt="Volleyball"
-                              style={{
-                                position: 'absolute',
-                                right: '-6vmin',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                width: '5vmin',
-                                height: '5vmin',
-                                zIndex: 5
-                              }}
-                            />
-                          )}
-                          {replacementNumber && (
-                            <span style={getReplacementBadgeStyle(player)}>
-                              {replacementNumber}
-                            </span>
-                          )}
-                          <span className="court-player-position">{player.position}</span>
-                          {/* Captain indicator - show C for captain (including libero-captain) */}
-                          {player.isCaptain && (() => {
-                            if (player.isLibero) {
-                              // Libero-captain ON COURT: show LC on white bg with green text
-                              return (
-                                <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
-                              )
-                            }
-                            return <span className="court-player-captain">C</span>
-                          })()}
-                          {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
-                          {player.isCourtCaptain && (
-                            <span
-                              className="court-player-captain"
-                              style={{
-                                background: player.isLibero ? '#3b82f6' : undefined,
-                                color: '#fbbf24',
-                                borderColor: '#fbbf24',
-                                fontSize: player.isLibero ? '9px' : undefined
-                              }}
-                            >
-                              {player.isLibero ? 'LC' : 'C'}
-                            </span>
-                          )}
-                          {/* Libero indicator (bottom-left) */}
-                          {player.isLibero && !player.isCaptain && (() => {
-                            const teamPlayers = rightTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-                            const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
-                            const liberoType = player.liberoType
-                            const isUnable = liberoType === 'unable'
-                            const isRedesignated = liberoType === 'redesignated'
-
-                            // Determine base label
-                            let baseLabel = ''
-                            if (liberoCount === 1) {
-                              baseLabel = 'L'
-                            } else if (liberoType === 'libero1') {
-                              baseLabel = 'L1'
-                            } else if (liberoType === 'libero2') {
-                              baseLabel = 'L2'
-                            } else if (isRedesignated) {
-                              baseLabel = 'L'
-                            } else {
-                              baseLabel = 'L'
-                            }
-
-                            return (
-                              <span style={{
-                                position: 'absolute',
-                                bottom: '-6px',
-                                left: '-8px',
-                                width: '18px',
-                                height: '18px',
-                                background: '#3b82f6',
-                                border: '2px solid rgba(255, 255, 255, 0.4)',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                color: '#fff',
-                                zIndex: 5,
-                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
-                              }}>
-                                <span style={{ position: 'relative', display: 'inline-block' }}>
-                                  {baseLabel}
-                                  {isRedesignated}
-                                  {isUnable && (
-                                    <span style={{
-                                      position: 'absolute',
-                                      top: '50%',
-                                      left: '50%',
-                                      transform: 'translate(-50%, -50%)',
-                                      fontSize: '1.2em',
-                                      color: '#ef4444',
-                                      fontWeight: 900
-                                    }}>✕</span>
-                                  )}
-                                </span>
-                              </span>
-                            )
-                          })()}
-                          {player.number}
-
-                          {/* Sanction cards indicator */}
-                          {sanctions.length > 0 && (
-                            <div style={{
-                              position: 'absolute',
-                              bottom: '-3px',
-                              right: '-6px',
-                              zIndex: 10
-                            }}>
-                              {hasExpulsion ? (
-                                // Expulsion: overlapping rotated cards
-                                <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                                  <div className="sanction-card yellow" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    left: '0',
-                                    top: '1px',
-                                    transform: 'rotate(-8deg)',
-                                    zIndex: 1,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                  <div className="sanction-card red" style={{
-                                    width: '6px',
-                                    height: '9px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                    position: 'absolute',
-                                    right: '0',
-                                    top: '1px',
-                                    transform: 'rotate(8deg)',
-                                    zIndex: 2,
-                                    borderRadius: '1px'
-                                  }}></div>
-                                </div>
-                              ) : (
-                                // Other sanctions: separate cards
-                                <div style={{ display: 'flex', gap: '1px' }}>
-                                  {(hasWarning || hasDisqualification) && (
-                                    <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                  {(hasPenalty || hasDisqualification) && (
-                                    <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {/* Player name rectangle - clickable to expand/collapse full name */}
-                          {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
-                            <div
-                              onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
-                              style={{
-                                position: 'absolute',
-                                bottom: '-27px',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                background: 'rgba(0, 0, 0, 0.85)',
-                                border: '1px solid rgba(255, 255, 255, 0.3)',
-                                borderRadius: '3px',
-                                padding: '1px 4px',
-                                fontSize: '9px',
-                                fontWeight: 600,
-                                color: '#fff',
-                                whiteSpace: 'nowrap',
-                                minWidth: '68px',
-                                zIndex: 10,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.3px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '2px'
-                              }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-                                {expandedPlayerName === `${rightTeamKey}-${player.number}`
-                                  ? `#${player.number}`
-                                  : getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
-                              </div>
-                              {expandedPlayerName === `${rightTeamKey}-${player.number}` && (
-                                <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                  <div>{player.firstName}</div>
-                                  <div>{player.lastName}</div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
-                  {rightTeamLineupSet && !leftTeamLineupSet && isFirstRally && !peekingLineup.right && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'rgba(0, 0, 0, 0.7)',
-                      backdropFilter: 'blur(8px)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '12px',
-                      zIndex: 50,
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{
-                        fontSize: 'clamp(16px, 3vw, 24px)',
-                        fontWeight: 700,
-                        color: '#22c55e',
-                        textAlign: 'center'
-                      }}>
-                        {t('scoreboard.lineupSet', 'Line-up set')}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        <button
-                          onMouseDown={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
-                          onMouseUp={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
-                          onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
-                          onTouchStart={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
-                          onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: 'clamp(11px, 2vw, 14px)',
-                            fontWeight: 600,
-                            background: 'rgba(59, 130, 246, 0.3)',
-                            color: '#fff',
-                            border: '1px solid rgba(59, 130, 246, 0.5)',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('scoreboard.showLineup', 'Show Line-up')}
-                        </button>
-                        <button
-                          onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: 'clamp(11px, 2vw, 14px)',
-                            fontWeight: 600,
-                            background: 'rgba(251, 191, 36, 0.3)',
-                            color: '#fbbf24',
-                            border: '1px solid rgba(251, 191, 36, 0.5)',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('scoreboard.changeLineup', 'Change Line-up')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 2nd Referee - below court, minimal margin */}
-            {!isCompactMode && (() => {
-              const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
-              const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}`.trim() : null
-              if (!ref2Name) return null
-              return (
+                {/* Game Captain Buttons + 1R row - above court */}
                 <div style={{
                   display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  marginTop: '-5px',
-                  marginBottom: '7px'
+                  width: '100%',
+                  marginBottom: '1px'
                 }}>
-                  <span style={{
-                    fontSize: isLaptopMode ? '13px' : '16px',
-                    color: 'var(--muted)',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    2R: {ref2Name}
-                  </span>
+                  {/* Left Game Captain Button */}
+                  {leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt ? (
+                    <button
+                      onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'home' : 'away' })}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        background: 'rgba(251, 191, 36, 0.2)',
+                        color: '#fbbf24',
+                        border: '1px solid rgba(251, 191, 36, 0.4)',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
+                    </button>
+                  ) : <div style={{ width: '80px' }} />}
+
+                  {/* 1R in center - only show in non-compact mode */}
+                  {!isCompactMode && (() => {
+                    const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
+                    const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
+                    if (!ref1Name) return <div style={{ flex: 1 }} />
+                    return (
+                      <span style={{
+                        fontSize: isLaptopMode ? '13px' : '16px',
+                        color: 'var(--muted)',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        1R: {ref1Name}
+                      </span>
+                    )
+                  })()}
+
+                  {/* Right Game Captain Button */}
+                  {rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt ? (
+                    <button
+                      onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'away' : 'home' })}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        background: 'rgba(251, 191, 36, 0.2)',
+                        color: '#fbbf24',
+                        border: '1px solid rgba(251, 191, 36, 0.4)',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
+                    </button>
+                  ) : <div style={{ width: '80px' }} />}
                 </div>
-              )
-            })()}
+
+                <div className="court" style={{ marginTop: isCompactMode ? '4px' : '2px', marginBottom: isCompactMode ? '2px' : '1px' }}>
+                  <div className="court-attack-line court-attack-left" />
+                  <div className="court-attack-line court-attack-right" />
+                  {rallyStatus === 'idle' && isFirstRally && (
+                    <>
+                      {!leftTeamLineupSet && (
+                        <button
+                          className="lineup-button lineup-button-left"
+                          onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
+                          style={{
+                            position: 'absolute',
+                            left: '25%',
+                            top: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 100,
+                            width: '40%',
+                            height: '80%',
+                            padding: '0',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            fontSize: 'clamp(20px, 4vw, 32px)',
+                            fontWeight: 700,
+                            background: 'var(--accent)',
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                            animation: 'lineupFlash 1.5s ease-in-out infinite'
+                          }}
+                        >
+                          <span>{t('scoreboard.lineup', 'Line-up')}</span>
+                          <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamALabel} - {teamAShortName}</span>
+                        </button>
+                      )}
+                      {!rightTeamLineupSet && (
+                        <button
+                          className="lineup-button lineup-button-right"
+                          onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
+                          style={{
+                            position: 'absolute',
+                            left: '75%',
+                            top: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 100,
+                            width: '40%',
+                            height: '80%',
+                            padding: '0',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            fontSize: 'clamp(20px, 4vw, 32px)',
+                            fontWeight: 700,
+                            background: 'var(--accent)',
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                            animation: 'lineupFlash 1.5s ease-in-out infinite'
+                          }}
+                        >
+                          <span>{t('scoreboard.lineup', 'Line-up')}</span>
+                          <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamBLabel} - {teamBShortName}</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <div className="court-side court-side-left">
+                    <div className="court-team court-team-left">
+                      <div className="court-row court-row-front">
+                        {leftTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
+                          const teamKey = leftIsHome ? 'home' : 'away'
+                          const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
+                          const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
+
+                          // Check if this player was recently substituted in
+                          const isRecentlySub = recentlySubstitutedPlayers.some(
+                            sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
+                          )
+
+                          // Get sanctions for this player
+                          const sanctions = getPlayerSanctions(teamKey, player.number)
+                          const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+                          const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+                          const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+                          const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+                          const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
+                          const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
+
+                          // Check if this position is a valid touch drop target
+                          const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
+                            t.type === 'court' && t.team === teamKey && t.position === player.position
+                          )
+                          // Check if this is an invalid drop zone during touch drag (wrong team or position)
+                          const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === teamKey && !isTouchDropTargetCourt
+
+                          return (
+                            <div
+                              key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
+                              data-court-position={player.position}
+                              data-team={teamKey}
+                              data-player-number={player.number}
+                              className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
+                              draggable={canSubstitute && !player.isLibero}
+                              onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
+                              onDragEnd={handleCourtDragEnd}
+                              onClick={(e) => !touchDragState.isDragging && handlePlayerClick(teamKey, player.position, player.number, e)}
+                              onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
+                              onDragLeave={handleCourtDragLeave}
+                              onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
+                              onTouchStart={(e) => canSubstitute && !player.isLibero && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
+                              style={{
+                                cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
+                                opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
+                                transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                                touchAction: canSubstitute && !player.isLibero ? 'none' : undefined,
+                                background: isTouchDropTargetCourt
+                                  ? 'rgba(74, 222, 128, 0.5)'  // Bright green for valid touch target
+                                  : isInvalidTouchDropZone
+                                    ? 'rgba(239, 68, 68, 0.2)'  // Red tint for invalid
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : player.isLibero ? '#FFF8E7' : undefined,
+                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                position: 'relative',
+                                animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                                fontWeight: isRecentlySub ? 900 : undefined,
+                                border: isTouchDropTargetCourt
+                                  ? '3px solid #22c55e'
+                                  : isInvalidTouchDropZone
+                                    ? '2px dashed rgba(239, 68, 68, 0.5)'
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #f97316' : undefined,
+                                boxShadow: isTouchDropTargetCourt
+                                  ? '0 0 16px rgba(74, 222, 128, 0.6)'
+                                  : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isDropTarget && !isTouchDropTargetCourt) {
+                                  e.currentTarget.style.transform = 'scale(1.05)'
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isDropTarget && !isTouchDropTargetCourt) {
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                  e.currentTarget.style.boxShadow = 'none'
+                                }
+                              }}
+                            >
+                              {replacementNumber && (
+                                <span style={getReplacementBadgeStyle(player)}>
+                                  {replacementNumber}
+                                </span>
+                              )}
+                              <span className="court-player-position">{player.position}</span>
+                              {/* Captain indicator - show C for captain (including libero-captain) */}
+                              {player.isCaptain && (() => {
+                                if (player.isLibero) {
+                                  // Libero-captain ON COURT: show LC on white bg with green text
+                                  return (
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                  )
+                                }
+                                return <span className="court-player-captain">C</span>
+                              })()}
+                              {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
+                              {player.isCourtCaptain && (
+                                <span
+                                  className="court-player-captain"
+                                  style={{
+                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    color: '#fbbf24',
+                                    borderColor: '#fbbf24',
+                                    fontSize: player.isLibero ? '9px' : undefined
+                                  }}
+                                >
+                                  {player.isLibero ? 'LC' : 'C'}
+                                </span>
+                              )}
+                              {/* Libero indicator (bottom-left) - only if not captain */}
+                              {player.isLibero && !player.isCaptain && (() => {
+                                const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                                const liberoType = player.liberoType
+                                const isUnable = liberoType === 'unable'
+                                const isRedesignated = liberoType === 'redesignated'
+
+                                // Determine base label
+                                let baseLabel = ''
+                                if (liberoCount === 1) {
+                                  baseLabel = 'L'
+                                } else if (liberoType === 'libero1') {
+                                  baseLabel = 'L1'
+                                } else if (liberoType === 'libero2') {
+                                  baseLabel = 'L2'
+                                } else if (isRedesignated) {
+                                  baseLabel = 'L'
+                                } else {
+                                  baseLabel = 'L'
+                                }
+
+                                return (
+                                  <span style={{
+                                    position: 'absolute',
+                                    bottom: '-6px',
+                                    left: '-6px',
+                                    width: '18px',
+                                    height: '18px',
+                                    background: '#3b82f6',
+                                    border: '2px solid rgba(255, 255, 255, 0.4)',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    color: '#fff',
+                                    zIndex: 5,
+                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                  }}>
+                                    <span style={{ position: 'relative', display: 'inline-block' }}>
+                                      {baseLabel}
+                                      {isRedesignated}
+                                      {isUnable && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '50%',
+                                          left: '50%',
+                                          transform: 'translate(-50%, -50%)',
+                                          fontSize: '1.2em',
+                                          color: '#ef4444',
+                                          fontWeight: 900
+                                        }}>✕</span>
+                                      )}
+                                    </span>
+                                  </span>
+                                )
+                              })()}
+                              {player.number}
+
+                              {/* Sanction cards indicator */}
+                              {sanctions.length > 0 && (
+                                <div style={{
+                                  position: 'absolute',
+                                  bottom: '-3px',
+                                  right: '-6px',
+                                  zIndex: 10
+                                }}>
+                                  {hasExpulsion ? (
+                                    // Expulsion: overlapping rotated cards
+                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                      <div className="sanction-card yellow" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        left: '0',
+                                        top: '1px',
+                                        transform: 'rotate(-8deg)',
+                                        zIndex: 1,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                      <div className="sanction-card red" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        right: '0',
+                                        top: '1px',
+                                        transform: 'rotate(8deg)',
+                                        zIndex: 2,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                    </div>
+                                  ) : (
+                                    // Other sanctions: separate cards
+                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                      {(hasWarning || hasDisqualification) && (
+                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                      {(hasPenalty || hasDisqualification) && (
+                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {/* Player name rectangle - clickable to expand/collapse full name */}
+                              {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                                <div
+                                  onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: '-27px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    background: 'rgba(0, 0, 0, 0.85)',
+                                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                                    borderRadius: '3px',
+                                    padding: '1px 4px',
+                                    fontSize: '9px',
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    whiteSpace: 'nowrap',
+                                    minWidth: '68px',
+                                    zIndex: 10,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.3px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '2px'
+                                  }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    {expandedPlayerName === `${teamKey}-${player.number}`
+                                      ? `#${player.number}`
+                                      : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
+                                  </div>
+                                  {expandedPlayerName === `${teamKey}-${player.number}` && (
+                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                      <div>{player.firstName}</div>
+                                      <div>{player.lastName}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="court-row court-row-back">
+                        {leftTeam.playersOnCourt.slice(3, 6).map((player, idx) => {
+                          const leftTeamKey = leftIsHome ? 'home' : 'away'
+                          const currentServe = getCurrentServe()
+                          const leftTeamServes = currentServe === leftTeamKey
+                          const shouldShowBall = player.position === 'I' && leftTeamServes
+                          const teamSubstitutions = substitutionsUsed?.[leftTeamKey] || 0
+                          const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
+
+                          // Check if this player was recently substituted in
+                          const isRecentlySub = recentlySubstitutedPlayers.some(
+                            sub => sub.team === leftTeamKey && String(sub.playerNumber) === String(player.number)
+                          )
+
+                          // Get sanctions for this player
+                          const sanctions = getPlayerSanctions(leftTeamKey, player.number)
+                          const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+                          const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+                          const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+                          const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+                          const isDropTarget = dropTargetPosition?.team === leftTeamKey && dropTargetPosition?.position === player.position
+                          const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === leftTeamKey && draggedPlayer?.position === player.position
+                          // For liberos on court, they can be dragged back to libero bench
+                          const canDragCourtPlayer = canSubstitute || (rallyStatus === 'idle' && player.isLibero)
+
+                          // Check if this position is a valid touch drop target
+                          const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
+                            t.type === 'court' && t.team === leftTeamKey && t.position === player.position
+                          )
+                          const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === leftTeamKey && !isTouchDropTargetCourt
+
+                          return (
+                            <div
+                              key={`${leftTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
+                              ref={player.position === 'V' ? leftCourtPositionVRef : undefined}
+                              data-court-position={player.position}
+                              data-team={leftTeamKey}
+                              data-player-number={player.number}
+                              className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
+                              draggable={canDragCourtPlayer}
+                              onDragStart={(e) => canDragCourtPlayer && handleCourtDragStart(e, leftTeamKey, player.position, player.number, player.isLibero)}
+                              onDragEnd={handleCourtDragEnd}
+                              onTouchStart={(e) => canDragCourtPlayer && handleTouchDragStart(e, { team: leftTeamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
+                              style={{
+                                position: 'relative',
+                                cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
+                                opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
+                                transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                                touchAction: canDragCourtPlayer ? 'none' : undefined,
+                                background: isTouchDropTargetCourt
+                                  ? 'rgba(74, 222, 128, 0.5)'
+                                  : isInvalidTouchDropZone
+                                    ? 'rgba(239, 68, 68, 0.2)'
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
+                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                                fontWeight: isRecentlySub ? 900 : undefined,
+                                border: isTouchDropTargetCourt
+                                  ? '3px solid #22c55e'
+                                  : isInvalidTouchDropZone
+                                    ? '2px dashed rgba(239, 68, 68, 0.5)'
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
+                                boxShadow: isTouchDropTargetCourt
+                                  ? '0 0 16px rgba(74, 222, 128, 0.6)'
+                                  : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
+                              }}
+                              onClick={(e) => !touchDragState.isDragging && handlePlayerClick(leftTeamKey, player.position, player.number, e)}
+                              onDragOver={(e) => handleCourtDragOver(e, leftTeamKey, player.position)}
+                              onDragLeave={handleCourtDragLeave}
+                              onDrop={(e) => handleCourtDrop(e, leftTeamKey, player.position, player.number)}
+                              onMouseEnter={(e) => {
+                                if (player.number && player.number !== '' && !isDropTarget && !isTouchDropTargetCourt) {
+                                  e.currentTarget.style.transform = 'scale(1.05)'
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (player.number && player.number !== '' && !isDropTarget && !isTouchDropTargetCourt) {
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                  e.currentTarget.style.boxShadow = 'none'
+                                }
+                              }}
+                            >
+                              {shouldShowBall && (
+                                <img
+                                  src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                                  alt="Volleyball"
+                                  style={{
+                                    position: 'absolute',
+                                    left: '-6vmin',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '5vmin',
+                                    height: '5vmin',
+                                    zIndex: 5
+                                  }}
+                                />
+                              )}
+                              {replacementNumber && (
+                                <span style={getReplacementBadgeStyle(player)}>
+                                  {replacementNumber}
+                                </span>
+                              )}
+                              <span className="court-player-position">{player.position}</span>
+                              {/* Captain indicator - show C for captain (including libero-captain) */}
+                              {player.isCaptain && (() => {
+                                if (player.isLibero) {
+                                  // Libero-captain ON COURT: show LC on white bg with green text
+                                  return (
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                  )
+                                }
+                                return <span className="court-player-captain">C</span>
+                              })()}
+                              {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
+                              {player.isCourtCaptain && (
+                                <span
+                                  className="court-player-captain"
+                                  style={{
+                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    color: '#fbbf24',
+                                    borderColor: '#fbbf24',
+                                    fontSize: player.isLibero ? '9px' : undefined
+                                  }}
+                                >
+                                  {player.isLibero ? 'LC' : 'C'}
+                                </span>
+                              )}
+                              {/* Libero indicator (bottom-left) - only if not captain */}
+                              {player.isLibero && !player.isCaptain && (() => {
+                                const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                                const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
+                                return (
+                                  <span style={{
+                                    position: 'absolute',
+                                    bottom: '-6px',
+                                    left: '-8px',
+                                    width: '18px',
+                                    height: '18px',
+                                    background: '#3b82f6',
+                                    border: '2px solid rgba(255, 255, 255, 0.4)',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    color: '#fff',
+                                    zIndex: 5,
+                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                  }}>
+                                    {liberoLabel}
+                                  </span>
+                                )
+                              })()}
+                              {player.number}
+
+                              {/* Sanction cards indicator */}
+                              {sanctions.length > 0 && (
+                                <div style={{
+                                  position: 'absolute',
+                                  bottom: '-3px',
+                                  right: '-6px',
+                                  zIndex: 10
+                                }}>
+                                  {hasExpulsion ? (
+                                    // Expulsion: overlapping rotated cards
+                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                      <div className="sanction-card yellow" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        left: '0',
+                                        top: '1px',
+                                        transform: 'rotate(-8deg)',
+                                        zIndex: 1,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                      <div className="sanction-card red" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        right: '0',
+                                        top: '1px',
+                                        transform: 'rotate(8deg)',
+                                        zIndex: 2,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                    </div>
+                                  ) : (
+                                    // Other sanctions: separate cards
+                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                      {(hasWarning || hasDisqualification) && (
+                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                      {(hasPenalty || hasDisqualification) && (
+                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {/* Player name rectangle - clickable to expand/collapse full name */}
+                              {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                                <div
+                                  onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: '-27px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    background: 'rgba(0, 0, 0, 0.85)',
+                                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                                    borderRadius: '3px',
+                                    padding: '1px 4px',
+                                    fontSize: '9px',
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    whiteSpace: 'nowrap',
+                                    minWidth: '68px',
+                                    zIndex: 10,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.3px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '2px'
+                                  }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    {expandedPlayerName === `${leftTeamKey}-${player.number}`
+                                      ? `#${player.number}`
+                                      : getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
+                                  </div>
+                                  {expandedPlayerName === `${leftTeamKey}-${player.number}` && (
+                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                      <div>{player.firstName}</div>
+                                      <div>{player.lastName}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+                      {leftTeamLineupSet && !rightTeamLineupSet && isFirstRally && !peekingLineup.left && (
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          background: 'rgba(0, 0, 0, 0.7)',
+                          backdropFilter: 'blur(8px)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '12px',
+                          zIndex: 50,
+                          borderRadius: '8px'
+                        }}>
+                          <div style={{
+                            fontSize: 'clamp(16px, 3vw, 24px)',
+                            fontWeight: 700,
+                            color: '#22c55e',
+                            textAlign: 'center'
+                          }}>
+                            {t('scoreboard.lineupSet', 'Line-up set')}
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            <button
+                              onMouseDown={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                              onMouseUp={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                              onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                              onTouchStart={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                              onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                              style={{
+                                padding: '8px 16px',
+                                fontSize: 'clamp(11px, 2vw, 14px)',
+                                fontWeight: 600,
+                                background: 'rgba(59, 130, 246, 0.3)',
+                                color: '#fff',
+                                border: '1px solid rgba(59, 130, 246, 0.5)',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {t('scoreboard.showLineup', 'Show Line-up')}
+                            </button>
+                            <button
+                              onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
+                              style={{
+                                padding: '8px 16px',
+                                fontSize: 'clamp(11px, 2vw, 14px)',
+                                fontWeight: 600,
+                                background: 'rgba(251, 191, 36, 0.3)',
+                                color: '#fbbf24',
+                                border: '1px solid rgba(251, 191, 36, 0.5)',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {t('scoreboard.changeLineup', 'Change Line-up')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="court-net" />
+                  <div className="court-side court-side-right">
+                    <div className="court-team court-team-right">
+                      <div className="court-row court-row-front">
+                        {rightTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
+                          const teamKey = leftIsHome ? 'away' : 'home'
+                          const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
+                          const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
+
+                          // Get sanctions for this player
+                          const sanctions = getPlayerSanctions(teamKey, player.number)
+                          const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+                          const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+                          const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+                          const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+                          // Check if this player was recently substituted in
+                          const isRecentlySub = recentlySubstitutedPlayers.some(
+                            sub => sub.team === teamKey && String(sub.playerNumber) === String(player.number)
+                          )
+
+                          const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
+                          const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
+
+                          return (
+                            <div
+                              key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
+                              ref={player.position === 'II' ? rightCourtPositionIIRef : undefined}
+                              className="court-player"
+                              draggable={canSubstitute && !player.isLibero}
+                              onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
+                              onDragEnd={handleCourtDragEnd}
+                              onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
+                              onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
+                              onDragLeave={handleCourtDragLeave}
+                              onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
+                              style={{
+                                cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
+                                opacity: isDragging ? 0.5 : undefined,
+                                transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                                background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
+                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                                fontWeight: isRecentlySub ? 900 : undefined,
+                                border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
+                                boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
+                                position: 'relative'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isDropTarget) {
+                                  e.currentTarget.style.transform = 'scale(1.05)'
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isDropTarget) {
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                  e.currentTarget.style.boxShadow = 'none'
+                                }
+                              }}
+                            >
+                              {replacementNumber && (
+                                <span style={getReplacementBadgeStyle(player)}>
+                                  {replacementNumber}
+                                </span>
+                              )}
+                              <span className="court-player-position">{player.position}</span>
+                              {/* Bottom-left indicators: Captain C (including libero-captain) */}
+                              {player.isCaptain && (() => {
+                                if (player.isLibero) {
+                                  // Libero-captain ON COURT: show LC on white bg with green text
+                                  return (
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                  )
+                                }
+                                return <span className="court-player-captain">C</span>
+                              })()}
+                              {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
+                              {player.isCourtCaptain && (
+                                <span
+                                  className="court-player-captain"
+                                  style={{
+                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    color: '#fbbf24',
+                                    borderColor: '#fbbf24',
+                                    fontSize: player.isLibero ? '9px' : undefined
+                                  }}
+                                >
+                                  {player.isLibero ? 'LC' : 'C'}
+                                </span>
+                              )}
+                              {/* Libero indicator (bottom-left) - only if not captain */}
+                              {player.isLibero && !player.isCaptain && (() => {
+                                const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                                const liberoType = player.liberoType
+                                const isUnable = liberoType === 'unable'
+                                const isRedesignated = liberoType === 'redesignated'
+
+                                // Determine base label
+                                let baseLabel = ''
+                                if (liberoCount === 1) {
+                                  baseLabel = 'L'
+                                } else if (liberoType === 'libero1') {
+                                  baseLabel = 'L1'
+                                } else if (liberoType === 'libero2') {
+                                  baseLabel = 'L2'
+                                } else if (isRedesignated) {
+                                  baseLabel = 'L'
+                                } else {
+                                  baseLabel = 'L'
+                                }
+
+                                return (
+                                  <span style={{
+                                    position: 'absolute',
+                                    bottom: '-6px',
+                                    left: '-8px',
+                                    width: '18px',
+                                    height: '18px',
+                                    background: '#3b82f6',
+                                    border: '2px solid rgba(255, 255, 255, 0.4)',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    color: '#fff',
+                                    zIndex: 5,
+                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                  }}>
+                                    <span style={{ position: 'relative', display: 'inline-block' }}>
+                                      {baseLabel}
+                                      {isRedesignated}
+                                      {isUnable && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '50%',
+                                          left: '50%',
+                                          transform: 'translate(-50%, -50%)',
+                                          fontSize: '1.2em',
+                                          color: '#ef4444',
+                                          fontWeight: 900
+                                        }}>✕</span>
+                                      )}
+                                    </span>
+                                  </span>
+                                )
+                              })()}
+                              {player.number}
+
+                              {/* Sanction cards indicator */}
+                              {sanctions.length > 0 && (
+                                <div style={{
+                                  position: 'absolute',
+                                  bottom: '-3px',
+                                  right: '-6px',
+                                  zIndex: 10
+                                }}>
+                                  {hasExpulsion ? (
+                                    // Expulsion: overlapping rotated cards
+                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                      <div className="sanction-card yellow" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        left: '0',
+                                        top: '1px',
+                                        transform: 'rotate(-8deg)',
+                                        zIndex: 1,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                      <div className="sanction-card red" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        right: '0',
+                                        top: '1px',
+                                        transform: 'rotate(8deg)',
+                                        zIndex: 2,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                    </div>
+                                  ) : (
+                                    // Other sanctions: separate cards
+                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                      {(hasWarning || hasDisqualification) && (
+                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                      {(hasPenalty || hasDisqualification) && (
+                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {/* Player name rectangle - clickable to expand/collapse full name */}
+                              {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                                <div
+                                  onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: '-27px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    background: 'rgba(0, 0, 0, 0.85)',
+                                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                                    borderRadius: '3px',
+                                    padding: '1px 4px',
+                                    fontSize: '9px',
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    whiteSpace: 'nowrap',
+                                    minWidth: '68px',
+                                    zIndex: 10,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.3px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '2px'
+                                  }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    {expandedPlayerName === `${teamKey}-${player.number}`
+                                      ? `#${player.number}`
+                                      : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
+                                  </div>
+                                  {expandedPlayerName === `${teamKey}-${player.number}` && (
+                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                      <div>{player.firstName}</div>
+                                      <div>{player.lastName}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="court-row court-row-back">
+                        {rightTeam.playersOnCourt.slice(3, 6).map((player, idx) => {
+                          const rightTeamKey = leftIsHome ? 'away' : 'home'
+                          const currentServe = getCurrentServe()
+                          const rightTeamServes = currentServe === rightTeamKey
+                          const shouldShowBall = player.position === 'I' && rightTeamServes
+                          const teamSubstitutions = substitutionsUsed?.[rightTeamKey] || 0
+                          const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
+
+                          // Get sanctions for this player
+                          const sanctions = getPlayerSanctions(rightTeamKey, player.number)
+                          const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+                          const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+                          const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+                          const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+                          // Check if this player was recently substituted in
+                          const isRecentlySub = recentlySubstitutedPlayers.some(
+                            sub => sub.team === rightTeamKey && String(sub.playerNumber) === String(player.number)
+                          )
+
+                          const isDropTarget = dropTargetPosition?.team === rightTeamKey && dropTargetPosition?.position === player.position
+                          const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === rightTeamKey && draggedPlayer?.position === player.position
+                          // For liberos on court, they can be dragged back to libero bench
+                          const canDragCourtPlayer = canSubstitute || (rallyStatus === 'idle' && player.isLibero)
+
+                          // Check if this position is a valid touch drop target (RIGHT TEAM BACK ROW)
+                          const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
+                            t.type === 'court' && t.team === rightTeamKey && t.position === player.position
+                          )
+                          const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === rightTeamKey && !isTouchDropTargetCourt
+
+                          return (
+                            <div
+                              key={`${rightTeamKey}-court-back-${player.position}-${player.id || player.number || idx}`}
+                              data-court-position={player.position}
+                              data-team={rightTeamKey}
+                              data-player-number={player.number}
+                              className="court-player"
+                              draggable={canDragCourtPlayer}
+                              onDragStart={(e) => canDragCourtPlayer && handleCourtDragStart(e, rightTeamKey, player.position, player.number, player.isLibero)}
+                              onDragEnd={handleCourtDragEnd}
+                              onTouchStart={(e) => canDragCourtPlayer && handleTouchDragStart(e, { team: rightTeamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
+                              style={{
+                                position: 'relative',
+                                cursor: canDragCourtPlayer ? 'grab' : (player.number && player.number !== '' ? 'pointer' : 'default'),
+                                opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
+                                transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
+                                touchAction: canDragCourtPlayer ? 'none' : undefined,
+                                background: isTouchDropTargetCourt
+                                  ? 'rgba(74, 222, 128, 0.5)'
+                                  : isInvalidTouchDropZone
+                                    ? 'rgba(239, 68, 68, 0.2)'
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
+                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
+                                fontWeight: isRecentlySub ? 900 : undefined,
+                                border: isTouchDropTargetCourt
+                                  ? '3px solid #22c55e'
+                                  : isInvalidTouchDropZone
+                                    ? '2px dashed rgba(239, 68, 68, 0.5)'
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
+                                boxShadow: isTouchDropTargetCourt
+                                  ? '0 0 16px rgba(74, 222, 128, 0.6)'
+                                  : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
+                              }}
+                              onClick={(e) => !touchDragState.isDragging && handlePlayerClick(rightTeamKey, player.position, player.number, e)}
+                              onDragOver={(e) => handleCourtDragOver(e, rightTeamKey, player.position)}
+                              onDragLeave={handleCourtDragLeave}
+                              onDrop={(e) => handleCourtDrop(e, rightTeamKey, player.position, player.number)}
+                              onMouseEnter={(e) => {
+                                if (player.number && player.number !== '' && !isDropTarget) {
+                                  e.currentTarget.style.transform = 'scale(1.05)'
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (player.number && player.number !== '' && !isDropTarget) {
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                  e.currentTarget.style.boxShadow = 'none'
+                                }
+                              }}
+                            >
+                              {shouldShowBall && (
+                                <img
+                                  src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                                  alt="Volleyball"
+                                  style={{
+                                    position: 'absolute',
+                                    right: '-6vmin',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '5vmin',
+                                    height: '5vmin',
+                                    zIndex: 5
+                                  }}
+                                />
+                              )}
+                              {replacementNumber && (
+                                <span style={getReplacementBadgeStyle(player)}>
+                                  {replacementNumber}
+                                </span>
+                              )}
+                              <span className="court-player-position">{player.position}</span>
+                              {/* Captain indicator - show C for captain (including libero-captain) */}
+                              {player.isCaptain && (() => {
+                                if (player.isLibero) {
+                                  // Libero-captain ON COURT: show LC on white bg with green text
+                                  return (
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                  )
+                                }
+                                return <span className="court-player-captain">C</span>
+                              })()}
+                              {/* Captain on Court indicator (different color) - uses pre-computed isCourtCaptain which checks if team captain is on court */}
+                              {player.isCourtCaptain && (
+                                <span
+                                  className="court-player-captain"
+                                  style={{
+                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    color: '#fbbf24',
+                                    borderColor: '#fbbf24',
+                                    fontSize: player.isLibero ? '9px' : undefined
+                                  }}
+                                >
+                                  {player.isLibero ? 'LC' : 'C'}
+                                </span>
+                              )}
+                              {/* Libero indicator (bottom-left) */}
+                              {player.isLibero && !player.isCaptain && (() => {
+                                const teamPlayers = rightTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+                                const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+                                const liberoType = player.liberoType
+                                const isUnable = liberoType === 'unable'
+                                const isRedesignated = liberoType === 'redesignated'
+
+                                // Determine base label
+                                let baseLabel = ''
+                                if (liberoCount === 1) {
+                                  baseLabel = 'L'
+                                } else if (liberoType === 'libero1') {
+                                  baseLabel = 'L1'
+                                } else if (liberoType === 'libero2') {
+                                  baseLabel = 'L2'
+                                } else if (isRedesignated) {
+                                  baseLabel = 'L'
+                                } else {
+                                  baseLabel = 'L'
+                                }
+
+                                return (
+                                  <span style={{
+                                    position: 'absolute',
+                                    bottom: '-6px',
+                                    left: '-8px',
+                                    width: '18px',
+                                    height: '18px',
+                                    background: '#3b82f6',
+                                    border: '2px solid rgba(255, 255, 255, 0.4)',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    color: '#fff',
+                                    zIndex: 5,
+                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                  }}>
+                                    <span style={{ position: 'relative', display: 'inline-block' }}>
+                                      {baseLabel}
+                                      {isRedesignated}
+                                      {isUnable && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '50%',
+                                          left: '50%',
+                                          transform: 'translate(-50%, -50%)',
+                                          fontSize: '1.2em',
+                                          color: '#ef4444',
+                                          fontWeight: 900
+                                        }}>✕</span>
+                                      )}
+                                    </span>
+                                  </span>
+                                )
+                              })()}
+                              {player.number}
+
+                              {/* Sanction cards indicator */}
+                              {sanctions.length > 0 && (
+                                <div style={{
+                                  position: 'absolute',
+                                  bottom: '-3px',
+                                  right: '-6px',
+                                  zIndex: 10
+                                }}>
+                                  {hasExpulsion ? (
+                                    // Expulsion: overlapping rotated cards
+                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                      <div className="sanction-card yellow" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        left: '0',
+                                        top: '1px',
+                                        transform: 'rotate(-8deg)',
+                                        zIndex: 1,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                      <div className="sanction-card red" style={{
+                                        width: '6px',
+                                        height: '9px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                        position: 'absolute',
+                                        right: '0',
+                                        top: '1px',
+                                        transform: 'rotate(8deg)',
+                                        zIndex: 2,
+                                        borderRadius: '1px'
+                                      }}></div>
+                                    </div>
+                                  ) : (
+                                    // Other sanctions: separate cards
+                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                      {(hasWarning || hasDisqualification) && (
+                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                      {(hasPenalty || hasDisqualification) && (
+                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {/* Player name rectangle - clickable to expand/collapse full name */}
+                              {showNamesOnCourt && (player.lastName || player.firstName) && !player.isPlaceholder && (
+                                <div
+                                  onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: '-27px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    background: 'rgba(0, 0, 0, 0.85)',
+                                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                                    borderRadius: '3px',
+                                    padding: '1px 4px',
+                                    fontSize: '9px',
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    whiteSpace: 'nowrap',
+                                    minWidth: '68px',
+                                    zIndex: 10,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.3px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '2px'
+                                  }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    {expandedPlayerName === `${rightTeamKey}-${player.number}`
+                                      ? `#${player.number}`
+                                      : getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
+                                  </div>
+                                  {expandedPlayerName === `${rightTeamKey}-${player.number}` && (
+                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                      <div>{player.firstName}</div>
+                                      <div>{player.lastName}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+                      {rightTeamLineupSet && !leftTeamLineupSet && isFirstRally && !peekingLineup.right && (
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          background: 'rgba(0, 0, 0, 0.7)',
+                          backdropFilter: 'blur(8px)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '12px',
+                          zIndex: 50,
+                          borderRadius: '8px'
+                        }}>
+                          <div style={{
+                            fontSize: 'clamp(16px, 3vw, 24px)',
+                            fontWeight: 700,
+                            color: '#22c55e',
+                            textAlign: 'center'
+                          }}>
+                            {t('scoreboard.lineupSet', 'Line-up set')}
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            <button
+                              onMouseDown={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                              onMouseUp={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                              onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                              onTouchStart={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                              onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                              style={{
+                                padding: '8px 16px',
+                                fontSize: 'clamp(11px, 2vw, 14px)',
+                                fontWeight: 600,
+                                background: 'rgba(59, 130, 246, 0.3)',
+                                color: '#fff',
+                                border: '1px solid rgba(59, 130, 246, 0.5)',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {t('scoreboard.showLineup', 'Show Line-up')}
+                            </button>
+                            <button
+                              onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
+                              style={{
+                                padding: '8px 16px',
+                                fontSize: 'clamp(11px, 2vw, 14px)',
+                                fontWeight: 600,
+                                background: 'rgba(251, 191, 36, 0.3)',
+                                color: '#fbbf24',
+                                border: '1px solid rgba(251, 191, 36, 0.5)',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {t('scoreboard.changeLineup', 'Change Line-up')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2nd Referee - below court, minimal margin */}
+                {!isCompactMode && (() => {
+                  const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
+                  const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}`.trim() : null
+                  if (!ref2Name) return null
+                  return (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: '-5px',
+                      marginBottom: '7px'
+                    }}>
+                      <span style={{
+                        fontSize: isLaptopMode ? '13px' : '16px',
+                        color: 'var(--muted)',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        2R: {ref2Name}
+                      </span>
+                    </div>
+                  )
+                })()}
               </>
             )}
 
@@ -18587,7 +18587,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       <ScoreboardOptionsModal
         open={showOptionsInMenu}
         onClose={() => setShowOptionsInMenu(false)}
-        onOpenGuide={() => setScoreboardGuideModal(true)}
+
         onOpenKeybindings={() => {
           setShowOptionsInMenu(false)
           setKeybindingsModalOpen(true)
@@ -18638,10 +18638,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       />
 
       {/* Scoreboard Guide Modal */}
-      <GuideModal
-        open={scoreboardGuideModal}
-        onClose={() => setScoreboardGuideModal(false)}
-      />
+
 
       {/* Touch Drag Overlays - Long press progress indicator and dragged player */}
       <LongPressProgressIndicator
@@ -21824,10 +21821,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ marginBottom: '16px', fontSize: '16px' }}>
               {stopMatchRemarksStep.type === 'forfeit'
                 ? t('scoreboard.stopMatch.finalConfirmForfeit', 'End match with {{winner}} as winner?', {
-                    winner: stopMatchRemarksStep.team === 'home'
-                      ? (data?.awayTeam?.name || t('common.away', 'Away'))
-                      : (data?.homeTeam?.name || t('common.home', 'Home'))
-                  })
+                  winner: stopMatchRemarksStep.team === 'home'
+                    ? (data?.awayTeam?.name || t('common.away', 'Away'))
+                    : (data?.homeTeam?.name || t('common.home', 'Home'))
+                })
                 : t('scoreboard.stopMatch.finalConfirmImpossibility', 'End match without a winner?')}
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -27512,6 +27509,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </div>
         </Modal>
       )}
+
     </div>
   )
 }

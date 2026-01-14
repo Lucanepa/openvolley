@@ -7,7 +7,7 @@ import Scoreboard from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd from './components/MatchEnd'
 import Modal from './components/Modal'
-import GuideModal from './components/GuideModal'
+import InteractiveGuide from './components/InteractiveGuide'
 import ConnectionStatus from './components/ConnectionStatus'
 import MainHeader from './components/MainHeader'
 import BackupTable from './components/BackupTable'
@@ -87,7 +87,7 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
-  const [homeGuideModal, setHomeGuideModal] = useState(false)
+  const [interactiveGuideOpen, setInteractiveGuideOpen] = useState(false)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
   const backup = useAutoBackup(matchId)
@@ -3058,6 +3058,7 @@ export default function App() {
               }
             }}
             alarmEnabled={currentMatch?.refereeConnectionEnabled === true}
+            onOpenGuide={() => setInteractiveGuideOpen(true)}
           />
           <div className="container" style={{
             minHeight: 0,
@@ -4020,7 +4021,6 @@ export default function App() {
             <HomeOptionsModal
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
-              onOpenGuide={() => setHomeGuideModal(true)}
               onOpenConnectionSetup={() => setConnectionSetupModal(true)}
               matchOptions={{
                 checkAccidentalRallyStart,
@@ -4072,10 +4072,10 @@ export default function App() {
               }}
             />
 
-            {/* Home Guide Modal */}
-            <GuideModal
-              open={homeGuideModal}
-              onClose={() => setHomeGuideModal(false)}
+            {/* Interactive Guide Modal */}
+            <InteractiveGuide
+              open={interactiveGuideOpen}
+              onClose={() => setInteractiveGuideOpen(false)}
             />
 
             {/* Connection Setup Modal */}

@@ -455,7 +455,25 @@
       "actionLog": "Registro azioni",
       "manualChanges": "Modifiche manuali",
       "keyboardShortcuts": "Scorciatoie tastiera",
-      "searchEvents": "Cerca eventi..."
+      "searchEvents": "Cerca eventi...",
+      "stopMatch": "Interrompi partita"
+    },
+    "stopMatch": {
+      "title": "Interrompi partita",
+      "teamForfeits": "Una squadra si ritira",
+      "impossibilityToResume": "Impossibilità di riprendere",
+      "selectForfeitingTeam": "Seleziona squadra che si ritira",
+      "selectTeamPrompt": "Quale squadra si ritira?",
+      "confirmForfeitTitle": "Conferma ritiro",
+      "confirmForfeitMessage": "{{team}} si ritira. L'avversario riceverà tutti i punti e set rimanenti.",
+      "confirmImpossibilityTitle": "Impossibilità di riprendere",
+      "confirmImpossibilityMessage": "La partita terminerà con il punteggio attuale. Nessun vincitore sarà dichiarato.",
+      "addRemarksPrompt": "Registra le osservazioni sull'interruzione della partita.",
+      "finalConfirmTitle": "Termina partita",
+      "finalConfirmForfeit": "Terminare la partita con {{winner}} come vincitore?",
+      "finalConfirmImpossibility": "Terminare la partita senza vincitore?",
+      "endMatch": "Termina partita",
+      "continueToRemarks": "Continua alle osservazioni"
     },
     "edit": {
       "editPoints": "Modifica punti",
@@ -870,6 +888,7 @@
     "preview": "Anteprima",
     "print": "Stampa",
     "savePdf": "Salva PDF",
+    "downloadLogs": "Scarica Logs",
     "approveParams": "Conferma e Approva",
     "downloading": "Scaricamento...",
     "reopenLastSet": "Riapri Ultimo Set",
@@ -903,7 +922,34 @@
     "errorApproving": "Errore durante l'approvazione: {{error}}",
     "noSetsReopen": "Nessun set da riaprire",
     "setReopened": "Set {{index}} riaperto per correzioni",
-    "errorReopening": "Errore riapertura: {{error}}"
+    "errorReopening": "Errore riapertura: {{error}}",
+    "sanctionTypes": {
+      "delayWarning": "Avvertimento ritardo",
+      "delayPenalty": "Penalità ritardo",
+      "warning": "Avvertimento",
+      "penalty": "Penalità",
+      "expulsion": "Espulsione",
+      "disqualification": "Squalifica"
+    }
+  },
+  "scoresheetPdf": {
+    "zoomOut": "Riduci",
+    "zoomIn": "Ingrandisci",
+    "resetZoom": "Reimposta zoom (100%)",
+    "fitToScreen": "Adatta allo schermo",
+    "fit": "Adatta",
+    "fullscreen": "Schermo intero",
+    "exitFullscreen": "Esci da schermo intero",
+    "printPdf": "Stampa / PDF",
+    "printPdfTooltip": "Stampa o salva come PDF (usa l'opzione 'Salva come PDF' del browser)",
+    "savePdf": "Salva PDF",
+    "savePdfTooltip": "Salva come PDF (download con un clic)",
+    "generating": "Generazione...",
+    "generatingPdf": "Generazione PDF...",
+    "generatingPdfMessage": "Attendere prego mentre il referto viene convertito in PDF. Potrebbe richiedere alcuni secondi.",
+    "importJson": "Importa JSON",
+    "importJsonTooltip": "Importa dati partita da file JSON",
+    "importJsonFile": "Importa file JSON"
   },
   "supportFeedback": {
     "title": "Supporto & Feedback",
@@ -1256,6 +1302,119 @@
     "title": "Le mie partite",
     "noMatches": "Nessuna partita ancora",
     "noMatchesHint": "Le partite che segni appariranno qui",
-    "unknown": "Sconosciuto"
+    "unknown": "Sconosciuto",
+    "vs": "vs"
+  },
+  "connectionStatus": {
+    "syncing": "Sincronizzazione",
+    "connected": "Connesso",
+    "error": "Errore",
+    "noMatch": "Nessuna partita",
+    "ready": "Pronto",
+    "offline": "Offline",
+    "disconnected": "Disconnesso",
+    "notConfigured": "Non configurato",
+    "naStatic": "N/A (Statico)",
+    "connecting": "Connessione",
+    "testMode": "Modalità test",
+    "unknown": "Sconosciuto",
+    "api": "API",
+    "server": "Server",
+    "webSocket": "WebSocket",
+    "scoreboard": "Tabellone",
+    "match": "Partita",
+    "database": "Database",
+    "supabase": "Supabase",
+    "syncingDots": "Sincronizzazione...",
+    "title": "Stato connessione",
+    "pendingBackgroundSync": "Sincronizzazione in sospeso:",
+    "synchronizationErrors": "Errori di sincronizzazione:",
+    "statusInformation": "Informazioni stato",
+    "statusLabel": "Stato:",
+    "messageLabel": "Messaggio:",
+    "connectionIssueDetected": "Problema di connessione rilevato"
+  },
+  "dashboardOptions": {
+    "supabase": "Supabase",
+    "webSocket": "WebSocket",
+    "none": "Nessuno",
+    "options": "Opzioni",
+    "connection": "Connessione",
+    "fallback": "Fallback",
+    "active": "Attivo:",
+    "connectionType": "Tipo connessione",
+    "autoRecommended": "Auto (Consigliato)",
+    "supabasePrimaryFallback": "Supabase primario, WebSocket fallback",
+    "supabaseOnly": "Solo Supabase",
+    "databaseRealtimeOnly": "Solo database realtime",
+    "webSocketOnly": "Solo WebSocket",
+    "directServerConnection": "Connessione server diretta",
+    "clearing": "Cancellazione...",
+    "clearCacheAndData": "Cancella cache e dati",
+    "clearCacheConfirmation": "Questo cancellerà tutti i dati in cache inclusi gli stati partita. Sei sicuro?"
+  },
+  "gameList": {
+    "loadingGames": "Caricamento partite...",
+    "noGamesAvailable": "Nessuna partita disponibile.",
+    "upcomingMatches": "Partite in programma",
+    "selectGameToStart": "Seleziona una partita per iniziare.",
+    "status": "Stato:",
+    "openMatch": "Apri partita",
+    "deleteMatchData": "Elimina dati partita",
+    "loadTestData": "Carica dati test",
+    "dateTbc": "Data da confermare"
+  },
+  "guideModal": {
+    "errorLoading": "Errore nel caricamento della guida. Verifica il file USER_GUIDE.md.",
+    "loadingGuide": "Caricamento guida...",
+    "userGuide": "Guida utente"
+  },
+  "matchEntry": {
+    "loading": "Caricamento...",
+    "matchHasEnded": "La partita è terminata",
+    "back": "Indietro",
+    "backArrow": "← Indietro",
+    "to": "TO",
+    "sub": "SOS",
+    "set": "Set",
+    "sanctions": "SANZIONI",
+    "none": "Nessuna",
+    "moreCount": "+{{count}} altro/i",
+    "noBenchData": "Nessun dato panchina"
+  },
+  "officialAutocomplete": {
+    "selectFromHistory": "Seleziona dalla cronologia"
+  },
+  "connectionSetup": {
+    "lan": "LAN",
+    "internet": "Internet",
+    "refereeQRCodeAlt": "QR Code Arbitro",
+    "cloudQRCodeAlt": "QR Code Cloud"
+  },
+  "backupTable": {
+    "noActions": "Nessuna azione",
+    "error": "Errore",
+    "gameN": "Partita N",
+    "set": "Set",
+    "score": "Punteggio",
+    "lastAction": "Ultima azione",
+    "createdAt": "Creato il",
+    "eventTypes": {
+      "point": "Punto",
+      "timeout": "Timeout",
+      "substitution": "Sostituzione",
+      "liberoEntry": "Ingresso libero",
+      "liberoExit": "Uscita libero",
+      "liberoExchange": "Scambio libero",
+      "liberoUnable": "Libero non disponibile",
+      "liberoRedesignation": "Redesignazione libero",
+      "setStart": "Inizio set",
+      "setEnd": "Fine set",
+      "coinToss": "Sorteggio",
+      "rotation": "Rotazione",
+      "sanction": "Sanzione",
+      "challenge": "Challenge",
+      "decisionChange": "Cambio decisione"
+    }
   }
 }
