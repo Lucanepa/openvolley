@@ -45,7 +45,7 @@ export default function LivescoreApp() {
     try {
       const { data, error: fetchError } = await supabase
         .from('match_live_state')
-        .select('*')
+        .select('*, matches!match_live_state_match_id_fkey_cascade(set_results)')
         .order('updated_at', { ascending: false })
 
       if (fetchError) {
@@ -125,6 +125,16 @@ export default function LivescoreApp() {
     const leftPoints = isALeft ? (game.points_a || 0) : (game.points_b || 0)
     const rightPoints = isALeft ? (game.points_b || 0) : (game.points_a || 0)
 
+    // Get set results from joined matches table and transform to left/right
+    // Format from DB: [{set: 1, home: 25, away: 20}, ...]
+    // Team A is always home in our system
+    const rawSetResults = game.matches?.set_results || []
+    const setResults = rawSetResults.map(s => ({
+      set: s.set,
+      left: isALeft ? s.home : s.away,
+      right: isALeft ? s.away : s.home
+    }))
+
     return {
       leftName: isALeft ? (game.team_a_name || 'Team A') : (game.team_b_name || 'Team B'),
       rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
@@ -137,13 +147,14 @@ export default function LivescoreApp() {
       rightPoints,
       isMatchEnded,
       // Serving: convert team key to side
-      servingTeam: game.serving_team // already 'left' or 'right'
+      servingTeam: game.serving_team, // already 'left' or 'right'
+      setResults
     }
   }
 
   // Fullscreen view for selected game
   if (selectedGameData) {
-    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, leftPoints, rightPoints, isMatchEnded, servingTeam } = getLeftRight(selectedGameData)
+    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(selectedGameData)
     const currentSet = selectedGameData.current_set || 1
     const gameN = selectedGameData.game_n || ''
     const league = selectedGameData.league || ''
@@ -242,24 +253,25 @@ export default function LivescoreApp() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px',
-          maxWidth: '400px'
+          padding: '20px'
         }}>
           {/* Point Score */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'auto 1fr auto 1fr auto',
+            gridTemplateColumns: isMatchEnded ? '1fr auto 1fr' : 'auto 1fr auto 1fr auto',
             alignItems: 'center',
             gap: '10px',
             width: '100%',
             maxWidth: '800px'
           }}>
-            {/* Left Ball */}
-            <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-              {servingTeam === 'left' && (
-                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
-              )}
-            </div>
+            {/* Left Ball - hidden when match ended */}
+            {!isMatchEnded && (
+              <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                {servingTeam === 'left' && (
+                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+                )}
+              </div>
+            )}
 
             {/* Left Score + Name */}
             <div style={{ textAlign: 'center' }}>
@@ -286,42 +298,58 @@ export default function LivescoreApp() {
               </div>
             </div>
 
-            {/* Right Ball */}
-            <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-              {servingTeam === 'right' && (
-                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
-              )}
-            </div>
+            {/* Right Ball - hidden when match ended */}
+            {!isMatchEnded && (
+              <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                {servingTeam === 'right' && (
+                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Set Score or Final indicator */}
           <div style={{
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            gap: '20px',
+            gap: '12px',
             marginTop: '40px'
           }}>
             {isMatchEnded ? (
-              /* Show FINAL badge and last set score when match ended */
-              <div style={{ textAlign: 'center' }}>
+              /* Show FINAL badge and each set's final score */
+              <>
                 <div style={{
                   fontSize: 'clamp(28px, 8vw, 56px)',
                   fontWeight: 800,
-                  color: '#22c55e',
-                  marginBottom: '8px'
+                  color: '#22c55e'
                 }}>
                   {t('livescore.final', 'FINAL')}
                 </div>
-                <div style={{
-                  fontSize: 'clamp(14px, 4vw, 20px)',
-                  color: 'rgba(255,255,255,0.5)'
-                }}>
-                  {t('livescore.lastSetScore', 'Last set')}: {leftPoints} - {rightPoints}
-                </div>
-              </div>
+                {setResults.length > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    gap: '16px',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center'
+                  }}>
+                    {setResults.map((s) => (
+                      <div key={s.set} style={{
+                        fontSize: 'clamp(14px, 4vw, 20px)',
+                        color: 'rgba(255,255,255,0.6)',
+                        padding: '4px 12px',
+                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: '6px'
+                      }}>
+                        {s.left}-{s.right}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
               /* Show set scores during match */
-              <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                 <div style={{
                   fontSize: 'clamp(32px, 10vw, 80px)',
                   fontWeight: 700,
@@ -348,7 +376,7 @@ export default function LivescoreApp() {
                 }}>
                   {rightSets}
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -473,12 +501,16 @@ export default function LivescoreApp() {
             <div>{t('livescore.noActiveGame', 'No live games')}</div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
             {liveGames.map((game) => {
               const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam } = getLeftRight(game)
               const gameN = game.game_n || ''
               const league = game.league || ''
-              const gender = game.gender || ''
+              const rawGender = game.gender || ''
+              // Convert gender to symbol
+              const genderSymbol = rawGender.toLowerCase().startsWith('m') ? '♂'
+                : rawGender.toLowerCase().startsWith('f') || rawGender.toLowerCase().startsWith('w') ? '♀'
+                : rawGender
 
               return (
                 <button
@@ -492,71 +524,64 @@ export default function LivescoreApp() {
                     color: '#fff',
                     cursor: 'pointer',
                     textAlign: 'left',
-                    transition: 'background 0.2s'
+                    transition: 'background 0.2s',
+                    width: 'auto'
                   }}
                 >
                   {/* Game N, League, Gender */}
-                  {(gameN || league || gender) && (
+                  {(gameN || league || genderSymbol) && (
                     <div style={{
                       marginBottom: '8px',
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.5)'
+                      color: 'rgba(255,255,255,0.5)',
+                      textAlign: 'center'
                     }}>
                       {gameN && <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Game {gameN}</span>}
-                      {gameN && (league || gender) && ' • '}
-                      {[league, gender].filter(Boolean).join(' • ')}
+                      {gameN && (league || genderSymbol) && ' • '}
+                      {[league, genderSymbol].filter(Boolean).join(' • ')}
                     </div>
                   )}
 
                   {/* Teams and Score */}
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr auto 1fr',
+                    gridTemplateColumns: '1fr auto auto auto 1fr',
                     alignItems: 'center',
-                    gap: '12px'
+                    gap: '8px'
                   }}>
-                    {/* Left Team */}
-                    <div>
-                      <div style={{
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}>
-                        {servingTeam === 'left' && (
-                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
-                        )}
-                        {leftName}
-                      </div>
-                    </div>
-
-                    {/* Score */}
+                    {/* Left Team - right aligned */}
                     <div style={{
+                      fontSize: '14px',
+                      fontWeight: 600,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px'
+                      justifyContent: 'flex-end',
+                      gap: '6px'
                     }}>
-                      <span style={{ fontSize: '28px', fontWeight: 700 }}>{leftScore}</span>
-                      <span style={{ fontSize: '20px', color: 'rgba(255,255,255,0.4)' }}>:</span>
-                      <span style={{ fontSize: '28px', fontWeight: 700 }}>{rightScore}</span>
+                      {!isMatchEnded && servingTeam === 'left' && (
+                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
+                      )}
+                      {leftName}
                     </div>
 
-                    {/* Right Team */}
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'flex-end',
-                        gap: '6px'
-                      }}>
-                        {rightName}
-                        {servingTeam === 'right' && (
-                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
-                        )}
-                      </div>
+                    {/* Score - colon centered */}
+                    <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'right', minWidth: '24px' }}>{leftScore}</span>
+                    <span style={{ fontSize: '20px', color: 'rgba(255,255,255,0.4)' }}>:</span>
+                    <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'left', minWidth: '24px' }}>{rightScore}</span>
+
+                    {/* Right Team - left aligned */}
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-start',
+                      gap: '6px'
+                    }}>
+                      {rightName}
+                      {!isMatchEnded && servingTeam === 'right' && (
+                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
+                      )}
                     </div>
                   </div>
 
