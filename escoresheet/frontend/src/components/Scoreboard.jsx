@@ -53,6 +53,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const { syncState, syncSetEnd, resetSyncState } = useSequentialSync()
   const [syncModalOpen, setSyncModalOpen] = useState(false)
   const syncProceedCallbackRef = useRef(null)
+  // Memoized callback for SyncProgressModal to prevent timer resets on re-render
+  const handleSyncProceed = useCallback(() => {
+    if (syncProceedCallbackRef.current) {
+      syncProceedCallbackRef.current()
+      syncProceedCallbackRef.current = null
+    }
+  }, [])
   const [now, setNow] = useState(() => new Date())
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -5343,6 +5350,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         currentStatus: matchRecord?.status
       }))
 
+      // Track sync result for conditional backup download
+      let syncResult = null
+
       // STEP 8: IMMEDIATE SYNC TO SUPABASE (if not a test match)
       // Sync happens FIRST before any UI operations to ensure data is saved
       if (matchRecord?.test !== true && matchRecord?.seed_key) {
@@ -5378,7 +5388,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         // Execute sequential sync (shows progress modal)
-        const syncResult = await syncSetEnd({
+        syncResult = await syncSetEnd({
           lastPointPayload: null, // Last point already synced by logEvent
           setPayload,
           matchPayload
@@ -5386,33 +5396,42 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         console.log('[SET_END_DEBUG] STEP 8 DONE: Sync completed:', syncResult)
 
-        // Wait for sync modal to complete (auto-proceed on success, user click on error)
-        // SyncProgressModal handles the timing (1s for success, 1.5s for warning, button for error)
-        // With timeout fallback to prevent blocking if browser suspends execution
-        const SYNC_MODAL_TIMEOUT = 5000 // 5 seconds max wait (modal auto-proceeds after 1-1.5s)
-        let syncTimeoutId = null
+        // Handle sync completion based on result
+        // - Success: brief 1s delay to show success, then proceed
+        // - Warning (offline): 1.5s delay, then proceed
+        // - Error: wait for user to click button in modal (with 5s timeout fallback)
+        if (!syncResult.success) {
+          // Error - wait for modal callback or timeout
+          const SYNC_MODAL_TIMEOUT = 5000
+          let syncTimeoutId = null
 
-        await Promise.race([
-          // Original promise - waits for modal callback
-          new Promise((resolve) => {
-            syncProceedCallbackRef.current = () => {
-              if (syncTimeoutId) clearTimeout(syncTimeoutId)
-              setSyncModalOpen(false)
-              resetSyncState()
-              resolve()
-            }
-          }),
-          // Timeout fallback - proceed anyway after 5 seconds
-          new Promise((resolve) => {
-            syncTimeoutId = setTimeout(() => {
-              console.warn('[SET_END] Sync modal timeout after 5s - proceeding anyway')
-              syncProceedCallbackRef.current = null
-              setSyncModalOpen(false)
-              resetSyncState()
-              resolve()
-            }, SYNC_MODAL_TIMEOUT)
-          })
-        ])
+          await Promise.race([
+            new Promise((resolve) => {
+              syncProceedCallbackRef.current = () => {
+                if (syncTimeoutId) clearTimeout(syncTimeoutId)
+                setSyncModalOpen(false)
+                resetSyncState()
+                resolve()
+              }
+            }),
+            new Promise((resolve) => {
+              syncTimeoutId = setTimeout(() => {
+                console.warn('[SET_END] Sync modal timeout after 5s - proceeding anyway')
+                syncProceedCallbackRef.current = null
+                setSyncModalOpen(false)
+                resetSyncState()
+                resolve()
+              }, SYNC_MODAL_TIMEOUT)
+            })
+          ])
+        } else {
+          // Success or warning - show completion briefly then proceed
+          const delay = syncResult.hasWarning ? 1500 : 1000
+          console.log('[SET_END] Sync succeeded - showing result for', delay, 'ms')
+          await new Promise(resolve => setTimeout(resolve, delay))
+          setSyncModalOpen(false)
+          resetSyncState()
+        }
       } else {
         console.log('[SET_END_DEBUG] STEP 8 SKIPPED: Test match or no seed_key')
         // For test matches, close sync modal immediately
@@ -5501,8 +5520,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }).catch(() => { })
         }
 
-        // Auto-download game data at set end if enabled
-        if (autoDownloadAtSetEnd) {
+        // Auto-download game data at set end if enabled AND sync failed/offline
+        // If sync succeeded and we're online, data is safe in cloud - no need to download
+        const syncSucceeded = syncResult?.success && !syncResult?.hasWarning
+        const isOffline = !navigator.onLine
+
+        if (autoDownloadAtSetEnd && (!syncSucceeded || isOffline)) {
+          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', {
+            syncSucceeded,
+            isOffline,
+            syncResult
+          })
           setSetTransitionLoading({ step: 'Downloading backup...' })
           try {
             const allMatches = await db.matches.toArray()
@@ -6905,15 +6933,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const getReplacementBadgeStyle = (player) => {
     const baseStyle = {
       position: 'absolute',
-      top: '-8px',
-      right: '-8px',
-      width: '18px',
-      height: '18px',
+      top: '-1vmin',
+      right: '-1vmin',
+      width: '2vmin',
+      height: '2vmin',
       borderRadius: '4px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      fontSize: '10px',
+      fontSize: '1.35vmin',
       fontWeight: 700,
       zIndex: 6
     }
@@ -9630,7 +9658,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             playerNumber,
             element: playerElement,
             x: rect.left + rect.width / 2,
-            y: rect.bottom + 8
+            y: rect.bottom + 8,
+            isExpelled: sanctionType === 'expulsion',
+            isDisqualified: sanctionType === 'disqualification'
           })
         } else {
           setSubstitutionDropdown({
@@ -9639,7 +9669,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             playerNumber,
             element: null,
             x: window.innerWidth / 2,
-            y: window.innerHeight / 2
+            y: window.innerHeight / 2,
+            isExpelled: sanctionType === 'expulsion',
+            isDisqualified: sanctionType === 'disqualification'
           })
         }
       } else {
@@ -11072,7 +11104,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // These modals need a decision - don't allow Escape to close them
       const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
         accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm ||
-        replayRallyConfirm || liberoRotationModal || liberoReentryModal
+        replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal
 
       // Confirm key (Enter)
       if (key === keyBindings.confirm) {
@@ -11264,6 +11296,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled === true
   const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled === true
   const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled === true
+
+  // Team labels (A or B) based on coin toss assignment
+  const homeLabel = data?.match?.coinTossTeamA === 'home' ? 'A' : (data?.match?.coinTossTeamB === 'home' ? 'B' : 'A')
+  const awayLabel = data?.match?.coinTossTeamA === 'away' ? 'A' : (data?.match?.coinTossTeamB === 'away' ? 'B' : 'B')
 
   // Handle captain on court selection
   const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
@@ -15508,17 +15544,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 return (
                                   <span style={{
                                     position: 'absolute',
-                                    bottom: '-6px',
-                                    left: '-6px',
-                                    width: '18px',
-                                    height: '18px',
+                                    bottom: '-1vmin',
+                                    left: '-1vmin',
+                                    width: '2vmin',
+                                    height: '2vmin',
                                     background: '#3b82f6',
                                     border: '2px solid rgba(255, 255, 255, 0.4)',
                                     borderRadius: '4px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '10px',
+                                    fontSize: '1.35vmin',
                                     fontWeight: 700,
                                     color: '#fff',
                                     zIndex: 5,
@@ -15548,31 +15584,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-3px',
-                                  right: '-6px',
+                                  bottom: '-1vmin',
+                                  right: '-1vmin',
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -15580,12 +15616,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -15729,11 +15765,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    left: '-6vmin',
+                                    left: '-8vmin',
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: '5vmin',
-                                    height: '5vmin',
+                                    width: '8vmin',
+                                    height: '8vmin',
                                     zIndex: 5
                                   }}
                                 />
@@ -15776,17 +15812,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 return (
                                   <span style={{
                                     position: 'absolute',
-                                    bottom: '-6px',
-                                    left: '-8px',
-                                    width: '18px',
-                                    height: '18px',
+                                    bottom: '-1vmin',
+                                    left: '-1vmin',
+                                    width: '2vmin',
+                                    height: '2vmin',
                                     background: '#3b82f6',
                                     border: '2px solid rgba(255, 255, 255, 0.4)',
                                     borderRadius: '4px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '10px',
+                                    fontSize: '1.35vmin',
                                     fontWeight: 700,
                                     color: '#fff',
                                     zIndex: 5,
@@ -15802,31 +15838,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-3px',
-                                  right: '-6px',
+                                  bottom: '-1vmin',
+                                  right: '-1vmin',
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -15834,12 +15870,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -16073,17 +16109,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 return (
                                   <span style={{
                                     position: 'absolute',
-                                    bottom: '-6px',
-                                    left: '-8px',
-                                    width: '18px',
-                                    height: '18px',
+                                    bottom: '-1vmin',
+                                    left: '-1vmin',
+                                    width: '2vmin',
+                                    height: '2vmin',
                                     background: '#3b82f6',
                                     border: '2px solid rgba(255, 255, 255, 0.4)',
                                     borderRadius: '4px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '10px',
+                                    fontSize: '1.35vmin',
                                     fontWeight: 700,
                                     color: '#fff',
                                     zIndex: 5,
@@ -16113,31 +16149,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-3px',
-                                  right: '-6px',
+                                  bottom: '-1vmin',
+                                  right: '-1vmin',
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -16145,12 +16181,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -16293,11 +16329,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    right: '-6vmin',
+                                    right: '-8vmin',
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: '5vmin',
-                                    height: '5vmin',
+                                    width: '8vmin',
+                                    height: '8vmin',
                                     zIndex: 5
                                   }}
                                 />
@@ -16357,17 +16393,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 return (
                                   <span style={{
                                     position: 'absolute',
-                                    bottom: '-6px',
-                                    left: '-8px',
-                                    width: '18px',
-                                    height: '18px',
+                                    bottom: '-1vmin',
+                                    left: '-1vmin',
+                                    width: '2vmin',
+                                    height: '2vmin',
                                     background: '#3b82f6',
                                     border: '2px solid rgba(255, 255, 255, 0.4)',
                                     borderRadius: '4px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '10px',
+                                    fontSize: '1.35vmin',
                                     fontWeight: 700,
                                     color: '#fff',
                                     zIndex: 5,
@@ -16397,31 +16433,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-3px',
-                                  right: '-6px',
+                                  bottom: '-1vmin',
+                                  right: '-1vmin',
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '12px', height: '12px' }}>
+                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '6px',
-                                        height: '9px',
+                                        width: '1vmin',
+                                        height: '1.5vmin',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '1px',
+                                        top: '0.15vmin',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -16429,12 +16465,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '1px' }}>
+                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -16553,26 +16589,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 </div>
 
-                {/* 2nd Referee - below court, minimal margin */}
+                {/* 2nd Referee - below court, or spacer if no 2R */}
                 {!isCompactMode && (() => {
                   const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
                   const ref2Name = ref2 ? `${ref2.firstName || ''} ${ref2.lastName || ''}`.trim() : null
-                  if (!ref2Name) return null
                   return (
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       marginTop: '-5px',
-                      marginBottom: '7px'
+                      height: ref2Name ? 'auto' : '12px'
                     }}>
-                      <span style={{
-                        fontSize: isLaptopMode ? '13px' : '16px',
-                        color: 'var(--muted)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        2R: {ref2Name}
-                      </span>
+                      {ref2Name && (
+                        <span style={{
+                          fontSize: isLaptopMode ? '13px' : '16px',
+                          color: 'var(--muted)',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          2R: {ref2Name}
+                        </span>
+                      )}
                     </div>
                   )
                 })()}
@@ -23231,15 +23268,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ? getAvailableExceptionalSubstitutes(teamKey, substitutionDropdown.playerNumber)
           : getAvailableSubstitutes(teamKey, substitutionDropdown.playerNumber, !isLegal)
 
-        // Check if player is expelled or disqualified
-        const playerSanctions = data?.events?.filter(e =>
+        // Check if player is expelled or disqualified - use stored flags or query events
+        const isExpelled = substitutionDropdown.isExpelled || data?.events?.some(e =>
           e.type === 'sanction' &&
           e.payload?.team === teamKey &&
           e.payload?.playerNumber === substitutionDropdown.playerNumber &&
-          (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
-        ) || []
-        const isExpelled = playerSanctions.some(s => s.payload?.type === 'expulsion')
-        const isDisqualified = playerSanctions.some(s => s.payload?.type === 'disqualification')
+          e.payload?.type === 'expulsion'
+        )
+        const isDisqualified = substitutionDropdown.isDisqualified || data?.events?.some(e =>
+          e.type === 'sanction' &&
+          e.payload?.team === teamKey &&
+          e.payload?.playerNumber === substitutionDropdown.playerNumber &&
+          e.payload?.type === 'disqualification'
+        )
 
         // Get element position - use stored coordinates if available, otherwise try to find element
         // For left side teams, menu opens to the right (use left CSS)
@@ -23282,9 +23323,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
+        // Block closing if player is expelled or disqualified - they MUST substitute
+        const mustSubstitute = isExpelled || isDisqualified
+
         return (
           <>
-            {/* Backdrop to close dropdown on click outside */}
+            {/* Backdrop to close dropdown on click outside - disabled if player must substitute */}
             <div
               style={{
                 position: 'fixed',
@@ -23293,9 +23337,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 right: 0,
                 bottom: 0,
                 zIndex: 999,
-                background: 'transparent'
+                background: mustSubstitute ? 'rgba(0, 0, 0, 0.3)' : 'transparent',
+                cursor: mustSubstitute ? 'not-allowed' : 'default'
               }}
               onClick={() => {
+                if (mustSubstitute) return // Block closing for expelled/disqualified players
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
                 setLiberoInDropdown(null)
@@ -23371,6 +23417,49 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </button>
                     ))}
                   </div>
+                )}
+                {/* Cancel Sanction button - only shown when player must substitute due to expulsion/disqualification */}
+                {mustSubstitute && (
+                  <button
+                    onClick={async () => {
+                      // Find and delete the most recent sanction event for this player
+                      const sanctionEvent = data?.events?.filter(e =>
+                        e.type === 'sanction' &&
+                        e.payload?.team === teamKey &&
+                        e.payload?.playerNumber === substitutionDropdown.playerNumber &&
+                        (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
+                      ).sort((a, b) => b.id - a.id)[0]
+
+                      if (sanctionEvent) {
+                        await db.events.delete(sanctionEvent.id)
+                      }
+                      setSubstitutionDropdown(null)
+                    }}
+                    style={{
+                      marginTop: '8px',
+                      padding: '6px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      color: '#ef4444',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      transition: 'all 0.2s',
+                      width: '100%'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'
+                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'
+                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'
+                    }}
+                  >
+                    Cancel Sanction
+                  </button>
                 )}
               </div>
             </div>
@@ -26263,12 +26352,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         open={syncModalOpen}
         steps={syncState?.steps || []}
         errorMessage={syncState?.hasError ? t('scoreboard.sync.syncError', 'Sync failed. Data saved locally.') : null}
-        onProceed={() => {
-          if (syncProceedCallbackRef.current) {
-            syncProceedCallbackRef.current()
-            syncProceedCallbackRef.current = null
-          }
-        }}
+        onProceed={handleSyncProceed}
         isComplete={syncState?.isComplete || false}
         hasError={syncState?.hasError || false}
         hasWarning={syncState?.hasWarning || false}

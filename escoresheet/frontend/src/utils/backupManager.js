@@ -406,15 +406,21 @@ export async function restoreMatchFromJson(jsonData) {
         } : null,
         players_home: homePlayers || [],
         players_away: awayPlayers || [],
-        // Include other match fields
-        hall: match.hall,
-        city: match.city,
-        league: match.league,
-        championship_type: match.championshipType || match.championship_type,
-        coin_toss_confirmed: match.coinTossConfirmed || match.coin_toss_confirmed,
-        coin_toss_team_a: match.coinTossTeamA || match.coin_toss_team_a,
-        coin_toss_team_b: match.coinTossTeamB || match.coin_toss_team_b,
-        first_serve: match.firstServe || match.first_serve
+        // Include match_info fields (stored as JSONB)
+        match_info: {
+          hall: match.hall,
+          city: match.city,
+          league: match.league,
+          championship_type: match.championshipType || match.championship_type,
+          ...(match.matchInfo || match.match_info || {})
+        },
+        coin_toss: {
+          confirmed: match.coinTossConfirmed || match.coin_toss_confirmed,
+          team_a: match.coinTossTeamA || match.coin_toss_team_a,
+          team_b: match.coinTossTeamB || match.coin_toss_team_b,
+          first_serve: match.firstServe || match.first_serve,
+          ...(match.coinToss || match.coin_toss || {})
+        }
       }
 
       // Build sets payload (convert local to Supabase format)
@@ -555,14 +561,21 @@ export async function restoreMatchInPlace(matchId, jsonData) {
         } : (match.away_team || null),
         players_home: homePlayers || match.players_home || [],
         players_away: awayPlayers || match.players_away || [],
-        hall: match.hall,
-        city: match.city,
-        league: match.league,
-        championship_type: match.championshipType || match.championship_type,
-        coin_toss_confirmed: match.coinTossConfirmed || match.coin_toss_confirmed,
-        coin_toss_team_a: match.coinTossTeamA || match.coin_toss_team_a,
-        coin_toss_team_b: match.coinTossTeamB || match.coin_toss_team_b,
-        first_serve: match.firstServe || match.first_serve
+        // Include match_info fields (stored as JSONB)
+        match_info: {
+          hall: match.hall,
+          city: match.city,
+          league: match.league,
+          championship_type: match.championshipType || match.championship_type,
+          ...(match.matchInfo || match.match_info || {})
+        },
+        coin_toss: {
+          confirmed: match.coinTossConfirmed || match.coin_toss_confirmed,
+          team_a: match.coinTossTeamA || match.coin_toss_team_a,
+          team_b: match.coinTossTeamB || match.coin_toss_team_b,
+          first_serve: match.firstServe || match.first_serve,
+          ...(match.coinToss || match.coin_toss || {})
+        }
       }
 
       // Build sets payload
