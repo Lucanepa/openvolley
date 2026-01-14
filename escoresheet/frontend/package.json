@@ -1,6 +1,6 @@
 {
   "name": "escoresheet",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -38,7 +38,9 @@
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
     "cap:build:android": "npm run build && cap sync android",
-    "cap:build:ios": "npm run build && cap sync ios"
+    "cap:build:ios": "npm run build && cap sync ios",
+    "translate": "node scripts/translate.js",
+    "translate:dry": "node scripts/translate.js --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

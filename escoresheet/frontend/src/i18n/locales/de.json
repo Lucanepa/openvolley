@@ -29,7 +29,11 @@
     "unknown": "Unbekannt",
     "reconnect": "Neu verbinden",
     "retry": "Wiederholen",
-    "retryAll": "Alle wiederholen"
+    "retryAll": "Alle wiederholen",
+    "screenTooSmall": "Bildschirm zu klein",
+    "screenTooSmallMessage": "Diese App erfordert eine Mindestbildschirmbreite von 357 Pixel. Bitte verwenden Sie ein Gerät mit einem breiteren Bildschirm oder drehen Sie Ihr Gerät ins Querformat.",
+    "tryFullscreen": "Versuchen Sie den Vollbildmodus",
+    "fullscreenHint": "Der Vollbildmodus kann mehr Platz bieten, indem er die Benutzeroberfläche des Browsers ausblendet."
   },
   "alert": {
     "error": "Fehler",
@@ -77,6 +81,8 @@
     "addPlayer": "+ Spieler hinzufügen",
     "addPlayerButton": "Spieler hinzufügen",
     "addPlayerTitle": "Spieler hinzufügen - {{team}}",
+    "liberos": "Liberos",
+    "bench": "Bank",
     "benchOfficials": "Bankoffizielle",
     "benchOfficialsCount": "Bankoffizielle ({{count}})",
     "addBench": "+ Hinzufügen",
@@ -102,7 +108,8 @@
     "deleteRoster": "Kader löschen",
     "loadTestRoster": "TEST Kader laden",
     "confirmLoadTestRoster": "Test Kader laden?",
-    "confirmLoadTestRosterMessage": "Dies ersetzt das aktuelle Kader mit Testdaten ({{team}})."
+    "confirmLoadTestRosterMessage": "Dies ersetzt das aktuelle Kader mit Testdaten ({{team}}).",
+    "noBenchOfficials": "Keine Bankbeamten"
   },
   "benchRoles": {
     "coach": "Trainer",
@@ -138,6 +145,10 @@
     "completeSignatures": "Bitte alle Unterschriften vor Bestätigung der Seitenwahl vervollständigen.",
     "noMatchId": "Fehler: Spiel-ID nicht gefunden. Bitte erneut versuchen."
   },
+  "errors": {
+    "databaseWriteError": "Datenbank-Schreibfehler",
+    "syncFailed": "Synchronisierung fehlgeschlagen"
+  },
   "signature": {
     "title": "Unterschrift",
     "clear": "Löschen",
@@ -151,6 +162,10 @@
     "birthdateWarning": "Die folgenden Daten erscheinen verdächtig (1. Januar). Bitte überprüfen:",
     "continueAnyway": "Trotzdem fortfahren",
     "close": "Schliessen"
+  },
+  "deleteMatch": {
+    "cancel": "Abbrechen",
+    "delete": "Löschen"
   },
   "refereeSelector": {
     "searchReferees": "Schiedsrichter suchen...",
@@ -241,6 +256,7 @@
     "gamePin": "Spiel-PIN",
     "gamePinDescription": "Auto-generierter PIN um dieses Spiel in einer neuen Sitzung zu öffnen",
     "notificationEmail": "PIN per E-Mail senden",
+    "notificationEmailPlaceholder": "E-Mail Adresse eingeben",
     "send": "Senden",
     "sending": "Wird gesendet...",
     "emailSent": "E-Mail erfolgreich gesendet!",
@@ -347,9 +363,14 @@
     },
     "coinToss": "Auslosung",
     "chooseTeamColor": "Farbe für Team {{team}} wählen",
+    "chooseTeamColour": "Wählen Sie {{team}} Teamfarbe",
     "syncStatus": {
       "notSynced": "Nicht synchronisiert",
-      "offline": "Offline"
+      "offline": "Offline",
+      "synced": "Synchronisiert",
+      "syncing": "Synchronisieren...",
+      "error": "Sync-Fehler",
+      "clickToRetry": "Klicken Sie auf , um die Synchronisierung zu wiederholen"
     }
   },
   "scoreboard": {
@@ -453,6 +474,7 @@
       "confirmPoint": "Punkt bestätigen",
       "confirmSanction": "Sanktion bestätigen",
       "confirmUndo": "Rückgängig bestätigen",
+      "confirmTimeout": "Zeitüberschreitung bestätigen",
       "decisionChange": "Entscheidungsänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",
       "exceptionalSubPlayerCantPlay": "Ausserordentliche Auswechslung - Spieler kann nicht mehr teilnehmen",
@@ -516,11 +538,14 @@
     "confirm": {
       "yesStartRally": "Ja, Ballwechsel starten",
       "yesAwardPoint": "Ja, Punkt vergeben",
+      "yesTimeout": "Ja, Zeitüberschreitung",
       "apply": "Anwenden",
       "rallyStartedQuickly": "Ballwechsel sehr schnell gestartet",
       "areYouSureRallyStarted": "Sind Sie sicher, dass der Ballwechsel tatsächlich begonnen hat?",
       "pointAwardedQuickly": "Punkt sehr schnell vergeben",
-      "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?"
+      "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?",
+      "timeoutAlreadyTaken": "Dieses Team hat in diesem Satz bereits eine Auszeit genommen.",
+      "areYouSureAnotherTimeout": "Sind Sie sicher, dass Sie einen weiteren Timeout für {{team}} aufrufen wollen?"
     },
     "menu": {
       "scoresheet": "eMatchblatt",
@@ -664,11 +689,15 @@
       "thisLiberoUnableToPlay": "Dieser Libero ist spielunfähig",
       "delayPenaltyRecorded": "Verzögerungsstrafe erfasst. Punkt wird nach Aufstellung beider Teams vergeben.",
       "requiresExceptionalCase": "Diese Auswechslung erfordert einen Ausnahmefall",
-      "playerCannotSubstitute": "Dieser Spieler kann den ausgewählten Feldspieler nicht ersetzen"
+      "playerCannotSubstitute": "Dieser Spieler kann den ausgewählten Feldspieler nicht ersetzen",
+      "setNotFound": "Der richtige Satz für die Aktualisierung konnte nicht gefunden werden. Bitte aktualisieren Sie und versuchen Sie es erneut.",
+      "exportFailed": "Fehler beim Exportieren von Datenbankdaten. Bitte versuchen Sie es erneut.",
+      "setEndFailed": "Ende setzen fehlgeschlagen. Daten lokal gespeichert."
     },
     "noEventsRecorded": "Noch keine Ereignisse erfasst.",
     "captainOnCourt": {
-      "designate": "Spielkapitän"
+      "designate": "Spielkapitän",
+      "selectTitle": "Spielführer"
     }
   },
   "settings": {
@@ -732,6 +761,8 @@
     "exitFullscreen": "Vollbild beenden",
     "fullscreen": "Vollbild",
     "exit": "Beenden",
+    "menu": "Menü",
+    "language": "Sprache",
     "scoresheet": "eMatchblatt",
     "preview": "Vorschau",
     "print": "Drucken",
@@ -991,7 +1022,11 @@
     "tapToSign": "Tippen zum Unterschreiben",
     "noRemarks": "Keine Bemerkungen",
     "editRemarks": "Bemerkungen bearbeiten",
+    "remarksPlaceholder": "Bemerkungen zum Spiel...",
     "noSanctions": "Keine Sanktionen",
+    "result": "Ergebnis",
+    "logsDownloaded": "Interaktionsprotokolle erfolgreich heruntergeladen",
+    "logsDownloadFailed": "Herunterladen von Protokollen fehlgeschlagen",
     "improperRequest": "Unzulässige Anfrage",
     "set": "Satz",
     "time": "Zeit",
@@ -1146,6 +1181,8 @@
     "enterPin": "PIN eingeben",
     "validate": "Validieren",
     "validating": "Validiere...",
+    "validated": "Validiert",
+    "noPinRequired": "Keine PIN erforderlich",
     "invalidPin": "Ungültiger PIN",
     "selectPdfFile": "PDF-Datei auswählen",
     "dropPdfHere": "PDF hier ablegen oder klicken zum Auswählen",
@@ -1188,6 +1225,7 @@
   "refereeDashboard": {
     "title": "Schiedsrichter",
     "dashboardTitle": "Schiedsrichter-Dashboard",
+    "status": "Status",
     "wakeLockOn": "An",
     "wakeLockOff": "Aus",
     "screenWillStayOn": "Bildschirm bleibt an",
@@ -1342,6 +1380,9 @@
     "signIn": "Anmelden",
     "signUp": "Registrieren",
     "signOut": "Abmelden",
+    "login": "Anmeldung",
+    "sending": "Ich schicke...",
+    "resetInstructions": "Geben Sie Ihre E-Mail-Adresse ein und wir senden Ihnen einen Link zum Zurücksetzen",
     "signedInAs": "Angemeldet als",
     "user": "Benutzer",
     "profile": "Profil",
@@ -1397,6 +1438,32 @@
     "noMatchesHint": "Spiele, die Sie schreiben, erscheinen hier",
     "unknown": "Unbekannt",
     "vs": "vs"
+  },
+  "backupTable": {
+    "noActions": "Keine Aktionen",
+    "error": "Fehler",
+    "gameN": "Spiel Nr.",
+    "set": "Satz",
+    "score": "Punkte",
+    "lastAction": "Letzte Aktion",
+    "createdAt": "Erstellt am",
+    "eventTypes": {
+      "point": "Punkt",
+      "timeout": "Timeout",
+      "substitution": "Auswechslung",
+      "liberoEntry": "Libero-Eintritt",
+      "liberoExit": "Libero-Austritt",
+      "liberoExchange": "Libero-Tausch",
+      "liberoUnable": "Libero spielunfähig",
+      "liberoRedesignation": "Libero-Neubezeichnung",
+      "setStart": "Satzanfang",
+      "setEnd": "Satzende",
+      "coinToss": "Auslosung",
+      "rotation": "Rotation",
+      "sanction": "Sanktion",
+      "challenge": "Challenge",
+      "decisionChange": "Entscheidungsänderung"
+    }
   },
   "connectionStatus": {
     "syncing": "Synchronisiere",
@@ -1483,32 +1550,6 @@
     "internet": "Internet",
     "refereeQRCodeAlt": "Schiedsrichter QR-Code",
     "cloudQRCodeAlt": "Cloud QR-Code"
-  },
-  "backupTable": {
-    "noActions": "Keine Aktionen",
-    "error": "Fehler",
-    "gameN": "Spiel Nr.",
-    "set": "Satz",
-    "score": "Punkte",
-    "lastAction": "Letzte Aktion",
-    "createdAt": "Erstellt am",
-    "eventTypes": {
-      "point": "Punkt",
-      "timeout": "Timeout",
-      "substitution": "Auswechslung",
-      "liberoEntry": "Libero-Eintritt",
-      "liberoExit": "Libero-Austritt",
-      "liberoExchange": "Libero-Tausch",
-      "liberoUnable": "Libero spielunfähig",
-      "liberoRedesignation": "Libero-Neubezeichnung",
-      "setStart": "Satzanfang",
-      "setEnd": "Satzende",
-      "coinToss": "Auslosung",
-      "rotation": "Rotation",
-      "sanction": "Sanktion",
-      "challenge": "Challenge",
-      "decisionChange": "Entscheidungsänderung"
-    }
   },
   "interactiveGuide": {
     "title": "App-Anleitung",
@@ -1815,6 +1856,113 @@
       "lanDesc": "Verbindung über lokale IP-Adresse. Am schnellsten, funktioniert ohne Internet.",
       "cloud": "Cloud-Relay",
       "cloudDesc": "Verbindung über Cloud. Funktioniert netzwerkübergreifend, erfordert aber Internet."
+    },
+    "buttonDemo": {
+      "title": "Rallye & Punktefluss",
+      "instruction": "Probieren Sie es aus! Klicken Sie auf die Schaltflächen, um zu sehen, wie die Rallye abläuft.",
+      "tryIt": "Probieren Sie die interaktive Demo",
+      "alreadyActive": "Eine Rallye ist bereits im Gange!",
+      "rallyStarted": "Rallye gestartet! Jetzt einen Punkt vergeben.",
+      "startFirst": "Starten Sie zuerst eine Rallye, bevor Sie Punkte vergeben.",
+      "pointAwarded": "Punkt vergeben! Rallye beendet.",
+      "rallyInProgress": "Rallye im Gange",
+      "waitingForRally": "Warten auf den Beginn der Rallye",
+      "enabled": "Aktiviert",
+      "disabled": "Behinderte",
+      "reset": "Demo zurücksetzen"
+    },
+    "liberoDemo": {
+      "title": "Libero Teilnahmebedingungen",
+      "instruction": "Klicken Sie auf die Spielfeldpositionen, um zu sehen, wo der Libero spielen kann und wo nicht.",
+      "tryIt": "Probieren Sie die interaktive Demo",
+      "onCourt": "Libero ist ON COURT",
+      "onBench": "Libero ist auf BENCH",
+      "front": "Vorderseite",
+      "back": "Zurück",
+      "allowed": "Libero erlaubt",
+      "notAllowed": "Nicht erlaubt",
+      "entrySuccess": "Libero erfolgreich eingegeben!",
+      "cannotEnterFront": "Sie können keine Plätze in der ersten Reihe einnehmen!",
+      "exitSuccess": "Der Libero hat den Platz verlassen.",
+      "exitWrongPos": "Der Libero muss aus der hinteren Reihe kommen."
+    },
+    "timeoutDemo": {
+      "title": "Timeout-Regeln",
+      "instruction": "Sehen Sie nach, wann Timeouts aufgerufen werden können/kann.",
+      "tryIt": "Testen Sie die interaktive Demo",
+      "notDuringRally": "Während eines Ballwechsels kann keine Auszeit genommen werden!",
+      "maxReached": "Maximale Zeitüberschreitung erreicht (2/2)!",
+      "alreadyActive": "Ein Timeout ist bereits im Gange!",
+      "timeoutCalled": "Auszeit aufgerufen!",
+      "simulateRally": "Rallye simulieren",
+      "endRally": "Rallye beenden",
+      "rallyActive": "Rallye aktiv (keine Zeitüberschreitung)",
+      "noRally": "Kein Ballwechsel (Zeitüberschreitung OK)"
+    },
+    "subDemo": {
+      "title": "Vertretungsregeln",
+      "instruction": "Wählen Sie einen Spieler auf dem Spielfeld und dann einen Ersatzspieler auf der Bank aus.",
+      "tryIt": "Probieren Sie die interaktive Demo",
+      "notDuringRally": "Keine Vertretung während einer Kundgebung möglich!",
+      "maxReached": "Maximale Auswechslungen erreicht (6/6)!",
+      "selectFirst": "Wählen Sie zunächst einen Spieler für das Spielfeld aus.",
+      "success": "Auswechslung abgeschlossen!",
+      "courtPlayers": "Hofspieler (zum Auswählen anklicken)",
+      "benchPlayers": "Bankspieler (zum Auswechseln anklicken)",
+      "canSub": "Substitution erlaubt",
+      "cannotSub": "Kann nicht ersetzen"
+    },
+    "mockups": {
+      "matchSetup": "Spiel-Einstellung",
+      "matchInfo": "Spiel-Informationen",
+      "gameNo": "Spiel #",
+      "dateTime": "Datum/Uhrzeit",
+      "location": "Stadt/Halle",
+      "league": "Liga",
+      "teamA": "Mannschaft A (Heim)",
+      "teamB": "Mannschaft B (Auswärts)",
+      "players": "spieler",
+      "rosterComplete": "Dienstplan vollständig",
+      "signatures": "Unterschriften",
+      "coachA": "Trainer A",
+      "captainA": "Kapitän A",
+      "coachB": "Trainer B",
+      "captainB": "Kapitän B",
+      "signed": "Unterzeichnet",
+      "tapToSign": "Zum Unterschreiben antippen",
+      "continueToToss": "Weiter zu Münzwurf",
+      "coinToss": "Münzwurf",
+      "serve": "Erster Aufschlag",
+      "leftSide": "Linke Seite",
+      "startMatch": "Spiel starten",
+      "scoreboard": "Anzeiger",
+      "screenStates": "Anzeigerstaaten",
+      "screenStatesDesc": "Die Anzeigetafel sieht je nach Spielverlauf unterschiedlich aus. Hier sind alle möglichen Zustände:",
+      "stateNormal": "Normaler Zustand - Warten auf die Rallye",
+      "stateRally": "Rallye aktiv - Punkte-Schaltflächen aktiviert",
+      "stateTimeout": "Timeout - Countdown-Anzeige",
+      "stateSub": "Auswechslung - Spielerauswahl",
+      "stateLibero": "Libero-Eintrag - hintere Reihe hervorgehoben",
+      "stateSanction": "Sanktion - Kartenauswahl",
+      "rallyInProgress": "Rallye im Gange",
+      "timeout": "Zeitüberschreitung",
+      "substitution": "Laufende Substitution",
+      "liberoEntry": "Libero Eintrag",
+      "sanction": "Auswahl der Sanktionen",
+      "waitingForRally": "Warten auf die Rallye",
+      "sets": "Sätze",
+      "point": "Punkt",
+      "stopTimeout": "Zeitüberschreitung stoppen",
+      "selectSanction": "Sanktionsart auswählen",
+      "matchEnd": "Spielende",
+      "winner": "Gewinner",
+      "setScores": "Partituren festlegen",
+      "finalSignatures": "Endgültige Unterschriften",
+      "referee1": "1. Kampfrichter",
+      "scorer": "Torschütze",
+      "exportPdf": "PDF exportieren",
+      "exportJson": "JSON exportieren",
+      "uploadCloud": "Hochladen in die Cloud"
     },
     "footer": "OpenVolley eScoresheet - Professionelle Volleyball-Punktezählung"
   }
