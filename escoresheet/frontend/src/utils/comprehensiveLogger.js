@@ -89,6 +89,53 @@ export function setGameContext(gameN, mId = null) {
 }
 
 /**
+ * Deep sanitize an object for storage in IndexedDB (structured clone compatible)
+ */
+function sanitizeForStorage(obj) {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj !== 'object') return obj
+
+  // Handle common non-serializable types
+  // Check for Event types - use multiple methods since instanceof can fail across frames
+  const constructorName = obj.constructor?.name || ''
+  if (
+    obj instanceof Event ||
+    (typeof PointerEvent !== 'undefined' && obj instanceof PointerEvent) ||
+    (typeof MouseEvent !== 'undefined' && obj instanceof MouseEvent) ||
+    (typeof TouchEvent !== 'undefined' && obj instanceof TouchEvent) ||
+    (typeof KeyboardEvent !== 'undefined' && obj instanceof KeyboardEvent) ||
+    constructorName.includes('Event') ||
+    (obj.type && obj.target && typeof obj.preventDefault === 'function')
+  ) {
+    return { type: 'Event', eventType: obj.type || constructorName }
+  }
+
+  if (obj instanceof Element || obj instanceof Node) {
+    return { type: 'Element', tagName: obj.tagName }
+  }
+
+  if (typeof obj === 'function') {
+    return { type: 'Function', name: obj.name || 'anonymous' }
+  }
+
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForStorage)
+  }
+
+  // Handle plain objects
+  try {
+    const sanitized = {}
+    for (const key of Object.keys(obj)) {
+      sanitized[key] = sanitizeForStorage(obj[key])
+    }
+    return sanitized
+  } catch (err) {
+    return String(obj)
+  }
+}
+
+/**
  * Core logging function
  * @param {string} category - 'ui' | 'function' | 'state' | 'navigation' | 'error' | 'system'
  * @param {string} type - Specific event type (click, input, handler_call, etc.)
@@ -98,6 +145,10 @@ export function setGameContext(gameN, mId = null) {
  * @param {object|null} target - DOM target info for UI events
  */
 export function log(category, type, component, action, payload = {}, target = null) {
+  // Sanitize payload and target before storing to avoid DataCloneError in IndexedDB
+  const safePayload = sanitizeForStorage(payload)
+  const safeTarget = sanitizeForStorage(target)
+
   const entry = {
     id: generateLogId(),
     ts: Date.now(),
@@ -106,8 +157,8 @@ export function log(category, type, component, action, payload = {}, target = nu
     type,
     component,
     action,
-    payload,
-    target,
+    payload: safePayload,
+    target: safeTarget,
     gameNumber,
     matchId,
     sessionId
@@ -242,9 +293,29 @@ async function flushToIndexedDB() {
     }
 
   } catch (err) {
-    console.error('[ComprehensiveLogger] IndexedDB flush failed:', err)
-    // Put entries back at front of buffer
-    logBuffer.unshift(...entriesToFlush)
+    // If DataCloneError, try adding entries one by one, skipping problematic ones
+    if (err.name === 'DataCloneError') {
+      console.warn('[ComprehensiveLogger] DataCloneError - filtering problematic entries')
+      let successCount = 0
+      for (const entry of entriesToFlush) {
+        try {
+          await db.interaction_logs.add(entry)
+          successCount++
+        } catch (addErr) {
+          // Skip this entry - it can't be cloned
+          if (CONFIG.LOG_TO_CONSOLE) {
+            console.warn('[ComprehensiveLogger] Skipped uncloneable entry:', entry.action)
+          }
+        }
+      }
+      if (CONFIG.LOG_TO_CONSOLE) {
+        console.log(`[ComprehensiveLogger] Recovered ${successCount}/${entriesToFlush.length} entries`)
+      }
+    } else {
+      console.error('[ComprehensiveLogger] IndexedDB flush failed:', err)
+      // Put entries back at front of buffer
+      logBuffer.unshift(...entriesToFlush)
+    }
   } finally {
     pendingFlush = false
   }

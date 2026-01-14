@@ -50,6 +50,29 @@ const RESOURCE_ORDER = ['match', 'set', 'event']
 // Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
 
+// Auto-retry interval for errored jobs (every 30 seconds when online)
+const ERROR_RETRY_INTERVAL = 30000
+
+/**
+ * Internal helper: Reset errored jobs to queued (non-hook function)
+ * This can be called from within useEffect without dependency issues
+ */
+async function retryErrorsInternal() {
+  try {
+    const errorJobs = await db.sync_queue.where('status').equals('error').toArray()
+    if (errorJobs.length === 0) return false
+
+    console.log(`[SyncQueue] Auto-retrying ${errorJobs.length} errored jobs`)
+    for (const job of errorJobs) {
+      await db.sync_queue.update(job.id, { status: 'queued', retry_count: 0 })
+    }
+    return true
+  } catch (err) {
+    console.error('[SyncQueue] Auto-retry errors failed:', err)
+    return false
+  }
+}
+
 export function useSyncQueue() {
   const busy = useRef(false)
   const [syncStatus, setSyncStatus] = useState('offline')
@@ -596,13 +619,15 @@ export function useSyncQueue() {
       setIsOnline(true)
       connectionVerified.current = false // Reset cache when coming online
       // Check connection when coming online
-      setTimeout(() => {
+      setTimeout(async () => {
         if (supabase) {
-          checkSupabaseConnection(true).then(connected => {
-            if (connected) {
-              flush()
-            }
-          })
+          const connected = await checkSupabaseConnection(true)
+          if (connected) {
+            // When coming back online, retry errored jobs first, then flush queued
+            console.log('[SyncQueue] Back online - retrying errored jobs and flushing queue')
+            await retryErrorsInternal()
+            flush()
+          }
         } else {
           setSyncStatus('online_no_supabase')
         }
@@ -620,8 +645,10 @@ export function useSyncQueue() {
     // Initial check
     if (isOnline) {
       if (supabase) {
-        checkSupabaseConnection(true).then(connected => {
+        checkSupabaseConnection(true).then(async (connected) => {
           if (connected) {
+            // On initial load, retry errored jobs if any
+            await retryErrorsInternal()
             flush()
           }
         })
@@ -651,23 +678,31 @@ export function useSyncQueue() {
     return () => clearInterval(interval)
   }, [isOnline, syncStatus, flush])
 
+  // Auto-retry errored jobs every 30 seconds when online
+  useEffect(() => {
+    if (!isOnline || syncStatus === 'offline' || syncStatus === 'online_no_supabase') return
+
+    const interval = setInterval(async () => {
+      if (!busy.current) {
+        const hadErrors = await retryErrorsInternal()
+        if (hadErrors) {
+          // Trigger a flush to process the retried jobs
+          flush()
+        }
+      }
+    }, ERROR_RETRY_INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [isOnline, syncStatus, flush])
+
   /**
    * Manual retry: reset all 'error' status jobs to 'queued' for immediate reprocessing
    */
   const retryErrors = useCallback(async () => {
-    try {
-      const errorJobs = await db.sync_queue.where('status').equals('error').toArray()
-      if (errorJobs.length === 0) return
-
-      console.log(`[SyncQueue] Retrying ${errorJobs.length} errored jobs`)
-      for (const job of errorJobs) {
-        await db.sync_queue.update(job.id, { status: 'queued', retry_count: 0 })
-      }
-
+    const hadErrors = await retryErrorsInternal()
+    if (hadErrors) {
       // Trigger a flush immediately
       flush()
-    } catch (err) {
-      console.error('[SyncQueue] Retry errors failed:', err)
     }
   }, [flush])
 

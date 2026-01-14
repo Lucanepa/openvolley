@@ -558,7 +558,7 @@ export default function ScoreboardOptionsModal({
               <InfoDot title={t('options.showNamesOnCourtInfo')} />
             </div>
             <ToggleSwitch
-              value={displayOptions?.showNamesOnCourt ?? true}
+              value={displayOptions?.showNamesOnCourt}
               onToggle={() => displayOptions?.setShowNamesOnCourt?.(!displayOptions?.showNamesOnCourt)}
             />
           </Row>

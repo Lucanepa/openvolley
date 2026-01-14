@@ -29,7 +29,11 @@
     "unknown": "Unknown",
     "reconnect": "Reconnect",
     "retry": "Retry",
-    "retryAll": "Retry All"
+    "retryAll": "Retry All",
+    "screenTooSmall": "Screen too Small",
+    "screenTooSmallMessage": "This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.",
+    "tryFullscreen": "Try Fullscreen",
+    "fullscreenHint": "Fullscreen may provide more space by hiding browser UI."
   },
   "alert": {
     "error": "Error",
@@ -77,6 +81,8 @@
     "addPlayer": "+ Add Player",
     "addPlayerButton": "Add Player",
     "addPlayerTitle": "Add Player - {{team}}",
+    "liberos": "Liberos",
+    "bench": "Bench",
     "benchOfficials": "Bench Officials",
     "benchOfficialsCount": "Bench Officials ({{count}})",
     "addBench": "+ Add",
@@ -102,7 +108,8 @@
     "deleteRoster": "Delete Roster",
     "loadTestRoster": "Load TEST Roster",
     "confirmLoadTestRoster": "Load Test Roster?",
-    "confirmLoadTestRosterMessage": "This will replace the current roster with test data ({{team}})."
+    "confirmLoadTestRosterMessage": "This will replace the current roster with test data ({{team}}).",
+    "noBenchOfficials": "No bench officials"
   },
   "benchRoles": {
     "coach": "Coach",
@@ -138,6 +145,10 @@
     "completeSignatures": "Please complete all signatures before confirming the coin toss.",
     "noMatchId": "Error: No match ID found. Please try again."
   },
+  "errors": {
+    "databaseWriteError": "Database write error",
+    "syncFailed": "Sync failed"
+  },
   "signature": {
     "title": "Signature",
     "clear": "Clear",
@@ -151,6 +162,10 @@
     "birthdateWarning": "The following dates look suspicious (January 1st). Please verify they are correct:",
     "continueAnyway": "Continue Anyway",
     "close": "Close"
+  },
+  "deleteMatch": {
+    "cancel": "Cancel",
+    "delete": "Delete"
   },
   "refereeSelector": {
     "searchReferees": "Search referees...",
@@ -241,6 +256,7 @@
     "gamePin": "Game PIN",
     "gamePinDescription": "Auto-generated PIN to open this match in a new session",
     "notificationEmail": "Send PIN by email",
+    "notificationEmailPlaceholder": "Enter email address",
     "send": "Send",
     "sending": "Sending...",
     "emailSent": "Email sent successfully!",
@@ -347,9 +363,14 @@
     },
     "coinToss": "Coin toss",
     "chooseTeamColor": "Choose {{team}} Team Colour",
+    "chooseTeamColour": "Choose {{team}} Team Colour",
     "syncStatus": {
       "notSynced": "Not synced",
-      "offline": "Offline"
+      "offline": "Offline",
+      "synced": "Synced",
+      "syncing": "Syncing...",
+      "error": "Sync Error",
+      "clickToRetry": "Click to retry sync"
     }
   },
   "scoreboard": {
@@ -453,6 +474,7 @@
       "confirmPoint": "Confirm Point",
       "confirmSanction": "Confirm Sanction",
       "confirmUndo": "Confirm Undo",
+      "confirmTimeout": "Confirm Timeout",
       "decisionChange": "Decision Change",
       "exceptionalSubstitution": "Exceptional Substitution",
       "exceptionalSubPlayerCantPlay": "Exceptional Substitution - Player cannot take part anymore",
@@ -516,11 +538,14 @@
     "confirm": {
       "yesStartRally": "Yes, Start Rally",
       "yesAwardPoint": "Yes, Award Point",
+      "yesTimeout": "Yes, Timeout",
       "apply": "Apply",
       "rallyStartedQuickly": "Rally started very quickly",
       "areYouSureRallyStarted": "Are you sure the rally has actually started?",
       "pointAwardedQuickly": "Point awarded very quickly",
-      "areYouSureAwardPoint": "Are you sure the point should be awarded to {{team}}?"
+      "areYouSureAwardPoint": "Are you sure the point should be awarded to {{team}}?",
+      "timeoutAlreadyTaken": "This team has already used a timeout this set.",
+      "areYouSureAnotherTimeout": "Are you sure you want to call another timeout for {{team}}?"
     },
     "menu": {
       "scoresheet": "Scoresheet",
@@ -664,11 +689,15 @@
       "thisLiberoUnableToPlay": "This libero is unable to play",
       "delayPenaltyRecorded": "Delay penalty recorded. Point will be awarded after both teams set their lineups.",
       "requiresExceptionalCase": "This substitution requires an exceptional case",
-      "playerCannotSubstitute": "This player cannot substitute for the selected court player"
+      "playerCannotSubstitute": "This player cannot substitute for the selected court player",
+      "setNotFound": "Could not find the correct set to update. Please refresh and try again.",
+      "exportFailed": "Error exporting database data. Please try again.",
+      "setEndFailed": "Set end failed. Data saved locally."
     },
     "noEventsRecorded": "No events recorded yet.",
     "captainOnCourt": {
-      "designate": "Game Captain"
+      "designate": "Game Captain",
+      "selectTitle": "Game Captain"
     }
   },
   "settings": {
@@ -993,7 +1022,11 @@
     "tapToSign": "Tap to sign",
     "noRemarks": "No remarks",
     "editRemarks": "Edit Remarks",
+    "remarksPlaceholder": "Record match remarks...",
     "noSanctions": "No sanctions",
+    "result": "Result",
+    "logsDownloaded": "Interaction logs downloaded successfully",
+    "logsDownloadFailed": "Failed to download logs",
     "improperRequest": "Improper Request",
     "set": "Set",
     "time": "Time",
@@ -1148,6 +1181,8 @@
     "enterPin": "Enter PIN",
     "validate": "Validate",
     "validating": "Validating...",
+    "validated": "Validated",
+    "noPinRequired": "No PIN required",
     "invalidPin": "Invalid PIN",
     "selectPdfFile": "Select PDF File",
     "dropPdfHere": "Drop PDF here or click to select",
@@ -1190,6 +1225,7 @@
   "refereeDashboard": {
     "title": "Referee",
     "dashboardTitle": "Referee Dashboard",
+    "status": "Status",
     "wakeLockOn": "On",
     "wakeLockOff": "Off",
     "screenWillStayOn": "Screen will stay on",
@@ -1344,6 +1380,9 @@
     "signIn": "Sign In",
     "signUp": "Sign Up",
     "signOut": "Sign Out",
+    "login": "Login",
+    "sending": "Sending...",
+    "resetInstructions": "Enter your email and we'll send you a reset link",
     "signedInAs": "Signed in as",
     "user": "User",
     "profile": "Profile",

@@ -17,12 +17,11 @@ import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 import SimpleHeader from './SimpleHeader'
 import DonutCountdown from './DonutCountdown'
-import { changelog } from '../CHANGELOG'
 import { supabase } from '../lib/supabaseClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 
-// Get current version from changelog
-const currentVersion = changelog[0]?.version || '1.0.0'
+// Get current version (hardcoded since changelog is removed)
+const currentVersion = '1.0.6'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -759,18 +758,21 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           // Handle timeout start/stop based on timeout_active flag
           if (state.timeout_active) {
-            // Timeout is active - show/update modal
-            if (state.last_event_type === 'timeout') {
+            // Timeout is active - show/update modal if not already active or if it's a new timeout
+            const serverStartTs = state.timeout_started_at ? new Date(state.timeout_started_at).getTime() : Date.now()
+
+            // Only update/start if not already tracking THIS timeout (compare start timestamps)
+            if (!timeoutModal || Math.abs(timeoutModal.startTimestamp - serverStartTs) > 2000) {
               const team = getTeamFromSide(state.last_event_team)
               timeoutActiveRef.current = true
               setTimeoutModal({
                 team,
                 countdown: state.last_event_data?.duration || 30,
-                startTimestamp: Date.now(), // Generate timestamp for Supabase path
+                startTimestamp: serverStartTs,
                 initialCountdown: state.last_event_data?.duration || 30,
                 started: true
               })
-              setShowTimeoutModal(true) // Show the modal overlay
+              setShowTimeoutModal(true)
             }
           } else if (timeoutActiveRef.current) {
             // Timeout was active but is now not active - clear modal
@@ -834,15 +836,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               setBetweenSetsCountdown(null)
               setShowIntervalModal(false)
             } else {
-              setBetweenSetsCountdown({
-                countdown: 180,
-                startTimestamp: Date.now(), // Generate timestamp for Supabase path
-                initialCountdown: 180,
-                started: true,
-                setIndex: state.last_event_data?.setIndex || state.current_set,
-                winner: state.last_event_data?.winner
-              })
-              setShowIntervalModal(true) // Show the modal overlay
+              const serverStartTs = state.set_interval_started_at ? new Date(state.set_interval_started_at).getTime() : Date.now()
+
+              // Only update if not already tracking this interval
+              if (!betweenSetsCountdown || Math.abs(betweenSetsCountdown.startTimestamp - serverStartTs) > 2000) {
+                setBetweenSetsCountdown({
+                  countdown: 180,
+                  startTimestamp: serverStartTs,
+                  initialCountdown: 180,
+                  started: true,
+                  setIndex: state.last_event_data?.setIndex || state.current_set,
+                  winner: state.last_event_data?.winner
+                })
+                setShowIntervalModal(true)
+              }
             }
           }
 
@@ -871,26 +878,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Handle timeout countdown timer
   useEffect(() => {
-    // Debug: Log effect entry
-    console.log('[REF_TO_DEBUG] Effect triggered', {
-      timeoutModalExists: !!timeoutModal,
-      started: timeoutModal?.started,
-      countdown: timeoutModal?.countdown,
-      startTimestamp: timeoutModal?.startTimestamp,
-      initialCountdown: timeoutModal?.initialCountdown
-    })
-
     if (!timeoutModal || !timeoutModal.started) return
 
-    const startTimestamp = timeoutModal.startTimestamp || Date.now()
-    const initialCountdown = timeoutModal.initialCountdown || timeoutModal.countdown || 30
-
-    console.log('[REF_TO_DEBUG] Creating interval', { startTimestamp, initialCountdown })
+    const startTimestamp = timeoutModal.startTimestamp
+    const initialCountdown = timeoutModal.initialCountdown || 30
 
     if (timeoutModal.countdown <= 0) {
-      console.log('[REF_TO_DEBUG] Countdown already 0, closing')
-      setTimeoutModal(null)
-      return
+      // Don't auto-clear here, wait for tick to hit 0 to avoid rapid state flickering
+      // if (timeoutModal.countdown < 0) setTimeoutModal(null)
+      // return
     }
 
     // Update every 100ms for smooth visuals
@@ -899,27 +895,27 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       const elapsed = Math.floor((now - startTimestamp) / 1000)
       const remaining = Math.max(0, initialCountdown - elapsed)
 
-      // Log every 5 seconds to avoid spam, plus first and last tick
-      if (remaining === initialCountdown || remaining <= 0 || remaining % 5 === 0) {
-        console.log('[REF_TO_DEBUG] Tick', { elapsed, remaining, startTimestamp })
-      }
-
       if (remaining <= 0) {
-        console.log('[REF_TO_DEBUG] Countdown complete, closing modal')
-        setTimeoutModal(null)
+        // If it was already 0 for a bit, clear it
+        setTimeoutModal(prev => {
+          if (prev && prev.countdown === 0 && (Date.now() - (prev.startTimestamp + prev.initialCountdown * 1000)) > 2000) {
+            return null
+          }
+          if (!prev) return null
+          return { ...prev, countdown: 0 }
+        })
       } else {
         setTimeoutModal(prev => {
           if (!prev || !prev.started) return null
+          // Only update if the value actually changed to reduce re-renders
+          if (prev.countdown === remaining) return prev
           return { ...prev, countdown: remaining }
         })
       }
-    }, 100) // 100ms for smooth updates
+    }, 100)
 
-    return () => {
-      console.log('[REF_TO_DEBUG] Clearing interval')
-      clearInterval(timer)
-    }
-  }, [timeoutModal])
+    return () => clearInterval(timer)
+  }, [timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.initialCountdown])
 
   // Track last point count to detect when points change (rally ends)
   const lastPointsRef = useRef({ home: 0, away: 0 })
@@ -1809,8 +1805,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
     // AND it wasn't manually dismissed
     if (isBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
-      setBetweenSetsCountdown({ countdown: 180, started: true }) // 3 minutes = 180 seconds
-      setShowIntervalModal(true) // Show the modal overlay
+      setBetweenSetsCountdown({
+        countdown: 180,
+        started: true,
+        startTimestamp: Date.now(),
+        initialCountdown: 180
+      })
+      setShowIntervalModal(true)
     } else if (!isBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
@@ -1824,29 +1825,33 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     if (!betweenSetsCountdown || !betweenSetsCountdown.started) return
 
     const startTimestamp = betweenSetsCountdown.startTimestamp || Date.now()
-    const initialCountdown = betweenSetsCountdown.initialCountdown || betweenSetsCountdown.countdown || 180
-
-    // Don't set interval if already at 0
-    if (betweenSetsCountdown.countdown <= 0) return
+    const initialCountdown = betweenSetsCountdown.initialCountdown || 180
 
     // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTimestamp) / 1000)
+      const now = Date.now()
+      const elapsed = Math.floor((now - startTimestamp) / 1000)
       const remaining = Math.max(0, initialCountdown - elapsed)
 
       if (remaining <= 0) {
-        // Stay at 0, don't reset to null
-        setBetweenSetsCountdown(prev => ({ ...prev, countdown: 0, started: false }))
+        setBetweenSetsCountdown(prev => {
+          if (prev && prev.countdown === 0 && (Date.now() - (prev.startTimestamp + prev.initialCountdown * 1000)) > 2000) {
+            return prev // Keep it at 0
+          }
+          if (!prev) return null
+          return { ...prev, countdown: 0, started: false }
+        })
       } else {
         setBetweenSetsCountdown(prev => {
           if (!prev || !prev.started) return prev
+          if (prev.countdown === remaining) return prev
           return { ...prev, countdown: remaining }
         })
       }
-    }, 100) // 100ms for smooth updates
+    }, 100)
 
     return () => clearInterval(timer)
-  }, [betweenSetsCountdown])
+  }, [betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.initialCountdown])
 
   // Calculate set results for Results component (must be before early return)
   const calculateSetResults = useMemo(() => {

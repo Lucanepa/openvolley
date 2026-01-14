@@ -23,42 +23,35 @@ export default function SyncProgressModal({
   hasWarning = false
 }) {
   const { t } = useTranslation()
-  const [autoProceeding, setAutoProceeding] = useState(false)
-  // Use ref for onProceed to avoid restarting the timer when the callback identity changes
-  // (e.g. parent re-renders due to clock ticks or other state changes)
-  const latestOnProceed = useRef(onProceed)
-  useEffect(() => {
-    latestOnProceed.current = onProceed
-  }, [onProceed])
+  // Track if we've already triggered auto-proceed to avoid double-calls
+  const hasAutoProceeded = useRef(false)
 
-  // Auto-proceed after success (1s delay to show "Done")
+  // Reset tracking when modal opens fresh
   useEffect(() => {
-    if (isComplete && !hasError && !hasWarning && !autoProceeding) {
-      setAutoProceeding(true)
-      const timer = setTimeout(() => {
-        if (latestOnProceed.current) latestOnProceed.current()
-      }, 1000)
-      return () => clearTimeout(timer)
-    }
-  }, [isComplete, hasError, hasWarning, autoProceeding])
-
-  // Auto-proceed for warnings (offline) after 1.5s
-  useEffect(() => {
-    if (isComplete && hasWarning && !hasError && !autoProceeding) {
-      setAutoProceeding(true)
-      const timer = setTimeout(() => {
-        if (latestOnProceed.current) latestOnProceed.current()
-      }, 1500)
-      return () => clearTimeout(timer)
-    }
-  }, [isComplete, hasWarning, hasError, autoProceeding])
-
-  // Reset auto-proceeding state when modal closes
-  useEffect(() => {
-    if (!open) {
-      setAutoProceeding(false)
+    if (open) {
+      hasAutoProceeded.current = false
     }
   }, [open])
+
+  // Auto-proceed after completion (1s for success, 1.5s for warning)
+  // Simplified: single effect with all conditions
+  useEffect(() => {
+    if (!open || !isComplete || hasAutoProceeded.current) return
+
+    // Don't auto-proceed on error - user must click button
+    if (hasError) return
+
+    const delay = hasWarning ? 1500 : 1000
+
+    const timer = setTimeout(() => {
+      if (!hasAutoProceeded.current) {
+        hasAutoProceeded.current = true
+        onProceed?.()
+      }
+    }, delay)
+
+    return () => clearTimeout(timer)
+  }, [open, isComplete, hasError, hasWarning, onProceed])
 
   if (!open) return null
 
