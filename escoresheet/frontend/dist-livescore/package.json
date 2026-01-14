@@ -1,6 +1,6 @@
 {
   "name": "openvolley-livescore",
-  "version": "1.0.17",
+  "version": "1.0.19",
   "private": true,
   "scripts": {
     "start": "npx serve . -s -l $PORT"
