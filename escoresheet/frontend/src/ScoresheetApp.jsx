@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from './lib/supabaseClient'
 import App from '../scoresheet_pdf/App_Scoresheet'
 
-// Fetch scoresheet data from Supabase storage
+// Fetch scoresheet data from Supabase storage (only _final files)
 const fetchFromStorage = async (date, game) => {
   try {
     if (!supabase) {
@@ -10,7 +10,7 @@ const fetchFromStorage = async (date, game) => {
       return null
     }
 
-    const storagePath = `${date}/game${game}.json`
+    const storagePath = `${date}/game${game}_final.json`
     console.log('[Scoresheet] Fetching from storage:', storagePath)
 
     const { data, error } = await supabase.storage
@@ -64,10 +64,11 @@ const fetchAllScoresheets = async () => {
       }
 
       for (const file of files || []) {
-        if (!file.name.endsWith('.json')) continue
+        // Only show approved/final scoresheets (game123_final.json)
+        if (!file.name.endsWith('_final.json')) continue
 
-        // Extract game number from filename (game123.json -> 123)
-        const gameMatch = file.name.match(/game(\d+)\.json/)
+        // Extract game number from filename (game123_final.json -> 123)
+        const gameMatch = file.name.match(/game(\d+)_final\.json/)
         if (!gameMatch) continue
 
         scoresheets.push({
@@ -148,7 +149,7 @@ const ScoresheetViewer = ({ date, game, action }) => {
         if (data) {
           setMatchData(data)
         } else {
-          setError(`Scoresheet not found: ${date}/game${game}.json`)
+          setError(`Scoresheet not found: ${date}/game${game}_final.json`)
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load scoresheet')
