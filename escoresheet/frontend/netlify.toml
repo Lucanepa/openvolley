@@ -4,6 +4,12 @@
   publish = "dist"
 
 [[redirects]]
+  from = "https://openvolley.app/*"
+  to = "https://app.openvolley.app/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
