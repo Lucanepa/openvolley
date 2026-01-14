@@ -72,23 +72,24 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
         {[1, 2, 3, 4, 5].map(setNum => {
           const setData = setResults?.find(r => r.setNumber === setNum)
           const isFinished = setData && setData.teamAPoints !== null
+          if (!isFinished) return null
           return (
             <div key={setNum} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', borderBottom: '1px solid #ccc', padding: '2px 0' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
-                <span>{isFinished ? (setData.teamATimeouts ?? '') : ''}</span>
-                <span>{isFinished ? (setData.teamASubstitutions ?? '') : ''}</span>
-                <span>{isFinished ? (setData.teamAWon ?? '') : ''}</span>
-                <span style={{ fontWeight: 700 }}>{isFinished ? (setData.teamAPoints ?? '') : ''}</span>
+                <span>{setData.teamATimeouts ?? ''}</span>
+                <span>{setData.teamASubstitutions ?? ''}</span>
+                <span>{setData.teamAWon ?? ''}</span>
+                <span style={{ fontWeight: 700 }}>{setData.teamAPoints ?? ''}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', color: '#000' }}>
                 <span style={{ fontWeight: 600 }}>{setNum}</span>
                 <span>{setData?.duration || ''}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
-                <span style={{ fontWeight: 700 }}>{isFinished ? (setData.teamBPoints ?? '') : ''}</span>
-                <span>{isFinished ? (setData.teamBWon ?? '') : ''}</span>
-                <span>{isFinished ? (setData.teamBSubstitutions ?? '') : ''}</span>
-                <span>{isFinished ? (setData.teamBTimeouts ?? '') : ''}</span>
+                <span style={{ fontWeight: 700 }}>{setData.teamBPoints ?? ''}</span>
+                <span>{setData.teamBWon ?? ''}</span>
+                <span>{setData.teamBSubstitutions ?? ''}</span>
+                <span>{setData.teamBTimeouts ?? ''}</span>
               </div>
             </div>
           )
@@ -1217,7 +1218,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         )}
 
         <MenuList
-          buttonLabel="📄 Scoresheet"
+          buttonLabel={`📄 ${t('matchEnd.scoresheet')}`}
           buttonClassName="secondary"
           buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
           showArrow={true}
@@ -1340,7 +1341,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             padding: '24px',
             maxWidth: '450px',
             width: '90%',
-            background: 'rgba(0, 0, 0, 0.8)',
             textAlign: 'center'
           }}>
             <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen Last Set?')}</h3>

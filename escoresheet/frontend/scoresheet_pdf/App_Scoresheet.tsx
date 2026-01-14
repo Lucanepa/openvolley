@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as htmlToImage from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { Header } from './components/Header';
@@ -25,6 +26,7 @@ interface AppScoresheetProps {
 }
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
+  const { t } = useTranslation();
   const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, sanctions = [] } = matchData;
 
   // Helper function to format players for scoresheet
@@ -2630,14 +2632,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             fontWeight: 'bold',
             marginBottom: '16px'
           }}>
-            Generating PDF...
+            {t('scoresheetPdf.generatingPdf', 'Generating PDF...')}
           </h2>
           <p style={{
             color: '#d1d5db',
             fontSize: '16px',
             maxWidth: '400px'
           }}>
-            Please wait while the scoresheet is being converted to PDF. This may take a few seconds.
+            {t('scoresheetPdf.generatingPdfMessage', 'Please wait while the scoresheet is being converted to PDF. This may take a few seconds.')}
           </p>
         </div>
       )}
@@ -2648,28 +2650,28 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           <button
             onClick={zoomOut}
             className="bg-gray-500 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm shadow"
-            title="Zoom Out"
+            title={t('scoresheetPdf.zoomOut', 'Zoom Out')}
           >
             −
           </button>
           <button
             onClick={resetZoom}
             className="bg-gray-500 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm shadow min-w-[50px]"
-            title="Reset Zoom (100%)"
+            title={t('scoresheetPdf.resetZoom', 'Reset Zoom (100%)')}
           >
             {Math.round(zoomLevel * 100)}%
           </button>
           <button
             onClick={fitToScreen}
             className="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm shadow"
-            title="Fit to Screen"
+            title={t('scoresheetPdf.fitToScreen', 'Fit to Screen')}
           >
-            Fit
+            {t('scoresheetPdf.fit', 'Fit')}
           </button>
           <button
             onClick={zoomIn}
             className="bg-gray-500 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm shadow"
-            title="Zoom In"
+            title={t('scoresheetPdf.zoomIn', 'Zoom In')}
           >
             +
           </button>
@@ -2681,7 +2683,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           <button
             onClick={toggleFullscreen}
             className="bg-blue-500 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm shadow"
-            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            title={isFullscreen ? t('scoresheetPdf.exitFullscreen', 'Exit Fullscreen') : t('scoresheetPdf.fullscreen', 'Fullscreen')}
           >
             {isFullscreen ? '⤓' : '⤢'}
           </button>
@@ -2690,9 +2692,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           <button
             onClick={handlePrint}
             className="bg-green-500 hover:bg-green-700 text-white px-3 py-1 rounded text-sm shadow"
-            title="Print or Save as PDF (use browser's Save as PDF option)"
+            title={t('scoresheetPdf.printPdfTooltip', 'Print or Save as PDF (use browser\'s Save as PDF option)')}
           >
-            Print / PDF
+            {t('scoresheetPdf.printPdf', 'Print / PDF')}
           </button>
 
           {/* Save PDF button (one-click, no dialog) */}
@@ -2700,9 +2702,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             onClick={() => handleSavePdf()}
             disabled={isGeneratingPdf}
             className={`${isGeneratingPdf ? 'bg-purple-400 cursor-wait' : 'bg-purple-500 hover:bg-purple-700'} text-white px-3 py-1 rounded text-sm shadow`}
-            title="Save as PDF (one-click download)"
+            title={t('scoresheetPdf.savePdfTooltip', 'Save as PDF (one-click download)')}
           >
-            {isGeneratingPdf ? 'Generating...' : 'Save PDF'}
+            {isGeneratingPdf ? t('scoresheetPdf.generating', 'Generating...') : t('scoresheetPdf.savePdf', 'Save PDF')}
           </button>
 
           {/* Divider */}
@@ -2712,9 +2714,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           <button
             onClick={handleImportJson}
             className="bg-orange-500 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm shadow"
-            title="Import match data from JSON file"
+            title={t('scoresheetPdf.importJsonTooltip', 'Import match data from JSON file')}
           >
-            Import JSON
+            {t('scoresheetPdf.importJson', 'Import JSON')}
           </button>
 
           {/* Hidden file input for JSON import */}
@@ -2724,7 +2726,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             accept=".json,application/json"
             onChange={handleFileChange}
             style={{ display: 'none' }}
-            aria-label="Import JSON file"
+            aria-label={t('scoresheetPdf.importJsonFile', 'Import JSON file')}
           />
         </div>
       </div>

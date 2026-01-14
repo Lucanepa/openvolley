@@ -452,7 +452,25 @@
       "actionLog": "Journal des actions",
       "manualChanges": "Modifications manuelles",
       "keyboardShortcuts": "Raccourcis clavier",
-      "searchEvents": "Rechercher des événements..."
+      "searchEvents": "Rechercher des événements...",
+      "stopMatch": "Arrêter le match"
+    },
+    "stopMatch": {
+      "title": "Arrêter le match",
+      "teamForfeits": "Une équipe déclare forfait",
+      "impossibilityToResume": "Impossibilité de reprendre",
+      "selectForfeitingTeam": "Sélectionner l'équipe qui déclare forfait",
+      "selectTeamPrompt": "Quelle équipe déclare forfait ?",
+      "confirmForfeitTitle": "Confirmer le forfait",
+      "confirmForfeitMessage": "{{team}} déclare forfait. L'adversaire recevra tous les points et sets restants.",
+      "confirmImpossibilityTitle": "Impossibilité de reprendre",
+      "confirmImpossibilityMessage": "Le match se terminera avec le score actuel. Aucun vainqueur ne sera déclaré.",
+      "addRemarksPrompt": "Veuillez saisir une remarque concernant l'arrêt du match.",
+      "finalConfirmTitle": "Terminer le match",
+      "finalConfirmForfeit": "Terminer le match avec {{winner}} comme vainqueur ?",
+      "finalConfirmImpossibility": "Terminer le match sans vainqueur ?",
+      "endMatch": "Terminer le match",
+      "continueToRemarks": "Continuer aux remarques"
     },
     "edit": {
       "editPoints": "Modifier les points",
@@ -866,7 +884,8 @@
     "scoresheet": "eScoresheet",
     "preview": "Aperçu",
     "print": "Imprimer",
-    "savePdf": "Sauver PDF",
+    "savePdf": "Enregistrer PDF",
+    "downloadLogs": "Télécharger les logs",
     "approveParams": "Confirmer et Approuver",
     "downloading": "Téléchargement...",
     "reopenLastSet": "Rouvrir Dernier Set",
@@ -900,7 +919,34 @@
     "errorApproving": "Erreur lors de l'approbation : {{error}}",
     "noSetsReopen": "Aucun set à rouvrir",
     "setReopened": "Set {{index}} rouvert pour correction",
-    "errorReopening": "Erreur réouverture : {{error}}"
+    "errorReopening": "Erreur réouverture : {{error}}",
+    "sanctionTypes": {
+      "delayWarning": "Avertissement pour retard",
+      "delayPenalty": "Pénalité pour retard",
+      "warning": "Avertissement",
+      "penalty": "Pénalité",
+      "expulsion": "Expulsion",
+      "disqualification": "Disqualification"
+    }
+  },
+  "scoresheetPdf": {
+    "zoomOut": "Réduire",
+    "zoomIn": "Agrandir",
+    "resetZoom": "Réinitialiser le zoom (100%)",
+    "fitToScreen": "Ajuster à l'écran",
+    "fit": "Ajuster",
+    "fullscreen": "Plein écran",
+    "exitFullscreen": "Quitter le plein écran",
+    "printPdf": "Imprimer / PDF",
+    "printPdfTooltip": "Imprimer ou enregistrer en PDF (utilisez l'option 'Enregistrer en PDF' du navigateur)",
+    "savePdf": "Enregistrer PDF",
+    "savePdfTooltip": "Enregistrer en PDF (téléchargement en un clic)",
+    "generating": "Génération...",
+    "generatingPdf": "Génération du PDF...",
+    "generatingPdfMessage": "Veuillez patienter pendant la conversion de la feuille de match en PDF. Cela peut prendre quelques secondes.",
+    "importJson": "Importer JSON",
+    "importJsonTooltip": "Importer les données du match depuis un fichier JSON",
+    "importJsonFile": "Importer fichier JSON"
   },
   "supportFeedback": {
     "title": "Support & Avis",
@@ -1240,6 +1286,119 @@
     "title": "Mes matchs",
     "noMatches": "Aucun match pour l'instant",
     "noMatchesHint": "Les matchs que vous marquez apparaîtront ici",
-    "unknown": "Inconnu"
+    "unknown": "Inconnu",
+    "vs": "vs"
+  },
+  "connectionStatus": {
+    "syncing": "Synchronisation",
+    "connected": "Connecté",
+    "error": "Erreur",
+    "noMatch": "Aucun match",
+    "ready": "Prêt",
+    "offline": "Hors ligne",
+    "disconnected": "Déconnecté",
+    "notConfigured": "Non configuré",
+    "naStatic": "N/A (Statique)",
+    "connecting": "Connexion",
+    "testMode": "Mode test",
+    "unknown": "Inconnu",
+    "api": "API",
+    "server": "Serveur",
+    "webSocket": "WebSocket",
+    "scoreboard": "Tableau de bord",
+    "match": "Match",
+    "database": "Base de données",
+    "supabase": "Supabase",
+    "syncingDots": "Synchronisation...",
+    "title": "État de connexion",
+    "pendingBackgroundSync": "Synchronisation en attente :",
+    "synchronizationErrors": "Erreurs de synchronisation :",
+    "statusInformation": "Informations d'état",
+    "statusLabel": "État :",
+    "messageLabel": "Message :",
+    "connectionIssueDetected": "Problème de connexion détecté"
+  },
+  "dashboardOptions": {
+    "supabase": "Supabase",
+    "webSocket": "WebSocket",
+    "none": "Aucun",
+    "options": "Options",
+    "connection": "Connexion",
+    "fallback": "Fallback",
+    "active": "Actif :",
+    "connectionType": "Type de connexion",
+    "autoRecommended": "Auto (Recommandé)",
+    "supabasePrimaryFallback": "Supabase principal, WebSocket fallback",
+    "supabaseOnly": "Supabase uniquement",
+    "databaseRealtimeOnly": "Base de données temps réel uniquement",
+    "webSocketOnly": "WebSocket uniquement",
+    "directServerConnection": "Connexion serveur directe",
+    "clearing": "Suppression...",
+    "clearCacheAndData": "Effacer cache et données",
+    "clearCacheConfirmation": "Cela supprimera toutes les données en cache, y compris les états de match. Êtes-vous sûr ?"
+  },
+  "gameList": {
+    "loadingGames": "Chargement des matchs...",
+    "noGamesAvailable": "Aucun match disponible.",
+    "upcomingMatches": "Matchs à venir",
+    "selectGameToStart": "Sélectionnez un match pour commencer.",
+    "status": "État :",
+    "openMatch": "Ouvrir le match",
+    "deleteMatchData": "Supprimer les données du match",
+    "loadTestData": "Charger des données de test",
+    "dateTbc": "Date à confirmer"
+  },
+  "guideModal": {
+    "errorLoading": "Erreur lors du chargement du guide. Veuillez vérifier le fichier USER_GUIDE.md.",
+    "loadingGuide": "Chargement du guide...",
+    "userGuide": "Guide utilisateur"
+  },
+  "matchEntry": {
+    "loading": "Chargement...",
+    "matchHasEnded": "Le match est terminé",
+    "back": "Retour",
+    "backArrow": "← Retour",
+    "to": "TO",
+    "sub": "REM",
+    "set": "Set",
+    "sanctions": "SANCTIONS",
+    "none": "Aucune",
+    "moreCount": "+{{count}} autre(s)",
+    "noBenchData": "Aucune donnée banc"
+  },
+  "officialAutocomplete": {
+    "selectFromHistory": "Sélectionner dans l'historique"
+  },
+  "connectionSetup": {
+    "lan": "LAN",
+    "internet": "Internet",
+    "refereeQRCodeAlt": "QR Code Arbitre",
+    "cloudQRCodeAlt": "QR Code Cloud"
+  },
+  "backupTable": {
+    "noActions": "Aucune action",
+    "error": "Erreur",
+    "gameN": "Match N",
+    "set": "Set",
+    "score": "Score",
+    "lastAction": "Dernière action",
+    "createdAt": "Créé le",
+    "eventTypes": {
+      "point": "Point",
+      "timeout": "Temps mort",
+      "substitution": "Remplacement",
+      "liberoEntry": "Entrée libéro",
+      "liberoExit": "Sortie libéro",
+      "liberoExchange": "Échange libéro",
+      "liberoUnable": "Libéro indisponible",
+      "liberoRedesignation": "Redesignation libéro",
+      "setStart": "Début de set",
+      "setEnd": "Fin de set",
+      "coinToss": "Tirage au sort",
+      "rotation": "Rotation",
+      "sanction": "Sanction",
+      "challenge": "Challenge",
+      "decisionChange": "Changement de décision"
+    }
   }
 }

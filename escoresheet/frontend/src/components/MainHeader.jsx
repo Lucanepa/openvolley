@@ -110,6 +110,7 @@ export default function MainHeader({
   collapsible = false, // Only allow collapsing on Scoreboard page
   onTriggerAlarm = null, // Trigger scorer attention alarm
   alarmEnabled = false, // Only show alarm when sync/dashboard is active
+  onOpenGuide = null, // Open the interactive app guide
 }) {
   const { t } = useTranslation()
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
@@ -1094,6 +1095,42 @@ export default function MainHeader({
                       </button>
                     )}
 
+                    {/* App Guide Action */}
+                    {onOpenGuide && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onOpenGuide()
+                          setActionsMenuOpen(false)
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          background: 'transparent',
+                          color: '#60a5fa',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          width: '100%',
+                          textAlign: 'left'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(96, 165, 250, 0.15)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent'
+                        }}
+                      >
+                        <span>📖</span>
+                        <span>{t('interactiveGuide.title', 'App Guide')}</span>
+                      </button>
+                    )}
+
                     {/* Version Changelog - nested dropdown */}
                     {versionMenuOpen && (
                       <div
@@ -1161,45 +1198,8 @@ export default function MainHeader({
               </div>
             </>
           ) : (
-            /* Desktop Mode: Show all actions inline */
+            /* Desktop Mode: Unified hamburger menu + Fullscreen button */
             <>
-
-
-              {/* Home Button - only show when not on home screen */}
-              {matchId && onOpenSetup && (
-                <button
-                  onClick={() => onOpenSetup()}
-                  title="Back to Home"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '4px 10px',
-                    fontSize: 'clamp(10px, 1.2vw, 12px)',
-                    fontWeight: 600,
-                    background: 'rgba(34, 197, 94, 0.2)',
-                    color: '#22c55e',
-                    border: '1px solid rgba(34, 197, 94, 0.4)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    whiteSpace: 'nowrap',
-                    gap: '4px'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(34, 197, 94, 0.3)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
-                  }}
-                >
-                  <span>{t('common.home')}</span>
-                </button>
-              )}
-
-              {/* User Button - hidden in offline mode */}
-              {!offlineMode && <UserButton />}
-
               {/* Viewport Size Display - Editable (hidden by default) */}
               {showViewportSize && (
                 <div style={{
@@ -1282,50 +1282,46 @@ export default function MainHeader({
                 </div>
               )}
 
-              {/* Language Selector */}
+              {/* Unified Menu Button (hamburger) */}
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    setLanguageMenuOpen(!languageMenuOpen)
+                    setActionsMenuOpen(!actionsMenuOpen)
+                    setLanguageMenuOpen(false)
                     setVersionMenuOpen(false)
                   }}
                   style={{
-                    fontSize: 'clamp(10px, 1.2vw, 12px)',
-                    color: 'rgba(255, 255, 255, 0.6)',
-                    whiteSpace: 'nowrap',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px',
+                    justifyContent: 'center',
+                    padding: '4px 12px',
+                    height: '32px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    background: actionsMenuOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#fff',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    gap: '6px',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+                    if (!actionsMenuOpen) {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                    }
                   }}
+                  title={t('header.menu', 'Menu')}
                 >
-                  {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
-                  <span>{languages.find(l => l.code === i18n.language)?.label || 'EN'}</span>
-                  <span style={{
-                    fontSize: '8px',
-                    transition: 'transform 0.2s',
-                    transform: languageMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
-                  }}>
-                    ▼
-                  </span>
+                  <span>{actionsMenuOpen ? '✕' : '☰'}</span>
                 </button>
 
-                {/* Language Dropdown */}
-                {languageMenuOpen && (
+                {/* Unified Actions Menu */}
+                {actionsMenuOpen && (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
@@ -1337,215 +1333,327 @@ export default function MainHeader({
                       background: 'rgba(0, 0, 0, 0.95)',
                       border: '1px solid rgba(255, 255, 255, 0.2)',
                       borderRadius: '8px',
-                      minWidth: '100px',
+                      minWidth: '200px',
                       zIndex: 1000,
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
                     }}
                   >
-                    {languages.map((lang) => (
+                    {/* Home Action - only show when not on home screen */}
+                    {matchId && onOpenSetup && (
                       <button
-                        key={lang.code}
                         onClick={(e) => {
                           e.stopPropagation()
-                          i18n.changeLanguage(lang.code)
-                          setLanguageMenuOpen(false)
+                          onOpenSetup()
+                          setActionsMenuOpen(false)
                         }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '8px',
-                          width: '100%',
-                          padding: '8px 12px',
+                          gap: '10px',
+                          padding: '10px 14px',
                           fontSize: '13px',
-                          fontWeight: i18n.language === lang.code ? 600 : 400,
-                          background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.2)' : 'transparent',
-                          color: i18n.language === lang.code ? '#4ade80' : '#fff',
+                          fontWeight: 500,
+                          background: 'transparent',
+                          color: '#22c55e',
                           border: 'none',
                           borderRadius: '6px',
                           cursor: 'pointer',
                           transition: 'all 0.2s',
+                          width: '100%',
                           textAlign: 'left'
                         }}
                         onMouseEnter={(e) => {
-                          if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                          }
+                          e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)'
                         }}
                         onMouseLeave={(e) => {
-                          if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'transparent'
-                          }
+                          e.currentTarget.style.background = 'transparent'
                         }}
                       >
-                        <FlagBox><lang.Flag /></FlagBox>
-                        <span>{lang.label}</span>
+                        <span>🏠</span>
+                        <span>{t('common.home')}</span>
                       </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    )}
 
-              {/* Version with Changelog Menu */}
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setVersionMenuOpen(!versionMenuOpen)
-                    setLanguageMenuOpen(false)
-                  }}
-                  style={{
-                    fontSize: 'clamp(10px, 1.2vw, 12px)',
-                    color: 'rgba(255, 255, 255, 0.6)',
-                    whiteSpace: 'nowrap',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
-                  }}
-                >
-                  <span>v{currentVersion}</span>
-                  <span style={{
-                    fontSize: '8px',
-                    transition: 'transform 0.2s',
-                    transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
-                  }}>
-                    ▼
-                  </span>
-                </button>
-
-                {/* Version Changelog Dropdown */}
-                {versionMenuOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: 'absolute',
-                      top: '100%',
-                      right: 0,
-                      marginTop: '4px',
-                      padding: '12px',
-                      background: 'rgba(0, 0, 0, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '8px',
-                      minWidth: '280px',
-                      maxWidth: '350px',
-                      maxHeight: '400px',
-                      overflowY: 'auto',
-                      zIndex: 1000,
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
-                    }}
-                  >
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: 700,
-                      color: '#fff',
-                      marginBottom: '12px',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-                      paddingBottom: '8px'
-                    }}>
-                      {t('header.versionHistory')}
-                    </div>
-
-                    {changelog.map((release, index) => (
-                      <div
-                        key={release.version}
+                    {/* App Guide Action */}
+                    {onOpenGuide && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onOpenGuide()
+                          setActionsMenuOpen(false)
+                        }}
                         style={{
-                          marginBottom: index < changelog.length - 1 ? '12px' : 0,
-                          paddingBottom: index < changelog.length - 1 ? '12px' : 0,
-                          borderBottom: index < changelog.length - 1 ? '1px solid rgba(255, 255, 255, 0.1)' : 'none'
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '10px 14px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          background: 'transparent',
+                          color: '#60a5fa',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          width: '100%',
+                          textAlign: 'left'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(96, 165, 250, 0.15)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent'
                         }}
                       >
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: '6px'
-                        }}>
-                          <span style={{
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: release.version === currentVersion ? '#4ade80' : '#fff'
-                          }}>
-                            v{release.version}
-                            {release.version === currentVersion && (
-                              <span style={{
-                                marginLeft: '6px',
-                                fontSize: '10px',
-                                background: 'rgba(74, 222, 128, 0.2)',
-                                padding: '2px 6px',
-                                borderRadius: '4px'
-                              }}>
-                                {t('header.current')}
-                              </span>
-                            )}
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
-                            {release.date}
-                          </span>
-                        </div>
-                        <ul style={{
-                          margin: 0,
-                          paddingLeft: '16px',
-                          fontSize: '12px',
-                          color: 'rgba(255, 255, 255, 0.7)',
-                          lineHeight: '1.5'
-                        }}>
-                          {release.changes.map((change, i) => (
-                            <li key={i} style={{ marginBottom: '2px' }}>{change}</li>
-                          ))}
-                        </ul>
+                        <span>📖</span>
+                        <span>{t('interactiveGuide.title', 'App Guide')}</span>
+                      </button>
+                    )}
+
+                    {/* Login / User Button - hidden in offline mode */}
+                    {!offlineMode && (
+                      <div style={{ padding: '2px 4px' }}>
+                        <UserButton />
                       </div>
-                    ))}
+                    )}
+
+                    {/* Divider */}
+                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+
+                    {/* Language Selector */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setLanguageMenuOpen(!languageMenuOpen)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: languageMenuOpen ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        width: '100%',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!languageMenuOpen) {
+                          e.currentTarget.style.background = 'transparent'
+                        }
+                      }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center' }}>
+                        {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
+                      </span>
+                      <span style={{ flex: 1 }}>{t('header.language', 'Language')}</span>
+                      <span style={{
+                        fontSize: '10px',
+                        transform: languageMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s'
+                      }}>▼</span>
+                    </button>
+
+                    {/* Language Options - nested */}
+                    {languageMenuOpen && (
+                      <div style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '6px',
+                        padding: '4px'
+                      }}>
+                        {languages.map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              i18n.changeLanguage(lang.code)
+                              setLanguageMenuOpen(false)
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '12px',
+                              fontWeight: i18n.language === lang.code ? 600 : 400,
+                              background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.2)' : 'transparent',
+                              color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              textAlign: 'left'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (i18n.language !== lang.code) {
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (i18n.language !== lang.code) {
+                                e.currentTarget.style.background = 'transparent'
+                              }
+                            }}
+                          >
+                            <FlagBox><lang.Flag /></FlagBox>
+                            <span>{lang.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Version / Changelog */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setVersionMenuOpen(!versionMenuOpen)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: versionMenuOpen ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        width: '100%',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!versionMenuOpen) {
+                          e.currentTarget.style.background = 'transparent'
+                        }
+                      }}
+                    >
+                      <span>📋</span>
+                      <span style={{ flex: 1 }}>v{currentVersion}</span>
+                      <span style={{
+                        fontSize: '10px',
+                        transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s'
+                      }}>▼</span>
+                    </button>
+
+                    {/* Version Changelog - nested */}
+                    {versionMenuOpen && (
+                      <div style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        maxHeight: '250px',
+                        overflowY: 'auto'
+                      }}>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: '#fff',
+                          marginBottom: '8px',
+                          paddingBottom: '6px',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                        }}>
+                          {t('header.versionHistory')}
+                        </div>
+                        {changelog.slice(0, 5).map((release, index) => (
+                          <div
+                            key={release.version}
+                            style={{
+                              marginBottom: index < 4 ? '8px' : 0,
+                              paddingBottom: index < 4 ? '8px' : 0,
+                              borderBottom: index < 4 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none'
+                            }}
+                          >
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: '4px'
+                            }}>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: release.version === currentVersion ? '#4ade80' : '#fff'
+                              }}>
+                                v{release.version}
+                              </span>
+                              <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                                {release.date}
+                              </span>
+                            </div>
+                            <ul style={{
+                              margin: 0,
+                              paddingLeft: '12px',
+                              fontSize: '10px',
+                              color: 'rgba(255, 255, 255, 0.6)',
+                              lineHeight: '1.4'
+                            }}>
+                              {release.changes.slice(0, 2).map((change, i) => (
+                                <li key={i} style={{ marginBottom: '1px' }}>{change}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Divider */}
+                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+
+                    {/* Fullscreen Action */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleFullscreen()
+                        setActionsMenuOpen(false)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: 'transparent',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        width: '100%',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent'
+                      }}
+                    >
+                      <span>⛶</span>
+                      <span>{isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}</span>
+                    </button>
                   </div>
                 )}
               </div>
-
-              {/* Fullscreen Button */}
-              <button
-                className="header-fullscreen-btn"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggleFullscreen()
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0 8px',
-                  width: 'auto',
-                  height: '80%',
-                  fontSize: 'clamp(8px, 1.2vw, 12px)',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                }}
-                title={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
-              >
-                <span className="fullscreen-btn-text" style={{ fontSize: 'clamp(10px, 1.2vw, 12px)' }}>
-                  {isFullscreen ? `⛶ ${t('header.exit')}` : `⛶ ${t('header.fullscreen')}`}
-                </span>
-              </button>
             </>
           )}
         </div>

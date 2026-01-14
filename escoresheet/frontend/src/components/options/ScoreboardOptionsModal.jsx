@@ -172,7 +172,7 @@ function Stepper({ value, onDecrement, onIncrement, label }) {
 export default function ScoreboardOptionsModal({
   open,
   onClose,
-  onOpenGuide,
+
   onOpenKeybindings,
   onOpenConnectionSetup,
   server,
@@ -761,7 +761,7 @@ export default function ScoreboardOptionsModal({
               }}
             />
           </Row>
-          
+
           <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.autoDownloadAtSetEnd')}</div>
@@ -893,36 +893,7 @@ export default function ScoreboardOptionsModal({
             <span style={{ fontSize: '20px' }}>📡</span>
             <span>{t('options.setupConnections')}</span>
           </button>
-          <button
-            onClick={() => {
-              onClose?.()
-              onOpenGuide?.()
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: 'var(--text)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              width: '100%',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            <span style={{ fontSize: '20px' }}>?</span>
-            <span>{t('options.showGuide')}</span>
-          </button>
+
         </div>
 
         <Section title={t('options.cloudBackup')}>
@@ -1254,6 +1225,6 @@ export default function ScoreboardOptionsModal({
         )}
 
       </div>
-    </Modal>
+    </Modal >
   )
 }
