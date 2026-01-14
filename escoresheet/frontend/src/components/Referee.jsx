@@ -13,7 +13,6 @@ import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
 import WsDebugOverlay from './WsDebugOverlay'
 import { db } from '../db/db'
-import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 import SimpleHeader from './SimpleHeader'
 import DonutCountdown from './DonutCountdown'
@@ -1853,81 +1852,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => clearInterval(timer)
   }, [betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.initialCountdown])
 
-  // Calculate set results for Results component (must be before early return)
-  const calculateSetResults = useMemo(() => {
-    if (!data) return []
-
-    const { match, sets, events } = data
-    const localTeamAKey = match?.coinTossTeamA || 'home'
-    const localTeamBKey = localTeamAKey === 'home' ? 'away' : 'home'
-
-    const results = []
-    for (let setNum = 1; setNum <= 5; setNum++) {
-      const setInfo = sets?.find(s => s.index === setNum)
-      const setEvents = events?.filter(e => e.setIndex === setNum) || []
-
-      const isSetFinished = setInfo?.finished === true
-
-      const teamAPoints = isSetFinished
-        ? (localTeamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
-        : null
-      const teamBPoints = isSetFinished
-        ? (localTeamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
-        : null
-
-      const teamATimeouts = isSetFinished
-        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamAKey).length
-        : null
-      const teamBTimeouts = isSetFinished
-        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === localTeamBKey).length
-        : null
-
-      const teamASubstitutions = isSetFinished
-        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamAKey).length
-        : null
-      const teamBSubstitutions = isSetFinished
-        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === localTeamBKey).length
-        : null
-
-      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
-        ? (teamAPoints > teamBPoints ? 1 : 0)
-        : null
-      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
-        ? (teamBPoints > teamAPoints ? 1 : 0)
-        : null
-
-      let duration = ''
-      if (isSetFinished && setInfo?.endTime) {
-        let start
-        if (setNum === 1 && match?.scheduledAt) {
-          start = new Date(match.scheduledAt)
-        } else if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime)
-        } else {
-          start = new Date()
-        }
-        const end = new Date(setInfo.endTime)
-        const durationMs = end.getTime() - start.getTime()
-        const minutes = Math.floor(durationMs / 60000)
-        duration = minutes > 0 ? `${minutes}'` : ''
-      }
-
-      results.push({
-        setNumber: setNum,
-        teamATimeouts,
-        teamASubstitutions,
-        teamAWon,
-        teamAPoints,
-        teamBTimeouts,
-        teamBSubstitutions,
-        teamBWon,
-        teamBPoints,
-        duration
-      })
-    }
-    return results
-  }, [data])
-
   // Check if match is waiting for coin toss (status is 'setup' or no data yet)
   // This must be checked BEFORE the !data return to show awaiting screen
   // A match is awaiting coin toss if: no data, status is 'setup', OR (no firstServe AND no coinTossTeamA AND not master mode AND no currentSet)
@@ -2390,7 +2314,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '6.5vmin',
+        fontSize: '8vmin',
         fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0,
@@ -2403,12 +2327,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             alt="Ball"
             style={{
               position: 'absolute',
-              // Position outside player box with 4px gap - responsive to box size
-              left: team === rightTeam ? 'calc(100% + 4px)' : 'auto',
-              right: team === leftTeam ? 'calc(100% + 4px)' : 'auto',
+              // Position outside player box with vmin gap - responsive to viewport
+              left: team === rightTeam ? 'calc(100% + 1vmin)' : 'auto',
+              right: team === leftTeam ? 'calc(100% + 1vmin)' : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
-              width: '5vmin',
+              width: '7vmin',
               aspectRatio: '1/1',
               filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
             }}
@@ -2557,14 +2481,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ? `${Math.max(liveStateSetsWonHome, liveStateSetsWonAway)}:${Math.min(liveStateSetsWonHome, liveStateSetsWonAway)}`
     : ''
 
-  // Team A/B short names for Results table (always available)
-  const teamAShortName = data?.match?.coinTossTeamA === 'home'
-    ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-    : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
-  const teamBShortName = data?.match?.coinTossTeamA === 'home'
-    ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
-    : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-
   // Show results when match is finished
   if (isMatchFinished) {
     return (
@@ -2612,24 +2528,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
             {matchResult}
           </div>
-        </div>
-
-        {/* Results Table */}
-        <div style={{
-          width: '100%',
-          maxWidth: '500px',
-          background: 'white',
-          borderRadius: '12px',
-          overflow: 'hidden'
-        }}>
-          <Results
-            teamAShortName={teamAShortName}
-            teamBShortName={teamBShortName}
-            setResults={calculateSetResults}
-            winner={matchWinner}
-            result={matchResult}
-            coinTossConfirmed={!!data?.match?.coinTossTeamA}
-          />
         </div>
 
         <button
