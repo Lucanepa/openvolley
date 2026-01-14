@@ -36,21 +36,28 @@ export default function SyncProgressModal({
   // Auto-proceed after completion (1s for success, 1.5s for warning)
   // Simplified: single effect with all conditions
   useEffect(() => {
+    console.log('[SyncModal] Effect check:', { open, isComplete, hasAutoProceeded: hasAutoProceeded.current, hasError, hasWarning })
     if (!open || !isComplete || hasAutoProceeded.current) return
 
     // Don't auto-proceed on error - user must click button
     if (hasError) return
 
     const delay = hasWarning ? 1500 : 1000
+    console.log('[SyncModal] Starting auto-proceed timer:', delay)
 
     const timer = setTimeout(() => {
+      console.log('[SyncModal] Timer fired, hasAutoProceeded:', hasAutoProceeded.current)
       if (!hasAutoProceeded.current) {
         hasAutoProceeded.current = true
+        console.log('[SyncModal] Calling onProceed')
         onProceed?.()
       }
     }, delay)
 
-    return () => clearTimeout(timer)
+    return () => {
+      console.log('[SyncModal] Cleanup - clearing timer')
+      clearTimeout(timer)
+    }
   }, [open, isComplete, hasError, hasWarning, onProceed])
 
   if (!open) return null
