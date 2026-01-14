@@ -4,9 +4,8 @@ import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
-import { changelog } from '../../CHANGELOG'
 
-const currentVersion = changelog[0]?.version || 'unknown'
+const currentVersion = '1.0.6'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -1556,14 +1555,14 @@ export default function HomeOptionsModal({
                   >
                     {editingKey === key ? t('options.pressKey') : (
                       keyBindings[key] === ' ' ? 'Space' :
-                      keyBindings[key] === 'Enter' ? 'Enter' :
-                      keyBindings[key] === 'Escape' ? 'Esc' :
-                      keyBindings[key] === 'Backspace' ? 'Backspace' :
-                      keyBindings[key] === 'ArrowUp' ? '↑' :
-                      keyBindings[key] === 'ArrowDown' ? '↓' :
-                      keyBindings[key] === 'ArrowLeft' ? '←' :
-                      keyBindings[key] === 'ArrowRight' ? '→' :
-                      keyBindings[key].toUpperCase()
+                        keyBindings[key] === 'Enter' ? 'Enter' :
+                          keyBindings[key] === 'Escape' ? 'Esc' :
+                            keyBindings[key] === 'Backspace' ? 'Backspace' :
+                              keyBindings[key] === 'ArrowUp' ? '↑' :
+                                keyBindings[key] === 'ArrowDown' ? '↓' :
+                                  keyBindings[key] === 'ArrowLeft' ? '←' :
+                                    keyBindings[key] === 'ArrowRight' ? '→' :
+                                      keyBindings[key].toUpperCase()
                     )}
                   </button>
                 </div>

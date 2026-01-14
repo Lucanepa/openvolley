@@ -34,7 +34,7 @@ function AlertModal({ alert, onClose }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 2000
+        zIndex: 100000
       }}
       onClick={(e) => {
         e.stopPropagation()

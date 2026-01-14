@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
-import changelog from '../CHANGELOG'
 import UserButton from './auth/UserButton'
 
 
@@ -130,8 +129,8 @@ export default function MainHeader({
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
-  // Use changelog as source of truth (first entry = latest version)
-  const currentVersion = changelog[0]?.version || '1.0.0'
+  // Use static version (changelog removed)
+  const currentVersion = '1.0.6'
 
   // Check if compact mode (viewport width <= 960px)
   const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960
@@ -1131,68 +1130,7 @@ export default function MainHeader({
                       </button>
                     )}
 
-                    {/* Version Changelog - nested dropdown */}
-                    {versionMenuOpen && (
-                      <div
-                        style={{
-                          padding: '8px',
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          borderRadius: '6px',
-                          maxHeight: '250px',
-                          overflowY: 'auto'
-                        }}
-                      >
-                        <div style={{
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          color: '#fff',
-                          marginBottom: '8px',
-                          paddingBottom: '6px',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}>
-                          {t('header.versionHistory')}
-                        </div>
-                        {changelog.slice(0, 5).map((release, index) => (
-                          <div
-                            key={release.version}
-                            style={{
-                              marginBottom: index < 4 ? '8px' : 0,
-                              paddingBottom: index < 4 ? '8px' : 0,
-                              borderBottom: index < 4 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none'
-                            }}
-                          >
-                            <div style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              marginBottom: '4px'
-                            }}>
-                              <span style={{
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                color: release.version === currentVersion ? '#4ade80' : '#fff'
-                              }}>
-                                v{release.version}
-                              </span>
-                              <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                                {release.date}
-                              </span>
-                            </div>
-                            <ul style={{
-                              margin: 0,
-                              paddingLeft: '12px',
-                              fontSize: '10px',
-                              color: 'rgba(255, 255, 255, 0.6)',
-                              lineHeight: '1.4'
-                            }}>
-                              {release.changes.slice(0, 2).map((change, i) => (
-                                <li key={i} style={{ marginBottom: '1px' }}>{change}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* Version history removed */}
                   </div>
                 )}
               </div>
@@ -1554,66 +1492,7 @@ export default function MainHeader({
                       }}>▼</span>
                     </button>
 
-                    {/* Version Changelog - nested */}
-                    {versionMenuOpen && (
-                      <div style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        borderRadius: '6px',
-                        padding: '8px',
-                        maxHeight: '250px',
-                        overflowY: 'auto'
-                      }}>
-                        <div style={{
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          color: '#fff',
-                          marginBottom: '8px',
-                          paddingBottom: '6px',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}>
-                          {t('header.versionHistory')}
-                        </div>
-                        {changelog.slice(0, 5).map((release, index) => (
-                          <div
-                            key={release.version}
-                            style={{
-                              marginBottom: index < 4 ? '8px' : 0,
-                              paddingBottom: index < 4 ? '8px' : 0,
-                              borderBottom: index < 4 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none'
-                            }}
-                          >
-                            <div style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              marginBottom: '4px'
-                            }}>
-                              <span style={{
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                color: release.version === currentVersion ? '#4ade80' : '#fff'
-                              }}>
-                                v{release.version}
-                              </span>
-                              <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                                {release.date}
-                              </span>
-                            </div>
-                            <ul style={{
-                              margin: 0,
-                              paddingLeft: '12px',
-                              fontSize: '10px',
-                              color: 'rgba(255, 255, 255, 0.6)',
-                              lineHeight: '1.4'
-                            }}>
-                              {release.changes.slice(0, 2).map((change, i) => (
-                                <li key={i} style={{ marginBottom: '1px' }}>{change}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* Version history removed */}
 
                     {/* Divider */}
                     <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />

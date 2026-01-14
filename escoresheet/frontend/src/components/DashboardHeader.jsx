@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
-import changelog from '../CHANGELOG'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -87,7 +86,7 @@ export default function DashboardHeader({
   rightContent
 }) {
   const { t } = useTranslation()
-  const currentVersion = changelog[0]?.version || '1.0.0'
+  const currentVersion = '1.0.6'
   const [menuOpen, setMenuOpen] = useState(false)
   const [versionExpanded, setVersionExpanded] = useState(false)
   const [languageExpanded, setLanguageExpanded] = useState(false)
@@ -534,54 +533,7 @@ export default function DashboardHeader({
                     }}>▼</span>
                   </button>
 
-                  {/* Version history */}
-                  {versionExpanded && (
-                    <div style={{
-                      maxHeight: '200px',
-                      overflowY: 'auto',
-                      borderTop: '1px solid rgba(255, 255, 255, 0.1)'
-                    }}>
-                      {changelog.slice(0, 5).map((entry, idx) => (
-                        <div
-                          key={entry.version}
-                          style={{
-                            padding: '8px 14px 8px 44px',
-                            borderLeft: idx === 0 ? '3px solid #22c55e' : '3px solid transparent',
-                            background: idx === 0 ? 'rgba(34, 197, 94, 0.05)' : 'transparent'
-                          }}
-                        >
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            marginBottom: '2px'
-                          }}>
-                            <span style={{
-                              fontSize: '10px',
-                              fontWeight: 600,
-                              color: idx === 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)'
-                            }}>
-                              v{entry.version}
-                            </span>
-                            <span style={{ fontSize: '9px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                              {entry.date}
-                            </span>
-                          </div>
-                          <ul style={{
-                            margin: 0,
-                            padding: '0 0 0 12px',
-                            fontSize: '10px',
-                            color: 'rgba(255, 255, 255, 0.5)',
-                            lineHeight: '1.4'
-                          }}>
-                            {entry.changes.slice(0, 2).map((change, i) => (
-                              <li key={i}>{change}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Version history removed */}
                 </div>
               </>
             )}

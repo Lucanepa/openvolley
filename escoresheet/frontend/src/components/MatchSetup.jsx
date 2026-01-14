@@ -227,8 +227,17 @@ const OfficialCard = memo(function OfficialCard({
     ? `${lastName || ''}${firstName ? ', ' + firstName.charAt(0) + '.' : ''}`
     : t('matchSetup.notSet')
 
+  const cardRef = useRef(null)
+  useEffect(() => {
+    if (isExpanded && cardRef.current) {
+      setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [isExpanded])
+
   return (
-    <div style={{
+    <div ref={cardRef} style={{
       border: '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '8px',
       background: 'rgba(15, 23, 42, 0.2)',
@@ -308,8 +317,17 @@ const LineJudgesCard = memo(function LineJudgesCard({
   const filledCount = [lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).length
   const displayText = filledCount > 0 ? t('matchSetup.set', { count: filledCount }) : t('matchSetup.notSet')
 
+  const cardRef = useRef(null)
+  useEffect(() => {
+    if (isExpanded && cardRef.current) {
+      setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [isExpanded])
+
   return (
-    <div style={{
+    <div ref={cardRef} style={{
       border: '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '8px',
       background: 'rgba(15, 23, 42, 0.2)',
@@ -502,10 +520,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [lineJudge3, setLineJudge3] = useState('')
   const [lineJudge4, setLineJudge4] = useState('')
 
-  // Track which official cards are expanded (all collapsed by default)
-  const [expandedOfficials, setExpandedOfficials] = useState({})
+  // Track which official cards are expanded (single accordion)
+  const [expandedOfficialId, setExpandedOfficialId] = useState(null)
   const toggleOfficialExpanded = (key) => {
-    setExpandedOfficials(prev => ({ ...prev, [key]: !prev[key] }))
+    setExpandedOfficialId(prev => prev === key ? null : key)
   }
 
   // Bench
@@ -3714,7 +3732,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setDob={setRef1Dob}
             hasDatabase={true}
             selectorKey="ref1"
-            isExpanded={expandedOfficials['ref1']}
+            isExpanded={expandedOfficialId === 'ref1'}
             onToggleExpanded={() => toggleOfficialExpanded('ref1')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
@@ -3732,7 +3750,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setDob={setRef2Dob}
             hasDatabase={true}
             selectorKey="ref2"
-            isExpanded={expandedOfficials['ref2']}
+            isExpanded={expandedOfficialId === 'ref2'}
             onToggleExpanded={() => toggleOfficialExpanded('ref2')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
@@ -3750,7 +3768,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setDob={setScorerDob}
             hasDatabase={false}
             selectorKey="scorer"
-            isExpanded={expandedOfficials['scorer']}
+            isExpanded={expandedOfficialId === 'scorer'}
             onToggleExpanded={() => toggleOfficialExpanded('scorer')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
@@ -3766,7 +3784,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setFirstName={setAsstFirst}
             setCountry={setAsstCountry}
             setDob={setAsstDob}
-            isExpanded={expandedOfficials['asst']}
+            isExpanded={expandedOfficialId === 'asst'}
             onToggleExpanded={() => toggleOfficialExpanded('asst')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
@@ -3780,7 +3798,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setLineJudge2={setLineJudge2}
             setLineJudge3={setLineJudge3}
             setLineJudge4={setLineJudge4}
-            isExpanded={expandedOfficials['lineJudges']}
+            isExpanded={expandedOfficialId === 'lineJudges'}
             onToggleExpanded={() => toggleOfficialExpanded('lineJudges')}
             t={t}
           />

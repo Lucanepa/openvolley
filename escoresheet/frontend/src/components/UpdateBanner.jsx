@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import useServiceWorker from '../hooks/useServiceWorker'
-import { changelog } from '../CHANGELOG'
 
-// Get current version from changelog (first entry is newest/current)
-const currentVersion = changelog[0]?.version || 'unknown'
+// Get current version (hardcoded since changelog is removed)
+const currentVersion = '1.0.6'
 
 /**
  * Banner that shows when a new version of the app is available

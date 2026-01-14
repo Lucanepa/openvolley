@@ -200,6 +200,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const setEndModalDismissedRef = useRef(null) // Track setIndex where set end modal was dismissed via undo
+  const confirmedSetEndRef = useRef(new Set()) // Track which sets have been confirmed to prevent double-processing
   const timeoutStartTimestampRef = useRef(null) // Timestamp when timeout started
   const timeoutInitialCountdownRef = useRef(30) // Initial timeout duration
   const betweenSetsStartTimestampRef = useRef(null) // Timestamp when between-sets interval started
@@ -297,7 +298,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Header collapse state
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
-  const [showNamesOnCourt, setShowNamesOnCourt] = useState(true)
+  const [showNamesOnCourt, setShowNamesOnCourtState] = useState(() => {
+    const saved = localStorage.getItem('showNamesOnCourt')
+    return saved === 'true' // default false
+  })
+  const setShowNamesOnCourt = (val) => {
+    setShowNamesOnCourtState(val)
+    localStorage.setItem('showNamesOnCourt', String(val))
+  }
   const [expandedPlayerName, setExpandedPlayerName] = useState(null) // 'home-12' | 'away-5' | null - tracks which player name is expanded
   const [autoDownloadAtSetEnd, setAutoDownloadAtSetEnd] = useState(true)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
@@ -534,6 +542,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const interval = setInterval(updateHeartbeat, 10000)
 
     return () => clearInterval(interval)
+  }, [matchId])
+
+  // Clear confirmed set end tracking when match changes
+  useEffect(() => {
+    confirmedSetEndRef.current.clear()
   }, [matchId])
 
   // Screen size detection for display mode suggestions
@@ -1770,9 +1783,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
       if (!snapshot) return
 
-      // Determine match status from event type
-      const isSetInterval = eventType === 'set_end'
-      const isTimeout = eventType === 'timeout'
+      // Determine match status from event type and current state
+      const isSetInterval = eventType === 'set_end' || (match?.status === 'interval' && !isSetFinished)
+      const isTimeout = eventType === 'timeout' || (timeoutModal !== null)
+
+      // If it's a timeout, we need a stable start time
+      const timeoutStartedAt = eventType === 'timeout'
+        ? new Date().toISOString()
+        : (timeoutModal?.startedAt || new Date().toISOString())
+
+      // For intervals, we also need a stable start time
+      const intervalStartedAt = eventType === 'set_end'
+        ? new Date().toISOString()
+        : (match?.intervalStartedAt || null)
 
       // For set_end, we need to show the NEXT set state (interval between sets)
       // The snapshot still has the OLD set data, so we override for set_end
@@ -1832,7 +1855,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
         nextServingTeam = nextSetFirstServe
 
-        console.log('[LiveState] 🏐 Next set first serve calculation:', {
+        console.log('[LiveState] Next set first serve calculation:', {
           nextSetIndex,
           set1FirstServe,
           set5FirstServe: match.set5FirstServe,
@@ -1844,9 +1867,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Detailed logging for set_end events
       if (isSetInterval) {
         console.log('═══════════════════════════════════════════════════════════════')
-        console.log('[LiveState] 🏁 SET_END Supabase Sync Calculations:')
+        console.log('[LiveState] SET_END Supabase Sync Calculations:')
         console.log('═══════════════════════════════════════════════════════════════')
-        console.log('[LiveState] 📊 Snapshot data:', {
+        console.log('[LiveState] Snapshot data:', {
           currentSetIndex: snapshot.currentSetIndex,
           teamAKey: snapshot.teamAKey,
           teamBKey: snapshot.teamAKey === 'home' ? 'away' : 'home',
@@ -1856,19 +1879,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           pointsB: snapshot.pointsB,
           sideA: snapshot.sideA
         })
-        console.log('[LiveState] 🏆 Set winner calculation:', {
+        console.log('[LiveState] Set winner calculation:', {
           eventDataWinner: eventData?.winner,
           setWinner,
           teamAKey: snapshot.teamAKey,
           winnerIsTeamA: setWinner === snapshot.teamAKey
         })
-        console.log('[LiveState] 📈 Score updates:', {
+        console.log('[LiveState] Score updates:', {
           setScoreA_before: snapshot.setScoreA,
           setScoreA_after: updatedSetScoreA,
           setScoreB_before: snapshot.setScoreB,
           setScoreB_after: updatedSetScoreB
         })
-        console.log('[LiveState] 🆕 Next set state:', {
+        console.log('[LiveState] Next set state:', {
           nextSetIndex,
           nextSideA,
           nextPointsA,
@@ -1913,10 +1936,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         last_event_team: eventTeam || null,
         last_event_data: eventData || null,
         last_event_ts: new Date().toISOString(),
-        set_interval_active: isSetInterval && !isMatchFinished,
-        set_interval_started_at: isSetInterval ? new Date().toISOString() : null,
         timeout_active: isTimeout,
-        timeout_started_at: isTimeout ? new Date().toISOString() : null,
+        timeout_started_at: isTimeout ? (timeoutModal?.startedAt || timeoutStartedAt) : null,
+        set_interval_active: isSetInterval,
+        set_interval_started_at: isSetInterval ? (match?.intervalStartedAt || intervalStartedAt) : null,
         match_status: matchStatus,
         scorer_attention_trigger: scorerAttentionTrigger,
         // Match metadata (from IndexedDB match record)
@@ -2156,13 +2179,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Set lock immediately to prevent race conditions
     setCreationInProgressRef.current = true
 
-    console.log('[SET_END_DEBUG] [ensureActiveSet] 🔍 Checking for active set... matchId=', matchId)
+    console.log('[SET_END_DEBUG] [ensureActiveSet] Checking for active set... matchId=', matchId)
 
     // GUARD 1: Check if match is over by status
     const match = await db.matches.get(matchId)
     console.log('[SET_END_DEBUG] [ensureActiveSet] Match status:', match?.status)
     if (match?.status === 'ended' || match?.status === 'approved' || match?.status === 'final') {
-      console.log('[SET_END_DEBUG] [ensureActiveSet] 🏁 Match status is', match.status, '- STOPPING, not creating new set')
+      console.log('[SET_END_DEBUG] [ensureActiveSet] Match status is', match.status, '- STOPPING, not creating new set')
       setCreationInProgressRef.current = false
       return
     }
@@ -2180,7 +2203,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       allSets: allSetsForGuard.map(s => ({ id: s.id, index: s.index, finished: s.finished }))
     }))
     if (homeSetsWon >= 3 || awaySetsWon >= 3) {
-      console.log('[SET_END_DEBUG] [ensureActiveSet] 🏆 Match is over (sets won:', homeSetsWon, '-', awaySetsWon, ') - STOPPING, not creating new set')
+      console.log('[SET_END_DEBUG] [ensureActiveSet] Match is over (sets won:', homeSetsWon, '-', awaySetsWon, ') - STOPPING, not creating new set')
       setCreationInProgressRef.current = false
       return
     }
@@ -2192,7 +2215,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .first()
 
     if (existing) {
-      console.log('[SET_END_DEBUG] [ensureActiveSet] ✅ Active set exists:', JSON.stringify({ id: existing.id, index: existing.index }))
+      console.log('[SET_END_DEBUG] [ensureActiveSet] Active set exists:', JSON.stringify({ id: existing.id, index: existing.index }))
       setCreationInProgressRef.current = false
       return
     }
@@ -2208,9 +2231,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         : 1
 
     // Enhanced recovery logging to help debug incomplete set transitions
-    console.log('[ensureActiveSet] ⚠️ RECOVERY: No active set found. Creating set', nextIndex,
+    console.log('[ensureActiveSet] RECOVERY: No active set found. Creating set', nextIndex,
       'Previous sets:', JSON.stringify(allSets.map(s => ({ index: s.index, finished: s.finished, homePoints: s.homePoints, awayPoints: s.awayPoints }))))
-    console.log('[ensureActiveSet] 📝 Creating set with index:', nextIndex, 'Total sets:', allSets.length)
+    console.log('[ensureActiveSet] Creating set with index:', nextIndex, 'Total sets:', allSets.length)
 
     // CRITICAL VALIDATION 1: Check if a set with this index already exists
     const duplicate = allSets.find(s => s.index === nextIndex)
@@ -2772,6 +2795,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Don't re-show if user dismissed via undo for this set
     if (setEndModalDismissedRef.current === data.set.index) return
+
+    // Don't show modal if this set was already confirmed (prevents race condition on double-confirm)
+    if (confirmedSetEndRef.current.has(data.set.index)) return
 
     const homePoints = data.set.homePoints || 0
     const awayPoints = data.set.awayPoints || 0
@@ -3584,7 +3610,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Debug function to check games in progress
       window.debugCheckGamesInProgress = async () => {
         try {
-          console.log('🔍 Checking games from two sources:')
+          console.log('[DEBUG] Checking games from two sources:')
           console.log('   1. Local IndexedDB (current match data)')
           console.log('   2. Server API (what Referee Dashboard sees)')
           console.log('')
@@ -3595,7 +3621,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             m.status === 'live' || m.status === 'scheduled'
           )
 
-          console.log(`📦 Local IndexedDB: ${inProgressMatches.length} match(es)`)
+          console.log(`[DEBUG] Local IndexedDB: ${inProgressMatches.length} match(es)`)
 
           // 2. Check server API (what Referee Dashboard actually uses)
           let serverMatches = []
@@ -3606,14 +3632,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               serverMatches = serverResult.matches
             }
           } catch (err) {
-            console.warn('⚠️ Could not fetch from server API:', err.message)
+            console.warn('[DEBUG] Could not fetch from server API:', err.message)
           }
 
-          console.log(`🌐 Server API: ${serverMatches.length} match(es) available in Referee Dashboard`)
+          console.log(`[DEBUG] Server API: ${serverMatches.length} match(es) available in Referee Dashboard`)
           console.log('')
 
           if (serverMatches.length > 0 && inProgressMatches.length === 0) {
-            console.log('⚠️ DISCREPANCY DETECTED!')
+            console.log('[DEBUG] DISCREPANCY DETECTED!')
             console.log('   Server has matches but local DB does not.')
             console.log('   This means matches exist in server memory but not synced to local DB.')
             console.log('')
@@ -3621,7 +3647,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
           // Show server matches (what actually appears in dropdown)
           if (serverMatches.length > 0) {
-            console.log('📋 Matches available in Referee Dashboard dropdown:')
+            console.log('[DEBUG] Matches available in Referee Dashboard dropdown:')
             console.table(serverMatches.map(m => ({
               id: m.id,
               gameNumber: m.gameNumber,
@@ -3633,13 +3659,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             })))
 
             serverMatches.forEach((m, idx) => {
-              console.log(`\n🎮 Server Match ${idx + 1}:`)
+              console.log(`\n[DEBUG] Server Match ${idx + 1}:`)
               console.log(`   ID: ${m.id}`)
               console.log(`   Game #: ${m.gameNumber}`)
               console.log(`   Teams: ${m.homeTeam} vs ${m.awayTeam}`)
               console.log(`   Status: ${m.status}`)
               console.log(`   Date/Time: ${m.dateTime}`)
-              console.log(`   Referee Connection: ${m.refereeConnectionEnabled ? '✅ Enabled' : '❌ Disabled'}`)
+              console.log(`   Referee Connection: ${m.refereeConnectionEnabled ? 'Enabled' : 'Disabled'}`)
             })
           }
 
@@ -3674,12 +3700,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })
             )
 
-            console.log('\n📦 Local IndexedDB matches:')
+            console.log('\n[DEBUG] Local IndexedDB matches:')
             console.table(matchesWithDetails)
 
             matchesWithDetails.forEach((m, idx) => {
-              const statusIcon = m.isLive ? '🔴' : '📅'
-              console.log(`\n${statusIcon} Local Match ${idx + 1}:${m.isCurrentMatch ? ' (CURRENT)' : ''}`)
+              const statusLabel = m.isLive ? '[LIVE]' : '[SCHEDULED]'
+              console.log(`\n${statusLabel} Local Match ${idx + 1}:${m.isCurrentMatch ? ' (CURRENT)' : ''}`)
               console.log(`   ID: ${m.id}`)
               console.log(`   Game #: ${m.gameNumber}`)
               console.log(`   Teams: ${m.homeTeam} vs ${m.awayTeam}`)
@@ -3696,7 +3722,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             serverAPI: { matches: serverMatches, count: serverMatches.length }
           }
         } catch (error) {
-          console.error('❌ Error checking games in progress:', error)
+          console.error('[DEBUG] Error checking games in progress:', error)
           return { localDB: { matches: [], count: 0 }, serverAPI: { matches: [], count: 0 }, error: error.message }
         }
       }
@@ -5110,11 +5136,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
     console.log('═══════════════════════════════════════════════════════════════')
-    console.log('[SET_END_DEBUG] 🏁 STEP 1: confirmSetEndTime STARTED at', new Date().toISOString())
+    console.log('[SET_END_DEBUG] STEP 1: confirmSetEndTime STARTED at', new Date().toISOString())
     console.log('═══════════════════════════════════════════════════════════════')
 
     if (!setEndTimeModal || !data?.match || !data?.set) {
-      console.log('[SET_END_DEBUG] ❌ STEP 1 FAILED - missing data:', {
+      console.log('[SET_END_DEBUG] STEP 1 FAILED - missing data:', {
         hasModal: !!setEndTimeModal,
         hasMatch: !!data?.match,
         hasSet: !!data?.set
@@ -5124,7 +5150,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
 
-    console.log('[SET_END_DEBUG] 📊 STEP 2: Modal data:', JSON.stringify({
+    // Guard: Check if this set was already confirmed to prevent double-processing
+    if (confirmedSetEndRef.current.has(setIndex)) {
+      console.log('[SET_END] Set', setIndex, 'already confirmed - ignoring duplicate call')
+      setSetEndTimeModal(null)
+      return
+    }
+
+    // Mark this set as being confirmed
+    confirmedSetEndRef.current.add(setIndex)
+
+    console.log('[SET_END_DEBUG] STEP 2: Modal data:', JSON.stringify({
       setIndex,
       winner,
       homePoints,
@@ -5148,500 +5184,526 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // CRITICAL: Acquire lock IMMEDIATELY to prevent ensureActiveSet from creating duplicate sets
     // This must happen BEFORE we mark the current set as finished
     setCreationInProgressRef.current = true
-    console.log('[SET_END] 🔒 Set creation lock acquired EARLY (before marking set finished)')
+    console.log('[SET_END] Set creation lock acquired EARLY (before marking set finished)')
 
-    // Reset libero suggestion dismissed state for new set
-    setLiberoSuggestionDismissedForExit({ home: null, away: null })
-
-    // Determine team labels (A or B) based on coin toss
-    const teamAKey = data.match.coinTossTeamA || 'home'
-    const teamBKey = teamAKey === 'home' ? 'away' : 'home'
-    const winnerLabel = winner === 'home'
-      ? (teamAKey === 'home' ? 'A' : 'B')
-      : (teamAKey === 'away' ? 'A' : 'B')
-
-    // Get start time from current set
-    const startTime = data.set.startTime
-
-    console.log('[SET_END_DEBUG] 📝 STEP 3: Logging set_end event...')
-    // Log set win with start and end times
-    await logEvent('set_end', {
-      team: winner,
-      teamLabel: winnerLabel,
-      setIndex: setIndex,
-      homePoints,
-      awayPoints,
-      startTime: startTime,
-      endTime: roundToMinute(time)
-    })
-    console.log('[SET_END_DEBUG] ✅ STEP 3 DONE: set_end event logged')
-
-    // Debug log: set end
-    debugLogger.log('SET_END', {
-      winner,
-      winnerLabel,
-      setIndex,
-      homePoints,
-      awayPoints,
-      startTime,
-      endTime: roundToMinute(time)
-    }, getStateSnapshot())
-
-    // STEP 4: Update set with end time and finished status
-    // CRITICAL FIX: Find set by matchId + setIndex to avoid updating wrong set if duplicates exist
-    const allSetsBeforeUpdate = await db.sets.where('matchId').equals(matchId).toArray()
-    console.log('[SET_END_DEBUG] 🔍 STEP 4: All sets BEFORE update:', JSON.stringify(allSetsBeforeUpdate.map(s => ({
-      id: s.id,
-      index: s.index,
-      finished: s.finished,
-      homePoints: s.homePoints,
-      awayPoints: s.awayPoints
-    }))))
-
-    // Find the UNFINISHED set with this index (the one we're actually playing)
-    const setToUpdate = allSetsBeforeUpdate.find(s => s.index === setIndex && !s.finished)
-
-    // SAFE FALLBACK: Only use data.set.id if it has the correct index
-    let setIdToUpdate = setToUpdate?.id
-    if (!setIdToUpdate) {
-      // No unfinished set with matching index found - check if data.set has correct index
-      if (data.set.index === setIndex) {
-        setIdToUpdate = data.set.id
-        console.warn('[SET_END] ⚠️ Fallback to data.set.id - set may already be finished but index matches:', setIdToUpdate)
-      } else {
-        // CRITICAL: Cannot find correct set to update - abort to prevent data corruption
-        console.error('[SET_END] ❌ CRITICAL: Cannot find set with index', setIndex, 'to update.')
-        console.error('[SET_END] data.set has index', data.set.index, '- aborting to prevent wrong set update')
-        console.error('[SET_END] Available sets:', allSetsBeforeUpdate.map(s => ({ id: s.id, index: s.index, finished: s.finished })))
-        setSetEndTimeModal(null)
-        setSyncModalOpen(false)
-        resetSyncState()
-        showAlert('Error: Could not find the correct set to update. Please refresh and try again.', 'error')
-        // Release lock before aborting
-        setCreationInProgressRef.current = false
-        console.log('[SET_END] 🔓 Lock released due to abort')
-        return
-      }
-    }
-
-    console.log('[SET_END_DEBUG] 💾 STEP 4: About to update set:', JSON.stringify({
-      setIdFromData: data.set.id,
-      setIdToUpdate: setIdToUpdate,
-      usingCorrectSet: setIdToUpdate === setToUpdate?.id,
-      setIndex: setIndex,
-      willSetFinished: true,
-      homePoints,
-      awayPoints,
-      endTime: roundToMinute(time)
-    }))
-
-    if (setIdToUpdate !== data.set.id) {
-      console.warn('[SET_END_DEBUG] ⚠️ WARNING: data.set.id differs from the unfinished set! Using correct set id:', setIdToUpdate)
-    }
-
-    setSetTransitionLoading({ step: 'Saving set data...' })
-    const updateResult = await db.sets.update(setIdToUpdate, { finished: true, homePoints, awayPoints, endTime: roundToMinute(time) })
-    console.log('[SET_END_DEBUG] 📝 STEP 4: Update result (rows affected):', updateResult)
-
-    // STEP 5: Verify the update actually worked
-    const verifySet = await db.sets.get(setIdToUpdate)
-    console.log('[SET_END_DEBUG] ✅ STEP 5: Verification - set after update:', JSON.stringify({
-      id: verifySet?.id,
-      index: verifySet?.index,
-      finished: verifySet?.finished,
-      homePoints: verifySet?.homePoints,
-      awayPoints: verifySet?.awayPoints
-    }))
-
-    if (!verifySet?.finished) {
-      console.error('[SET_END_DEBUG] ❌ STEP 5 FAILED: Set was NOT marked as finished! This is a bug.')
-    } else {
-      console.log('[SET_END_DEBUG] ✅ STEP 5 SUCCESS: Set is marked as finished=true')
-    }
-
-    // Also verify all sets after update to catch any issues
-    const allSetsAfterUpdate = await db.sets.where('matchId').equals(matchId).toArray()
-    console.log('[SET_END_DEBUG] 🔍 STEP 5: All sets AFTER update:', JSON.stringify(allSetsAfterUpdate.map(s => ({
-      id: s.id,
-      index: s.index,
-      finished: s.finished
-    }))))
-
-    // STEP 6: Get all sets and calculate sets won by each team (moved up for sync payload)
-    const sets = await db.sets.where({ matchId }).toArray()
-    const finishedSets = sets.filter(s => s.finished)
-    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
-    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-
-    console.log('[SET_END_DEBUG] 📊 STEP 6: Sets Summary:', JSON.stringify({
-      totalSets: sets.length,
-      finishedSetsCount: finishedSets.length,
-      allSets: sets.map(s => ({ index: s.index, home: s.homePoints, away: s.awayPoints, finished: s.finished })),
-      homeSetsWon,
-      awaySetsWon
-    }))
-
-    // STEP 7: Check if either team has won 3 sets (match win)
-    const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
-    console.log('[SET_END_DEBUG] 🏆 STEP 7: Match End Check:', JSON.stringify({ isMatchEnd, homeSetsWon, awaySetsWon }))
-
-    // Get match record for both branches (test check, cloud backup)
-    const matchRecord = await db.matches.get(matchId)
-    console.log('[SET_END_DEBUG] 🔍 STEP 7: Match info:', JSON.stringify({
-      matchId,
-      isTest: matchRecord?.test,
-      seed_key: matchRecord?.seed_key,
-      currentStatus: matchRecord?.status
-    }))
-
-    // STEP 8: Sequential sync to Supabase (if not a test match)
-    // This shows a progress modal and waits for each step to complete
-    if (matchRecord?.test !== true && matchRecord?.seed_key) {
-      setSetTransitionLoading({ step: 'Syncing to cloud...' })
-      console.log('[SET_END_DEBUG] 📤 STEP 8: Starting sequential sync to Supabase')
-
-      // Prepare set update payload
-      const setPayload = {
-        external_id: String(setIdToUpdate),
-        home_points: homePoints,
-        away_points: awayPoints,
-        finished: true,
-        end_time: time
-      }
-
-      // Prepare match payload if match end
-      let matchPayload = null
-      if (isMatchEnd) {
-        const setResults = finishedSets
-          .sort((a, b) => a.index - b.index)
-          .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
-        const matchWinner = homeSetsWon > awaySetsWon ? 'home' : 'away'
-        const finalScore = `${homeSetsWon}-${awaySetsWon}`
-
-        matchPayload = {
-          id: matchRecord.seed_key,
-          status: 'ended',
-          set_results: setResults,
-          winner: matchWinner,
-          final_score: finalScore,
-          sanctions: matchRecord?.sanctions || null
-        }
-      }
-
-      // Execute sequential sync (shows progress modal)
-      const syncResult = await syncSetEnd({
-        lastPointPayload: null, // Last point already synced by logEvent
-        setPayload,
-        matchPayload
-      })
-
-      console.log('[SET_END_DEBUG] ✅ STEP 8 DONE: Sequential sync completed:', syncResult)
-
-      // Wait for sync modal to complete (auto-proceed on success, user click on error)
-      // SyncProgressModal handles the timing (1s for success, 1.5s for warning, button for error)
-      // With timeout fallback to prevent blocking if browser suspends execution (Edge ERR_NETWORK_IO_SUSPENDED)
-      // Increased to 15s to allow for slow networks + 1s modal delay
-      const SYNC_MODAL_TIMEOUT = 15000 // 15 seconds max wait
-      let syncTimeoutId = null
-
-      await Promise.race([
-        // Original promise - waits for modal callback
-        new Promise((resolve) => {
-          syncProceedCallbackRef.current = () => {
-            if (syncTimeoutId) clearTimeout(syncTimeoutId)
-            setSyncModalOpen(false)
-            resetSyncState()
-            resolve()
-          }
-        }),
-        // Timeout fallback - proceed anyway after 15 seconds
-        new Promise((resolve) => {
-          syncTimeoutId = setTimeout(() => {
-            console.warn('[SET_END] ⚠️ Sync modal timeout after 15s - proceeding anyway')
-            syncProceedCallbackRef.current = null
-            setSyncModalOpen(false)
-            resetSyncState()
-            resolve()
-          }, SYNC_MODAL_TIMEOUT)
-        })
-      ])
-    } else {
-      console.log('[SET_END_DEBUG] ⏭️ STEP 8 SKIPPED: Test match or no seed_key')
-      // For test matches, close sync modal immediately
+    // Cleanup function to ensure resources are released on any failure
+    const cleanup = (reason) => {
+      console.log('[SET_END] Cleanup triggered:', reason)
+      setCreationInProgressRef.current = false
+      setSetTransitionLoading(null)
       setSyncModalOpen(false)
       resetSyncState()
     }
 
-    console.log('[SET_END_DEBUG] 🔍 STEP 9: Match record status BEFORE any changes:', matchRecord?.status)
+    try {
+      // Reset libero suggestion dismissed state for new set
+      setLiberoSuggestionDismissedForExit({ home: null, away: null })
 
-    if (isMatchEnd) {
-      console.log('[SET_END_DEBUG] 🏁 STEP 10: MATCH END BRANCH - isMatchEnd=true')
-      // IMPORTANT: When match ends, preserve ALL data in database:
-      // - All sets remain in db.sets
-      // - All events remain in db.events
-      // - All players remain in db.players
-      // - All teams remain in db.teams
-      // - Set status to 'ended' - MatchEnd component will set to 'approved' after approval
-      // Status flow: live -> ended -> approved
+      // Determine team labels (A or B) based on coin toss
+      const teamAKey = data.match.coinTossTeamA || 'home'
+      const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+      const winnerLabel = winner === 'home'
+        ? (teamAKey === 'home' ? 'A' : 'B')
+        : (teamAKey === 'away' ? 'A' : 'B')
 
-      // Update local match status to 'ended'
-      console.log('[SET_END_DEBUG] 🏁 STEP 10: Setting match status to "ended"...')
-      await db.matches.update(matchId, { status: 'ended' })
+      // Get start time from current set
+      const startTime = data.set.startTime
 
-      // Verify the status was updated
-      const matchAfterStatusUpdate = await db.matches.get(matchId)
-      console.log('[SET_END_DEBUG] ✅ STEP 10: Match status after update:', matchAfterStatusUpdate?.status)
+      // STEP 3: Log set_end event to local DB
+      console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
+      await logEvent('set_end', {
+        team: winner,
+        teamLabel: winnerLabel,
+        setIndex: setIndex,
+        homePoints,
+        awayPoints,
+        startTime: startTime,
+        endTime: roundToMinute(time)
+      })
+      console.log('[SET_END_DEBUG] STEP 3 DONE: set_end event logged')
 
-      // NOTE: Match update sync is now done in STEP 8 (sequential sync) above
+      // Debug log: set end
+      debugLogger.log('SET_END', {
+        winner,
+        winnerLabel,
+        setIndex,
+        homePoints,
+        awayPoints,
+        startTime,
+        endTime: roundToMinute(time)
+      }, getStateSnapshot())
 
-      // Notify server to delete match from matchDataStore (since it's now final)
-      const currentWs = wsRef.current
-      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-        try {
-          currentWs.send(JSON.stringify({
-            type: 'delete-match',
-            matchId: String(matchId)
-          }))
-        } catch (err) {
-          // Silently ignore WebSocket errors
-        }
-      }
+      // STEP 4: Update set with end time and finished status in local DB
+      // CRITICAL FIX: Find set by matchId + setIndex to avoid updating wrong set if duplicates exist
+      const allSetsBeforeUpdate = await db.sets.where('matchId').equals(matchId).toArray()
+      console.log('[SET_END_DEBUG] STEP 4: All sets BEFORE update:', JSON.stringify(allSetsBeforeUpdate.map(s => ({
+        id: s.id,
+        index: s.index,
+        finished: s.finished,
+        homePoints: s.homePoints,
+        awayPoints: s.awayPoints
+      }))))
 
-      // Trigger event backup for Safari/Firefox (match end)
-      onTriggerEventBackup?.('match_end')
+      // Find the UNFINISHED set with this index (the one we're actually playing)
+      const setToUpdate = allSetsBeforeUpdate.find(s => s.index === setIndex && !s.finished)
 
-      // Cloud backup at match end (non-blocking)
-      if (matchRecord?.test !== true) {
-        const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
-        exportMatchData(matchId).then(backupData => {
-          uploadBackupToCloud(matchId, backupData)
-          uploadLogsToCloud(matchId, gameNum)
-        }).catch(() => { })
-      }
-
-      // Only call onFinishSet for match end, not between sets
-      // (Scoreboard now handles set creation internally)
-      console.log('[SET_END_DEBUG] 🎬 STEP 11: Calling onFinishSet callback with set:', JSON.stringify({
-        setId: data.set.id,
-        setIndex: data.set.index
-      }))
-      if (onFinishSet) onFinishSet(data.set)
-      console.log('[SET_END_DEBUG] ✅ STEP 11: onFinishSet callback completed')
-
-      // Release lock for match end path (no new set to create)
-      setCreationInProgressRef.current = false
-      setSetTransitionLoading(null) // Clear loading overlay
-      console.log('[SET_END] 🔓 Lock released (match end - no new set needed)')
-
-      console.log('═══════════════════════════════════════════════════════════════')
-      console.log('[SET_END_DEBUG] 🏁 MATCH END FLOW COMPLETE')
-      console.log('═══════════════════════════════════════════════════════════════')
-      return // Exit early for match end - don't fall through to new set creation
-    } else {
-      console.log('[SET_END_DEBUG] ➡️ STEP 9: SET END BRANCH (not match end) - continuing to next set')
-      // Trigger event backup for Safari/Firefox (set end)
-      onTriggerEventBackup?.('set_end')
-
-      // Cloud backup at set end (non-blocking)
-      if (matchRecord?.test !== true) {
-        setSetTransitionLoading({ step: 'Uploading backup...' })
-        const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
-        exportMatchData(matchId).then(backupData => {
-          uploadBackupToCloud(matchId, backupData)
-          uploadLogsToCloud(matchId, gameNum)
-        }).catch(() => { })
-      }
-
-      // Auto-download game data at set end if enabled
-      if (autoDownloadAtSetEnd) {
-        setSetTransitionLoading({ step: 'Downloading backup...' })
-        try {
-          const allMatches = await db.matches.toArray()
-          const allTeams = await db.teams.toArray()
-          const allPlayers = await db.players.toArray()
-          const allSets = await db.sets.toArray()
-          const allEvents = await db.events.toArray()
-          const allReferees = await db.referees.toArray()
-          const allScorers = await db.scorers.toArray()
-
-          const exportData = {
-            exportDate: new Date().toISOString(),
-            exportReason: `set_${setIndex}_end`,
-            matchId: matchId,
-            matches: allMatches,
-            teams: allTeams,
-            players: allPlayers,
-            sets: allSets,
-            events: allEvents,
-            referees: allReferees,
-            scorers: allScorers
+      // SAFE FALLBACK: Only use data.set.id if it has the correct index
+      let setIdToUpdate = setToUpdate?.id
+      if (!setIdToUpdate) {
+        // No unfinished set with matching index found - check if data.set has correct index
+        if (data.set.index === setIndex) {
+          setIdToUpdate = data.set.id
+          console.warn('[SET_END] Fallback to data.set.id - set may already be finished but index matches:', setIdToUpdate)
+        } else {
+          // Check if the set is ALREADY finished (e.g. from a previous confirmation call)
+          const alreadyFinishedSet = allSetsBeforeUpdate.find(s => s.index === setIndex && s.finished)
+          if (alreadyFinishedSet) {
+            console.log('[SET_END] Set', setIndex, 'is already finished. Aborting confirmSetEndTime gracefully.')
+            cleanup('set already finished')
+            return
           }
 
-          const jsonString = JSON.stringify(exportData, null, 2)
-          const blob = new Blob([jsonString], { type: 'application/json' })
-          const url = URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = url
-          link.download = `backup_set${setIndex}_${matchId}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          URL.revokeObjectURL(url)
-        } catch (error) {
-          console.error('Auto-download at set end failed:', error)
+          // CRITICAL: Cannot find correct set to update - abort to prevent data corruption
+          console.error('[SET_END] CRITICAL: Cannot find set with index', setIndex, 'to update.')
+          console.error('[SET_END] data.set has index', data.set.index, '- aborting to prevent wrong set update')
+          console.error('[SET_END] Available sets:', allSetsBeforeUpdate.map(s => ({ id: s.id, index: s.index, finished: s.finished })))
+          showAlert(t('scoreboard.errors.setNotFound'), 'error')
+          cleanup('set not found')
+          return
         }
       }
 
-      // Start countdown immediately when set ends (not match end)
-      // Reset dismissed flag and start countdown
-      console.log('[SET_END] ⏱️ Starting between-sets countdown:', { duration: setIntervalDuration })
-      countdownDismissedRef.current = false
-      setBetweenSetsCountdown({ countdown: setIntervalDuration, started: true })
+      console.log('[SET_END_DEBUG] STEP 4: About to update set:', JSON.stringify({
+        setIdFromData: data.set.id,
+        setIdToUpdate: setIdToUpdate,
+        usingCorrectSet: setIdToUpdate === setToUpdate?.id,
+        setIndex: setIndex,
+        willSetFinished: true,
+        homePoints,
+        awayPoints,
+        endTime: roundToMinute(time)
+      }))
 
-      // Send set_end action to referee to show countdown
-      console.log('[SET_END] 📡 Sending set_end action to Referee:', {
-        setIndex,
-        winner: winner,
-        homePoints: homePoints,
-        awayPoints: awayPoints,
-        countdown: setIntervalDuration,
+      if (setIdToUpdate !== data.set.id) {
+        console.warn('[SET_END_DEBUG] WARNING: data.set.id differs from the unfinished set! Using correct set id:', setIdToUpdate)
+      }
+
+      setSetTransitionLoading({ step: 'Saving set data...' })
+      const updateResult = await db.sets.update(setIdToUpdate, { finished: true, homePoints, awayPoints, endTime: roundToMinute(time) })
+      console.log('[SET_END_DEBUG] STEP 4: Update result (rows affected):', updateResult)
+
+      // STEP 5: Verify the update actually worked
+      const verifySet = await db.sets.get(setIdToUpdate)
+      console.log('[SET_END_DEBUG] STEP 5: Verification - set after update:', JSON.stringify({
+        id: verifySet?.id,
+        index: verifySet?.index,
+        finished: verifySet?.finished,
+        homePoints: verifySet?.homePoints,
+        awayPoints: verifySet?.awayPoints
+      }))
+
+      if (!verifySet?.finished) {
+        console.error('[SET_END_DEBUG] STEP 5 FAILED: Set was NOT marked as finished! This is a bug.')
+      } else {
+        console.log('[SET_END_DEBUG] STEP 5 SUCCESS: Set is marked as finished=true')
+      }
+
+      // Also verify all sets after update to catch any issues
+      const allSetsAfterUpdate = await db.sets.where('matchId').equals(matchId).toArray()
+      console.log('[SET_END_DEBUG] STEP 5: All sets AFTER update:', JSON.stringify(allSetsAfterUpdate.map(s => ({
+        id: s.id,
+        index: s.index,
+        finished: s.finished
+      }))))
+
+      // STEP 6: Get all sets and calculate sets won by each team
+      const sets = await db.sets.where({ matchId }).toArray()
+      const finishedSets = sets.filter(s => s.finished)
+      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+
+      console.log('[SET_END_DEBUG] STEP 6: Sets Summary:', JSON.stringify({
+        totalSets: sets.length,
+        finishedSetsCount: finishedSets.length,
+        allSets: sets.map(s => ({ index: s.index, home: s.homePoints, away: s.awayPoints, finished: s.finished })),
         homeSetsWon,
         awaySetsWon
-      })
-      sendActionToReferee('set_end', {
-        setIndex,
-        winner: winner,
-        homePoints: homePoints,
-        awayPoints: awayPoints,
-        countdown: setIntervalDuration,
-        startTimestamp: Date.now(),
-        homeSetsWon,
-        awaySetsWon
-      })
+      }))
 
-      // Lock was already acquired early in confirmSetEndTime (line ~5034)
-      // Verify it's still held (should be true)
-      console.log('[SET_END] 🔒 Set creation lock still held:', setCreationInProgressRef.current)
+      // STEP 7: Check if either team has won 3 sets (match win)
+      const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
+      console.log('[SET_END_DEBUG] STEP 7: Match End Check:', JSON.stringify({ isMatchEnd, homeSetsWon, awaySetsWon }))
 
-      // Upload scoresheet to cloud (async, non-blocking) - Set Finished state
-      const matchForScoresheet = await db.matches.get(matchId)
-      const allSetsForScoresheet = await db.sets.where('matchId').equals(matchId).sortBy('index')
-      const allEventsForScoresheet = await db.events.where('matchId').equals(matchId).sortBy('seq')
-      const homePlayersForScoresheet = await db.players.where('teamId').equals(matchForScoresheet?.homeTeamId || '').toArray()
-      const awayPlayersForScoresheet = await db.players.where('teamId').equals(matchForScoresheet?.awayTeamId || '').toArray()
-      const homeTeamForScoresheet = matchForScoresheet?.homeTeamId ? await db.teams.get(matchForScoresheet.homeTeamId) : null
-      const awayTeamForScoresheet = matchForScoresheet?.awayTeamId ? await db.teams.get(matchForScoresheet.awayTeamId) : null
+      // Get match record for both branches (test check, cloud backup)
+      const matchRecord = await db.matches.get(matchId)
+      console.log('[SET_END_DEBUG] STEP 7: Match info:', JSON.stringify({
+        matchId,
+        isTest: matchRecord?.test,
+        seed_key: matchRecord?.seed_key,
+        currentStatus: matchRecord?.status
+      }))
 
-      uploadScoresheetAsync({
-        match: matchForScoresheet,
-        homeTeam: homeTeamForScoresheet,
-        awayTeam: awayTeamForScoresheet,
-        homePlayers: homePlayersForScoresheet,
-        awayPlayers: awayPlayersForScoresheet,
-        sets: allSetsForScoresheet,
-        events: allEventsForScoresheet
-      })
+      // STEP 8: IMMEDIATE SYNC TO SUPABASE (if not a test match)
+      // Sync happens FIRST before any UI operations to ensure data is saved
+      if (matchRecord?.test !== true && matchRecord?.seed_key) {
+        setSetTransitionLoading({ step: 'Syncing to cloud...' })
+        console.log('[SET_END_DEBUG] STEP 8: Starting IMMEDIATE sync to Supabase')
 
-      console.log('═══════════════════════════════════════════════════════════════')
-      console.log('[SET_END] ✅ confirmSetEndTime COMPLETED - Creating next set immediately')
-      console.log('═══════════════════════════════════════════════════════════════')
+        // Prepare set update payload
+        const setPayload = {
+          external_id: String(setIdToUpdate),
+          home_points: homePoints,
+          away_points: awayPoints,
+          finished: true,
+          end_time: time
+        }
 
-      // Create next set immediately (lock is still held from earlier)
-      // This prevents ensureActiveSet from racing with manual set creation
-      try {
-        const newSetIndex = setIndex + 1
-        console.log('[SET_END] 🆕 Creating new set:', { previousSetIndex: setIndex, newSetIndex })
+        // Prepare match payload if match end
+        let matchPayload = null
+        if (isMatchEnd) {
+          const setResults = finishedSets
+            .sort((a, b) => a.index - b.index)
+            .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
+          const matchWinner = homeSetsWon > awaySetsWon ? 'home' : 'away'
+          const finalScore = `${homeSetsWon}-${awaySetsWon}`
 
-        // Special handling for Set 5 - need to set up coin toss defaults
-        if (newSetIndex === 5) {
-          console.log('[SET_END] 🏐 Set 4 ended - preparing Set 5 setup')
+          matchPayload = {
+            id: matchRecord.seed_key,
+            status: 'ended',
+            set_results: setResults,
+            winner: matchWinner,
+            final_score: finalScore,
+            sanctions: matchRecord?.sanctions || null
+          }
+        }
 
-          // Get team A/B assignments for set 5
-          const set4TeamAKey = data?.match?.coinTossTeamA || 'home'
+        // Execute sequential sync (shows progress modal)
+        const syncResult = await syncSetEnd({
+          lastPointPayload: null, // Last point already synced by logEvent
+          setPayload,
+          matchPayload
+        })
 
-          // Determine current positions at end of set 4 (set 2, 3, 4 have teams switched)
-          const set4LeftIsHome = set4TeamAKey !== 'home'
-          const set4LeftTeamKey = set4LeftIsHome ? 'home' : 'away'
-          const set4LeftTeamLabel = set4LeftTeamKey === set4TeamAKey ? 'A' : 'B'
+        console.log('[SET_END_DEBUG] STEP 8 DONE: Sync completed:', syncResult)
 
-          // Get current serve at end of set 4
-          const currentServe = getCurrentServe()
-          const set4ServingTeamLabel = currentServe === set4TeamAKey ? 'A' : 'B'
+        // Wait for sync modal to complete (auto-proceed on success, user click on error)
+        // SyncProgressModal handles the timing (1s for success, 1.5s for warning, button for error)
+        // With timeout fallback to prevent blocking if browser suspends execution
+        const SYNC_MODAL_TIMEOUT = 5000 // 5 seconds max wait (modal auto-proceeds after 1-1.5s)
+        let syncTimeoutId = null
 
-          // Use existing values if set, otherwise use current positions
-          const selectedLeftTeam = data?.match?.set5LeftTeam || set4LeftTeamLabel
-          const selectedFirstServe = data?.match?.set5FirstServe || set4ServingTeamLabel
-
-          // Set default values for inline setup UI
-          setSet5SelectedLeftTeam(selectedLeftTeam)
-          setSet5SelectedFirstServe(selectedFirstServe)
-          setSet5SetupConfirmed(false) // Mark as not confirmed - inline UI will show
-
-          // Update match with default Set 5 configuration
-          await db.matches.update(matchId, {
-            set5LeftTeam: selectedLeftTeam,
-            set5FirstServe: selectedFirstServe,
-            set5CourtSwitched: false
+        await Promise.race([
+          // Original promise - waits for modal callback
+          new Promise((resolve) => {
+            syncProceedCallbackRef.current = () => {
+              if (syncTimeoutId) clearTimeout(syncTimeoutId)
+              setSyncModalOpen(false)
+              resetSyncState()
+              resolve()
+            }
+          }),
+          // Timeout fallback - proceed anyway after 5 seconds
+          new Promise((resolve) => {
+            syncTimeoutId = setTimeout(() => {
+              console.warn('[SET_END] Sync modal timeout after 5s - proceeding anyway')
+              syncProceedCallbackRef.current = null
+              setSyncModalOpen(false)
+              resetSyncState()
+              resolve()
+            }, SYNC_MODAL_TIMEOUT)
           })
+        ])
+      } else {
+        console.log('[SET_END_DEBUG] STEP 8 SKIPPED: Test match or no seed_key')
+        // For test matches, close sync modal immediately
+        setSyncModalOpen(false)
+        resetSyncState()
+      }
+
+      console.log('[SET_END_DEBUG] STEP 9: Match record status BEFORE any changes:', matchRecord?.status)
+
+      // STEP 9+: Branch based on match end or set end
+      if (isMatchEnd) {
+        console.log('[SET_END_DEBUG] STEP 10: MATCH END BRANCH - isMatchEnd=true')
+        // IMPORTANT: When match ends, preserve ALL data in database:
+        // - All sets remain in db.sets
+        // - All events remain in db.events
+        // - All players remain in db.players
+        // - All teams remain in db.teams
+        // - Set status to 'ended' - MatchEnd component will set to 'approved' after approval
+        // Status flow: live -> ended -> approved
+
+        // Update local match status to 'ended'
+        console.log('[SET_END_DEBUG] STEP 10: Setting match status to "ended"...')
+        await db.matches.update(matchId, { status: 'ended' })
+
+        // Verify the status was updated
+        const matchAfterStatusUpdate = await db.matches.get(matchId)
+        console.log('[SET_END_DEBUG] STEP 10: Match status after update:', matchAfterStatusUpdate?.status)
+
+        // NOTE: Match update sync is now done in STEP 8 (sequential sync) above
+
+        // Notify server to delete match from matchDataStore (since it's now final)
+        const currentWs = wsRef.current
+        if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+          try {
+            currentWs.send(JSON.stringify({
+              type: 'delete-match',
+              matchId: String(matchId)
+            }))
+          } catch (err) {
+            // Silently ignore WebSocket errors
+          }
         }
 
-        // Check if a set with this index already exists
-        const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
-        const existingSet = allSetsForMatch.find(s => s.index === newSetIndex)
+        // Trigger event backup for Safari/Firefox (match end)
+        onTriggerEventBackup?.('match_end')
 
-        let newSetId
-        if (existingSet) {
-          console.log('[SET_END] ♻️ Resetting existing set:', existingSet.id)
-          await db.sets.update(existingSet.id, { finished: false, homePoints: 0, awayPoints: 0 })
-          newSetId = existingSet.id
-        } else {
-          console.log('[SET_END] ➕ Adding new set to database')
-          newSetId = await db.sets.add({
-            matchId,
-            index: newSetIndex,
-            homePoints: 0,
-            awayPoints: 0,
-            finished: false
-          })
-          console.log('[SET_END] ✅ New set added:', { newSetId, newSetIndex })
+        // Cloud backup at match end (non-blocking)
+        if (matchRecord?.test !== true) {
+          const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
+          exportMatchData(matchId).then(backupData => {
+            uploadBackupToCloud(matchId, backupData)
+            uploadLogsToCloud(matchId, gameNum)
+          }).catch(() => { })
         }
 
-        // Reset set5CourtSwitched flag (for non-set-5 transitions)
-        if (newSetIndex !== 5) {
-          await db.matches.update(matchId, { set5CourtSwitched: false })
-        }
+        // Only call onFinishSet for match end, not between sets
+        // (Scoreboard now handles set creation internally)
+        console.log('[SET_END_DEBUG] STEP 11: Calling onFinishSet callback with set:', JSON.stringify({
+          setId: data.set.id,
+          setIndex: data.set.index
+        }))
+        if (onFinishSet) onFinishSet(data.set)
+        console.log('[SET_END_DEBUG] STEP 11: onFinishSet callback completed')
 
-        // Sync new set to cloud (if not test match)
-        const matchRecord = await db.matches.get(matchId)
-        const isTest = matchRecord?.test || false
-        if (!isTest && !existingSet) {
-          await db.sync_queue.add({
-            resource: 'set',
-            action: 'insert',
-            payload: {
-              external_id: String(newSetId),
-              match_id: matchRecord?.seed_key || String(matchId),
-              index: newSetIndex,
-              home_points: 0,
-              away_points: 0,
-              finished: false,
-              test: isTest,
-              start_time: new Date().toISOString()
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-        }
-
-        console.log('[SET_END] ✅ Next set created successfully:', { newSetId, newSetIndex })
-      } finally {
-        // Release lock and clear loading overlay
+        // Release lock for match end path (no new set to create)
         setCreationInProgressRef.current = false
-        setSetTransitionLoading(null)
-        console.log('[SET_END] 🔓 Lock released, loading cleared')
+        setSetTransitionLoading(null) // Clear loading overlay
+        console.log('[SET_END] Lock released (match end - no new set needed)')
+
+        console.log('═══════════════════════════════════════════════════════════════')
+        console.log('[SET_END_DEBUG] MATCH END FLOW COMPLETE')
+        console.log('═══════════════════════════════════════════════════════════════')
+        return // Exit early for match end - don't fall through to new set creation
+      } else {
+        console.log('[SET_END_DEBUG] STEP 9: SET END BRANCH (not match end) - continuing to next set')
+        // Trigger event backup for Safari/Firefox (set end)
+        onTriggerEventBackup?.('set_end')
+
+        // Cloud backup at set end (non-blocking)
+        if (matchRecord?.test !== true) {
+          setSetTransitionLoading({ step: 'Uploading backup...' })
+          const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
+          exportMatchData(matchId).then(backupData => {
+            uploadBackupToCloud(matchId, backupData)
+            uploadLogsToCloud(matchId, gameNum)
+          }).catch(() => { })
+        }
+
+        // Auto-download game data at set end if enabled
+        if (autoDownloadAtSetEnd) {
+          setSetTransitionLoading({ step: 'Downloading backup...' })
+          try {
+            const allMatches = await db.matches.toArray()
+            const allTeams = await db.teams.toArray()
+            const allPlayers = await db.players.toArray()
+            const allSets = await db.sets.toArray()
+            const allEvents = await db.events.toArray()
+            const allReferees = await db.referees.toArray()
+            const allScorers = await db.scorers.toArray()
+
+            const exportData = {
+              exportDate: new Date().toISOString(),
+              exportReason: `set_${setIndex}_end`,
+              matchId: matchId,
+              matches: allMatches,
+              teams: allTeams,
+              players: allPlayers,
+              sets: allSets,
+              events: allEvents,
+              referees: allReferees,
+              scorers: allScorers
+            }
+
+            const jsonString = JSON.stringify(exportData, null, 2)
+            const blob = new Blob([jsonString], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = `backup_set${setIndex}_${matchId}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            URL.revokeObjectURL(url)
+          } catch (error) {
+            console.error('Auto-download at set end failed:', error)
+          }
+        }
+
+        // Start countdown immediately when set ends (not match end)
+        // Reset dismissed flag and start countdown
+        console.log('[SET_END] Starting between-sets countdown:', { duration: setIntervalDuration })
+        countdownDismissedRef.current = false
+        setBetweenSetsCountdown({ countdown: setIntervalDuration, started: true })
+
+        // Send set_end action to referee to show countdown
+        console.log('[SET_END] Sending set_end action to Referee:', {
+          setIndex,
+          winner: winner,
+          homePoints: homePoints,
+          awayPoints: awayPoints,
+          countdown: setIntervalDuration,
+          homeSetsWon,
+          awaySetsWon
+        })
+        sendActionToReferee('set_end', {
+          setIndex,
+          winner: winner,
+          homePoints: homePoints,
+          awayPoints: awayPoints,
+          countdown: setIntervalDuration,
+          startTimestamp: Date.now(),
+          homeSetsWon,
+          awaySetsWon
+        })
+
+        // Lock was already acquired early in confirmSetEndTime
+        // Verify it's still held (should be true)
+        console.log('[SET_END] Set creation lock still held:', setCreationInProgressRef.current)
+
+        // Upload scoresheet to cloud (async, non-blocking) - Set Finished state
+        const matchForScoresheet = await db.matches.get(matchId)
+        const allSetsForScoresheet = await db.sets.where('matchId').equals(matchId).sortBy('index')
+        const allEventsForScoresheet = await db.events.where('matchId').equals(matchId).sortBy('seq')
+        const homePlayersForScoresheet = await db.players.where('teamId').equals(matchForScoresheet?.homeTeamId || '').toArray()
+        const awayPlayersForScoresheet = await db.players.where('teamId').equals(matchForScoresheet?.awayTeamId || '').toArray()
+        const homeTeamForScoresheet = matchForScoresheet?.homeTeamId ? await db.teams.get(matchForScoresheet.homeTeamId) : null
+        const awayTeamForScoresheet = matchForScoresheet?.awayTeamId ? await db.teams.get(matchForScoresheet.awayTeamId) : null
+
+        uploadScoresheetAsync({
+          match: matchForScoresheet,
+          homeTeam: homeTeamForScoresheet,
+          awayTeam: awayTeamForScoresheet,
+          homePlayers: homePlayersForScoresheet,
+          awayPlayers: awayPlayersForScoresheet,
+          sets: allSetsForScoresheet,
+          events: allEventsForScoresheet
+        })
+
+        console.log('═══════════════════════════════════════════════════════════════')
+        console.log('[SET_END] confirmSetEndTime COMPLETED - Creating next set immediately')
+        console.log('═══════════════════════════════════════════════════════════════')
+
+        // Create next set immediately (lock is still held from earlier)
+        // This prevents ensureActiveSet from racing with manual set creation
+        try {
+          const newSetIndex = setIndex + 1
+          console.log('[SET_END] Creating new set:', { previousSetIndex: setIndex, newSetIndex })
+
+          // Special handling for Set 5 - need to set up coin toss defaults
+          if (newSetIndex === 5) {
+            console.log('[SET_END] Set 4 ended - preparing Set 5 setup')
+
+            // Get team A/B assignments for set 5
+            const set4TeamAKey = data?.match?.coinTossTeamA || 'home'
+
+            // Determine current positions at end of set 4 (set 2, 3, 4 have teams switched)
+            const set4LeftIsHome = set4TeamAKey !== 'home'
+            const set4LeftTeamKey = set4LeftIsHome ? 'home' : 'away'
+            const set4LeftTeamLabel = set4LeftTeamKey === set4TeamAKey ? 'A' : 'B'
+
+            // Get current serve at end of set 4
+            const currentServe = getCurrentServe()
+            const set4ServingTeamLabel = currentServe === set4TeamAKey ? 'A' : 'B'
+
+            // Use existing values if set, otherwise use current positions
+            const selectedLeftTeam = data?.match?.set5LeftTeam || set4LeftTeamLabel
+            const selectedFirstServe = data?.match?.set5FirstServe || set4ServingTeamLabel
+
+            // Set default values for inline setup UI
+            setSet5SelectedLeftTeam(selectedLeftTeam)
+            setSet5SelectedFirstServe(selectedFirstServe)
+            setSet5SetupConfirmed(false) // Mark as not confirmed - inline UI will show
+
+            // Update match with default Set 5 configuration
+            await db.matches.update(matchId, {
+              set5LeftTeam: selectedLeftTeam,
+              set5FirstServe: selectedFirstServe,
+              set5CourtSwitched: false
+            })
+          }
+
+          // Check if a set with this index already exists
+          const allSetsForMatch = await db.sets.where('matchId').equals(matchId).toArray()
+          const existingSet = allSetsForMatch.find(s => s.index === newSetIndex)
+
+          let newSetId
+          if (existingSet) {
+            console.log('[SET_END] Resetting existing set:', existingSet.id)
+            await db.sets.update(existingSet.id, { finished: false, homePoints: 0, awayPoints: 0 })
+            newSetId = existingSet.id
+          } else {
+            console.log('[SET_END] Adding new set to database')
+            newSetId = await db.sets.add({
+              matchId,
+              index: newSetIndex,
+              homePoints: 0,
+              awayPoints: 0,
+              finished: false
+            })
+            console.log('[SET_END] New set added:', { newSetId, newSetIndex })
+          }
+
+          // Reset set5CourtSwitched flag (for non-set-5 transitions)
+          if (newSetIndex !== 5) {
+            await db.matches.update(matchId, { set5CourtSwitched: false })
+          }
+
+          // Sync new set to cloud (if not test match)
+          const matchRecordForNewSet = await db.matches.get(matchId)
+          const isTest = matchRecordForNewSet?.test || false
+          if (!isTest && !existingSet) {
+            await db.sync_queue.add({
+              resource: 'set',
+              action: 'insert',
+              payload: {
+                external_id: String(newSetId),
+                match_id: matchRecordForNewSet?.seed_key || String(matchId),
+                index: newSetIndex,
+                home_points: 0,
+                away_points: 0,
+                finished: false,
+                test: isTest,
+                start_time: new Date().toISOString()
+              },
+              ts: new Date().toISOString(),
+              status: 'queued'
+            })
+          }
+
+          console.log('[SET_END] Next set created successfully:', { newSetId, newSetIndex })
+        } finally {
+          // Release lock and clear loading overlay
+          setCreationInProgressRef.current = false
+          setSetTransitionLoading(null)
+          console.log('[SET_END] Lock released, loading cleared')
+        }
       }
+    } catch (error) {
+      // COMPREHENSIVE ERROR HANDLER - ensures cleanup on ANY failure
+      console.error('[SET_END] CRITICAL ERROR in confirmSetEndTime:', error)
+      console.error('[SET_END] Error stack:', error.stack)
+
+      // Show user-friendly error message
+      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
+
+      // Ensure cleanup happens
+      cleanup('uncaught exception: ' + error.message)
+
+      // Don't re-throw - the match can continue from local data
     }
-  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration])
+  }, [setEndTimeModal, data?.match, data?.set, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t])
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
   const confirmSet5SideService = useCallback(async (leftTeam, firstServe, inlineMode = false) => {
@@ -6535,14 +6597,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }, getStateSnapshot())
 
       // Start the timeout countdown
-      setTimeoutModal({ ...timeoutModal, started: true })
+      const startTimestamp = Date.now()
+      setTimeoutModal({ ...timeoutModal, started: true, startedAt: new Date(startTimestamp).toISOString() })
       console.log('[TO_DEBUG] setTimeoutModal called with started: true')
 
       // Send timeout action to referee to show modal
       sendActionToReferee('timeout', {
         team: timeoutModal.team,
         countdown: 30,
-        startTimestamp: Date.now()
+        startTimestamp: startTimestamp
       })
 
       // Trigger event backup for Safari/Firefox
@@ -6592,78 +6655,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [timeoutModal, sendActionToReferee, syncLiveStateToSupabase])
 
   useEffect(() => {
-    // Debug: Log effect entry
-    console.log('[TO_DEBUG] Effect triggered', {
-      timeoutModalExists: !!timeoutModal,
-      started: timeoutModal?.started,
-      countdown: timeoutModal?.countdown,
-      refTimestamp: timeoutStartTimestampRef.current,
-      refInitial: timeoutInitialCountdownRef.current
-    })
-    debugLogger.log('TO_EFFECT', {
-      started: timeoutModal?.started,
-      countdown: timeoutModal?.countdown,
-      refTimestamp: timeoutStartTimestampRef.current
-    })
-
     if (!timeoutModal || !timeoutModal.started) return
 
-    // Initialize refs when timeout starts
-    if (!timeoutStartTimestampRef.current) {
-      const newTimestamp = Date.now()
-      console.log('[TO_DEBUG] Initializing refs', {
-        newTimestamp,
-        countdown: timeoutModal.countdown || 30
-      })
-      debugLogger.log('TO_REFS_INIT', { timestamp: newTimestamp })
-      timeoutStartTimestampRef.current = newTimestamp
-      timeoutInitialCountdownRef.current = timeoutModal.countdown || 30
-    }
+    // Use startedAt from state if available, otherwise fallback to ref or Date.now()
+    const startTimestamp = timeoutModal.startedAt ? new Date(timeoutModal.startedAt).getTime() : (timeoutStartTimestampRef.current || Date.now())
+    const initialCountdown = timeoutInitialCountdownRef.current || 30
+
+    // Sync refs for legacy support/internal tracking
+    if (!timeoutStartTimestampRef.current) timeoutStartTimestampRef.current = startTimestamp
 
     if (timeoutModal.countdown <= 0) {
-      // When countdown reaches 0, close the modal
-      console.log('[TO_DEBUG] Countdown reached 0, closing modal')
-      setTimeoutModal(null)
-      timeoutStartTimestampRef.current = null // Reset for next timeout
       return
     }
 
-    // Capture current start timestamp for the interval closure
-    const startTimestamp = timeoutStartTimestampRef.current
-    const initialCountdown = timeoutInitialCountdownRef.current
-
-    console.log('[TO_DEBUG] Creating interval', { startTimestamp, initialCountdown })
-
-    // Update every 100ms for smooth visuals (instead of 1000ms)
+    // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
       const now = Date.now()
       const elapsed = Math.floor((now - startTimestamp) / 1000)
       const remaining = Math.max(0, initialCountdown - elapsed)
 
-      // Log every 5 seconds to avoid spam, plus first and last tick
-      if (remaining === initialCountdown || remaining <= 0 || remaining % 5 === 0) {
-        console.log('[TO_DEBUG] Tick', { elapsed, remaining, startTimestamp })
-        debugLogger.log('TO_TICK', { elapsed, remaining })
-      }
-
       if (remaining <= 0) {
-        console.log('[TO_DEBUG] Countdown complete, closing modal')
         setTimeoutModal(null)
-        timeoutStartTimestampRef.current = null // Reset for next timeout
+        timeoutStartTimestampRef.current = null
       } else {
         setTimeoutModal(prev => {
-          // Keep the modal open as long as it exists and is started
-          if (!prev) return null
+          if (!prev || !prev.started) return null
+          if (prev.countdown === remaining) return prev
           return { ...prev, countdown: remaining }
         })
       }
-    }, 100) // 100ms for smooth visual updates
+    }, 100)
 
-    return () => {
-      console.log('[TO_DEBUG] Clearing interval')
-      clearInterval(timer)
-    }
-  }, [timeoutModal])
+    return () => clearInterval(timer)
+  }, [timeoutModal?.started, timeoutModal?.startedAt])
 
   const getTimeoutsUsed = useCallback(
     side => {
@@ -7471,7 +7495,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       return result
     }
-    console.log('🏐 Debug: Run window.debugLiberoStatus() to check libero status')
+    console.log('[DEBUG] Run window.debugLiberoStatus() to check libero status')
   }, [data?.homePlayers, data?.awayPlayers, data?.events, isLiberoUnable, getLiberoOnCourt, liberoRedesignationModal, liberoUnableModal])
 
   // Check if there has been a point since last libero exchange
@@ -12500,7 +12524,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     URL.revokeObjectURL(url)
                   } catch (error) {
                     console.error('Error exporting database:', error)
-                    showAlert('Error exporting database data. Please try again.', 'error')
+                    showAlert(t('scoreboard.errors.exportFailed'), 'error')
                   }
                 }
               },
@@ -18360,7 +18384,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     setMenuModal(false)
                   } catch (error) {
                     console.error('Error exporting database:', error)
-                    showAlert('Error exporting database data. Please try again.', 'error')
+                    showAlert(t('scoreboard.errors.exportFailed'), 'error')
                   }
                 }}>
                 📥 {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
@@ -28802,6 +28826,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
     const { time: localTime } = splitLocalDateTime(defaultTime)
     return localTime
   })
+  const [isConfirming, setIsConfirming] = useState(false) // Prevent double-clicks
 
   // Get winner team name
   const winnerTeamName = winner === 'home' ? homeTeamName : awayTeamName
@@ -28813,6 +28838,8 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
   const rightScore = leftIsHome ? awayPoints : homePoints
 
   const handleConfirm = () => {
+    if (isConfirming) return // Prevent double-clicks
+    setIsConfirming(true)
     // Get the date component from defaultTime and combine with entered time
     const { date } = splitLocalDateTime(defaultTime)
     // Convert local time to UTC ISO string
@@ -28858,21 +28885,24 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <button
             onClick={handleConfirm}
+            disabled={isConfirming}
             style={{
               padding: '12px 24px',
               fontSize: '14px',
               fontWeight: 600,
-              background: 'var(--accent)',
+              background: isConfirming ? 'var(--muted)' : 'var(--accent)',
               color: '#000',
               border: 'none',
               borderRadius: '8px',
-              cursor: 'pointer'
+              cursor: isConfirming ? 'not-allowed' : 'pointer',
+              opacity: isConfirming ? 0.7 : 1
             }}
           >
-            Confirm
+            {isConfirming ? 'Confirming...' : 'Confirm'}
           </button>
           <button
             onClick={onDecisionChange}
+            disabled={isConfirming}
             style={{
               padding: '12px 24px',
               fontSize: '14px',
@@ -28881,7 +28911,8 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
               color: '#000',
               border: 'none',
               borderRadius: '8px',
-              cursor: 'pointer'
+              cursor: isConfirming ? 'not-allowed' : 'pointer',
+              opacity: isConfirming ? 0.7 : 1
             }}
           >
             Decision Change
