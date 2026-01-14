@@ -16,7 +16,7 @@ jobs:
   build-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
     env:
@@ -44,6 +44,8 @@ jobs:
           cp dist/index.html dist/404.html
           # Write CNAME when provided
           if [ -n "$PAGES_CNAME" ]; then echo $PAGES_CNAME > dist/CNAME; fi
+          # Build all subdomains for Railway deployment
+          node scripts/build-subdomains.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -56,4 +58,12 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Commit subdomain builds
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add escoresheet/frontend/dist-*/
+          git diff --staged --quiet || git commit -m "Build subdomains [skip ci]"
+          git push
 
