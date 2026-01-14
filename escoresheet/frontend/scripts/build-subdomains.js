@@ -77,7 +77,8 @@ const subdomains = {
     description: 'View and download volleyball match scoresheets',
     title: 'Scoresheet Archive - OpenVolley',
     mainEntry: 'scoresheet-main',
-    themeColor: '#0891b2'
+    themeColor: '#0891b2',
+    customHtml: true
   }
 }
 
@@ -102,6 +103,85 @@ function createIndexHtml(config) {
 `
 }
 
+function createScoresheetHtml(config) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
+  <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
+  <meta name="theme-color" content="${config.themeColor}" />
+  <meta name="description" content="${config.description}" />
+  <title>${config.title}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Global Font Setting */
+    body {
+      font-family: 'Aptos Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* Custom print styles to ensure background graphics/colors print */
+    @media print {
+      html,
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+      }
+
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+
+      #root {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+      }
+    }
+
+    /* Hide scrollbar for cleaner look in inputs */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .vertical-text {
+      writing-mode: vertical-lr;
+      transform: rotate(180deg);
+    }
+
+    /* Dense table utils */
+    .input-dense {
+      text-align: center;
+      background-color: transparent;
+      width: 100%;
+      height: 100%;
+      outline: none;
+    }
+
+    .input-dense:focus {
+      background-color: rgba(59, 130, 246, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-900 antialiased print:bg-white text-[10px] overflow-auto">
+  <div id="root"></div>
+  <script type="module" src="/src/${config.mainEntry}.jsx"></script>
+</body>
+</html>
+`
+}
+
 async function buildSubdomain(subdomain) {
   const config = subdomains[subdomain]
   if (!config) {
@@ -119,8 +199,9 @@ async function buildSubdomain(subdomain) {
 
   console.log(`\n🔨 Building ${subdomain}.openvolley.app...`)
 
-  // Create temp index.html in frontend root
-  writeFileSync(tempIndexPath, createIndexHtml(config))
+  // Create temp index.html in frontend root (use custom HTML for scoresheet)
+  const htmlContent = config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
+  writeFileSync(tempIndexPath, htmlContent)
 
   try {
     await build({
