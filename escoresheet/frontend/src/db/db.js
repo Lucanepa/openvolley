@@ -254,4 +254,20 @@ db.version(14).stores({
   scorers: '++id,seedKey,lastName,createdAt'
 })
 
+// Version 15: Add interaction_logs table for comprehensive logging
+// Stores all user interactions (clicks, inputs, function calls, etc.)
+// Indexed by id (unique log ID), ts (timestamp), and gameNumber for filtering
+db.version(15).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot,[matchId+seq],[matchId+setIndex]',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt',
+  interaction_logs: 'id,ts,gameNumber,category,sessionId'
+})
+
 

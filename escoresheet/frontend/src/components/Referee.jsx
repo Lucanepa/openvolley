@@ -549,14 +549,22 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     console.log(`[Referee] 📥 Received action '${action}' at ${new Date(receiveTimestamp).toISOString()}:`, actionData)
 
     if (action === 'timeout') {
+      console.log('[REF_TO_DEBUG] Received timeout action', {
+        team: actionData.team,
+        countdown: actionData.countdown,
+        startTimestamp: actionData.startTimestamp,
+        receiveTimestamp
+      })
       timeoutActiveRef.current = true
-      setTimeoutModal({
+      const newTimeoutModal = {
         team: actionData.team,
         countdown: actionData.countdown || 30,
         startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
         initialCountdown: actionData.countdown || 30,
         started: true
-      })
+      }
+      console.log('[REF_TO_DEBUG] Setting timeoutModal state', newTimeoutModal)
+      setTimeoutModal(newTimeoutModal)
       setShowTimeoutModal(true) // Show the modal overlay
     } else if (action === 'substitution') {
       // Add player to recently substituted list for flashing effect (no modal, just flash)
@@ -839,7 +847,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }
 
           // Store last event for footer display (only specific event types)
-          const displayableEvents = ['point', 'timeout', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_redesignation', 'set_end', 'sanction']
+          const displayableEvents = ['point', 'timeout', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_redesignation', 'set_end', 'sanction', 'court_captain_designation']
           if (state.last_event_type && displayableEvents.includes(state.last_event_type)) {
             setLastEvent({
               type: state.last_event_type,
@@ -863,22 +871,41 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Handle timeout countdown timer
   useEffect(() => {
+    // Debug: Log effect entry
+    console.log('[REF_TO_DEBUG] Effect triggered', {
+      timeoutModalExists: !!timeoutModal,
+      started: timeoutModal?.started,
+      countdown: timeoutModal?.countdown,
+      startTimestamp: timeoutModal?.startTimestamp,
+      initialCountdown: timeoutModal?.initialCountdown
+    })
+
     if (!timeoutModal || !timeoutModal.started) return
 
     const startTimestamp = timeoutModal.startTimestamp || Date.now()
     const initialCountdown = timeoutModal.initialCountdown || timeoutModal.countdown || 30
 
+    console.log('[REF_TO_DEBUG] Creating interval', { startTimestamp, initialCountdown })
+
     if (timeoutModal.countdown <= 0) {
+      console.log('[REF_TO_DEBUG] Countdown already 0, closing')
       setTimeoutModal(null)
       return
     }
 
     // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTimestamp) / 1000)
+      const now = Date.now()
+      const elapsed = Math.floor((now - startTimestamp) / 1000)
       const remaining = Math.max(0, initialCountdown - elapsed)
 
+      // Log every 5 seconds to avoid spam, plus first and last tick
+      if (remaining === initialCountdown || remaining <= 0 || remaining % 5 === 0) {
+        console.log('[REF_TO_DEBUG] Tick', { elapsed, remaining, startTimestamp })
+      }
+
       if (remaining <= 0) {
+        console.log('[REF_TO_DEBUG] Countdown complete, closing modal')
         setTimeoutModal(null)
       } else {
         setTimeoutModal(prev => {
@@ -888,7 +915,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }
     }, 100) // 100ms for smooth updates
 
-    return () => clearInterval(timer)
+    return () => {
+      console.log('[REF_TO_DEBUG] Clearing interval')
+      clearInterval(timer)
+    }
   }, [timeoutModal])
 
   // Track last point count to detect when points change (rally ends)
@@ -2323,7 +2353,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const displayLiberoLabel = isLibero ? (
       <span style={{ position: 'relative', display: 'inline-block' }}>
         {baseLabel}
-        {isRedesignated && <sub style={{ fontSize: '0.5em', verticalAlign: 'sub' }}>R</sub>}
+        {isRedesignated && R}
         {isUnable && (
           <span style={{
             position: 'absolute',
@@ -4108,6 +4138,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
                       const parts = [sanctionTypeShort, teamInfo, memberInfo].filter(Boolean)
                       return parts.join(' ')
+                    }
+                    if (lastEvent.type === 'court_captain_designation') {
+                      const playerNumber = lastEvent.data?.playerNumber || '?'
+                      return `${t('refereeDashboard.events.courtCaptainDesignation')} ${teamInfo} #${playerNumber}`
                     }
                     return ''
                   })()}

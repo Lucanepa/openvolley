@@ -642,22 +642,32 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
         if (awardsPoint) {
           // Find the next point event scored by the opponent after this sanction
+          // We need to calculate what the score will be when that point is scored
+          let futureHomeCount = homePointCount;
+          let futureAwayCount = awayPointCount;
+
           for (let j = i + 1; j < allEventsWithSanctions.length; j++) {
             const nextEvent = allEventsWithSanctions[j];
-            if (nextEvent.type === 'point' && nextEvent.payload?.team === opponentTeam) {
-              // This point was scored due to the sanction - mark it for circling
-              if (opponentTeam === 'home') {
-                homePointCount++;
-                if (!homeCircledPoints.includes(homePointCount)) {
-                  homeCircledPoints.push(homePointCount);
+            if (nextEvent.type === 'point') {
+              if (nextEvent.payload?.team === 'home') {
+                futureHomeCount++;
+                if (opponentTeam === 'home') {
+                  // This is the point we're looking for - circle it
+                  if (!homeCircledPoints.includes(futureHomeCount)) {
+                    homeCircledPoints.push(futureHomeCount);
+                  }
+                  break;
                 }
-              } else {
-                awayPointCount++;
-                if (!awayCircledPoints.includes(awayPointCount)) {
-                  awayCircledPoints.push(awayPointCount);
+              } else if (nextEvent.payload?.team === 'away') {
+                futureAwayCount++;
+                if (opponentTeam === 'away') {
+                  // This is the point we're looking for - circle it
+                  if (!awayCircledPoints.includes(futureAwayCount)) {
+                    awayCircledPoints.push(futureAwayCount);
+                  }
+                  break;
                 }
               }
-              break; // Only circle the first point after the sanction
             }
           }
         }
@@ -850,12 +860,31 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             // This is a return substitution - add it to the original player's substitution array
             // Find the original substitution where this player went out
             const originalSub = returnSubsArray.find(sub => sub.playerOut === originalPlayerOut && sub.playerIn === playerOutNum);
-            if (originalSub) {
+
+            // For Set 5: only circle the original sub if both original and return are in the same panel
+            // If original was before court change but return is after, don't circle in the Before map
+            // The circle will be shown in Panel 3 where both subs appear together
+            const originalWasBefore = isSet5 && leftSubsByPlayer_Before.has(originalPlayerOut) &&
+              leftSubsByPlayer_Before.get(originalPlayerOut)!.includes(originalSub!);
+            const returnIsAfter = isSet5 && courtChangeHappened;
+            const shouldCircleOriginal = !isSet5 || !(originalWasBefore && returnIsAfter);
+
+            if (originalSub && shouldCircleOriginal) {
               // Circle the playerIn (the substitute who came in), not the playerOut
               originalSub.isCircled = true; // Circle the playerIn who can't re-enter
             }
             // Add return substitution (playerIn goes out, originalPlayerOut comes back in)
-            returnSubsArray.push({
+            // For Set 5: return sub goes to the correct map based on WHEN the return happens (not where original was)
+            const returnTargetArray = isSet5
+              ? (() => {
+                  const correctMap = courtChangeHappened ? leftSubsByPlayer_After : leftSubsByPlayer_Before;
+                  if (!correctMap.has(originalPlayerOut)) {
+                    correctMap.set(originalPlayerOut, []);
+                  }
+                  return correctMap.get(originalPlayerOut)!;
+                })()
+              : returnSubsArray;
+            returnTargetArray.push({
               playerOut: playerOutNum, // The player currently going out
               playerIn: originalPlayerOut, // The original player coming back in
               score: scoreStr,
@@ -998,7 +1027,20 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         const afterSubs = convertSubsMapToArray(leftSubsByPlayer_After, leftLineup);
         // Merge: for each position, combine before and after substitutions
         return beforeSubs.map((beforeSubsForPosition, positionIndex) => {
-          return [...beforeSubsForPosition, ...afterSubs[positionIndex]];
+          const afterSubsForPosition = afterSubs[positionIndex];
+          // Deep copy before subs so we can modify isCircled without affecting Panel 1
+          const mergedBefore = beforeSubsForPosition.map(sub => ({ ...sub }));
+          // If there's a return sub in afterSubs, mark the corresponding before sub as circled
+          for (const afterSub of afterSubsForPosition) {
+            // A return sub has playerIn matching the original playerOut from before
+            const originalSub = mergedBefore.find(
+              bs => bs.playerOut === afterSub.playerIn && bs.playerIn === afterSub.playerOut
+            );
+            if (originalSub) {
+              originalSub.isCircled = true;
+            }
+          }
+          return [...mergedBefore, ...afterSubsForPosition];
         });
       })()
       : [[], [], [], [], [], []];

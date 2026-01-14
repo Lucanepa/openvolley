@@ -528,6 +528,7 @@
       "showActionLog": "Show Action Log",
       "showSanctionsResults": "Show Sanctions and Results",
       "openRemarksRecording": "Open Remarks Recording",
+      "stopMatch": "Stop the Match",
       "showPins": "Show PINs",
       "showMatchSetup": "Show Match Setup",
       "downloadGameData": "Download Game Data (JSON)",
@@ -540,6 +541,23 @@
       "manualChanges": "Manual Changes",
       "keyboardShortcuts": "Keyboard Shortcuts",
       "searchEvents": "Search events..."
+    },
+    "stopMatch": {
+      "title": "Stop the Match",
+      "teamForfeits": "A team forfeits",
+      "impossibilityToResume": "Impossibility to resume",
+      "selectForfeitingTeam": "Select Forfeiting Team",
+      "selectTeamPrompt": "Which team is forfeiting?",
+      "confirmForfeitTitle": "Confirm Forfeit",
+      "confirmForfeitMessage": "{{team}} will forfeit. The opponent will be awarded all remaining points and sets to win the match.",
+      "confirmImpossibilityTitle": "Impossibility to Resume",
+      "confirmImpossibilityMessage": "The match will end with current scores. No winner will be declared. Match data will be downloaded.",
+      "addRemarksPrompt": "Please record remarks explaining the match stoppage.",
+      "finalConfirmTitle": "End Match",
+      "finalConfirmForfeit": "End match with {{winner}} as winner?",
+      "finalConfirmImpossibility": "End match without a winner?",
+      "endMatch": "End Match",
+      "continueToRemarks": "Continue to Remarks"
     },
     "edit": {
       "editPoints": "Edit Points",
@@ -1214,6 +1232,7 @@
       "liberoRedesignation": "Libero redesignation",
       "setEnd": "Set {{set}} ended",
       "sanction": "Sanction",
+      "courtCaptainDesignation": "Court captain",
       "noAction": "—"
     }
   },

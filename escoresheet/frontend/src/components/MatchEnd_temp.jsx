@@ -9,8 +9,6 @@ import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import JSZip from 'jszip'
 import { supabase } from '../lib/supabaseClient'
-import { useComponentLogging } from '../contexts/LoggingContext'
-import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = '/ball.png'
@@ -263,7 +261,6 @@ function MatchEndPageView({ children }) {
 }
 
 export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
-  const cLogger = useComponentLogging('MatchEnd')
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
     if (!match) return null
@@ -538,9 +535,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   // Determine team labels (A or B)
   const teamAKey = match.coinTossTeamA || 'home'
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
+  const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
   // Winner info
   const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || 'Home') : (awayTeam?.name || 'Away')
+  const winnerLabel = homeSetsWon > awaySetsWon ? homeLabel : awayLabel
+  const result = `3:${Math.min(homeSetsWon, awaySetsWon)}`
 
   // Match time info - duration is matchEnd - matchStart
   const matchStartDate = match?.scheduledAt ? new Date(match.scheduledAt) : null
@@ -602,7 +602,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const allSignaturesDone = currentStep === 'complete'
 
   const handleSaveSignature = async (role, signatureData) => {
-    cLogger.logHandler('handleSaveSignature', { role })
     const fieldMap = {
       'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
       'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
@@ -702,7 +701,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   }
 
   const handleShowScoresheet = (action = 'preview') => {
-    cLogger.logHandler('handleShowScoresheet', { action })
     // Prepare scoresheet data
     const scoresheetData = {
       match,
@@ -718,22 +716,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
     window.open(url, '_blank', 'width=1600,height=1200')
   }
 
-  // Handle downloading comprehensive interaction logs
-  const handleDownloadLogs = async () => {
-    cLogger.logHandler('handleDownloadLogs', { matchId })
-    try {
-      const gameN = match?.gameNumber || match?.game_n || null
-      const { downloadLogs } = await import('../utils/comprehensiveLogger')
-      await downloadLogs(gameN, 'ndjson')
-      showAlert(t('matchEnd.logsDownloaded', 'Interaction logs downloaded successfully'), 'success')
-    } catch (err) {
-      console.error('[MatchEnd] Failed to download logs:', err)
-      showAlert(t('matchEnd.logsDownloadFailed', 'Failed to download logs'), 'error')
-    }
-  }
-
   const handleApprove = async () => {
-    cLogger.logHandler('handleApprove', { matchId, allSignaturesDone })
     setIsSaving(true)
     try {
       // Only check signatures for official matches
@@ -810,18 +793,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       zip.file(jsonFilename, dataStr)
       zip.file(pdfResult.filename, pdfResult.blob)
 
-      // Add comprehensive interaction logs to the ZIP
-      try {
-        const gameN = match.gameNumber || match.game_n || null
-        const logsContent = await exportLogsAsNDJSON(gameN)
-        if (logsContent && logsContent.length > 0) {
-          const logsFilename = `interaction_logs_${matchDate}.ndjson`
-          zip.file(logsFilename, logsContent)
-        }
-      } catch (logsError) {
-        console.warn('[MatchEnd] Failed to add interaction logs to ZIP:', logsError)
-      }
-
       const zipBlob = await zip.generateAsync({ type: 'blob' })
       const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.zip`
 
@@ -870,7 +841,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   }
 
   const handleConfirmClose = async (closeMatch) => {
-    cLogger.logHandler('handleConfirmClose', { closeMatch, matchId })
     setShowCloseConfirm(false)
 
     if (closeMatch) {
@@ -928,7 +898,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
   // Handle reopening the last set for corrections
   const handleReopenLastSet = async () => {
-    cLogger.logHandler('handleReopenLastSet', { matchId })
     setShowReopenConfirm(false)
 
     try {
@@ -1037,36 +1006,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       </div>
 
       {/* Winner Card */}
-      <div className="card" style={{ marginBottom: '16px', padding: '20px' }}>
-        <h3 style={{ margin: 0, textAlign: 'center' }}>{t('matchEnd.winner', 'Winner')}</h3>
-        {/* Team Name with background */}
-        <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '26px', fontWeight: 700, marginBottom: '20px' }}>
-          {winner}
+      <div className="card" style={{ marginBottom: '16px', textAlign: 'center', padding: '20px' }}>
+        <div className="text-sm" style={{ marginBottom: '8px' }}>{t('matchEnd.winner', 'Winner')}</div>
+        <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>
+          {winner} <span className="text-sm" style={{ fontWeight: 400 }}>{t('matchEnd.teamLabel', { label: winnerLabel })}</span>
         </div>
-        {/* Score and Set Results */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px' }}>
-          {/* Main Score */}
-          <div style={{ fontSize: '10vmin', fontWeight: 800, color: 'var(--accent)' }}>
-            {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
-          </div>
-          {/* Set Scores - Vertical List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '1.5vmin' }}>
-            {finishedSets.map((set, idx) => {
-              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
-              return (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '15px', color: 'var(--muted)'}}>
-                  <span style={{ width: '24px', fontSize: '1.5vmin', color: 'var(--muted)', marginRight: '15px', textAlign: 'center' }}>{romanNumerals[idx]}</span>
-                  <span style={{ fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)',  }}>
-                    {set.homePoints}
-                  </span>
-                  <span>:</span>
-                  <span style={{ fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
-                    {set.awayPoints}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+        <div style={{ fontSize: '40px', fontWeight: 800, color: 'var(--accent)' }}>
+          {result}
         </div>
       </div>
 
@@ -1074,451 +1020,3 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       {!isApproved && (
         <div className="card" style={{ marginBottom: '16px' }}>
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <SignatureBox role="captain-a" />
-            <SignatureBox role="captain-b" />
-          </div>
-        </div>
-      )}
-
-      {/* Results and Sanctions - Side by side, clickable to zoom */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
-        {/* Results Card */}
-        <div
-          className="card"
-          style={{ flex: '1 1 300px', minWidth: '280px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
-          onClick={() => setZoomedSection('results')}
-        >
-          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.results', 'Results')}</h3>
-          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
-            <ResultsTable
-              teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
-              teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
-              setResults={calculateSetResults}
-              matchStart={matchStart}
-              matchEnd={matchEndTime}
-              matchDuration={matchDuration}
-            />
-          </div>
-        </div>
-
-        {/* Sanctions Card */}
-        <div
-          className="card"
-          style={{ flex: '1 1 300px', minWidth: '280px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
-          onClick={() => setZoomedSection('sanctions')}
-        >
-          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3>
-          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
-            <SanctionsTable
-              items={sanctionsInBox}
-              improperRequests={improperRequests}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Remarks Card */}
-      <div className="card" style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h3 style={{ margin: 0 }}>{t('matchEnd.remarks', 'Remarks')}</h3>
-          {!isApproved && (
-            <button
-              onClick={() => {
-                setRemarksText(match?.remarks || '')
-                setShowRemarksModal(true)
-              }}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                background: '#fff',
-                cursor: 'pointer'
-              }}
-            >
-              {t('matchEnd.editRemarks', 'Edit Remarks')}
-            </button>
-          )}
-        </div>
-        <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
-          <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
-        </div>
-      </div>
-
-      {/* Other Signatures - At the bottom */}
-      {!isApproved && captainsDone && (
-        <div className="card" style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div>
-              <h3 style={{ margin: 0, display: 'inline' }}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
-              <span className="text-sm" style={{ marginLeft: '12px' }}>
-                {currentStep === 'asst-scorer' && t('matchEnd.assistantScorer', 'Assistant Scorer')}
-                {currentStep === 'scorer' && t('matchEnd.scorer', 'Scorer')}
-                {currentStep === 'ref2' && t('matchEnd.referee2', '2nd Referee')}
-                {currentStep === 'ref1' && t('matchEnd.referee1', '1st Referee')}
-                {currentStep === 'complete' && t('matchEnd.allSignaturesCollected', 'All signatures collected')}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            {/* Assistant Scorer (if present) */}
-            {hasAsstScorer && (
-              <SignatureBox role="asst-scorer" disabled={false} />
-            )}
-
-            {/* Scorer */}
-            <SignatureBox role="scorer" disabled={hasAsstScorer && !asstScorerSigned} />
-
-            {/* 2nd Referee (if present) - can sign after scorer has signed */}
-            {hasRef2 && (
-              <SignatureBox role="ref2" disabled={!scorerSigned} />
-            )}
-
-            {/* 1st Referee (final) - can sign after ref2 (if present) or after scorer (if no ref2) */}
-            <SignatureBox role="ref1" disabled={(hasRef2 && !ref2Signed) || !scorerSigned} />
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {!isApproved && !showCloseConfirm && !showReopenConfirm && (
-          <>
-            <button
-              onClick={handleApprove}
-              disabled={isSaving || (!match.test && !allSignaturesDone)}
-              className="primary"
-              style={{
-                flex: 1,
-                minWidth: '150px',
-                padding: '14px',
-                fontSize: '15px',
-                opacity: (isSaving || (!match.test && !allSignaturesDone)) ? 0.5 : 1,
-                cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and Approve')}
-            </button>
-            <button
-              onClick={() => setShowReopenConfirm(true)}
-              className="secondary"
-              style={{
-                padding: '14px 20px',
-                fontSize: '15px',
-                background: '#ea0808ff',
-                color: '#000',
-              }}
-            >
-              {t('matchEnd.reopenLastSet', 'Reopen Last Set')}
-            </button>
-          </>
-        )}
-
-        <MenuList
-          buttonLabel="📄 Scoresheet"
-          buttonClassName="secondary"
-          buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
-          showArrow={true}
-          position="right"
-          vertical="top"
-          items={[
-            { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
-            { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
-            { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
-            { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
-          ]}
-        />
-      </div>
-
-      {/* Download Progress Modal */}
-      {downloadProgress && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div style={{
-            background: '#111827',
-            borderRadius: '12px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
-            textAlign: 'center'
-          }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing Match Export...')}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                <span style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
-                <span style={{ color: downloadProgress.json ? '#22c55e' : 'var(--muted)' }}>Match Data (JSON)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                <span style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
-                <span style={{ color: downloadProgress.pdf ? '#22c55e' : 'var(--muted)' }}>{t('matchEnd.generatingPdf', 'Generating Scoresheet (PDF)')}</span>
-              </div>
-            </div>
-            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
-              {downloadProgress.json && downloadProgress.pdf
-                ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
-                : t('matchEnd.waitCheck', 'Please wait while files are being prepared...')}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Close Match Confirmation Modal */}
-      {showCloseConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div style={{
-            background: '#111827',
-            borderRadius: '12px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
-            textAlign: 'center'
-          }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.closeMatchConfirmTitle', 'Close Match?')}</h3>
-            <p style={{ margin: '0 0 24px 0', color: 'var(--muted)' }}>
-              {t('matchEnd.closeMatchConfirmBody', 'Match data has been downloaded. Do you want to close the match?')}
-            </p>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => handleConfirmClose(true)}
-                className="primary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.closeMatch', 'Close Match')}
-              </button>
-              <button
-                onClick={() => handleConfirmClose(false)}
-                className="secondary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reopen Last Set Confirmation Modal */}
-      {showReopenConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div style={{
-            background: 'var(--bg-secondary)',
-            borderRadius: '12px',
-            padding: '24px',
-            maxWidth: '450px',
-            width: '90%',
-            background: 'rgba(0, 0, 0, 0.8)',
-            textAlign: 'center'
-          }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen Last Set?')}</h3>
-            <p style={{ margin: '0 0 16px 0', color: 'var(--muted)' }}>
-              {t('matchEnd.reopenSetConfirmBody', 'This will reopen the last set for corrections and allow you to continue scoring.')}
-            </p>
-            <p style={{ margin: '0 0 24px 0', color: 'var(--warning)', fontSize: '14px' }}>
-              {t('matchEnd.reopenSetWarning', 'Warning: All collected signatures will be cleared and must be collected again after approval.')}
-            </p>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={handleReopenLastSet}
-                className="primary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.yesReopen', 'Yes, Reopen Set')}
-              </button>
-              <button
-                onClick={() => setShowReopenConfirm(false)}
-                className="secondary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.cancel', 'Cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Zoom Modal for Results/Sanctions */}
-      {zoomedSection && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '20px'
-          }}
-          onClick={() => setZoomedSection(null)}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: '12px',
-              maxWidth: '95vw',
-              maxHeight: '90vh',
-              overflow: 'auto',
-              transform: 'scale(1.2)',
-              transformOrigin: 'center center'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {zoomedSection === 'results' && (
-              <ResultsTable
-                teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
-                teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
-                setResults={calculateSetResults}
-                matchStart={matchStart}
-                matchEnd={matchEndTime}
-                matchDuration={matchDuration}
-              />
-            )}
-            {zoomedSection === 'sanctions' && (
-              <SanctionsTable
-                items={sanctionsInBox}
-                improperRequests={improperRequests}
-              />
-            )}
-          </div>
-          <button
-            onClick={() => setZoomedSection(null)}
-            style={{
-              position: 'absolute',
-              top: '20px',
-              right: '20px',
-              background: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              fontSize: '24px',
-              color: '#fff',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            ×
-          </button>
-        </div>
-      )}
-
-      {/* Signature Modal - Added open prop */}
-      <SignaturePad
-        open={!!openSignature}
-        title={openSignature ? getSignatureLabel(openSignature) : ''}
-        existingSignature={openSignature ? getSignatureData(openSignature) : null}
-        onSave={(signatureData) => handleSaveSignature(openSignature, signatureData)}
-        onClose={() => setOpenSignature(null)}
-      />
-
-      {/* Remarks Modal */}
-      {showRemarksModal && (
-        <Modal
-          title={t('matchEnd.editRemarks', 'Edit Remarks')}
-          open={true}
-          onClose={() => {
-            setShowRemarksModal(false)
-            setRemarksText('')
-          }}
-          width={600}
-        >
-          <div style={{ padding: '20px' }}>
-            <textarea
-              ref={remarksTextareaRef}
-              placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
-              value={remarksText}
-              onChange={e => setRemarksText(e.target.value)}
-              style={{
-                width: '100%',
-                minHeight: '200px',
-                padding: '12px',
-                fontSize: '14px',
-                border: '1px solid #ccc',
-                borderRadius: '6px',
-                resize: 'vertical',
-                fontFamily: 'inherit',
-                boxSizing: 'border-box'
-              }}
-              autoFocus
-            />
-            <div style={{ marginTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  setShowRemarksModal(false)
-                  setRemarksText('')
-                }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  border: '1px solid #ccc',
-                  borderRadius: '6px',
-                  background: '#fff',
-                  cursor: 'pointer'
-                }}
-              >
-                {t('common.cancel', 'Cancel')}
-              </button>
-              <button
-                onClick={async () => {
-                  await db.matches.update(matchId, { remarks: remarksText.trim() })
-                  setShowRemarksModal(false)
-                  setRemarksText('')
-                }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: '#007bff',
-                  color: '#fff',
-                  cursor: 'pointer'
-                }}
-              >
-                {t('common.save', 'Save')}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </MatchEndPageView>
-  )
-}
