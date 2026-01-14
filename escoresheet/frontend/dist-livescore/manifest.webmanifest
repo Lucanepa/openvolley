@@ -1,0 +1,1 @@
+{"name":"Live Scoreboard","short_name":"Livescore","start_url":"/","display":"standalone","background_color":"#ffffff","lang":"en","scope":"/","description":"Live scoring display for volleyball match","theme_color":"#7c3aed","icons":[{"src":"openvolley_no_bg.png","sizes":"192x192","type":"image/png"},{"src":"openvolley_no_bg.png","sizes":"512x512","type":"image/png"}]}
