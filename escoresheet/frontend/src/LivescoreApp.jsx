@@ -117,13 +117,25 @@ export default function LivescoreApp() {
   const getLeftRight = (game) => {
     const sideA = game.side_a || 'left' // default Team A on left
     const isALeft = sideA === 'left'
+    const isMatchEnded = game.match_status === 'ended' || game.match_status === 'final'
+
+    // When match is ended, show set score as main score
+    const leftSets = isALeft ? (game.sets_won_a || 0) : (game.sets_won_b || 0)
+    const rightSets = isALeft ? (game.sets_won_b || 0) : (game.sets_won_a || 0)
+    const leftPoints = isALeft ? (game.points_a || 0) : (game.points_b || 0)
+    const rightPoints = isALeft ? (game.points_b || 0) : (game.points_a || 0)
+
     return {
       leftName: isALeft ? (game.team_a_name || 'Team A') : (game.team_b_name || 'Team B'),
       rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
-      leftScore: isALeft ? (game.points_a || 0) : (game.points_b || 0),
-      rightScore: isALeft ? (game.points_b || 0) : (game.points_a || 0),
-      leftSets: isALeft ? (game.sets_won_a || 0) : (game.sets_won_b || 0),
-      rightSets: isALeft ? (game.sets_won_b || 0) : (game.sets_won_a || 0),
+      // Main score: show sets if match ended, otherwise points
+      leftScore: isMatchEnded ? leftSets : leftPoints,
+      rightScore: isMatchEnded ? rightSets : rightPoints,
+      leftSets,
+      rightSets,
+      leftPoints,
+      rightPoints,
+      isMatchEnded,
       // Serving: convert team key to side
       servingTeam: game.serving_team // already 'left' or 'right'
     }
@@ -131,7 +143,7 @@ export default function LivescoreApp() {
 
   // Fullscreen view for selected game
   if (selectedGameData) {
-    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, servingTeam } = getLeftRight(selectedGameData)
+    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, leftPoints, rightPoints, isMatchEnded, servingTeam } = getLeftRight(selectedGameData)
     const currentSet = selectedGameData.current_set || 1
     const gameN = selectedGameData.game_n || ''
     const league = selectedGameData.league || ''
@@ -230,7 +242,8 @@ export default function LivescoreApp() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px'
+          padding: '20px',
+          maxWidth: '400px'
         }}>
           {/* Point Score */}
           <div style={{
@@ -281,39 +294,62 @@ export default function LivescoreApp() {
             </div>
           </div>
 
-          {/* Set Score */}
+          {/* Set Score or Final indicator */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '20px',
             marginTop: '40px'
           }}>
-            <div style={{
-              fontSize: 'clamp(32px, 10vw, 80px)',
-              fontWeight: 700,
-              padding: '8px 16px',
-              background: 'rgba(255,255,255,0.1)',
-              borderRadius: '8px'
-            }}>
-              {leftSets}
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
-                {t('livescore.set', 'SET')}
+            {isMatchEnded ? (
+              /* Show FINAL badge and last set score when match ended */
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  fontSize: 'clamp(28px, 8vw, 56px)',
+                  fontWeight: 800,
+                  color: '#22c55e',
+                  marginBottom: '8px'
+                }}>
+                  {t('livescore.final', 'FINAL')}
+                </div>
+                <div style={{
+                  fontSize: 'clamp(14px, 4vw, 20px)',
+                  color: 'rgba(255,255,255,0.5)'
+                }}>
+                  {t('livescore.lastSetScore', 'Last set')}: {leftPoints} - {rightPoints}
+                </div>
               </div>
-              <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
-                {currentSet}
-              </div>
-            </div>
-            <div style={{
-              fontSize: 'clamp(32px, 10vw, 80px)',
-              fontWeight: 700,
-              padding: '8px 16px',
-              background: 'rgba(255,255,255,0.1)',
-              borderRadius: '8px'
-            }}>
-              {rightSets}
-            </div>
+            ) : (
+              /* Show set scores during match */
+              <>
+                <div style={{
+                  fontSize: 'clamp(32px, 10vw, 80px)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '8px'
+                }}>
+                  {leftSets}
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
+                    {t('livescore.set', 'SET')}
+                  </div>
+                  <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
+                    {currentSet}
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 'clamp(32px, 10vw, 80px)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '8px'
+                }}>
+                  {rightSets}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -439,7 +475,7 @@ export default function LivescoreApp() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {liveGames.map((game) => {
-              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, servingTeam } = getLeftRight(game)
+              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam } = getLeftRight(game)
               const gameN = game.game_n || ''
               const league = game.league || ''
               const gender = game.gender || ''
@@ -524,14 +560,18 @@ export default function LivescoreApp() {
                     </div>
                   </div>
 
-                  {/* Set Score */}
+                  {/* Set Score or Final indicator */}
                   <div style={{
                     marginTop: '8px',
                     fontSize: '12px',
-                    color: 'rgba(255,255,255,0.5)',
-                    textAlign: 'center'
+                    color: isMatchEnded ? '#22c55e' : 'rgba(255,255,255,0.5)',
+                    textAlign: 'center',
+                    fontWeight: isMatchEnded ? 600 : 400
                   }}>
-                    Set {game.current_set || 1} • Sets: {leftSets} - {rightSets}
+                    {isMatchEnded
+                      ? t('livescore.final', 'FINAL')
+                      : `Set ${game.current_set || 1} • Sets: ${leftSets} - ${rightSets}`
+                    }
                   </div>
                 </button>
               )

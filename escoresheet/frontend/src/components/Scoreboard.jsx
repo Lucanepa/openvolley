@@ -8378,7 +8378,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleTouchDragStart = useCallback((e, playerData) => {
     if (rallyStatus !== 'idle') return
 
-    // Don't interfere with native scroll on single touch
+    // Prevent native long-press behavior (copy/paste/download context menu on tablets)
+    e.preventDefault()
+
     const touch = e.touches[0]
     const startPos = { x: touch.clientX, y: touch.clientY }
 
@@ -8535,11 +8537,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
       }
-
-      // Reset state
-      cancelTouchDrag()
     }
+
+    // Always cleanup touch state to prevent green highlighting from persisting
+    // This handles edge cases on touchscreen PCs where state timing may differ
+    cancelTouchDrag()
   }, [touchDragState, draggedPlayer, cancelTouchDrag, getDropInfoFromElement, isValidDropTarget, handleCourtDrop, handleBenchDrop])
+
+  // Handle touch cancel - fires when touch is interrupted (browser context menu, scroll gesture, etc.)
+  const handleTouchCancel = useCallback(() => {
+    cancelTouchDrag()
+  }, [cancelTouchDrag])
 
   // Cleanup touch drag on unmount or when match changes
   useEffect(() => {
