@@ -70,6 +70,14 @@ const subdomains = {
     title: 'Roster Upload - OpenVolley',
     mainEntry: 'upload-roster-main',
     themeColor: '#ea580c'
+  },
+  scoresheet: {
+    name: 'Scoresheet Archive',
+    shortName: 'Scoresheet',
+    description: 'View and download volleyball match scoresheets',
+    title: 'Scoresheet Archive - OpenVolley',
+    mainEntry: 'scoresheet-main',
+    themeColor: '#0891b2'
   }
 }
 
