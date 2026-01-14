@@ -7836,7 +7836,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         return (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
             <div className="panel">
-              <h3>{t('matchSetup.teamRoster', { team: home || t('common.home') })}</h3>
+              <h3>{t('roster.titleWithTeam', { team: home || t('common.home') })}</h3>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
                 <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.players')}</strong>
@@ -7844,8 +7844,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>{t('common.name')}</th>
-                      <th>{t('common.dob')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th>{t('roster.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7880,8 +7880,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Name</th>
-                        <th>DOB</th>
+                        <th>{t('roster.name')}</th>
+                        <th>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -7918,9 +7918,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <table className="roster-table">
                   <thead>
                     <tr>
-                      <th>Role</th>
-                      <th>{t('common.name')}</th>
-                      <th>{t('common.dob')}</th>
+                      <th>{t('roster.role')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th>{t('roster.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7947,7 +7947,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
             </div>
             <div className="panel">
-              <h3>{t('matchSetup.teamRoster', { team: away || t('common.away') })}</h3>
+              <h3>{t('roster.titleWithTeam', { team: away || t('common.away') })}</h3>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
                 <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.players')}</strong>
@@ -7955,8 +7955,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>{t('common.name')}</th>
-                      <th>{t('common.dob')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th>{t('roster.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7991,8 +7991,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Name</th>
-                        <th>DOB</th>
+                        <th>{t('roster.name')}</th>
+                        <th>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -8029,9 +8029,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <table className="roster-table">
                   <thead>
                     <tr>
-                      <th>Role</th>
-                      <th>{t('common.name')}</th>
-                      <th>{t('common.dob')}</th>
+                      <th>{t('roster.role')}</th>
+                      <th>{t('roster.name')}</th>
+                      <th>{t('roster.dob')}</th>
                     </tr>
                   </thead>
                   <tbody>
