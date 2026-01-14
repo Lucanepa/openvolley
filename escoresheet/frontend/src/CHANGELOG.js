@@ -3,6 +3,13 @@
 
 export const changelog = [
   {
+    version: '1.0.3',
+    date: '14.01.26',
+    changes: [
+      '1.0.1'
+    ]
+  },
+  {
     version: '1.0.2',
     date: '14.01.26',
     changes: [
