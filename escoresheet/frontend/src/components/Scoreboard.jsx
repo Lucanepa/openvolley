@@ -15094,7 +15094,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{
               position: 'relative',
               display: 'grid',
-              gridTemplateColumns: '1fr auto auto auto 1fr',
+              gridTemplateColumns: '1fr minmax(0, 15vw) auto minmax(0, 15vw) 1fr',
               alignItems: 'center',
               gap: 0,
               width: '100%'
