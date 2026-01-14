@@ -7227,11 +7227,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
                 <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>{t('matchSetup.matchInfo')}</h3>
-                {!matchInfoConfirmed && (
-                  <span style={{ color: canConfirmMatchInfo ? '#3b82f6' : '#f59e0b', fontSize: '11px', fontWeight: 500 }}>
-                    {canConfirmMatchInfo ? t('matchSetup.readyToConfirm') : t('matchSetup.fillRequiredFields')}
-                  </span>
-                )}
               </div>
               <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
