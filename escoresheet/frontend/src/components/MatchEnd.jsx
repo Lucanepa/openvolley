@@ -1,44 +1,66 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
 import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
+import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import JSZip from 'jszip'
 import { supabase } from '../lib/supabaseClient'
+import { useComponentLogging } from '../contexts/LoggingContext'
+import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = '/ball.png'
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 
+// Helper to format duration as hh:mm
+const formatDurationHHMM = (durationStr) => {
+  if (!durationStr) return ''
+  // If already in format like "176'" (minutes), convert to hh:mm
+  const match = durationStr.match(/^(\d+)'?$/)
+  if (match) {
+    const totalMinutes = parseInt(match[1], 10)
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return `${hours}:${String(minutes).padStart(2, '0')}`
+  }
+  return durationStr
+}
+
 // Standard Results component for MatchEnd page
 const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration }) => {
   const { t } = useTranslation()
+
+  // Calculate winner
+  const teamAWins = setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0
+  const teamBWins = setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0
+  const winnerName = teamAWins > teamBWins ? teamAName : teamBWins > teamAWins ? teamBName : null
+
   return (
-    <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000' }}>
-      {/* Header Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 1fr', gap: '4px', marginBottom: '4px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px', background: '#f0f0f0', borderRadius: '4px' }}>
-          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: '#000' }}>A</div>
-          <span style={{ fontWeight: 600, fontSize: '11px', color: '#000' }}>{teamAName}</span>
+    <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Team Labels Row - flex: 1 to fill available vertical space */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginBottom: '4px', flex: 1, minHeight: '40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px', background: '#f0f0f0', borderRadius: '4px' }}>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#000', flexShrink: 0 }}>A</div>
+          <span style={{ fontWeight: 600, fontSize: '14px', color: '#000' }}>{teamAName}</span>
         </div>
-        <div style={{ textAlign: 'center', fontWeight: 600, fontSize: '10px', color: '#333' }}>{t('matchEnd.set', 'Set')}</div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', padding: '4px', background: '#f0f0f0', borderRadius: '4px' }}>
-          <span style={{ fontWeight: 600, fontSize: '11px', color: '#000' }}>{teamBName}</span>
-          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: '#000' }}>B</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', padding: '8px', background: '#f0f0f0', borderRadius: '4px' }}>
+          <span style={{ fontWeight: 600, fontSize: '14px', color: '#000', textAlign: 'right' }}>{teamBName}</span>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#000', flexShrink: 0 }}>B</div>
         </div>
       </div>
 
       {/* Column Headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 1fr', gap: '4px', marginBottom: '2px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', marginBottom: '2px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
           <span>T</span><span>S</span><span>W</span><span>P</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
-          <span>#</span><span>{t('matchEnd.time', 'Time')}</span>
+          <span>{t('matchEnd.set', 'Set')}</span><span>{t('matchEnd.time', 'Time')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
           <span>P</span><span>W</span><span>S</span><span>T</span>
@@ -46,48 +68,74 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
       </div>
 
       {/* Set Rows */}
-      {[1, 2, 3, 4, 5].map(setNum => {
-        const setData = setResults?.find(r => r.setNumber === setNum)
-        const isFinished = setData && setData.teamAPoints !== null
+      <div>
+        {[1, 2, 3, 4, 5].map(setNum => {
+          const setData = setResults?.find(r => r.setNumber === setNum)
+          const isFinished = setData && setData.teamAPoints !== null
+          return (
+            <div key={setNum} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', borderBottom: '1px solid #ccc', padding: '2px 0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
+                <span>{isFinished ? (setData.teamATimeouts ?? '') : ''}</span>
+                <span>{isFinished ? (setData.teamASubstitutions ?? '') : ''}</span>
+                <span>{isFinished ? (setData.teamAWon ?? '') : ''}</span>
+                <span style={{ fontWeight: 700 }}>{isFinished ? (setData.teamAPoints ?? '') : ''}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', color: '#000' }}>
+                <span style={{ fontWeight: 600 }}>{setNum}</span>
+                <span>{setData?.duration || ''}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
+                <span style={{ fontWeight: 700 }}>{isFinished ? (setData.teamBPoints ?? '') : ''}</span>
+                <span>{isFinished ? (setData.teamBWon ?? '') : ''}</span>
+                <span>{isFinished ? (setData.teamBSubstitutions ?? '') : ''}</span>
+                <span>{isFinished ? (setData.teamBTimeouts ?? '') : ''}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Totals Row */}
+      {(() => {
+        // Sum of set durations (parse "21'" format)
+        const totalSetMinutes = setResults?.reduce((sum, r) => {
+          if (!r.duration) return sum
+          const match = r.duration.match(/^(\d+)'?$/)
+          return sum + (match ? parseInt(match[1], 10) : 0)
+        }, 0) || 0
+        const totalSetDuration = totalSetMinutes > 0 ? `${totalSetMinutes}'` : ''
+
         return (
-          <div key={setNum} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 1fr', gap: '4px', borderBottom: '1px solid #ccc', padding: '2px 0' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
-              <span>{isFinished ? (setData.teamATimeouts ?? '') : ''}</span>
-              <span>{isFinished ? (setData.teamASubstitutions ?? '') : ''}</span>
-              <span>{isFinished ? (setData.teamAWon ?? '') : ''}</span>
-              <span style={{ fontWeight: 700 }}>{isFinished ? (setData.teamAPoints ?? '') : ''}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', padding: '4px 0', background: '#e8e8e8', marginTop: '2px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamATimeouts ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamASubstitutions ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0}</span>
+              <span style={{ fontWeight: 700 }}>{setResults?.reduce((sum, r) => sum + (r.teamAPoints ?? 0), 0) || 0}</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', color: '#000' }}>
-              <span style={{ fontWeight: 600 }}>{setNum}</span>
-              <span>{setData?.duration || ''}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
+              <span>{t('matchEnd.tot', 'Tot')}</span>
+              <span>{totalSetDuration}</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
-              <span style={{ fontWeight: 700 }}>{isFinished ? (setData.teamBPoints ?? '') : ''}</span>
-              <span>{isFinished ? (setData.teamBWon ?? '') : ''}</span>
-              <span>{isFinished ? (setData.teamBSubstitutions ?? '') : ''}</span>
-              <span>{isFinished ? (setData.teamBTimeouts ?? '') : ''}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
+              <span style={{ fontWeight: 700 }}>{setResults?.reduce((sum, r) => sum + (r.teamBPoints ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamBSubstitutions ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamBTimeouts ?? 0), 0) || 0}</span>
             </div>
           </div>
         )
-      })}
+      })()}
 
-      {/* Totals Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 1fr', gap: '4px', padding: '4px 0', background: '#e8e8e8', borderRadius: '0 0 4px 4px', marginTop: '2px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamATimeouts ?? 0), 0) || 0}</span>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamASubstitutions ?? 0), 0) || 0}</span>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0}</span>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamAPoints ?? 0), 0) || 0}</span>
+      {/* Winner Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', padding: '6px 8px', background: '#e8e8e8', borderRadius: '0 0 4px 4px', borderTop: '1px solid #ccc' }}>
+        <div>
+          <span style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase' }}>{t('matchEnd.winner', 'Winner')}</span>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{winnerName || '-'}</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
-          <span>{t('matchEnd.tot', 'Tot')}</span>
-          <span>{matchDuration}</span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamBPoints ?? 0), 0) || 0}</span>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0}</span>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamBSubstitutions ?? 0), 0) || 0}</span>
-          <span>{setResults?.reduce((sum, r) => sum + (r.teamBTimeouts ?? 0), 0) || 0}</span>
+        <div style={{ textAlign: 'right' }}>
+          <span style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase' }}>{t('matchEnd.result', 'Result')}</span>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{Math.max(teamAWins, teamBWins)}:{Math.min(teamAWins, teamBWins)}</div>
         </div>
       </div>
 
@@ -95,7 +143,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#000', marginTop: '8px', padding: '6px', background: '#f0f0f0', borderRadius: '4px' }}>
         <span>{t('matchEnd.start', 'Start')}: <strong>{matchStart}</strong></span>
         <span>{t('matchEnd.end', 'End')}: <strong>{matchEnd}</strong></span>
-        <span>{t('matchEnd.duration', 'Duration')}: <strong>{matchDuration}</strong></span>
+        <span>{t('matchEnd.duration', 'Duration')}: <strong>{formatDurationHHMM(matchDuration)}</strong></span>
       </div>
     </div>
   )
@@ -105,7 +153,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
 const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
   const { t } = useTranslation()
   return (
-    <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000' }}>
+    <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Improper Request Row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#f0f0f0', borderRadius: '4px', marginBottom: '8px' }}>
         <span style={{ fontSize: '11px', fontWeight: 600, color: '#000' }}>{t('matchEnd.improperRequest', 'Improper Request')}</span>
@@ -139,21 +187,23 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
       </div>
 
       {/* Sanction Rows */}
-      {items.length > 0 ? (
-        items.map((item, idx) => (
-          <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', fontSize: '11px', textAlign: 'center', padding: '4px 0', borderBottom: '1px solid #ccc', color: '#000' }}>
-            <span style={{ fontWeight: 600 }}>{item.type === 'warning' ? item.playerNr : ''}</span>
-            <span style={{ fontWeight: 600 }}>{item.type === 'penalty' ? item.playerNr : ''}</span>
-            <span style={{ fontWeight: 600 }}>{item.type === 'expulsion' ? item.playerNr : ''}</span>
-            <span style={{ fontWeight: 600 }}>{item.type === 'disqualification' ? item.playerNr : ''}</span>
-            <span style={{ fontWeight: 600 }}>{item.team}</span>
-            <span>{item.set}</span>
-            <span>{item.score}</span>
-          </div>
-        ))
-      ) : (
-        <div style={{ textAlign: 'center', color: '#666', padding: '16px', fontSize: '11px' }}>{t('matchEnd.noSanctions', 'No sanctions')}</div>
-      )}
+      <div style={{ flex: 1 }}>
+        {items.length > 0 ? (
+          items.map((item, idx) => (
+            <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', fontSize: '11px', textAlign: 'center', padding: '4px 0', borderBottom: '1px solid #ccc', color: '#000' }}>
+              <span style={{ fontWeight: 600 }}>{item.type === 'warning' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.type === 'penalty' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.type === 'expulsion' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.type === 'disqualification' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.team}</span>
+              <span>{item.set}</span>
+              <span>{item.score}</span>
+            </div>
+          ))
+        ) : (
+          <div style={{ textAlign: 'center', color: '#666', padding: '16px', fontSize: '11px' }}>{t('matchEnd.noSanctions', 'No sanctions')}</div>
+        )}
+      </div>
     </div>
   )
 }
@@ -161,6 +211,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
 // Standard Remarks component for MatchEnd page
 const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
   const { t } = useTranslation()
+
   const formatSanction = (sanction) => {
     const isDelay = sanction.playerNr === 'D'
     const typeLabel = sanction.type === 'warning'
@@ -212,6 +263,7 @@ function MatchEndPageView({ children }) {
 }
 
 export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
+  const cLogger = useComponentLogging('MatchEnd')
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
     if (!match) return null
@@ -259,6 +311,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(null) // { json: boolean, pdf: boolean }
+  const [zoomedSection, setZoomedSection] = useState(null) // 'results' | 'sanctions' | null
+  const [showRemarksModal, setShowRemarksModal] = useState(false)
+  const [remarksText, setRemarksText] = useState('')
+  const remarksTextareaRef = useRef(null)
 
   // Prevent accidental navigation away before approval
   // Skip warning during save process (isSaving) to avoid dialog during PDF generation
@@ -482,12 +538,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   // Determine team labels (A or B)
   const teamAKey = match.coinTossTeamA || 'home'
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
-  const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
   // Winner info
   const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || 'Home') : (awayTeam?.name || 'Away')
-  const winnerLabel = homeSetsWon > awaySetsWon ? homeLabel : awayLabel
-  const result = `3:${Math.min(homeSetsWon, awaySetsWon)}`
 
   // Match time info - duration is matchEnd - matchStart
   const matchStartDate = match?.scheduledAt ? new Date(match.scheduledAt) : null
@@ -549,6 +602,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const allSignaturesDone = currentStep === 'complete'
 
   const handleSaveSignature = async (role, signatureData) => {
+    cLogger.logHandler('handleSaveSignature', { role })
     const fieldMap = {
       'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
       'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
@@ -648,6 +702,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   }
 
   const handleShowScoresheet = (action = 'preview') => {
+    cLogger.logHandler('handleShowScoresheet', { action })
     // Prepare scoresheet data
     const scoresheetData = {
       match,
@@ -663,7 +718,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
     window.open(url, '_blank', 'width=1600,height=1200')
   }
 
+  // Handle downloading comprehensive interaction logs
+  const handleDownloadLogs = async () => {
+    cLogger.logHandler('handleDownloadLogs', { matchId })
+    try {
+      const gameN = match?.gameNumber || match?.game_n || null
+      const { downloadLogs } = await import('../utils/comprehensiveLogger')
+      await downloadLogs(gameN, 'ndjson')
+      showAlert(t('matchEnd.logsDownloaded', 'Interaction logs downloaded successfully'), 'success')
+    } catch (err) {
+      console.error('[MatchEnd] Failed to download logs:', err)
+      showAlert(t('matchEnd.logsDownloadFailed', 'Failed to download logs'), 'error')
+    }
+  }
+
   const handleApprove = async () => {
+    cLogger.logHandler('handleApprove', { matchId, allSignaturesDone })
     setIsSaving(true)
     try {
       // Only check signatures for official matches
@@ -740,6 +810,18 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       zip.file(jsonFilename, dataStr)
       zip.file(pdfResult.filename, pdfResult.blob)
 
+      // Add comprehensive interaction logs to the ZIP
+      try {
+        const gameN = match.gameNumber || match.game_n || null
+        const logsContent = await exportLogsAsNDJSON(gameN)
+        if (logsContent && logsContent.length > 0) {
+          const logsFilename = `interaction_logs_${matchDate}.ndjson`
+          zip.file(logsFilename, logsContent)
+        }
+      } catch (logsError) {
+        console.warn('[MatchEnd] Failed to add interaction logs to ZIP:', logsError)
+      }
+
       const zipBlob = await zip.generateAsync({ type: 'blob' })
       const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.zip`
 
@@ -788,6 +870,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   }
 
   const handleConfirmClose = async (closeMatch) => {
+    cLogger.logHandler('handleConfirmClose', { closeMatch, matchId })
     setShowCloseConfirm(false)
 
     if (closeMatch) {
@@ -845,6 +928,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
   // Handle reopening the last set for corrections
   const handleReopenLastSet = async () => {
+    cLogger.logHandler('handleReopenLastSet', { matchId })
     setShowReopenConfirm(false)
 
     try {
@@ -944,33 +1028,45 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
     <MatchEndPageView>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '32px', height: '32px' }} />
-          <h2 style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
+          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '4vmin', aspectRatio: '1' }} />
+          <h1 style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h1>
+          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '4vmin', aspectRatio: '1' }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <MenuList
-            buttonLabel="📄 Scoresheet"
-            buttonClassName="secondary"
-            showArrow={true}
-            position="right"
-            items={[
-              { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
-              { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
-              { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') }
-            ]}
-          />
-        </div>
+
       </div>
 
       {/* Winner Card */}
-      <div className="card" style={{ marginBottom: '16px', textAlign: 'center', padding: '20px' }}>
-        <div className="text-sm" style={{ marginBottom: '8px' }}>{t('matchEnd.winner', 'Winner')}</div>
-        <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>
-          {winner} <span className="text-sm" style={{ fontWeight: 400 }}>{t('matchEnd.teamLabel', { label: winnerLabel })}</span>
+      <div className="card" style={{ marginBottom: '16px', padding: '20px' }}>
+        <h3 style={{ margin: 0, textAlign: 'center' }}>{t('matchEnd.winner', 'Winner')}</h3>
+        {/* Team Name with background */}
+        <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '26px', fontWeight: 700, marginBottom: '20px' }}>
+          {winner}
         </div>
-        <div style={{ fontSize: '40px', fontWeight: 800, color: 'var(--accent)' }}>
-          {result}
+        {/* Score and Set Results */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px' }}>
+          {/* Main Score */}
+          <div style={{ fontSize: '10vmin', fontWeight: 800, color: 'var(--accent)' }}>
+            {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
+          </div>
+          {/* Set Scores - Vertical List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '1.5vmin' }}>
+            {finishedSets.map((set, idx) => {
+              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
+              return (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '15px', color: 'var(--muted)'}}>
+                  <span style={{ width: '24px', fontSize: '1.5vmin', color: 'var(--muted)', marginRight: '15px', textAlign: 'center' }}>{romanNumerals[idx]}</span>
+                  <span style={{ fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)',  }}>
+                    {set.homePoints}
+                  </span>
+                  <span>:</span>
+                  <span style={{ fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
+                    {set.awayPoints}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
 
@@ -985,12 +1081,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         </div>
       )}
 
-      {/* Results and Sanctions - Flex layout, side by side if space, otherwise stacked */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      {/* Results and Sanctions - Side by side, clickable to zoom */}
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
         {/* Results Card */}
-        <div className="card" style={{ flex: '1 1 400px', minWidth: '300px' }}>
+        <div
+          className="card"
+          style={{ flex: '1 1 300px', minWidth: '280px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+          onClick={() => setZoomedSection('results')}
+        >
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.results', 'Results')}</h3>
-          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333' }}>
+          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <ResultsTable
               teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
               teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
@@ -1003,9 +1103,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         </div>
 
         {/* Sanctions Card */}
-        <div className="card" style={{ flex: '1 1 400px', minWidth: '300px' }}>
+        <div
+          className="card"
+          style={{ flex: '1 1 300px', minWidth: '280px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+          onClick={() => setZoomedSection('sanctions')}
+        >
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3>
-          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '150px' }}>
+          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <SanctionsTable
               items={sanctionsInBox}
               improperRequests={improperRequests}
@@ -1016,7 +1120,27 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
       {/* Remarks Card */}
       <div className="card" style={{ marginBottom: '16px' }}>
-        <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.remarks', 'Remarks')}</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h3 style={{ margin: 0 }}>{t('matchEnd.remarks', 'Remarks')}</h3>
+          {!isApproved && (
+            <button
+              onClick={() => {
+                setRemarksText(match?.remarks || '')
+                setShowRemarksModal(true)
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                background: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              {t('matchEnd.editRemarks', 'Edit Remarks')}
+            </button>
+          )}
+        </div>
         <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
           <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
         </div>
@@ -1082,7 +1206,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
               className="secondary"
               style={{
                 padding: '14px 20px',
-                fontSize: '15px'
+                fontSize: '15px',
+                background: '#ea0808ff',
+                color: '#000',
               }}
             >
               {t('matchEnd.reopenLastSet', 'Reopen Last Set')}
@@ -1100,7 +1226,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
           items={[
             { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
             { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
-            { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') }
+            { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
+            { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
           ]}
         />
       </div>
@@ -1243,6 +1370,77 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         </div>
       )}
 
+      {/* Zoom Modal for Results/Sanctions */}
+      {zoomedSection && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          onClick={() => setZoomedSection(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              maxWidth: '95vw',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              transform: 'scale(1.2)',
+              transformOrigin: 'center center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {zoomedSection === 'results' && (
+              <ResultsTable
+                teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
+                teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
+                setResults={calculateSetResults}
+                matchStart={matchStart}
+                matchEnd={matchEndTime}
+                matchDuration={matchDuration}
+              />
+            )}
+            {zoomedSection === 'sanctions' && (
+              <SanctionsTable
+                items={sanctionsInBox}
+                improperRequests={improperRequests}
+              />
+            )}
+          </div>
+          <button
+            onClick={() => setZoomedSection(null)}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              fontSize: '24px',
+              color: '#fff',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Signature Modal - Added open prop */}
       <SignaturePad
         open={!!openSignature}
@@ -1251,6 +1449,76 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
         onSave={(signatureData) => handleSaveSignature(openSignature, signatureData)}
         onClose={() => setOpenSignature(null)}
       />
+
+      {/* Remarks Modal */}
+      {showRemarksModal && (
+        <Modal
+          title={t('matchEnd.editRemarks', 'Edit Remarks')}
+          open={true}
+          onClose={() => {
+            setShowRemarksModal(false)
+            setRemarksText('')
+          }}
+          width={600}
+        >
+          <div style={{ padding: '20px' }}>
+            <textarea
+              ref={remarksTextareaRef}
+              placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
+              value={remarksText}
+              onChange={e => setRemarksText(e.target.value)}
+              style={{
+                width: '100%',
+                minHeight: '200px',
+                padding: '12px',
+                fontSize: '14px',
+                border: '1px solid #ccc',
+                borderRadius: '6px',
+                resize: 'vertical',
+                fontFamily: 'inherit',
+                boxSizing: 'border-box'
+              }}
+              autoFocus
+            />
+            <div style={{ marginTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowRemarksModal(false)
+                  setRemarksText('')
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  border: '1px solid #ccc',
+                  borderRadius: '6px',
+                  background: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+              <button
+                onClick={async () => {
+                  await db.matches.update(matchId, { remarks: remarksText.trim() })
+                  setShowRemarksModal(false)
+                  setRemarksText('')
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: '#007bff',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                {t('common.save', 'Save')}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </MatchEndPageView>
   )
 }

@@ -656,7 +656,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
         .slice(0, 2);
 
     return (
-        <div className="border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0">
+        <div className={`border ${isHome ? 'border-r-0' : ''} border-black bg-white w-full h-full flex flex-col min-w-0`}>
             <div className="bg-white text-black border-b border-r border-black font-bold py-0.5 text-xs flex justify-between px-1 items-center h-6 shrink-0">
                 {isHome ? (
                     <>
