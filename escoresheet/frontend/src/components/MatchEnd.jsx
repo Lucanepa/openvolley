@@ -9,6 +9,7 @@ import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import JSZip from 'jszip'
 import { supabase } from '../lib/supabaseClient'
+import { uploadScoresheet } from '../utils/scoresheetUploader'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
@@ -826,26 +827,43 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       const zipBlob = await zip.generateAsync({ type: 'blob' })
       const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.zip`
 
-      // Upload PDF to Supabase storage "scoresheets" bucket
-      // Path format: {scheduled_date}/game{n}.pdf
+      // Upload PDF and final JSON to Supabase storage "scoresheets" bucket
       if (supabase && !match?.test) {
         try {
           const scheduledDate = match.scheduledAt
             ? new Date(match.scheduledAt).toISOString().slice(0, 10) // YYYY-MM-DD
             : new Date().toISOString().slice(0, 10)
           const gameNumber = match.gameNumber || match.externalId || match.game_n || 'unknown'
-          const storagePath = `${scheduledDate}/game${gameNumber}.pdf`
 
+          // Upload PDF
+          const pdfStoragePath = `${scheduledDate}/game${gameNumber}.pdf`
           const { error: uploadError } = await supabase.storage
             .from('scoresheets')
-            .upload(storagePath, pdfResult.blob, {
+            .upload(pdfStoragePath, pdfResult.blob, {
               contentType: 'application/pdf',
               upsert: true
             })
           if (uploadError) {
-            console.warn('Failed to upload scoresheet to cloud:', uploadError)
+            console.warn('Failed to upload PDF to cloud:', uploadError)
           } else {
-            console.log('Scoresheet uploaded to cloud:', storagePath)
+            console.log('PDF uploaded to cloud:', pdfStoragePath)
+          }
+
+          // Upload final JSON (with _final suffix for approved matches)
+          const jsonResult = await uploadScoresheet({
+            match,
+            homeTeam,
+            awayTeam,
+            homePlayers,
+            awayPlayers,
+            sets: allSets,
+            events: allEvents,
+            final: true
+          })
+          if (jsonResult.success) {
+            console.log('Final JSON uploaded to cloud:', jsonResult.path)
+          } else {
+            console.warn('Failed to upload final JSON:', jsonResult.error)
           }
         } catch (uploadErr) {
           console.warn('Error uploading scoresheet:', uploadErr)

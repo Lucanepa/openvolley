@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 /**
  * Upload scoresheet data as JSON to Supabase storage.
  * PDFs are generated on-demand at scoresheet.openvolley.app/storage
- * Uploads to: scoresheets/{scheduled_date}/game{n}.json
+ * Uploads to: scoresheets/{scheduled_date}/game{n}.json (or game{n}_final.json if final=true)
  *
  * @param {Object} options
  * @param {Object} options.match - Match data
@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabaseClient'
  * @param {Array} options.awayPlayers - Away players
  * @param {Array} options.sets - Sets data
  * @param {Array} options.events - Events data
+ * @param {boolean} options.final - If true, uploads as game{n}_final.json (approved match)
  * @returns {Promise<{success: boolean, path?: string, error?: string}>}
  */
 export async function uploadScoresheet({
@@ -22,7 +23,8 @@ export async function uploadScoresheet({
   homePlayers,
   awayPlayers,
   sets,
-  events
+  events,
+  final = false
 }) {
   // Skip if no supabase or no match
   if (!supabase || !match) {
@@ -53,13 +55,14 @@ export async function uploadScoresheet({
     const jsonString = JSON.stringify(scoresheetData)
     const jsonBlob = new Blob([jsonString], { type: 'application/json' })
 
-    // Determine storage path: {scheduled_date}/game{n}.json
+    // Determine storage path: {scheduled_date}/game{n}.json or game{n}_final.json
     const scheduledDate = match.scheduledAt
       ? new Date(match.scheduledAt).toISOString().slice(0, 10) // YYYY-MM-DD
       : new Date().toISOString().slice(0, 10)
 
     const gameNumber = match.gameNumber || match.externalId || match.game_n || 'unknown'
-    const storagePath = `${scheduledDate}/game${gameNumber}.json`
+    const suffix = final ? '_final' : ''
+    const storagePath = `${scheduledDate}/game${gameNumber}${suffix}.json`
 
     // Upload to Supabase storage
     const { error: uploadError } = await supabase.storage
