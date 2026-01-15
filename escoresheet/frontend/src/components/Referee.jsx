@@ -19,8 +19,8 @@ import DonutCountdown from './DonutCountdown'
 import { supabase } from '../lib/supabaseClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 
-// Get current version (hardcoded since changelog is removed)
-const currentVersion = '1.0.6'
+// Get current version from package.json (injected by Vite at build time)
+const currentVersion = __APP_VERSION__
 
 // Flag SVG components for language selector
 const FlagGB = () => (

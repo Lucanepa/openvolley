@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import useServiceWorker from '../hooks/useServiceWorker'
 
-// Get current version (hardcoded since changelog is removed)
-const currentVersion = '1.0.6'
+// Get current version from package.json (injected by Vite at build time)
+const currentVersion = __APP_VERSION__
 
 /**
  * Banner that shows when a new version of the app is available

@@ -129,8 +129,8 @@ export default function MainHeader({
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
-  // Use static version (changelog removed)
-  const currentVersion = '1.0.6'
+  // Use version from package.json (injected by Vite at build time)
+  const currentVersion = __APP_VERSION__
 
   // Check if compact mode (viewport width <= 960px)
   const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960

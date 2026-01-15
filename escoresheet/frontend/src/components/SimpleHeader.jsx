@@ -71,7 +71,7 @@ export default function SimpleHeader({
   const [menuOpen, setMenuOpen] = useState(false)
   const [versionExpanded, setVersionExpanded] = useState(false)
   const [languageExpanded, setLanguageExpanded] = useState(false)
-  const currentVersion = version || '1.0.6'
+  const currentVersion = version || __APP_VERSION__
 
   // Close menu on outside click
   useEffect(() => {

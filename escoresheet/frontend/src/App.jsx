@@ -6,6 +6,7 @@ import MatchSetup from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd from './components/MatchEnd'
+import ManualAdjustments from './components/ManualAdjustments'
 import Modal from './components/Modal'
 import InteractiveGuide from './components/InteractiveGuide'
 import ConnectionStatus from './components/ConnectionStatus'
@@ -67,6 +68,7 @@ export default function App() {
   const [showMatchSetup, setShowMatchSetup] = useState(false)
   const [showCoinToss, setShowCoinToss] = useState(false)
   const [showMatchEnd, setShowMatchEnd] = useState(false)
+  const [showManualAdjustments, setShowManualAdjustments] = useState(false)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [deletePinInput, setDeletePinInput] = useState('')
   const [deletePinError, setDeletePinError] = useState('')
@@ -1570,7 +1572,10 @@ export default function App() {
     }
   }
 
-  const openMatchSetup = () => setMatchId(null)
+  const openMatchSetup = () => {
+    setMatchId(null)
+    setShowManualAdjustments(false)
+  }
 
   const openMatchSetupView = () => setShowMatchSetup(true)
 
@@ -1592,6 +1597,7 @@ export default function App() {
     }
     setMatchId(null)
     setShowMatchSetup(false)
+    setShowManualAdjustments(false)
   }
 
   async function clearLocalTestData() {
@@ -2229,6 +2235,7 @@ export default function App() {
     setDeleteMatchModal(null)
     setMatchId(null)
     setShowMatchSetup(false)
+    setShowManualAdjustments(false)
   }
 
   function cancelDeleteMatch() {
@@ -2794,6 +2801,7 @@ export default function App() {
           setMatchId(null)
           setShowMatchSetup(false)
           setShowCoinToss(false)
+          setShowManualAdjustments(false)
 
           setAlertModal(t('home.modals.testMatchDeleted'))
         } catch (error) {
@@ -3112,16 +3120,34 @@ export default function App() {
                   }}
                   offlineMode={offlineMode}
                 />
+              ) : showManualAdjustments && matchId ? (
+                <ManualAdjustments
+                  matchId={matchId}
+                  onClose={() => {
+                    setShowManualAdjustments(false)
+                    setShowMatchEnd(true)
+                  }}
+                  onSave={() => {
+                    setShowManualAdjustments(false)
+                    setShowMatchEnd(true)
+                  }}
+                />
               ) : showMatchEnd && matchId ? (
                 <MatchEnd
                   matchId={matchId}
                   onGoHome={() => {
                     setMatchId(null)
                     setShowMatchEnd(false)
+                    setShowManualAdjustments(false)
                   }}
                   onReopenLastSet={() => {
                     // Just hide MatchEnd - Scoreboard will show for the same matchId
                     setShowMatchEnd(false)
+                    setShowManualAdjustments(false)
+                  }}
+                  onManualAdjustments={() => {
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(true)
                   }}
                 />
               ) : !matchId ? (
@@ -3809,12 +3835,16 @@ export default function App() {
                                 const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
                                 const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
 
-                                if (matchStatus === 'live' && isMatchFinished) {
+                                // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
+                                if (isMatchFinished) {
+                                  // Match is complete - go directly to MatchEnd
                                   setShowMatchSetup(false)
                                   setShowMatchEnd(true)
-                                } else if (matchStatus === 'live' && (hasEvents || hasSets)) {
+                                } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
+                                  // Match in progress with activity - go to Scoreboard
                                   setShowMatchSetup(false)
                                 } else {
+                                  // New or setup-phase match - go to MatchSetup
                                   setShowMatchSetup(true)
                                 }
                               } catch (err) {
