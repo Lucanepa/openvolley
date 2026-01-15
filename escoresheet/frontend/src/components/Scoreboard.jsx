@@ -11579,6 +11579,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setCourtSwitchModal(null)
   }, [courtSwitchModal, data?.events])
 
+  // Check if match is already finished (loaded a completed match)
+  // If so, trigger onFinishSet to navigate to MatchEnd screen
+  useEffect(() => {
+    if (data && !data.set && data.sets && data.sets.length > 0 && !setTransitionLoading) {
+      // No active set but we have sets - check if match is finished
+      const finishedSets = data.sets.filter(s => s.finished)
+      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+      const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+
+      if (isMatchFinished && onFinishSet) {
+        console.log('[Scoreboard] Match is already finished, navigating to MatchEnd')
+        // Pass the last finished set to trigger match end navigation
+        const lastSet = finishedSets.sort((a, b) => b.index - a.index)[0]
+        onFinishSet(lastSet)
+      }
+    }
+  }, [data, setTransitionLoading, onFinishSet])
+
   if (!data?.set || setTransitionLoading) {
     const loadingStep = setTransitionLoading?.step || 'Loading...'
     return (
@@ -15090,41 +15109,44 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </ScoreboardTeamColumn>
 
           <ScoreboardCourtColumn>
-            {/* 5-column layout: Serve+Ball | Left Score | Colon | Right Score | Ball+Serve */}
+            {/* Layered layout: Score centered absolutely, serve indicators in flex layer */}
             <div style={{
               position: 'relative',
-              display: 'grid',
-              gridTemplateColumns: '1fr minmax(0, 15vw) auto minmax(0, 15vw) 1fr',
-              alignItems: 'center',
-              gap: 0,
-              width: '100%'
+              width: '100%',
+              minHeight: '12vmin'
             }}>
-              {/* Column 1: Left - Serve indicator + Ball */}
+              {/* Layer 1: Serve indicators - flex space-between */}
               <div style={{
                 display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-                justifyContent: 'flex-start',
-                gap: '2vmin',
-                paddingRight: '2vmin'
+                width: '100%'
               }}>
-                {leftServing && (() => {
-                  const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
-                  // If lineup not set, show just the ball
-                  if (!servingPlayer || !servingPlayer.number) {
+                {/* Left Serve indicator */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                  gap: '2vmin',
+                  minWidth: '10vmin'
+                }}>
+                  {leftServing && (() => {
+                    const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
+                    // If lineup not set, show just the ball
+                    if (!servingPlayer || !servingPlayer.number) {
+                      return (
+                        <img
+                          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                          alt="Serving team"
+                          style={{
+                            ...serveBallBaseStyle,
+                            width: '8vmin',
+                            height: '8vmin'
+                          }}
+                        />
+                      )
+                    }
                     return (
-                      <img
-                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                        alt="Serving team"
-                        style={{
-                          ...serveBallBaseStyle,
-                          width: '8vmin',
-                          height: '8vmin'
-                        }}
-                      />
-                    )
-                  }
-                  return (
-                    <>
                       <div style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -15158,121 +15180,118 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {servingPlayer.number}
                         </div>
                       </div>
-                    </>
-                  )
-                })()}
+                    )
+                  })()}
+                </div>
+
+                {/* Right Serve indicator */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '2vmin',
+                  minWidth: '10vmin'
+                }}>
+                  {rightServing && (() => {
+                    const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
+                    // If lineup not set, show just the ball
+                    if (!servingPlayer || !servingPlayer.number) {
+                      return (
+                        <img
+                          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                          alt="Serving team"
+                          style={{
+                            ...serveBallBaseStyle,
+                            width: '8vmin',
+                            height: '8vmin'
+                          }}
+                        />
+                      )
+                    }
+                    return (
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: isVeryCompact ? '1px' : isCompactMode ? '2px' : '4px',
+                        zIndex: 10,
+                        pointerEvents: 'none'
+                      }}>
+                        <div style={{
+                          fontSize: '3vmin',
+                          fontWeight: 700,
+                          color: 'var(--text)',
+                          textTransform: 'uppercase',
+                          letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
+                        }}>
+                          SERVE
+                        </div>
+                        <div style={{
+                          fontSize: '6vmin',
+                          fontWeight: 700,
+                          color: 'var(--accent)',
+                          width: '8vmin',
+                          height: '8vmin',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'rgba(34, 197, 94, 0.1)',
+                          border: isVeryCompact ? '2px solid var(--accent)' : isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
+                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '14px'
+                        }}>
+                          {servingPlayer.number}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
               </div>
 
-              {/* Column 2: Left Score */}
+              {/* Layer 2: Score display - absolutely centered */}
               <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'flex-end'
+                justifyContent: 'center',
+                pointerEvents: 'none'
               }}>
+                {/* Left Score */}
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
                   fontSize: 'min(11vw, 11vh)',
                   fontWeight: 500,
-                  lineHeight: 1
+                  lineHeight: 1,
+                  minWidth: '1.2em',
+                  textAlign: 'right',
+                  display: 'inline-block'
                 }}>{pointsBySide.left}</span>
-              </div>
 
-              {/* Column 3: Colon - CENTERED with equal spacing */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 1.5em'
-              }}>
+                {/* Colon */}
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontSize: 'min(11vw, 11vh)',
                   fontWeight: 700,
                   lineHeight: 1,
                   color: '#22c55e',
-                  transform: 'translateY(-0.06em)'
+                  transform: 'translateY(-0.06em)',
+                  padding: '0 0.3em'
                 }}>:</span>
-              </div>
 
-              {/* Column 4: Right Score */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-start'
-              }}>
+                {/* Right Score */}
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
                   fontSize: 'min(11vw, 11vh)',
                   fontWeight: 500,
-                  lineHeight: 1
+                  lineHeight: 1,
+                  minWidth: '1.2em',
+                  textAlign: 'left',
+                  display: 'inline-block'
                 }}>{pointsBySide.right}</span>
-              </div>
-
-              {/* Column 5: Right - Ball + Serve indicator */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                gap: '2vmin',
-                paddingLeft: '2vmin'
-              }}>
-                {rightServing && (() => {
-                  const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
-                  // If lineup not set, show just the ball
-                  if (!servingPlayer || !servingPlayer.number) {
-                    return (
-                      <img
-                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                        alt="Serving team"
-                        style={{
-                          ...serveBallBaseStyle,
-                          width: '8vmin',
-                          height: '8vmin'
-                        }}
-                      />
-                    )
-                  }
-                  return (
-                    <>
-
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: isVeryCompact ? '1px' : isCompactMode ? '2px' : '4px',
-                        zIndex: 10,
-                        pointerEvents: 'none'
-                      }}>
-                        <div style={{
-                          fontSize: '3vmin',
-                          fontWeight: 700,
-                          color: 'var(--text)',
-                          textTransform: 'uppercase',
-                          letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
-                        }}>
-                          SERVE
-                        </div>
-                        <div style={{
-                          fontSize: '6vmin',
-                          fontWeight: 700,
-                          color: 'var(--accent)',
-                          width: '8vmin',
-                          height: '8vmin',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(34, 197, 94, 0.1)',
-                          border: isVeryCompact ? '2px solid var(--accent)' : isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
-                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '14px'
-                        }}>
-                          {servingPlayer.number}
-                        </div>
-                      </div>
-                    </>
-                  )
-                })()}
               </div>
             </div>
 
@@ -16732,7 +16751,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
 
               {/* Rally Controls - Center */}
-              <div className="rally-controls" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div className="rally-controls" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: '12px' }}>
                 {/* Show timeout countdown if timeout is active */}
                 {timeoutModal && timeoutModal.started ? (
                   <>
@@ -26332,8 +26351,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           teamAKey={teamAKey}
           leftIsHome={leftIsHome}
           isMatchEnd={setEndTimeModal.isMatchEnd}
-          homeTeamName={data?.homeTeam?.name || 'Home'}
-          awayTeamName={data?.awayTeam?.name || 'Away'}
+          homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'}
+          awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'}
           onConfirm={confirmSetEndTime}
           onDecisionChange={async () => {
             // Track that user dismissed via undo to prevent re-showing
@@ -28954,11 +28973,14 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
       hideCloseButton={true}
     >
       <div style={{ padding: '24px', textAlign: 'center' }}>
-        <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700 }}>
-          {isMatchEnd ? `${winnerTeamName} won the Match!` : `${winnerTeamName} won Set ${setIndex}!`}
+        <p style={{ marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
+          {leftTeamName} vs {rightTeamName}
         </p>
-        <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--muted)' }}>
-          Set {setIndex}: {leftTeamName} {leftScore} : {rightScore} {rightTeamName}
+        <p style={{ marginBottom: '16px', fontSize: '36px', fontWeight: 700 }}>
+          {leftScore} : {rightScore}
+        </p>
+        <p style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}>
+          {isMatchEnd ? `${winnerTeamName} won the Match!` : `${winnerTeamName} wins!`}
         </p>
         <p style={{ marginBottom: '16px', fontSize: '16px' }}>
           Confirm the end time:

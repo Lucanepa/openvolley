@@ -86,7 +86,7 @@ export default function DashboardHeader({
   rightContent
 }) {
   const { t } = useTranslation()
-  const currentVersion = '1.0.6'
+  const currentVersion = __APP_VERSION__
   const [menuOpen, setMenuOpen] = useState(false)
   const [versionExpanded, setVersionExpanded] = useState(false)
   const [languageExpanded, setLanguageExpanded] = useState(false)

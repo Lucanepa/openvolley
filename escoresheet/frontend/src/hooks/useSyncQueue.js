@@ -53,6 +53,22 @@ const MAX_DEPENDENCY_RETRIES = 10
 // Auto-retry interval for errored jobs (every 30 seconds when online)
 const ERROR_RETRY_INTERVAL = 30000
 
+// Valid Supabase matches table columns - filters out invalid columns from old backup formats
+const VALID_MATCH_COLUMNS = [
+  'external_id', 'game_n', 'game_pin', 'status', 'connections', 'connection_pins',
+  'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
+  'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
+  'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
+  'set_results', 'final_score', 'sanctions', 'winner'
+]
+
+// Filter match payload to only include valid Supabase columns
+function filterMatchPayload(payload) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => VALID_MATCH_COLUMNS.includes(key))
+  )
+}
+
 /**
  * Internal helper: Reset errored jobs to queued (non-hook function)
  * This can be called from within useEffect without dependency issues
@@ -149,7 +165,8 @@ export function useSyncQueue() {
       // ==================== MATCH ====================
       if (job.resource === 'match' && job.action === 'insert') {
         // All data is stored as JSONB in the match record - no FK resolution needed
-        const matchPayload = { ...job.payload }
+        // Filter to valid columns only - handles old backup formats with invalid fields
+        const matchPayload = filterMatchPayload(job.payload)
 
         console.log('[SyncQueue] Match insert payload:', matchPayload)
         const { error } = await supabase
@@ -381,9 +398,11 @@ export function useSyncQueue() {
           }
 
           // Step 3: UPSERT match (creates or updates BY external_id)
+          // Filter to valid columns only - handles old backup formats with invalid fields
+          const filteredMatch = filterMatchPayload(match)
           const { data: upsertedMatch, error: matchError } = await supabase
             .from('matches')
-            .upsert(match, { onConflict: 'external_id' })
+            .upsert(filteredMatch, { onConflict: 'external_id' })
             .select('id')
             .single()
 

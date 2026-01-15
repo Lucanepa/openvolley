@@ -5,7 +5,7 @@ import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
 
-const currentVersion = '1.0.6'
+const currentVersion = __APP_VERSION__
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)

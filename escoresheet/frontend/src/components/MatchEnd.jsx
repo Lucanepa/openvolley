@@ -264,7 +264,7 @@ function MatchEndPageView({ children }) {
   return <div className="setup" style={setupViewStyle}>{children}</div>
 }
 
-export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
+export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualAdjustments }) {
   const cLogger = useComponentLogging('MatchEnd')
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
@@ -310,7 +310,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const [openSignature, setOpenSignature] = useState(null)
   const [isApproved, setIsApproved] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  // showCloseConfirm modal removed - now using direct post-approval buttons
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(null) // { json: boolean, pdf: boolean }
   const [zoomedSection, setZoomedSection] = useState(null) // 'results' | 'sanctions' | null
@@ -876,23 +876,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       zipLink.href = URL.createObjectURL(zipBlob)
       zipLink.click()
 
-      // Show confirmation dialog after downloads complete
-      setDownloadProgress(null)
-      setIsSaving(false)
-      setShowCloseConfirm(true)
-    } catch (error) {
-      console.error('Error approving match:', error)
-      showAlert(t('matchEnd.errorApproving', { error: error.message }), 'error')
-      setDownloadProgress(null)
-      setIsSaving(false)
-    }
-  }
-
-  const handleConfirmClose = async (closeMatch) => {
-    cLogger.logHandler('handleConfirmClose', { closeMatch, matchId })
-    setShowCloseConfirm(false)
-
-    if (closeMatch) {
       // Save to sync queue if official match with seed_key
       if (!match.test && match?.seed_key) {
         // Collect all signatures for the approval JSONB field
@@ -912,36 +895,105 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
           resource: 'match',
           action: 'update',
           payload: {
-            id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
-            status: 'final',
-            current_set: null, // Clear current_set when match is final (not_live)
-            approval: approvalData // JSONB field with signatures and approval timestamp
+            id: match.seed_key,
+            status: 'approved',
+            current_set: null,
+            approval: approvalData
           },
           ts: new Date().toISOString(),
           status: 'queued'
         })
       }
 
-      // Mark as approved and set status to 'final'
+      // Mark as approved in local database (status stays 'ended' until Close Match)
       await db.matches.update(matchId, {
         approved: true,
         approvedAt: new Date().toISOString(),
-        status: 'final',
-        current_set: null // Clear current_set when match is final
+        current_set: null
       })
-      setIsApproved(true)
 
-      // Go home
+      // Update UI state to show post-approval buttons
+      setDownloadProgress(null)
+      setIsSaving(false)
+      setIsApproved(true)
+    } catch (error) {
+      console.error('Error approving match:', error)
+      showAlert(t('matchEnd.errorApproving', { error: error.message }), 'error')
+      setDownloadProgress(null)
+      setIsSaving(false)
+    }
+  }
+
+  // Handle closing match after approval - deletes local data and navigates home
+  const handleCloseMatch = async () => {
+    cLogger.logHandler('handleCloseMatch', { matchId })
+
+    try {
+      // Update match to final status in Supabase first (before deleting local data)
+      if (!match.test && match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            status: 'final'
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      // Delete all local data for this match from IndexedDB
+      await db.transaction('rw', db.events, db.sets, db.players, db.teams, db.matches, async () => {
+        // Delete events for this match
+        await db.events.where('matchId').equals(matchId).delete()
+
+        // Delete sets for this match
+        await db.sets.where('matchId').equals(matchId).delete()
+
+        // Get team IDs before deleting match
+        const matchData = await db.matches.get(matchId)
+        if (matchData) {
+          // Delete players for both teams
+          if (matchData.homeTeamId) {
+            await db.players.where('teamId').equals(matchData.homeTeamId).delete()
+            await db.teams.delete(matchData.homeTeamId)
+          }
+          if (matchData.awayTeamId) {
+            await db.players.where('teamId').equals(matchData.awayTeamId).delete()
+            await db.teams.delete(matchData.awayTeamId)
+          }
+        }
+
+        // Delete the match itself
+        await db.matches.delete(matchId)
+      })
+
+      // Navigate home
       if (onGoHome) onGoHome()
-    } else {
-      // Reopen match for manual adjustments
+    } catch (error) {
+      console.error('[MatchEnd] Error closing match:', error)
+      showAlert(t('matchEnd.errorClosing', 'Error closing match: ') + error.message, 'error')
+    }
+  }
+
+  // Handle reopening match after approval - allows re-approval or adjustments
+  const handleReopenMatch = async () => {
+    cLogger.logHandler('handleReopenMatch', { matchId })
+
+    try {
+      // Clear approval state in database
       await db.matches.update(matchId, {
         approved: false,
         approvedAt: null,
-        status: 'live'
+        status: 'ended' // Match is finished but not final
       })
-      // Navigate back to scoreboard
-      if (onGoHome) onGoHome()
+
+      // Update local state
+      setIsApproved(false)
+    } catch (error) {
+      console.error('[MatchEnd] Error reopening match:', error)
+      showAlert(t('matchEnd.errorReopening', 'Error reopening match: ') + error.message, 'error')
     }
   }
 
@@ -1203,7 +1255,37 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
 
       {/* Action Buttons */}
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {!isApproved && !showCloseConfirm && !showReopenConfirm && (
+        {isApproved ? (
+          // Post-approval buttons: Close Match and Reopen Match
+          <>
+            <button
+              onClick={handleCloseMatch}
+              className="primary"
+              style={{
+                flex: 1,
+                minWidth: '150px',
+                padding: '14px',
+                fontSize: '15px',
+                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+              }}
+            >
+              {t('matchEnd.closeMatch', 'Close Match')}
+            </button>
+            <button
+              onClick={handleReopenMatch}
+              className="secondary"
+              style={{
+                padding: '14px 20px',
+                fontSize: '15px',
+                background: '#ea0808ff',
+                color: '#000',
+              }}
+            >
+              {t('matchEnd.reopenMatch', 'Reopen Match')}
+            </button>
+          </>
+        ) : !showReopenConfirm && (
+          // Pre-approval buttons: Confirm and Approve, Reopen Last Set, Manual Adjustments, Scoresheet
           <>
             <button
               onClick={handleApprove}
@@ -1232,23 +1314,32 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
             >
               {t('matchEnd.reopenLastSet', 'Reopen Last Set')}
             </button>
+            <button
+              onClick={onManualAdjustments}
+              className="secondary"
+              style={{
+                padding: '14px 20px',
+                fontSize: '15px',
+              }}
+            >
+              {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
+            </button>
+            <MenuList
+              buttonLabel={`📄 ${t('matchEnd.scoresheet')}`}
+              buttonClassName="secondary"
+              buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
+              showArrow={true}
+              position="right"
+              vertical="top"
+              items={[
+                { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
+                { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
+                { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
+                { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
+              ]}
+            />
           </>
         )}
-
-        <MenuList
-          buttonLabel={`📄 ${t('matchEnd.scoresheet')}`}
-          buttonClassName="secondary"
-          buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
-          showArrow={true}
-          position="right"
-          vertical="top"
-          items={[
-            { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
-            { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
-            { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
-            { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
-          ]}
-        />
       </div>
 
       {/* Download Progress Modal */}
@@ -1289,52 +1380,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
                 ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
                 : t('matchEnd.waitCheck', 'Please wait while files are being prepared...')}
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* Close Match Confirmation Modal */}
-      {showCloseConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div style={{
-            background: '#111827',
-            borderRadius: '12px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
-            textAlign: 'center'
-          }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.closeMatchConfirmTitle', 'Close Match?')}</h3>
-            <p style={{ margin: '0 0 24px 0', color: 'var(--muted)' }}>
-              {t('matchEnd.closeMatchConfirmBody', 'Match data has been downloaded. Do you want to close the match?')}
-            </p>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => handleConfirmClose(true)}
-                className="primary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.closeMatch', 'Close Match')}
-              </button>
-              <button
-                onClick={() => handleConfirmClose(false)}
-                className="secondary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
-              </button>
-            </div>
           </div>
         </div>
       )}

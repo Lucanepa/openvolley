@@ -13,6 +13,26 @@ import { sanitizeSimple } from './stringUtils'
 const BACKUP_DB_NAME = 'escoresheet_backup'
 const BACKUP_DIR_HANDLE_KEY = 'backup_directory_handle'
 
+// Valid Supabase matches table columns - used to filter restore payloads
+// to prevent sending invalid columns that don't exist in the schema
+const VALID_MATCH_COLUMNS = [
+  'external_id', 'game_n', 'game_pin', 'status', 'connections', 'connection_pins',
+  'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
+  'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
+  'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
+  'set_results', 'final_score', 'sanctions', 'winner'
+]
+
+/**
+ * Filter match payload to only include valid Supabase columns
+ * Prevents sync errors from old backup formats with invalid column names
+ */
+function filterMatchPayload(payload) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => VALID_MATCH_COLUMNS.includes(key))
+  )
+}
+
 /**
  * Check if File System Access API is available
  */
@@ -461,12 +481,12 @@ export async function restoreMatchFromJson(jsonData) {
         status: match.status || 'live'
       }
 
-      // Queue the restore job
+      // Queue the restore job (filter payload to valid columns only)
       await db.sync_queue.add({
         resource: 'match',
         action: 'restore',
         payload: {
-          match: matchPayload,
+          match: filterMatchPayload(matchPayload),
           sets: setsPayload,
           events: eventsPayload,
           liveState: liveStatePayload
@@ -616,12 +636,12 @@ export async function restoreMatchInPlace(matchId, jsonData) {
         status: match.status || 'live'
       }
 
-      // Queue the restore job
+      // Queue the restore job (filter payload to valid columns only)
       await db.sync_queue.add({
         resource: 'match',
         action: 'restore',
         payload: {
-          match: matchPayload,
+          match: filterMatchPayload(matchPayload),
           sets: setsPayload,
           events: eventsPayload,
           liveState: liveStatePayload

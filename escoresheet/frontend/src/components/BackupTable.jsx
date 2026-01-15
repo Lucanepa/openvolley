@@ -136,8 +136,33 @@ export default function BackupTable({
         {showRestoreButton && <span></span>}
       </div>
 
-      {/* Table Rows */}
-      {backups.map((backup, index) => {
+      {/* Table Rows - sorted by created_at descending (newest first) */}
+      {[...backups].sort((a, b) => {
+        // Sort by date/time descending (newest first)
+        // Backups have date (YYYYMMDD), time (HHmmss), and ms fields
+        const getTimestamp = (backup) => {
+          if (backup.date && backup.time) {
+            // Parse date YYYYMMDD and time HHmmss
+            const dateStr = backup.date
+            const timeStr = backup.time.padStart(6, '0')
+            const ms = backup.ms || 0
+            return new Date(
+              parseInt(dateStr.slice(0, 4)),
+              parseInt(dateStr.slice(4, 6)) - 1,
+              parseInt(dateStr.slice(6, 8)),
+              parseInt(timeStr.slice(0, 2)),
+              parseInt(timeStr.slice(2, 4)),
+              parseInt(timeStr.slice(4, 6)),
+              ms
+            ).getTime()
+          }
+          if (backup.created_at) {
+            return new Date(backup.created_at).getTime()
+          }
+          return 0
+        }
+        return getTimestamp(b) - getTimestamp(a)
+      }).map((backup, index) => {
         const formattedTime = backup.date && backup.time
           ? formatBackupDateTime(backup.date, backup.time, backup.ms)
           : (backup.created_at ? new Date(backup.created_at).toLocaleString() : 'Unknown')
