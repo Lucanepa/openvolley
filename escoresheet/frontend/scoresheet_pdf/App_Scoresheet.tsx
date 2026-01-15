@@ -2411,8 +2411,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       await document.fonts.ready;
 
       // Capture using html-to-image toCanvas
+      // pixelRatio: 2 provides good quality for A3 print (300 DPI equivalent) while keeping file size reasonable
       const canvas = await htmlToImage.toCanvas(containerRef.current, {
-        pixelRatio: 4,
+        pixelRatio: 2,
         backgroundColor: '#ffffff',
         style: {
           transform: 'none',
@@ -2422,18 +2423,19 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       // Restore zoom
       setZoomLevel(savedZoomLevel);
 
-      // Convert canvas to image data
-      const imgData = canvas.toDataURL('image/png', 1.0);
+      // Convert canvas to JPEG with compression (0.85 quality is a good balance)
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
       // Create PDF (A3 landscape: 420mm x 297mm)
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
-        format: 'a3'
+        format: 'a3',
+        compress: true
       });
 
-      // Add canvas as full-page image
-      pdf.addImage(imgData, 'PNG', 0, 0, 420, 297);
+      // Add canvas as full-page image using JPEG format
+      pdf.addImage(imgData, 'JPEG', 0, 0, 420, 297, undefined, 'FAST');
 
       if (returnBlob) {
         // Return blob instead of saving
