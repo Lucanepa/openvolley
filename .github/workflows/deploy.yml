@@ -6,6 +6,11 @@ on:
     branches: [ main ]
     paths:
       - 'escoresheet/frontend/**'
+      - 'index.html'
+      - 'landing.css'
+      - 'landing.js'
+      - 'ball.png'
+      - 'favicon.ico'
 
 # Cancel any in-progress deployments for the same branch
 concurrency:
@@ -20,7 +25,7 @@ jobs:
       pages: write
       id-token: write
     env:
-      PAGES_CNAME: app.openvolley.app
+      PAGES_CNAME: openvolley.app
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
@@ -32,20 +37,21 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build
+      - name: Build subdomains
         working-directory: escoresheet/frontend
         run: |
           npm install
-          # Determine base path: use '/' when CNAME set, else '/<repo-name>/'
-          if [ -n "$PAGES_CNAME" ]; then BASE_PATH="/"; else BASE_PATH="/$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)/"; fi
-          export VITE_BASE_PATH="$BASE_PATH"
+          export VITE_BASE_PATH="/"
           npm run build
-          # Create SPA fallback for GitHub Pages
-          cp dist/index.html dist/404.html
-          # Write CNAME when provided
-          if [ -n "$PAGES_CNAME" ]; then echo $PAGES_CNAME > dist/CNAME; fi
           # Build all subdomains for Railway deployment
           node scripts/build-subdomains.js
+
+      - name: Prepare landing page
+        run: |
+          mkdir -p landing-dist
+          cp index.html landing.css landing.js ball.png favicon.ico landing-dist/ 2>/dev/null || true
+          # Write CNAME for GitHub Pages
+          echo "$PAGES_CNAME" > landing-dist/CNAME
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -53,7 +59,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: escoresheet/frontend/dist
+          path: landing-dist
 
       - name: Deploy to GitHub Pages
         id: deployment
@@ -64,6 +70,6 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add -f escoresheet/frontend/dist-*/
-          git diff --staged --quiet || git commit -m "Build subdomains [skip ci]"
+          git diff --staged --quiet || git commit -m "Build subdomains"
           git push
 
