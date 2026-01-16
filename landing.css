@@ -45,9 +45,17 @@ body {
 }
 
 @keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-20px); }
-  100% { transform: translateY(0px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-20px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
 }
 
 .title {
@@ -55,6 +63,7 @@ body {
   font-weight: 800;
   margin: 0;
   background: linear-gradient(to right, #fff, #9ca3af);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   text-align: center;
@@ -209,7 +218,7 @@ body {
   .main-options {
     grid-template-columns: 1fr;
   }
-  
+
   .title {
     font-size: 2rem;
   }
