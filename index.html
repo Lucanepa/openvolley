@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Openvolley Apps</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="landing.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+</head>
+<body>
+    <div class="container" id="main-container">
+        <img src="ball.png" alt="Openvolley Ball" class="hero-image">
+        <h1 class="title">Openvolley</h1>
+        
+        <div class="main-options">
+            <div class="option-card" onclick="openMenu('indoor')">
+                <i class="bi bi-diagram-3 option-icon" style="color: #60a5fa;"></i>
+                <div class="option-title">Indoor Volleyball</div>
+                <div class="item-desc">Court 6x6</div>
+            </div>
+            
+            <div class="option-card" onclick="openMenu('beach')">
+                <i class="bi bi-sun option-icon" style="color: #fca5a5;"></i>
+                <div class="option-title">Beach Volleyball</div>
+                <div class="item-desc">Sand 2x2</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Indoor Menu -->
+    <div class="sub-menu" id="menu-indoor">
+        <button class="close-menu" onclick="closeMenu('indoor')">
+            <i class="bi bi-x-lg"></i>
+        </button>
+        <div class="menu-grid">
+            <a href="https://app.openvolley.app" class="menu-item highlight">
+                <i class="bi bi-pencil-square item-icon"></i>
+                <div>
+                    <div class="item-title">Main eScoresheet</div>
+                    <div class="item-desc">Official electronic scoresheet application</div>
+                </div>
+            </a>
+            
+            <a href="https://referee.openvolley.app" class="menu-item">
+                <i class="bi bi-whistle item-icon"></i>
+                <div class="item-title">Referee Dashboard</div>
+            </a>
+            
+            <a href="https://bench.openvolley.app" class="menu-item">
+                <i class="bi bi-people item-icon"></i>
+                <div class="item-title">Bench Dashboard</div>
+            </a>
+            
+            <a href="https://roster.openvolley.app" class="menu-item">
+                <i class="bi bi-file-earmark-person item-icon"></i>
+                <div class="item-title">Roster Upload</div>
+            </a>
+            
+            <a href="https://livescore.openvolley.app" class="menu-item">
+                <i class="bi bi-broadcast item-icon"></i>
+                <div class="item-title">Livescore</div>
+            </a>
+
+            <a href="https://scoresheet.openvolley.app" class="menu-item">
+                <i class="bi bi-database item-icon"></i>
+                <div class="item-title">Scoresheet DB</div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Beach Menu -->
+    <div class="sub-menu" id="menu-beach">
+        <button class="close-menu" onclick="closeMenu('beach')">
+            <i class="bi bi-x-lg"></i>
+        </button>
+        <div class="menu-grid">
+            <a href="https://beach.openvolley.app" class="menu-item highlight">
+                <i class="bi bi-sun item-icon"></i>
+                <div>
+                    <div class="item-title">Main eScoresheet</div>
+                    <div class="item-desc">Beach volleyball scoring application</div>
+                </div>
+            </a>
+            
+            <a href="https://beach_referee.openvolley.app" class="menu-item">
+                <i class="bi bi-whistle item-icon"></i>
+                <div class="item-title">Referee Dashboard</div>
+            </a>
+            
+            <a href="https://beach_scoresheet.openvolley.app" class="menu-item">
+                <i class="bi bi-database item-icon"></i>
+                <div class="item-title">Scoresheet DB</div>
+            </a>
+        </div>
+    </div>
+
+    <script src="landing.js"></script>
+</body>
+</html>
