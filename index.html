@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,18 +10,19 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
 </head>
+
 <body>
     <div class="container" id="main-container">
         <img src="ball.png" alt="Openvolley Ball" class="hero-image">
         <h1 class="title">Openvolley</h1>
-        
+
         <div class="main-options">
             <div class="option-card" onclick="openMenu('indoor')">
                 <i class="bi bi-diagram-3 option-icon" style="color: #60a5fa;"></i>
                 <div class="option-title">Indoor Volleyball</div>
                 <div class="item-desc">Court 6x6</div>
             </div>
-            
+
             <div class="option-card" onclick="openMenu('beach')">
                 <i class="bi bi-sun option-icon" style="color: #fca5a5;"></i>
                 <div class="option-title">Beach Volleyball</div>
@@ -31,7 +33,7 @@
 
     <!-- Indoor Menu -->
     <div class="sub-menu" id="menu-indoor">
-        <button class="close-menu" onclick="closeMenu('indoor')">
+        <button class="close-menu" onclick="closeMenu('indoor')" aria-label="Close Indoor Menu">
             <i class="bi bi-x-lg"></i>
         </button>
         <div class="menu-grid">
@@ -42,22 +44,22 @@
                     <div class="item-desc">Official electronic scoresheet application</div>
                 </div>
             </a>
-            
+
             <a href="https://referee.openvolley.app" class="menu-item">
                 <i class="bi bi-whistle item-icon"></i>
                 <div class="item-title">Referee Dashboard</div>
             </a>
-            
+
             <a href="https://bench.openvolley.app" class="menu-item">
                 <i class="bi bi-people item-icon"></i>
                 <div class="item-title">Bench Dashboard</div>
             </a>
-            
+
             <a href="https://roster.openvolley.app" class="menu-item">
                 <i class="bi bi-file-earmark-person item-icon"></i>
                 <div class="item-title">Roster Upload</div>
             </a>
-            
+
             <a href="https://livescore.openvolley.app" class="menu-item">
                 <i class="bi bi-broadcast item-icon"></i>
                 <div class="item-title">Livescore</div>
@@ -72,7 +74,7 @@
 
     <!-- Beach Menu -->
     <div class="sub-menu" id="menu-beach">
-        <button class="close-menu" onclick="closeMenu('beach')">
+        <button class="close-menu" onclick="closeMenu('beach')" aria-label="Close Beach Menu">
             <i class="bi bi-x-lg"></i>
         </button>
         <div class="menu-grid">
@@ -83,12 +85,12 @@
                     <div class="item-desc">Beach volleyball scoring application</div>
                 </div>
             </a>
-            
+
             <a href="https://beach_referee.openvolley.app" class="menu-item">
                 <i class="bi bi-whistle item-icon"></i>
                 <div class="item-title">Referee Dashboard</div>
             </a>
-            
+
             <a href="https://beach_scoresheet.openvolley.app" class="menu-item">
                 <i class="bi bi-database item-icon"></i>
                 <div class="item-title">Scoresheet DB</div>
@@ -98,4 +100,5 @@
 
     <script src="landing.js"></script>
 </body>
+
 </html>
