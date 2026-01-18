@@ -4,7 +4,8 @@
  */
 
 // Cloud relay URL for tablets/mobile (non-Electron/non-desktop)
-const CLOUD_RELAY_URL = 'https://escoresheet-backend-production.up.railway.app'
+// Using Render free tier - may sleep after 15 min inactivity (handled by smart fallback)
+const CLOUD_RELAY_URL = 'https://openvolley-backend.onrender.com'
 
 /**
  * Detect if running on a desktop platform (Mac/PC/Linux) vs tablet/mobile
