@@ -59,7 +59,7 @@ const VALID_MATCH_COLUMNS = [
   'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
   'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
   'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
-  'set_results', 'final_score', 'sanctions', 'winner'
+  'set_results', 'final_score', 'sanctions', 'winner', 'sport_type'
 ]
 
 // Filter match payload to only include valid Supabase columns
@@ -417,7 +417,7 @@ export function useSyncQueue() {
           // Step 4: INSERT all sets (with resolved match_id)
           if (sets?.length > 0) {
             for (const set of sets) {
-              const setPayload = { ...set, match_id: matchUuid }
+              const setPayload = { ...set, match_id: matchUuid, sport_type: 'indoor' }
               const { error: setErr } = await supabase
                 .from('sets')
                 .upsert(setPayload, { onConflict: 'external_id' })
@@ -431,7 +431,7 @@ export function useSyncQueue() {
           // Step 5: INSERT all events (with resolved match_id)
           if (events?.length > 0) {
             // Batch insert events for efficiency
-            const eventsWithMatchId = events.map(e => ({ ...e, match_id: matchUuid }))
+            const eventsWithMatchId = events.map(e => ({ ...e, match_id: matchUuid, sport_type: 'indoor' }))
             const { error: eventsErr } = await supabase
               .from('events')
               .upsert(eventsWithMatchId, { onConflict: 'external_id' })
@@ -470,7 +470,7 @@ export function useSyncQueue() {
       // ==================== SET ====================
       if (job.resource === 'set' && job.action === 'insert') {
         // Resolve match_id from external_id
-        let setPayload = { ...job.payload }
+        let setPayload = { ...job.payload, sport_type: 'indoor' }
 
         if (setPayload.match_id && typeof setPayload.match_id === 'string') {
           const { data: matchData } = await supabase
@@ -502,7 +502,7 @@ export function useSyncQueue() {
 
         const { error } = await supabase
           .from('sets')
-          .update(updateData)
+          .update({ ...updateData, sport_type: 'indoor' })
           .eq('external_id', external_id)
         if (error) {
           console.error('[SyncQueue] Set update error:', error, job.payload)
@@ -514,7 +514,7 @@ export function useSyncQueue() {
       // ==================== EVENT ====================
       if (job.resource === 'event' && job.action === 'insert') {
         // Resolve match_id from external_id
-        let eventPayload = { ...job.payload }
+        let eventPayload = { ...job.payload, sport_type: 'indoor' }
 
         if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
           const { data: matchData } = await supabase
