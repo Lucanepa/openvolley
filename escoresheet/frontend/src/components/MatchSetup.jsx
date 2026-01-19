@@ -2037,6 +2037,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         match_type_2: type2 || null,
         match_type_3: type3 || null,
         match_type_3_other: type3Other || null,
+        sport_type: 'indoor',
         game_n: gameN ? parseInt(gameN, 10) : null,
         seed_key: matchSeedKey, // Ensure seed_key is set
         bench_home: benchHome,
@@ -2053,6 +2054,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         scheduled_at: scheduledAt || null,
         game_n: gameN ? parseInt(gameN, 10) : null,
         game_pin: match?.gamePin || null,
+        sport_type: 'indoor',
         test: false,
         // JSONB columns
         match_info: {
@@ -2345,6 +2347,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         match_type_2: type2,
         match_type_3: type3,
         match_type_3_other: type3 === 'other' ? type3Other : null,
+        sport_type: 'indoor',
         // Team names and colors for local access
         homeName: home.trim(),
         awayName: away.trim(),
@@ -2389,6 +2392,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           status: 'live',
           scheduled_at: scheduledAt || null,
           test: false,
+          sport_type: 'indoor',
           created_at: new Date().toISOString(),
           // JSONB columns
           match_info: {
@@ -2443,7 +2447,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           await supabase.from('user_matches').upsert({
             user_id: user.id,
             match_external_id: seedKey,
-            role: 'scorer'
+            role: 'scorer',
+            sport_type: 'indoor'
           }, { onConflict: 'user_id,match_external_id,role' })
           console.log('[MatchSetup] Associated user with match:', seedKey)
         } catch (err) {

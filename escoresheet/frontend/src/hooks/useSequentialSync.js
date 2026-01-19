@@ -97,7 +97,7 @@ export function useSequentialSync() {
 
         const { error } = await supabase
           .from('sets')
-          .update(updateData)
+          .update({ ...updateData, sport_type: 'indoor' })
           .eq('external_id', external_id)
 
         if (error) {
@@ -131,7 +131,7 @@ export function useSequentialSync() {
 
         const { error } = await supabase
           .from('sets')
-          .upsert(setPayload, { onConflict: 'external_id' })
+          .upsert({ ...setPayload, sport_type: 'indoor' }, { onConflict: 'external_id' })
 
         if (error) {
           return { success: false, error }
@@ -164,7 +164,7 @@ export function useSequentialSync() {
 
         const { error } = await supabase
           .from('events')
-          .upsert(eventPayload, { onConflict: 'external_id' })
+          .upsert({ ...eventPayload, sport_type: 'indoor' }, { onConflict: 'external_id' })
 
         if (error) {
           return { success: false, error }

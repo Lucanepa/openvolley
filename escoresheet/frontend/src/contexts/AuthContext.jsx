@@ -147,7 +147,8 @@ export function AuthProvider({ children }) {
           last_name: profileData.lastName || null,
           country: profileData.country || 'CHE',
           dob: profileData.dob || null,
-          roles: profileData.roles || ['scorer']
+          roles: profileData.roles || ['scorer'],
+          sport_type: 'indoor'
         }
       }
     })
@@ -184,7 +185,8 @@ export function AuthProvider({ children }) {
         last_name: updates.lastName,
         country: updates.country,
         dob: updates.dob,
-        roles: updates.roles
+        roles: updates.roles,
+        sport_type: 'indoor'
       })
       .eq('user_id', user.id)
       .select()

@@ -1953,7 +1953,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         game_n: match.gameN || match.game_n || null,
         league: match.league || null,
         gender: match.match_type_2 || null,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        sport_type: 'indoor'
       }
 
       console.log('[LiveState] Syncing to Supabase:', {
@@ -19703,7 +19704,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (supabase && data.match?.seed_key) {
                                       try {
-                                        const sbUpdate = leftIsHome ? { home_points: newPoints } : { away_points: newPoints }
+                                        const sbUpdate = leftIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
                                         await supabase.from('sets').update(sbUpdate).eq('external_id', String(data.set.id))
                                       } catch (err) { /* ignore */ }
                                     }
@@ -19740,7 +19741,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (supabase && data.match?.seed_key) {
                                       try {
-                                        const sbUpdate = rightIsHome ? { home_points: newPoints } : { away_points: newPoints }
+                                        const sbUpdate = rightIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
                                         await supabase.from('sets').update(sbUpdate).eq('external_id', String(data.set.id))
                                       } catch (err) { /* ignore */ }
                                     }
@@ -19884,7 +19885,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (supabase && data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ home_points: newPoints }).eq('external_id', String(set.id))
+                                        await supabase.from('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                   }}
@@ -19912,7 +19913,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (supabase && data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ away_points: newPoints }).eq('external_id', String(set.id))
+                                        await supabase.from('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                   }}
@@ -19937,7 +19938,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (supabase && data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ finished: e.target.checked }).eq('external_id', String(set.id))
+                                        await supabase.from('sets').update({ finished: e.target.checked, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                   }}
