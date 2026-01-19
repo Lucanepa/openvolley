@@ -65,7 +65,7 @@ function getWebSocketUrl() {
  */
 export async function validatePin(pin, type = 'referee') {
   const serverUrl = getServerUrl()
-  
+
   try {
     const response = await fetch(`${serverUrl}/api/match/validate-pin`, {
       method: 'POST',
@@ -151,6 +151,7 @@ export async function getMatchData(matchId) {
         .from('matches')
         .select('*')
         .eq('external_id', matchId)
+        .eq('sport_type', 'indoor')
         .maybeSingle()
 
       if (matchByExtId) {
@@ -163,6 +164,7 @@ export async function getMatchData(matchId) {
             .from('matches')
             .select('*')
             .eq('id', matchId)
+            .eq('sport_type', 'indoor')
             .maybeSingle()
 
           if (matchById) {
@@ -559,7 +561,7 @@ export function forceReconnect(matchId) {
   if (connection.ws) {
     try {
       connection.ws.close(4000, 'Force reconnect')
-    } catch (e) {}
+    } catch (e) { }
     connection.ws = null
   }
 
@@ -593,7 +595,7 @@ export function forceReconnect(matchId) {
 export function subscribeToMatchData(matchId, onUpdate) {
   const wsUrl = getWebSocketUrl()
   const matchIdStr = String(matchId)
-  
+
   // Get or create connection manager for this match
   let connection = wsConnections.get(matchIdStr)
   if (!connection) {
@@ -607,10 +609,10 @@ export function subscribeToMatchData(matchId, onUpdate) {
     }
     wsConnections.set(matchIdStr, connection)
   }
-  
+
   // Add this subscriber
   connection.subscribers.add(onUpdate)
-  
+
   const maxReconnectDelay = 10000 // Max 10 seconds
 
   const connect = () => {
@@ -731,9 +733,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
             connection.subscribers.forEach(subscriber => {
               try {
                 // Pass the action with a special _action wrapper, including timestamps for latency tracking
-                subscriber({ 
-                  _action: message.action, 
-                  _actionData: message.data, 
+                subscriber({
+                  _action: message.action,
+                  _actionData: message.data,
                   _timestamp: message._timestamp || message.timestamp,
                   _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
                 })
@@ -794,7 +796,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
         // Exponential backoff for reconnection
         connection.reconnectAttempts++
         const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
-        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay/1000} seconds... (attempt ${connection.reconnectAttempts})`)
+        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay / 1000} seconds... (attempt ${connection.reconnectAttempts})`)
         connection.reconnectTimeout = setTimeout(connect, delay)
       }
     } catch (err) {
@@ -855,11 +857,11 @@ export function subscribeToMatchData(matchId, onUpdate) {
 export function getWebSocketStatus(matchId) {
   const matchIdStr = String(matchId)
   const connection = wsConnections.get(matchIdStr)
-  
+
   if (!connection || !connection.ws) {
     return 'disconnected'
   }
-  
+
   switch (connection.ws.readyState) {
     case WebSocket.CONNECTING:
       return 'connecting'
@@ -878,7 +880,7 @@ export function getWebSocketStatus(matchId) {
  */
 export async function findMatchByGameNumber(gameNumber) {
   const serverUrl = getServerUrl()
-  
+
   try {
     const response = await fetch(`${serverUrl}/api/match/by-game-number?gameNumber=${encodeURIComponent(gameNumber)}`, {
       method: 'GET',
@@ -904,7 +906,7 @@ export async function findMatchByGameNumber(gameNumber) {
  */
 export async function updateMatchData(matchId, updates) {
   const serverUrl = getServerUrl()
-  
+
   try {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'PATCH',
@@ -1155,6 +1157,7 @@ export async function validatePinSupabase(pin, type = 'referee') {
         connection_pins
       `)
       .in('status', ['setup', 'live'])
+      .eq('sport_type', 'indoor')
 
     if (error) {
       console.error('[validatePinSupabase] Error:', error)
