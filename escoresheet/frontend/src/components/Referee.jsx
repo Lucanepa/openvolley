@@ -680,6 +680,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         .from('matches')
         .select('id')
         .eq('external_id', matchId)
+        .eq('sport_type', 'indoor')
         .maybeSingle()
 
       if (!error && data?.id) {

@@ -46,6 +46,7 @@ export default function LivescoreApp() {
       const { data, error: fetchError } = await supabase
         .from('match_live_state')
         .select('*, matches!match_live_state_match_id_fkey_cascade(set_results)')
+        .eq('sport_type', 'indoor')
         .order('updated_at', { ascending: false })
 
       if (fetchError) {
@@ -77,7 +78,8 @@ export default function LivescoreApp() {
         {
           event: '*',
           schema: 'public',
-          table: 'match_live_state'
+          table: 'match_live_state',
+          filter: 'sport_type=eq.indoor'
         },
         (payload) => {
           console.log('[Livescore] Realtime update:', payload.eventType)
@@ -207,7 +209,7 @@ export default function LivescoreApp() {
             <button
               onClick={() => {
                 if (document.documentElement.requestFullscreen) {
-                  document.documentElement.requestFullscreen().catch(() => {})
+                  document.documentElement.requestFullscreen().catch(() => { })
                 }
               }}
               style={{
@@ -430,7 +432,7 @@ export default function LivescoreApp() {
           <button
             onClick={() => {
               if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => {})
+                document.documentElement.requestFullscreen().catch(() => { })
               }
             }}
             style={{
@@ -510,7 +512,7 @@ export default function LivescoreApp() {
               // Convert gender to symbol
               const genderSymbol = rawGender.toLowerCase().startsWith('m') ? '♂'
                 : rawGender.toLowerCase().startsWith('f') || rawGender.toLowerCase().startsWith('w') ? '♀'
-                : rawGender
+                  : rawGender
 
               return (
                 <button

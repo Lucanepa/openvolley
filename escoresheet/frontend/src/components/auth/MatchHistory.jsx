@@ -34,6 +34,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
         .from('user_matches')
         .select('match_external_id, role, created_at')
         .eq('user_id', user.id)
+        .eq('sport_type', 'indoor')
         .order('created_at', { ascending: false })
 
       if (userMatchesError) {
@@ -52,6 +53,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
         .from('matches')
         .select('external_id, team_a, team_b, final_score, winner, status, start_time, created_at')
         .in('external_id', matchIds)
+        .eq('sport_type', 'indoor')
 
       if (matchError) {
         throw matchError
