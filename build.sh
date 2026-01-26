@@ -18,8 +18,11 @@ cp favicon.ico "$OUTPUT_DIR/"
 cp CNAME "$OUTPUT_DIR/" 2>/dev/null || true
 
 # Copy images
-cp *.png "$OUTPUT_DIR/" 2>/dev/null || true
-cp *.ico "$OUTPUT_DIR/" 2>/dev/null || true
+for file in *.png *.ico; do
+  if [ -f "$file" ]; then
+    cp "$file" "$OUTPUT_DIR/"
+  fi
+done 2>/dev/null || true
 
 # Copy assets directory if it exists
 if [ -d "assets" ]; then
