@@ -50,3 +50,20 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// Change ball image based on hover
+function changeBall(type) {
+    const ballImg = document.getElementById('hero-ball');
+    if (type === 'beach') {
+        ballImg.src = 'ball_beach.png';
+    } else if (type === 'readvolley') {
+        // Try ball_readvolley.png first, fallback to readvolley.png if not found
+        ballImg.src = 'ball_readvolley.png';
+        ballImg.onerror = function() {
+            this.src = 'readvolley.png';
+            this.onerror = null; // Prevent infinite loop
+        };
+    } else {
+        ballImg.src = 'ball.png';
+    }
+}

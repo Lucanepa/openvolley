@@ -13,7 +13,7 @@
 
 <body>
     <div class="container" id="main-container">
-        <img src="ball.png" alt="Openvolley Ball" class="hero-image">
+        <img id="hero-ball" src="ball.png" alt="Openvolley Ball" class="hero-image">
         <h1 class="title">Openvolley eScoresheet</h1>
 
         <div class="main-options">
@@ -23,12 +23,25 @@
                 <div class="option-title">Indoor Volleyball</div>
             </div>
 
-            <div class="option-card" onclick="openMenu('beach')">
+            <div class="option-card" onclick="openMenu('beach')" 
+                 onmouseenter="changeBall('beach')" 
+                 onmouseleave="changeBall('indoor')">
                 <img src="openbeach_no_bg.png" alt="Beach Icon" class="option-icon"
                     style="aspect-ratio:1; width:180px; object-fit: contain;">
                 <div class="option-title">Beach Volleyball</div>
             </div>
         </div>
+
+        <h2 class="subtitle">ReadVolley - Rules database</h2>
+        
+        <a href="https://readvolley.openvolley.app" class="option-card readvolley-card" 
+           style="text-decoration: none; color: inherit;"
+           onmouseenter="changeBall('readvolley')" 
+           onmouseleave="changeBall('indoor')">
+            <img src="readvolley.png" alt="Readvolley Icon" class="option-icon"
+                style="aspect-ratio:1; width:180px; object-fit: contain;">
+            <div class="option-title">Readvolley</div>
+        </a>
     </div>
 
     <!-- Indoor Menu -->
