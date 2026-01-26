@@ -14,3 +14,10 @@ key.pem
 .claude/settings.local.json
 .claude/plans/
 nul
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/
