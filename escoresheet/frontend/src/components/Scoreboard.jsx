@@ -26,6 +26,7 @@ import { supabase } from '../lib/supabaseClient'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
+import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 
 /**
@@ -28796,10 +28797,7 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
         <p style={{ marginBottom: '24px', fontSize: '16px' }}>
           Confirm the start time for Set {setIndex}:
         </p>
-        <input
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
+        <div
           style={{
             padding: '12px 16px',
             fontSize: '18px',
@@ -28810,9 +28808,12 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
             borderRadius: '8px',
             color: 'var(--text)',
             marginBottom: '24px',
-            width: '150px'
+            width: '150px',
+            display: 'inline-block'
           }}
-        />
+        >
+          <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
+        </div>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <button
             onClick={handleConfirm}
@@ -28986,10 +28987,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
         <p style={{ marginBottom: '16px', fontSize: '16px' }}>
           Confirm the end time:
         </p>
-        <input
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
+        <div
           style={{
             padding: '12px 16px',
             fontSize: '18px',
@@ -29000,9 +28998,12 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
             borderRadius: '8px',
             color: 'var(--text)',
             marginBottom: '24px',
-            width: '150px'
+            width: '150px',
+            display: 'inline-block'
           }}
-        />
+        >
+          <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
+        </div>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <button
             onClick={handleConfirm}

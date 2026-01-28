@@ -8,6 +8,7 @@ import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
+import { TimeInput24 } from './TimeInput24'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -3232,11 +3233,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div className="field">
               <label>{t('matchSetup.time')}</label>
-              <input
+              <TimeInput24
                 className="w-100"
-                type="time"
                 value={time}
-                onChange={e => handleTimeChange(e.target.value)}
+                onChange={handleTimeChange}
                 style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
               />
               {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
