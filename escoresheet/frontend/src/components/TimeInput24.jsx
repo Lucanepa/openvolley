@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const defaultInputStyle = {
-  width: '2.5em',
-  padding: '6px 4px',
+  width: '5em',
+  padding: '6px 8px',
   fontSize: 'inherit',
   textAlign: 'center',
   background: 'var(--bg-secondary, #1f2937)',
@@ -11,9 +11,11 @@ const defaultInputStyle = {
   color: 'var(--text, #e5e7eb)'
 }
 
+const HHMM_REGEX = /^(\d{1,2}):(\d{2})$/
+
 function parseHHmm(value) {
   if (!value || typeof value !== 'string') return { hour: 0, minute: 0 }
-  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/)
+  const match = value.trim().match(HHMM_REGEX)
   if (!match) return { hour: 0, minute: 0 }
   const hour = Math.min(23, Math.max(0, parseInt(match[1], 10)))
   const minute = Math.min(59, Math.max(0, parseInt(match[2], 10)))
@@ -28,68 +30,56 @@ function formatHHmm(hour, minute) {
 
 /**
  * Time input that always displays and edits in 24-hour format (HH:mm).
- * Use this instead of <input type="time"> when you need locale-independent 24h display.
+ * Single field like a normal time input, e.g. "08:30" or "20:45".
  */
 export function TimeInput24({ value = '', onChange, style, className, ...rest }) {
-  const parsed = parseHHmm(value)
-  const [hour, setHour] = useState(parsed.hour)
-  const [minute, setMinute] = useState(parsed.minute)
+  const normalized = formatHHmm(parseHHmm(value).hour, parseHHmm(value).minute)
+  const [local, setLocal] = useState(normalized || '00:00')
+  const lastSentRef = useRef(normalized || '00:00')
 
   useEffect(() => {
-    const next = parseHHmm(value)
-    setHour(next.hour)
-    setMinute(next.minute)
+    const next = formatHHmm(parseHHmm(value).hour, parseHHmm(value).minute) || '00:00'
+    if (value !== undefined && value !== lastSentRef.current) {
+      lastSentRef.current = next
+      setLocal(next)
+    }
   }, [value])
 
-  const notify = (h, m) => {
-    const next = formatHHmm(h, m)
-    if (onChange) onChange(next)
+  const handleChange = (e) => {
+    const raw = e.target.value
+    setLocal(raw)
+    if (HHMM_REGEX.test(raw.trim())) {
+      const { hour, minute } = parseHHmm(raw)
+      const formatted = formatHHmm(hour, minute)
+      lastSentRef.current = formatted
+      if (onChange) onChange(formatted)
+    }
   }
 
-  const handleHourChange = (e) => {
-    const v = e.target.value === '' ? 0 : parseInt(e.target.value, 10)
-    const h = isNaN(v) ? hour : Math.min(23, Math.max(0, v))
-    setHour(h)
-    notify(h, minute)
+  const handleBlur = () => {
+    const { hour, minute } = parseHHmm(local)
+    const formatted = formatHHmm(hour, minute)
+    setLocal(formatted)
+    lastSentRef.current = formatted
+    if (onChange) onChange(formatted)
   }
 
-  const handleMinuteChange = (e) => {
-    const v = e.target.value === '' ? 0 : parseInt(e.target.value, 10)
-    const m = isNaN(v) ? minute : Math.min(59, Math.max(0, v))
-    setMinute(m)
-    notify(hour, m)
-  }
-
-  const containerStyle = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px'
-  }
   const inputStyle = { ...defaultInputStyle, ...(style || {}) }
 
   return (
-    <span className={className} style={containerStyle} {...rest}>
-      <input
-        type="number"
-        min={0}
-        max={23}
-        value={hour}
-        onChange={handleHourChange}
-        onFocus={(e) => e.target.select()}
-        style={inputStyle}
-        aria-label="Hour (24h)"
-      />
-      <span style={{ fontWeight: 600, userSelect: 'none' }}>:</span>
-      <input
-        type="number"
-        min={0}
-        max={59}
-        value={minute}
-        onChange={handleMinuteChange}
-        onFocus={(e) => e.target.select()}
-        style={inputStyle}
-        aria-label="Minute"
-      />
-    </span>
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder="HH:mm"
+      value={local}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onFocus={(e) => e.target.select()}
+      maxLength={5}
+      className={className}
+      style={inputStyle}
+      aria-label="Time (24h, HH:mm)"
+      {...rest}
+    />
   )
 }
