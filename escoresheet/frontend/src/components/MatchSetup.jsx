@@ -8,7 +8,6 @@ import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
-import { TimeInput24 } from './TimeInput24'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -708,12 +707,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const homeCounts = {
     players: homeRoster.length,
     liberos: homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
-    bench: benchHome.filter(m => m.firstName || m.lastName || m.dob).length
+    bench: benchHome.filter(m => m.firstName || m.lastName || m.dob).length,
+    // For coin toss validation: check all players have numbers, has captain, has coach
+    allPlayersHaveNumbers: homeRoster.every(p => p.number !== null && p.number !== undefined && p.number !== ''),
+    hasCaptain: homeRoster.some(p => p.isCaptain),
+    hasCoach: benchHome.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName))
   }
   const awayCounts = {
     players: awayRoster.length,
     liberos: awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
-    bench: benchAway.filter(m => m.firstName || m.lastName || m.dob).length
+    bench: benchAway.filter(m => m.firstName || m.lastName || m.dob).length,
+    // For coin toss validation: check all players have numbers, has captain, has coach
+    allPlayersHaveNumbers: awayRoster.every(p => p.number !== null && p.number !== undefined && p.number !== ''),
+    hasCaptain: awayRoster.some(p => p.isCaptain),
+    hasCoach: benchAway.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName))
   }
 
   // Signatures
@@ -3233,10 +3240,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div className="field">
               <label>{t('matchSetup.time')}</label>
-              <TimeInput24
+              <input
                 className="w-100"
+                type="text"
                 value={time}
-                onChange={handleTimeChange}
+                onChange={e => handleTimeChange(e.target.value)}
+                placeholder="HH:MM"
                 style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
               />
               {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
@@ -6617,8 +6626,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const officialsConfigured =
     !!(ref1Last && ref1First && scorerLast && scorerFirst)
   const matchInfoConfigured = !!(date || time || hall || city || league)
-  const homeConfigured = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
-  const awayConfigured = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
+  // Basic roster configured (enough for saving)
+  const homeRosterExists = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
+  const awayRosterExists = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
+
+  // Roster validation for proceeding to coin toss (requires captain and coach)
+  // Note: all players having numbers is only required when CONFIRMING coin toss, not proceeding to it
+  const homeConfigured = homeRosterExists && homeCounts.hasCaptain && homeCounts.hasCoach
+  const awayConfigured = awayRosterExists && awayCounts.hasCaptain && awayCounts.hasCoach
 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
@@ -7780,6 +7795,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setupIssues.push('Home Team name')
                   } else if (homeRoster.length < 6) {
                     setupIssues.push('Home Team roster (minimum 6 players)')
+                  } else {
+                    // Additional roster validations for proceeding to coin toss
+                    // Note: all players having numbers is only validated when CONFIRMING coin toss
+                    if (!homeCounts.hasCaptain) {
+                      setupIssues.push('Home Team: must have a captain assigned')
+                    }
+                    if (!homeCounts.hasCoach) {
+                      setupIssues.push('Home Team: must have a coach')
+                    }
                   }
 
                   // Check Away Team
@@ -7787,6 +7811,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setupIssues.push('Away Team name')
                   } else if (awayRoster.length < 6) {
                     setupIssues.push('Away Team roster (minimum 6 players)')
+                  } else {
+                    // Additional roster validations for proceeding to coin toss
+                    // Note: all players having numbers is only validated when CONFIRMING coin toss
+                    if (!awayCounts.hasCaptain) {
+                      setupIssues.push('Away Team: must have a captain assigned')
+                    }
+                    if (!awayCounts.hasCoach) {
+                      setupIssues.push('Away Team: must have a coach')
+                    }
                   }
 
                   // Check short names

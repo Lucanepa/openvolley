@@ -1044,6 +1044,16 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         validationErrors.push(`Away team needs at least 6 players with numbers (not liberos). Currently: ${awayNonLiberoWithNumbers.length}`)
       }
 
+      // 4b. Check ALL players have jersey numbers (including liberos)
+      const homePlayersWithoutNumbers = homeRoster.filter(p => p.number == null || p.number === '')
+      const awayPlayersWithoutNumbers = awayRoster.filter(p => p.number == null || p.number === '')
+      if (homePlayersWithoutNumbers.length > 0) {
+        validationErrors.push(`Home team: all players must have jersey numbers (${homePlayersWithoutNumbers.length} missing)`)
+      }
+      if (awayPlayersWithoutNumbers.length > 0) {
+        validationErrors.push(`Away team: all players must have jersey numbers (${awayPlayersWithoutNumbers.length} missing)`)
+      }
+
       // 5. Check at least 1 coach per team
       const homeCoach = benchHome.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
       const awayCoach = benchAway.find(b => b.role === 'Coach' && (b.lastName || b.firstName))

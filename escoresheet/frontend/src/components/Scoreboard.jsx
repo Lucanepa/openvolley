@@ -141,6 +141,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
   const [displayModeSuggestion, setDisplayModeSuggestion] = useState(null) // null | 'tablet' | 'smartphone'
   const [showDisplayModeSuggestion, setShowDisplayModeSuggestion] = useState(false)
+  const [currentDateTime, setCurrentDateTime] = useState(() => new Date())
   const [leftTeamSanctionsExpanded, setLeftTeamSanctionsExpanded] = useState(false)
   const [rightTeamSanctionsExpanded, setRightTeamSanctionsExpanded] = useState(false)
   const [leftTeamBenchExpanded, setLeftTeamBenchExpanded] = useState(false)
@@ -639,6 +640,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
+
+  // Update current datetime every second for fullscreen header display
+  useEffect(() => {
+    if (activeDisplayMode === 'tablet' || activeDisplayMode === 'smartphone') {
+      const interval = setInterval(() => {
+        setCurrentDateTime(new Date())
+      }, 1000)
+      return () => clearInterval(interval)
+    }
+  }, [activeDisplayMode])
+
+  // Format datetime as dd/mm/yyyy hh:mm:ss
+  const formatDateTime = (date) => {
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
+  }
 
   // Fullscreen and orientation lock for tablet/smartphone modes
   const enterDisplayMode = useCallback((mode) => {
@@ -13099,20 +13121,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 Menu
               </button>
 
-              {/* Set Counter - Center */}
+              {/* Set Counter and DateTime - Center */}
               <div style={{
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                gap: '12px',
-                fontSize: '16px',
-                fontWeight: 700
+                gap: '2px'
               }}>
-                <span style={{ color: leftTeam?.color || '#ef4444' }}>
-                  {setsWon.left}
-                </span>
-                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t('scoreboard.labels.sets')}</span>
-                <span style={{ color: rightTeam?.color || '#3b82f6' }}>
-                  {setsWon.right}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  fontSize: '16px',
+                  fontWeight: 700
+                }}>
+                  <span style={{ color: leftTeam?.color || '#ef4444' }}>
+                    {setsWon.left}
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t('scoreboard.labels.sets')}</span>
+                  <span style={{ color: rightTeam?.color || '#3b82f6' }}>
+                    {setsWon.right}
+                  </span>
+                </div>
+                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                  {formatDateTime(currentDateTime)}
                 </span>
               </div>
 
@@ -14070,7 +14102,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </div>
         )
       })() : (
-        <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: 'calc(100vh - 40px)', maxHeight: '100vh', overflow: 'hidden' } : {}}>
+        <>
+          {/* Tablet Mode Header Bar with DateTime */}
+          {activeDisplayMode === 'tablet' && (
+            <div style={{
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(15, 23, 42, 0.95)',
+              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              flexShrink: 0
+            }}>
+              <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
+                {formatDateTime(currentDateTime)}
+              </span>
+            </div>
+          )}
+          <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: 'calc(100vh - 40px)', maxHeight: '100vh', overflow: 'hidden' } : {}}>
           <ScoreboardTeamColumn side="left">
             <div className="team-info" style={{ overflow: 'hidden' }}>
               <div
@@ -18231,6 +18280,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
           </ScoreboardTeamColumn>
         </div>
+        </>
       )}
 
       {/* Menu Modal - Keep for Options submenu */}
