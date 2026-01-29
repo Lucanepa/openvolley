@@ -312,13 +312,16 @@ const ScoresheetList = () => {
 
 // MatchId viewer component - loads from IndexedDB
 const MatchIdViewer = ({ matchId, action }) => {
+  // Convert matchId to number if it's a numeric string
+  const numericMatchId = !isNaN(matchId) ? parseInt(matchId, 10) : matchId
+
   // Use live queries to get real-time data from IndexedDB
   const match = useLiveQuery(
     async () => {
-      if (!matchId) return null
-      return await db.matches.get(matchId)
+      if (!numericMatchId) return null
+      return await db.matches.get(numericMatchId)
     },
-    [matchId]
+    [numericMatchId]
   )
 
   const homeTeam = useLiveQuery(
@@ -355,18 +358,18 @@ const MatchIdViewer = ({ matchId, action }) => {
 
   const sets = useLiveQuery(
     async () => {
-      if (!matchId) return []
-      return await db.sets.where('matchId').equals(matchId).sortBy('index')
+      if (!numericMatchId) return []
+      return await db.sets.where('matchId').equals(numericMatchId).sortBy('index')
     },
-    [matchId]
+    [numericMatchId]
   )
 
   const events = useLiveQuery(
     async () => {
-      if (!matchId) return []
-      return await db.events.where('matchId').equals(matchId).sortBy('seq')
+      if (!numericMatchId) return []
+      return await db.events.where('matchId').equals(numericMatchId).sortBy('seq')
     },
-    [matchId]
+    [numericMatchId]
   )
 
   // Show loading state while initial data is being fetched
