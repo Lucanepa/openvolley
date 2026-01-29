@@ -45,6 +45,12 @@ const getStorageParams = () => {
   return null;
 };
 
+// Check if matchId is passed via URL parameter
+const getMatchIdFromUrl = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('matchId');
+};
+
 // Check if we should show the list view
 const shouldShowList = () => {
   const params = new URLSearchParams(window.location.search);
@@ -308,6 +314,13 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
 // Static scoresheet component (fallback when no matchId available)
 const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ matchData, action }) => {
   return <App matchData={matchData} autoAction={action} />;
+};
+
+// URL matchId scoresheet component - loads from IndexedDB by matchId
+const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ matchId, action }) => {
+  // Use the LiveScoresheet component with a minimal initial data object
+  const initialData = { match: { id: matchId } };
+  return <LiveScoresheet initialMatchData={initialData} action={action} />;
 };
 
 // Storage scoresheet component - fetches from Supabase storage
@@ -607,6 +620,7 @@ const ScoresheetList: React.FC = () => {
 
 const storageParams = getStorageParams();
 const showList = shouldShowList();
+const urlMatchId = getMatchIdFromUrl();
 const initialMatchData = loadMatchData();
 
 const rootElement = document.getElementById('root');
@@ -695,8 +709,17 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Priority: 1. Storage params (?date=...&game=...), 2. List view (?list), 3. sessionStorage, 4. No data
-if (storageParams) {
+// Priority: 1. URL matchId param, 2. Storage params (?date=...&game=...), 3. List view (?list), 4. sessionStorage, 5. No data
+if (urlMatchId) {
+  // Load from IndexedDB using matchId from URL
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <UrlMatchIdScoresheet matchId={urlMatchId} action={initialAction} />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+} else if (storageParams) {
   // Load from Supabase storage
   root.render(
     <React.StrictMode>
