@@ -182,7 +182,7 @@ function createScoresheetHtml(config) {
 `
 }
 
-async function buildSubdomain(subdomain) {
+async function buildSubdomain(subdomain, basePath = '/') {
   const config = subdomains[subdomain]
   if (!config) {
     console.error(`Unknown subdomain: ${subdomain}`)
@@ -197,7 +197,7 @@ async function buildSubdomain(subdomain) {
   // Clean output directory
   if (existsSync(outDir)) rmSync(outDir, { recursive: true })
 
-  console.log(`\n🔨 Building ${subdomain}.openvolley.app...`)
+  console.log(`\n🔨 Building ${subdomain}.openvolley.app...${basePath !== '/' ? ` (base: ${basePath})` : ''}`)
 
   // Create temp index.html in frontend root (use custom HTML for scoresheet)
   const htmlContent = config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
@@ -206,7 +206,7 @@ async function buildSubdomain(subdomain) {
   try {
     await build({
       root: frontendDir,
-      base: '/',
+      base: basePath,
       publicDir: 'public',
       define: {
         __APP_VERSION__: JSON.stringify(appVersion)
@@ -338,10 +338,10 @@ async function main() {
   if (targetSubdomain) {
     await buildSubdomain(targetSubdomain)
 
-    // If building 'app', also build scoresheet and copy it into dist-app/scoresheet
+    // If building 'app', also build scoresheet with /scoresheet/ base path
     if (targetSubdomain === 'app') {
       console.log('\n📋 Building embedded scoresheet for app.openvolley.app/scoresheet...')
-      await buildSubdomain('scoresheet')
+      await buildSubdomain('scoresheet', '/scoresheet/')
       const scoresheetSrc = resolve(frontendDir, 'dist-scoresheet')
       const scoresheetDest = resolve(frontendDir, 'dist-app', 'scoresheet')
       if (existsSync(scoresheetSrc)) {
