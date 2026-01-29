@@ -4764,31 +4764,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               return
             }
 
-            // Validate roster before saving
+            // Roster save validation - only block for critical errors (duplicates, invalid numbers)
+            // Missing numbers, captain, coach are validated at coin toss confirmation instead
             const validationErrors = []
 
-            // 1. Check at least 6 non-libero players with numbers
-            const nonLiberoWithNumbers = homeRoster.filter(p => !p.libero && p.number != null && p.number !== '')
-            console.log('[MatchSetup] Home non-libero players with numbers:', nonLiberoWithNumbers.length)
-            if (nonLiberoWithNumbers.length < 6) {
-              validationErrors.push(`Need at least 6 players with numbers (not liberos). Currently: ${nonLiberoWithNumbers.length}`)
-            }
-
-            // 2. Check captain is set
-            const hasCaptain = homeRoster.some(p => p.isCaptain)
-            console.log('[MatchSetup] Home has captain:', hasCaptain)
-            if (!hasCaptain) {
-              validationErrors.push(t('matchSetup.validation.noCaptain'))
-            }
-
-            // 3. Check coach is set
-            const hasCoach = benchHome.some(b => b.role === 'Coach' && (b.lastName || b.firstName))
-            console.log('[MatchSetup] Home has coach:', hasCoach)
-            if (!hasCoach) {
-              validationErrors.push(t('matchSetup.validation.noCoach'))
-            }
-
-            // 4. Check for duplicate numbers
+            // Check for duplicate numbers (critical - must block)
             const numbers = homeRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
             const duplicateNumbers = numbers.filter((num, idx) => numbers.indexOf(num) !== idx)
             if (duplicateNumbers.length > 0) {
@@ -4796,21 +4776,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
-            // 5. Check for invalid numbers (must be 1-99)
-            const invalidNumbers = homeRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
+            // Check for invalid numbers (must be 1-99) - critical - must block
+            const invalidNumbers = homeRoster.filter(p => p.number != null && p.number !== '' && (p.number < 1 || p.number > 99))
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Home invalid numbers:', invalidNumbers.map(p => p.number))
               validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
             }
 
-            // 6. Check for players without numbers
-            const noNumbers = homeRoster.filter(p => p.number == null || p.number === '')
-            if (noNumbers.length > 0) {
-              console.log('[MatchSetup] Home players without numbers:', noNumbers.length)
-              validationErrors.push(t('matchSetup.validation.playersWithoutNumbers', { count: noNumbers.length }))
-            }
-
-            // Show validation errors if any
+            // Show validation errors if any critical errors
             if (validationErrors.length > 0) {
               console.log('[MatchSetup] Home roster validation errors:', validationErrors)
               setNoticeModal({ message: t('matchSetup.validation.fixIssues', { issues: validationErrors.join('\n• ') }) })
@@ -6081,31 +6054,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               return
             }
 
-            // Validate roster before saving
+            // Roster save validation - only block for critical errors (duplicates, invalid numbers)
+            // Missing numbers, captain, coach are validated at coin toss confirmation instead
             const validationErrors = []
 
-            // 1. Check at least 6 non-libero players with numbers
-            const nonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
-            console.log('[MatchSetup] Away non-libero players with numbers:', nonLiberoWithNumbers.length)
-            if (nonLiberoWithNumbers.length < 6) {
-              validationErrors.push(t('matchSetup.validation.minPlayers', { count: nonLiberoWithNumbers.length }))
-            }
-
-            // 2. Check captain is set
-            const hasCaptain = awayRoster.some(p => p.isCaptain)
-            console.log('[MatchSetup] Away has captain:', hasCaptain)
-            if (!hasCaptain) {
-              validationErrors.push(t('matchSetup.validation.noCaptain'))
-            }
-
-            // 3. Check coach is set
-            const hasCoach = benchAway.some(b => b.role === 'Coach' && (b.lastName || b.firstName))
-            console.log('[MatchSetup] Away has coach:', hasCoach)
-            if (!hasCoach) {
-              validationErrors.push(t('matchSetup.validation.noCoach'))
-            }
-
-            // 4. Check for duplicate numbers
+            // Check for duplicate numbers (critical - must block)
             const numbers = awayRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
             const duplicateNumbers = numbers.filter((num, idx) => numbers.indexOf(num) !== idx)
             if (duplicateNumbers.length > 0) {
@@ -6113,21 +6066,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
-            // 5. Check for invalid numbers (must be 1-99)
-            const invalidNumbers = awayRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
+            // Check for invalid numbers (must be 1-99) - critical - must block
+            const invalidNumbers = awayRoster.filter(p => p.number != null && p.number !== '' && (p.number < 1 || p.number > 99))
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Away invalid numbers:', invalidNumbers.map(p => p.number))
               validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
             }
 
-            // 6. Check for players without numbers
-            const noNumbers = awayRoster.filter(p => p.number == null || p.number === '')
-            if (noNumbers.length > 0) {
-              console.log('[MatchSetup] Away players without numbers:', noNumbers.length)
-              validationErrors.push(t('matchSetup.validation.playersWithoutNumbers', { count: noNumbers.length }))
-            }
-
-            // Show validation errors if any
+            // Show validation errors if any critical errors
             if (validationErrors.length > 0) {
               console.log('[MatchSetup] Away roster validation errors:', validationErrors)
               setNoticeModal({ message: t('matchSetup.validation.fixIssues', { issues: validationErrors.join('\n• ') }) })
