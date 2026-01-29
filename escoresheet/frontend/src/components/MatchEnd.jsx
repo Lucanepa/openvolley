@@ -716,7 +716,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       events
     }
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-    const url = action === 'preview' ? '/scoresheet' : `/scoresheet?action=${action}`
+    const url = action === 'preview' ? `/scoresheet?matchId=${matchId}` : `/scoresheet?matchId=${matchId}&action=${action}`
     window.open(url, '_blank', 'width=1600,height=1200')
   }
 
@@ -801,7 +801,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       })
 
       // Open scoresheet window with getBlob action
-      window.open('/scoresheet?action=getBlob', '_blank', 'width=1600,height=1200')
+      window.open(`/scoresheet?matchId=${matchId}&action=getBlob`, '_blank', 'width=1600,height=1200')
 
       // Wait for PDF blob
       const pdfResult = await pdfPromise
