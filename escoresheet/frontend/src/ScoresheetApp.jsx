@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from './db/db'
 import { supabase } from './lib/supabaseClient'
 import App from '../scoresheet_pdf/App_Scoresheet'
 
@@ -117,8 +119,9 @@ const getUrlParams = () => {
   const params = new URLSearchParams(window.location.search)
   const date = params.get('date')
   const game = params.get('game')
+  const matchId = params.get('matchId')
   const action = params.get('action') || 'preview'
-  return { date, game, action }
+  return { date, game, matchId, action }
 }
 
 // Format date for display
@@ -307,11 +310,114 @@ const ScoresheetList = () => {
   )
 }
 
+// MatchId viewer component - loads from IndexedDB
+const MatchIdViewer = ({ matchId, action }) => {
+  // Use live queries to get real-time data from IndexedDB
+  const match = useLiveQuery(
+    async () => {
+      if (!matchId) return null
+      return await db.matches.get(matchId)
+    },
+    [matchId]
+  )
+
+  const homeTeam = useLiveQuery(
+    async () => {
+      if (!match?.homeTeamId) return null
+      return await db.teams.get(match.homeTeamId)
+    },
+    [match]
+  )
+
+  const awayTeam = useLiveQuery(
+    async () => {
+      if (!match?.awayTeamId) return null
+      return await db.teams.get(match.awayTeamId)
+    },
+    [match]
+  )
+
+  const homePlayers = useLiveQuery(
+    async () => {
+      if (!match?.homeTeamId) return []
+      return await db.players.where('teamId').equals(match.homeTeamId).toArray()
+    },
+    [match]
+  )
+
+  const awayPlayers = useLiveQuery(
+    async () => {
+      if (!match?.awayTeamId) return []
+      return await db.players.where('teamId').equals(match.awayTeamId).toArray()
+    },
+    [match]
+  )
+
+  const sets = useLiveQuery(
+    async () => {
+      if (!matchId) return []
+      return await db.sets.where('matchId').equals(matchId).sortBy('index')
+    },
+    [matchId]
+  )
+
+  const events = useLiveQuery(
+    async () => {
+      if (!matchId) return []
+      return await db.events.where('matchId').equals(matchId).sortBy('seq')
+    },
+    [matchId]
+  )
+
+  // Show loading state while initial data is being fetched
+  if (match === undefined) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-lg text-gray-600">Loading scoresheet...</div>
+      </div>
+    )
+  }
+
+  if (match === null) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen gap-5">
+        <div className="text-2xl font-bold text-red-500">Match Not Found</div>
+        <div className="text-gray-600">Match ID: {matchId}</div>
+        <button
+          onClick={() => window.close()}
+          className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+        >
+          Close Window
+        </button>
+      </div>
+    )
+  }
+
+  // Build match data from live queries
+  const matchData = {
+    match: match || {},
+    homeTeam: homeTeam || null,
+    awayTeam: awayTeam || null,
+    homePlayers: homePlayers || [],
+    awayPlayers: awayPlayers || [],
+    sets: sets || [],
+    events: events || [],
+    sanctions: []
+  }
+
+  return <App matchData={matchData} autoAction={action} />
+}
+
 // Main app component
 export default function ScoresheetApp() {
-  const { date, game, action } = getUrlParams()
+  const { date, game, matchId, action } = getUrlParams()
 
-  // If date and game are provided, show the scoresheet viewer
+  // Priority: 1. matchId (from local IndexedDB), 2. date+game (from Supabase storage), 3. list
+  if (matchId) {
+    return <MatchIdViewer matchId={matchId} action={action} />
+  }
+
+  // If date and game are provided, show the scoresheet viewer (from Supabase)
   if (date && game) {
     return <ScoresheetViewer date={date} game={game} action={action} />
   }
