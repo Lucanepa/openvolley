@@ -12376,7 +12376,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
 
                     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
+                    const scoresheetWindow = window.open(`/scoresheet?matchId=${match.id}`, '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
                       showAlert(t('header.allowPopups'), 'warning')
@@ -12423,7 +12423,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
 
                     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const scoresheetWindow = window.open('/scoresheet?action=print', '_blank', 'width=1200,height=900')
+                    const scoresheetWindow = window.open(`/scoresheet?matchId=${match.id}&action=print`, '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
                       showAlert(t('header.allowPopups'), 'warning')
@@ -12470,7 +12470,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
 
                     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const scoresheetWindow = window.open('/scoresheet?action=save', '_blank', 'width=1200,height=900')
+                    const scoresheetWindow = window.open(`/scoresheet?matchId=${match.id}&action=save`, '_blank', 'width=1200,height=900')
 
                     if (!scoresheetWindow) {
                       showAlert(t('header.allowPopups'), 'warning')
@@ -13163,7 +13163,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     sanctions: []
                   }
                   sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                  window.open('/scoresheet', '_blank', 'width=1200,height=900')
+                  window.open(`/scoresheet?matchId=${match.id}`, '_blank', 'width=1200,height=900')
                 }}
                 style={{
                   padding: '8px 12px',
