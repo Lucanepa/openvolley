@@ -337,6 +337,19 @@ async function main() {
 
   if (targetSubdomain) {
     await buildSubdomain(targetSubdomain)
+
+    // If building 'app', also build scoresheet and copy it into dist-app/scoresheet
+    if (targetSubdomain === 'app') {
+      console.log('\n📋 Building embedded scoresheet for app.openvolley.app/scoresheet...')
+      await buildSubdomain('scoresheet')
+      const scoresheetSrc = resolve(frontendDir, 'dist-scoresheet')
+      const scoresheetDest = resolve(frontendDir, 'dist-app', 'scoresheet')
+      if (existsSync(scoresheetSrc)) {
+        mkdirSync(scoresheetDest, { recursive: true })
+        cpSync(scoresheetSrc, scoresheetDest, { recursive: true })
+        console.log('✅ Copied scoresheet to dist-app/scoresheet/')
+      }
+    }
   } else {
     console.log('\n📦 Building all subdomains...')
     for (const subdomain of Object.keys(subdomains)) {
