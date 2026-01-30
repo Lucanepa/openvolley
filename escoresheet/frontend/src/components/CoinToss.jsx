@@ -1505,7 +1505,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   }
 
                   sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                  const scoresheetWindow = window.open('/scoresheet', '_blank', 'width=1200,height=900')
+                  const scoresheetWindow = window.open(`/scoresheet?matchId=${matchId}`, '_blank', 'width=1200,height=900')
 
                   if (!scoresheetWindow) {
                     showAlert(t('coinToss.allowPopups'), 'warning')

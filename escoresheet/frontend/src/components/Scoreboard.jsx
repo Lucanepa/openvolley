@@ -1814,7 +1814,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (!snapshot) return
 
       // Determine match status from event type and current state
-      const isSetInterval = eventType === 'set_end' || (match?.status === 'interval' && !isSetFinished)
+      const isMatchEnd = eventType === 'match_end' || match?.status === 'ended'
+      const isSetInterval = !isMatchEnd && (eventType === 'set_end' || (match?.status === 'interval' && !isSetFinished))
       const isTimeout = eventType === 'timeout' || (timeoutModal !== null)
 
       // If it's a timeout, we need a stable start time
@@ -1850,7 +1851,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Determine match status - 'ended' takes priority over interval
       let matchStatus = 'in_progress'
-      if (isMatchFinished) matchStatus = 'ended'
+      if (isMatchEnd || isMatchFinished) matchStatus = 'ended'
       else if (isTimeout) matchStatus = 'timeout'
       else if (isSetInterval) matchStatus = 'interval'
 
@@ -5483,6 +5484,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Verify the status was updated
         const matchAfterStatusUpdate = await db.matches.get(matchId)
         console.log('[SET_END_DEBUG] STEP 10: Match status after update:', matchAfterStatusUpdate?.status)
+
+        // CRITICAL: Sync to referee AFTER status is updated so referee sees match_status='ended'
+        // This ensures the referee receives the final state with all sets marked finished
+        syncToReferee()
+        // Also sync match_status='ended' to Supabase live state
+        syncLiveStateToSupabase('match_end', winner, {
+          setIndex,
+          homePoints,
+          awayPoints,
+          homeSetsWon,
+          awaySetsWon,
+          finalScore: `${Math.max(homeSetsWon, awaySetsWon)}-${Math.min(homeSetsWon, awaySetsWon)}`
+        })
 
         // NOTE: Match update sync is now done in STEP 8 (sequential sync) above
 
