@@ -1785,8 +1785,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightSetsWon = rightTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
 
   // During interval, show sets won; during play, show current set points
-  const leftDisplayScore = leftPoints
-  const rightDisplayScore = rightPoints
+  const leftDisplayScore = isInSetInterval ? leftSetsWon : leftPoints
+  const rightDisplayScore = isInSetInterval ? rightSetsWon : rightPoints
   // Display set index - during interval show the NEXT set, but never show more than Set 5
   const displaySetIndex = Math.min(
     isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1),

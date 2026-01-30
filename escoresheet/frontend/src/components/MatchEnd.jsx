@@ -803,14 +803,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Open scoresheet window with getBlob action
       window.open(`/scoresheet?matchId=${matchId}&action=getBlob`, '_blank', 'width=1600,height=1200')
 
-      // Wait for PDF blob
-      const pdfResult = await pdfPromise
-      setDownloadProgress(prev => ({ ...prev, pdf: true }))
+      // Wait for PDF blob - but don't let failures block approval
+      let pdfResult = null
+      try {
+        pdfResult = await pdfPromise
+        setDownloadProgress(prev => ({ ...prev, pdf: true }))
+      } catch (pdfError) {
+        console.warn('[MatchEnd] PDF generation failed, continuing with approval:', pdfError)
+        // Don't block approval if PDF fails - just skip PDF in ZIP
+      }
 
-      // Create ZIP with both files
+      // Create ZIP with both files (PDF is optional)
       const zip = new JSZip()
       zip.file(jsonFilename, dataStr)
-      zip.file(pdfResult.filename, pdfResult.blob)
+      if (pdfResult) {
+        zip.file(pdfResult.filename, pdfResult.blob)
+      }
 
       // Add comprehensive interaction logs to the ZIP
       try {
@@ -835,18 +843,20 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             : new Date().toISOString().slice(0, 10)
           const gameNumber = match.gameNumber || match.externalId || match.game_n || 'unknown'
 
-          // Upload PDF
-          const pdfStoragePath = `${scheduledDate}/game${gameNumber}.pdf`
-          const { error: uploadError } = await supabase.storage
-            .from('scoresheets')
-            .upload(pdfStoragePath, pdfResult.blob, {
-              contentType: 'application/pdf',
-              upsert: true
-            })
-          if (uploadError) {
-            console.warn('Failed to upload PDF to cloud:', uploadError)
-          } else {
-            console.log('PDF uploaded to cloud:', pdfStoragePath)
+          // Upload PDF (only if generation succeeded)
+          if (pdfResult) {
+            const pdfStoragePath = `${scheduledDate}/game${gameNumber}.pdf`
+            const { error: uploadError } = await supabase.storage
+              .from('scoresheets')
+              .upload(pdfStoragePath, pdfResult.blob, {
+                contentType: 'application/pdf',
+                upsert: true
+              })
+            if (uploadError) {
+              console.warn('Failed to upload PDF to cloud:', uploadError)
+            } else {
+              console.log('PDF uploaded to cloud:', pdfStoragePath)
+            }
           }
 
           // Upload final JSON (with _final suffix for approved matches)
@@ -916,6 +926,11 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       setDownloadProgress(null)
       setIsSaving(false)
       setIsApproved(true)
+
+      // Warn if PDF was not generated (approval still succeeded)
+      if (!pdfResult) {
+        showAlert(t('matchEnd.pdfGenerationFailed', 'Match approved, but PDF generation failed. You can generate the PDF manually from the Scoresheet button.'), 'warning')
+      }
     } catch (error) {
       console.error('Error approving match:', error)
       showAlert(t('matchEnd.errorApproving', { error: error.message }), 'error')
