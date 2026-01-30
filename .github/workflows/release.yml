@@ -106,7 +106,8 @@ jobs:
           ELECTRON: 'true'
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run electron:build:win
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build:win -- --publish never
       
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -147,7 +148,8 @@ jobs:
           ELECTRON: 'true'
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run electron:build:mac
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build:mac -- --publish never
       
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -189,7 +191,8 @@ jobs:
           ELECTRON: 'true'
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run electron:build:linux
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build:linux -- --publish never
       
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
