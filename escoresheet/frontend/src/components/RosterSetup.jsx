@@ -7,10 +7,24 @@ import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
 import SignaturePad from './SignaturePad'
+import { useScaledLayout } from '../hooks/useScaledLayout'
+
+// Sort players: numbered players first (ascending), then unnumbered alphabetically by lastName, firstName
+const sortPlayers = (players) => [...players].sort((a, b) => {
+  const aHasNum = a.number != null && a.number !== 0
+  const bHasNum = b.number != null && b.number !== 0
+  if (aHasNum && !bHasNum) return -1
+  if (!aHasNum && bHasNum) return 1
+  if (aHasNum && bHasNum) return a.number - b.number
+  // Both unnumbered: sort alphabetically
+  const lastCmp = (a.lastName || '').localeCompare(b.lastName || '')
+  return lastCmp !== 0 ? lastCmp : (a.firstName || '').localeCompare(b.firstName || '')
+})
 
 export default function RosterSetup({ matchId, team, onBack, embedded = false, useSupabaseConnection = false, matchData = null }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const { scaleFactor } = useScaledLayout()
   const [players, setPlayers] = useState([])
   const [benchOfficials, setBenchOfficials] = useState([])
   const [loading, setLoading] = useState(false)
@@ -47,8 +61,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       ? (result.homePlayers || [])
       : (result.awayPlayers || [])
 
-    setPlayers(teamPlayers
-      .sort((a, b) => (a.number || 0) - (b.number || 0))
+    setPlayers(sortPlayers(teamPlayers
       .map(p => ({
         id: p.id,
         number: p.number,
@@ -57,7 +70,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         dob: p.dob || '',
         libero: p.libero || '',
         isCaptain: p.isCaptain || false
-      })))
+      }))))
 
     const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
     if (result.match[benchKey]) {
@@ -196,7 +209,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       const importedBench = pendingRoster.bench || []
 
       // Update local state
-      setPlayers(importedPlayers.map(p => ({
+      setPlayers(sortPlayers(importedPlayers.map(p => ({
         id: null,
         number: p.number,
         firstName: p.firstName || '',
@@ -204,7 +217,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         dob: p.dob || '',
         libero: p.libero || '',
         isCaptain: p.isCaptain || false
-      })))
+      }))))
       setBenchOfficials(importedBench.map(b => ({
         role: b.role || '',
         firstName: b.firstName || b.first_name || '',
@@ -423,7 +436,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       
 
       // Replace all players with imported data
-      setPlayers(mergedPlayers)
+      setPlayers(sortPlayers(mergedPlayers))
       
       // Prepare bench officials from imported data (will be saved to DB below)
       const importedBenchOfficials = []
@@ -710,35 +723,36 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: '20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      padding: `${Math.round(20 * scaleFactor)}px`,
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      fontSize: `${Math.round(14 * scaleFactor)}px`
     }}>
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: `${Math.round(1200 * scaleFactor)}px`,
         margin: '0 auto',
         background: 'var(--bg-secondary)',
-        borderRadius: '12px',
-        padding: '30px'
+        borderRadius: `${Math.round(12 * scaleFactor)}px`,
+        padding: `${Math.round(30 * scaleFactor)}px`
       }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '30px'
+          marginBottom: `${Math.round(30 * scaleFactor)}px`
         }}>
-          <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>
+          <h1 style={{ fontSize: `${Math.round(28 * scaleFactor)}px`, fontWeight: 700, margin: 0 }}>
             {t('rosterSetup.title')} — {team === 'home' ? (match?.homeTeamName || t('common.home')) : (match?.awayTeamName || t('common.away'))}
           </h1>
           <button
             onClick={onBack}
             style={{
-              padding: '10px 20px',
-              fontSize: '14px',
+              padding: `${Math.round(10 * scaleFactor)}px ${Math.round(20 * scaleFactor)}px`,
+              fontSize: `${Math.round(14 * scaleFactor)}px`,
               fontWeight: 500,
               background: 'transparent',
               color: 'var(--muted)',
               border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px',
+              borderRadius: `${Math.round(8 * scaleFactor)}px`,
               cursor: 'pointer'
             }}
           >
@@ -972,167 +986,125 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.number')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.firstName')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.lastName')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.dob')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.libero')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.captain')}</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((player, index) => (
-                  <tr key={index} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="number"
-                        value={player.number || ''}
-                        onChange={(e) => handleUpdatePlayer(index, 'number', parseInt(e.target.value) || 0)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                        style={{
-                          width: '40px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          textAlign: 'center',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={player.firstName}
-                        onChange={(e) => handleUpdatePlayer(index, 'firstName', e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                        style={{
-                          width: '150px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={player.lastName}
-                        onChange={(e) => handleUpdatePlayer(index, 'lastName', e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                        style={{
-                          width: '150px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={player.dob}
-                        onChange={(e) => handleUpdatePlayer(index, 'dob', e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                        placeholder="DD/MM/YYYY"
-                        style={{
-                          width: '120px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <select
-                        value={player.libero || ''}
-                        onChange={(e) => {
-                          const newValue = e.target.value
-                          // If L2 is selected but no L1 exists, automatically change L2 to L1
-                          if (newValue === 'libero2') {
-                            const hasL1 = players.some((p, idx) => idx !== index && p.libero === 'libero1')
-                            if (!hasL1) {
-                              handleUpdatePlayer(index, 'libero', 'libero1')
-                              return
-                            }
-                          }
-                          handleUpdatePlayer(index, 'libero', newValue)
-                        }}
-                        style={{
-                          width: '100px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: '#000000',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="" style={{ background: '#000000', color: 'var(--text)' }}>None</option>
-                        {!players.some((p, idx) => idx !== index && p.libero === 'libero1') && (
-                          <option value="libero1" style={{ background: '#000000', color: 'var(--text)' }}>L1</option>
-                        )}
-                        {!players.some((p, idx) => idx !== index && p.libero === 'libero2') && (
-                          <option value="libero2" style={{ background: '#000000', color: 'var(--text)' }}>L2</option>
-                        )}
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="radio"
-                        name={`captain-${team}`}
-                        checked={player.isCaptain || false}
-                        onChange={(e) => {
-                          // Unset all other captains, set this one
-                          const updatedPlayers = players.map((p, idx) => ({
-                            ...p,
-                            isCaptain: idx === index ? e.target.checked : false
-                          }))
-                          setPlayers(updatedPlayers)
-                        }}
-                        style={{
-                          width: '20px',
-                          height: '20px',
-                          cursor: 'pointer'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => handleDeletePlayer(index)}
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: '12px',
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#ef4444',
-                          border: '1px solid #ef4444',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {t('common.delete')}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Header Row */}
+            <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
+              <div className="w-num" style={{ textAlign: 'center' }}>#</div>
+              <div className="w-name">{t('rosterSetup.lastName')}</div>
+              <div className="w-name">{t('rosterSetup.firstName')}</div>
+              <div className="w-dob">{t('rosterSetup.dob')}</div>
+              <div className="w-90" style={{ textAlign: 'center' }}>{t('rosterSetup.libero')}</div>
+              <div className="w-captain">C</div>
+              <div className="w-action"></div>
+            </div>
+            {players.map((player, index) => {
+              const isCaptain = player.isCaptain || false
+              const isLibero = !!player.libero
+              let borderStyle = { borderRadius: '6px', padding: '6px 8px', border: '2px solid transparent' }
+              if (isCaptain && isLibero) {
+                borderStyle = { padding: '6px 8px', background: 'rgba(34, 197, 94, 0.05)', border: '2px solid', borderImage: 'repeating-linear-gradient(90deg, #22c55e 0, #22c55e 6px, #ffffff 6px, #ffffff 12px) 1' }
+              } else if (isCaptain) {
+                borderStyle = { border: '2px solid #22c55e', borderRadius: '6px', padding: '6px 8px', background: 'rgba(34, 197, 94, 0.1)' }
+              } else if (isLibero) {
+                borderStyle = { border: '2px solid rgba(255, 255, 255, 0.8)', borderRadius: '6px', padding: '6px 8px', background: 'rgba(255, 255, 255, 0.05)' }
+              }
+
+              return (
+                <div key={index} className="row" style={{ alignItems: 'center', ...borderStyle }}>
+                  <input
+                    className="w-num"
+                    type="number"
+                    inputMode="numeric"
+                    min="1" max="99"
+                    value={player.number || ''}
+                    onChange={(e) => handleUpdatePlayer(index, 'number', parseInt(e.target.value) || 0)}
+                    onBlur={() => setPlayers(prev => sortPlayers(prev))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  />
+                  <input
+                    className="w-name capitalize"
+                    type="text"
+                    value={player.lastName}
+                    onChange={(e) => handleUpdatePlayer(index, 'lastName', e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  />
+                  <input
+                    className="w-name capitalize"
+                    type="text"
+                    value={player.firstName}
+                    onChange={(e) => handleUpdatePlayer(index, 'firstName', e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  />
+                  <input
+                    className="w-dob"
+                    type="text"
+                    value={player.dob}
+                    onChange={(e) => handleUpdatePlayer(index, 'dob', e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                    placeholder="DD/MM/YYYY"
+                  />
+                  <select
+                    className="w-90"
+                    value={player.libero || ''}
+                    onChange={(e) => {
+                      const newValue = e.target.value
+                      if (newValue === 'libero2') {
+                        const hasL1 = players.some((p, idx) => idx !== index && p.libero === 'libero1')
+                        if (!hasL1) {
+                          handleUpdatePlayer(index, 'libero', 'libero1')
+                          return
+                        }
+                      }
+                      handleUpdatePlayer(index, 'libero', newValue)
+                    }}
+                  >
+                    <option value=""></option>
+                    {!players.some((p, idx) => idx !== index && p.libero === 'libero1') && (
+                      <option value="libero1">L1</option>
+                    )}
+                    {!players.some((p, idx) => idx !== index && p.libero === 'libero2') && (
+                      <option value="libero2">L2</option>
+                    )}
+                  </select>
+                  <div className="w-captain">
+                    <div
+                      onClick={() => {
+                        const updatedPlayers = players.map((p, idx) => ({
+                          ...p,
+                          isCaptain: idx === index ? !p.isCaptain : false
+                        }))
+                        setPlayers(updatedPlayers)
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        border: player.isCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                        background: player.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: player.isCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                        userSelect: 'none',
+                        flexShrink: 0
+                      }}
+                    >C</div>
+                  </div>
+                  <div className="w-action">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => handleDeletePlayer(index)}
+                    >
+                      {t('common.delete')}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
@@ -1170,110 +1142,61 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.role')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.firstName')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.lastName')}</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.dob')}</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '14px', fontWeight: 600 }}>{t('rosterSetup.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {benchOfficials.map((official, index) => (
-                  <tr key={index} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                    <td style={{ padding: '12px' }}>
-                      <select
-                        value={official.role}
-                        onChange={(e) => handleUpdateOfficial(index, 'role', e.target.value)}
-                        style={{
-                          width: '180px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      >
-                        <option value="Coach">{t('benchRoles.coach')}</option>
-                        <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1')}</option>
-                        <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2')}</option>
-                        <option value="Physiotherapist">{t('benchRoles.physiotherapist')}</option>
-                        <option value="Medic">{t('benchRoles.medic')}</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={official.firstName}
-                        onChange={(e) => handleUpdateOfficial(index, 'firstName', e.target.value)}
-                        style={{
-                          width: '150px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={official.lastName}
-                        onChange={(e) => handleUpdateOfficial(index, 'lastName', e.target.value)}
-                        style={{
-                          width: '150px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <input
-                        type="text"
-                        value={official.dob}
-                        onChange={(e) => handleUpdateOfficial(index, 'dob', e.target.value)}
-                        placeholder="DD/MM/YYYY"
-                        style={{
-                          width: '120px',
-                          padding: '6px',
-                          fontSize: '14px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: '4px',
-                          color: 'var(--text)'
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => handleDeleteOfficial(index)}
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: '12px',
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#ef4444',
-                          border: '1px solid #ef4444',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {t('common.delete')}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Bench Header Row */}
+            <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
+              <div className="w-220">{t('rosterSetup.role')}</div>
+              <div className="w-name">{t('rosterSetup.lastName')}</div>
+              <div className="w-name">{t('rosterSetup.firstName')}</div>
+              <div className="w-dob">{t('rosterSetup.dob')}</div>
+              <div className="w-action"></div>
+            </div>
+            {benchOfficials.map((official, index) => (
+              <div key={index} className="row" style={{ alignItems: 'center', borderRadius: '6px', padding: '6px 8px', border: '2px solid transparent' }}>
+                <select
+                  className="w-220"
+                  value={official.role}
+                  onChange={(e) => handleUpdateOfficial(index, 'role', e.target.value)}
+                >
+                  <option value="Coach">{t('benchRoles.coach')}</option>
+                  <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1')}</option>
+                  <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2')}</option>
+                  <option value="Physiotherapist">{t('benchRoles.physiotherapist')}</option>
+                  <option value="Medic">{t('benchRoles.medic')}</option>
+                </select>
+                <input
+                  className="w-name capitalize"
+                  type="text"
+                  value={official.lastName}
+                  onChange={(e) => handleUpdateOfficial(index, 'lastName', e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                />
+                <input
+                  className="w-name capitalize"
+                  type="text"
+                  value={official.firstName}
+                  onChange={(e) => handleUpdateOfficial(index, 'firstName', e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                />
+                <input
+                  className="w-dob"
+                  type="text"
+                  value={official.dob}
+                  onChange={(e) => handleUpdateOfficial(index, 'dob', e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                  placeholder="DD/MM/YYYY"
+                />
+                <div className="w-action">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleDeleteOfficial(index)}
+                  >
+                    {t('common.delete')}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 

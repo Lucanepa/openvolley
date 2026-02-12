@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
 import { supabase } from '../lib/supabaseClient'
 import SignaturePad from './SignaturePad'
@@ -115,41 +116,42 @@ const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 export default function CoinToss({ matchId, onConfirm, onBack }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const { vmin } = useScaledLayout()
 
   // Check if compact mode
   const isCompact = useCompactMode()
 
-  // Responsive sizing
+  // Responsive sizing - scales with viewport height
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768
+  const vhScale = Math.max(0.6, Math.min(1.4, vh / 900)) // scale factor based on viewport height
   const sizes = isCompact ? {
-    headerFont: '20px',
-    teamButtonFont: '13px',
-    teamButtonPadding: '8px 12px',
-    volleyballSize: '48px',
-    rosterButtonFont: '12px',
-    rosterButtonPadding: '6px 12px',
-    signButtonFont: '12px',
-    signButtonPadding: '6px 12px',
-    confirmButtonFont: '14px',
-    confirmButtonPadding: '12px 24px',
-    switchButtonFont: '11px',
-    switchButtonPadding: '6px 10px',
-    gap: 12,
-    marginBottom: 24
+    headerFont: `${Math.round(22 * vhScale)}px`,
+    teamButtonFont: `${Math.round(15 * vhScale)}px`,
+    teamButtonPadding: `${Math.round(10 * vhScale)}px ${Math.round(14 * vhScale)}px`,
+    volleyballSize: `${Math.round(60 * vhScale)}px`,
+    // Unified button size for roster, sign, and switch buttons
+    actionButtonFont: `${Math.round(14 * vhScale)}px`,
+    actionButtonPadding: `${Math.round(10 * vhScale)}px ${Math.round(20 * vhScale)}px`,
+    actionButtonMinWidth: `${Math.round(180 * vhScale)}px`,
+    actionButtonMinHeight: `${Math.round(44 * vhScale)}px`,
+    confirmButtonFont: `${Math.round(16 * vhScale)}px`,
+    confirmButtonPadding: `${Math.round(14 * vhScale)}px ${Math.round(28 * vhScale)}px`,
+    gap: Math.round(12 * vhScale),
+    marginBottom: Math.round(24 * vhScale)
   } : {
-    headerFont: '28px',
-    teamButtonFont: '18px',
-    teamButtonPadding: '12px 20px',
-    volleyballSize: '72px',
-    rosterButtonFont: '16px',
-    rosterButtonPadding: '10px 20px',
-    signButtonFont: '16px',
-    signButtonPadding: '10px 20px',
-    confirmButtonFont: '18px',
-    confirmButtonPadding: '16px 32px',
-    switchButtonFont: '14px',
-    switchButtonPadding: '10px 16px',
-    gap: 20,
-    marginBottom: 32
+    headerFont: `${Math.round(32 * vhScale)}px`,
+    teamButtonFont: `${Math.round(22 * vhScale)}px`,
+    teamButtonPadding: `${Math.round(14 * vhScale)}px ${Math.round(24 * vhScale)}px`,
+    volleyballSize: `${Math.round(100 * vhScale)}px`,
+    // Unified button size for roster, sign, and switch buttons
+    actionButtonFont: `${Math.round(18 * vhScale)}px`,
+    actionButtonPadding: `${Math.round(12 * vhScale)}px ${Math.round(28 * vhScale)}px`,
+    actionButtonMinWidth: `${Math.round(220 * vhScale)}px`,
+    actionButtonMinHeight: `${Math.round(52 * vhScale)}px`,
+    confirmButtonFont: `${Math.round(20 * vhScale)}px`,
+    confirmButtonPadding: `${Math.round(18 * vhScale)}px ${Math.round(36 * vhScale)}px`,
+    gap: Math.round(24 * vhScale),
+    marginBottom: Math.round(32 * vhScale)
   }
 
   // Team info state (loaded from DB)
@@ -1263,7 +1265,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   // Volleyball images - responsive size
   const volleyballImage = (
     <div style={{
-      width: '15vmin', height: '15vmin', display: 'flex',
+      width: vmin(15), height: vmin(15), display: 'flex',
       alignItems: 'center', justifyContent: 'center', flexShrink: 0
     }}>
       <img
@@ -1275,7 +1277,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   )
   const volleyballPlaceholder = (
     <div style={{
-      width: '15vmin', height: '15vmin', display: 'flex',
+      width: vmin(15), height: vmin(15), display: 'flex',
       alignItems: 'center', justifyContent: 'center', background: 'transparent', flexShrink: 0
     }} />
   )
@@ -1288,66 +1290,70 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
     <div className="setup" style={{
       width: '95vw',
       maxWidth: '100vw',
-      alignSelf: 'flex-start',
-      marginTop: '10px',
+      height: '100%',
+      maxHeight: '100%',
       padding: isCompact ? '0 12px' : '5px 24px',
-      boxSizing: 'border-box'
+      boxSizing: 'border-box',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isCompact ? 16 : 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
         <button className="secondary" onClick={onBack}>← {t('common.back')}</button>
-        <h1 style={{ margin: 0, fontSize: '50px', fontWeight: 700, textAlign: 'center' }}>{t('coinToss.title')}</h1>
+        <h1 style={{ margin: 0, fontSize: `${Math.round(46 * vhScale)}px`, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.title')}</h1>
         <div style={{ width: '80px' }}></div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, marginBottom: sizes.marginBottom, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
         {/* Team A */}
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamA')}</h1>
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', width: '100%' }}>
-            <div
-              style={{
-                background: teamAInfo.color,
-                color: isBrightColor(teamAInfo.color) ? '#000' : '#fff',
-                flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
-                fontWeight: 600, border: 'none', borderRadius: '8px',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                cursor: 'default'
-              }}
-              title={teamAInfo.name}
-            >
-              {getDisplayName(teamAInfo.name)}
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
+          {/* Row 1: Team label + Team name bar */}
+          <div style={{ width: '100%' }}>
+            <h1 style={{ margin: 0, marginBottom: Math.round(6 * vhScale), fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamA')}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
+              <div
+                style={{
+                  background: teamAInfo.color,
+                  color: isBrightColor(teamAInfo.color) ? '#000' : '#fff',
+                  flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
+                  fontWeight: 600, border: 'none', borderRadius: '8px',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  cursor: 'default'
+                }}
+                title={teamAInfo.name}
+              >
+                {getDisplayName(teamAInfo.name)}
+              </div>
             </div>
           </div>
-
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
-            {serveA ? volleyballImage : volleyballPlaceholder}
-          </div>
-
-          {/* Team A Roster Button */}
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', justifyContent: 'center' }}>
+          {/* Row 2: Volleyball + Roster Button */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(10 * vhScale) }}>
+            <div style={{ display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
+              {serveA ? volleyballImage : volleyballPlaceholder}
+            </div>
             <button
               type="button"
               className="secondary"
               onClick={() => setRosterModal('teamA')}
-              style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
+              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               {t('coinToss.showRoster')} ({teamAInfo.roster.length})
             </button>
           </div>
-
-          {/* Team A Signatures */}
-          <div style={{ marginTop: isCompact ? 16 : 20, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%' }}>
+          {/* Row 3: Signatures */}
+          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <button
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 className={`sign ${teamACoachSig && teamACaptainSig ? 'signed' : ''}`}
-                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 {t('coinToss.signA')} {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
               </button>
               {signatureMenuA && (
                 <div style={{
-                  marginTop: '8px',
+                  position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                  marginTop: '8px', zIndex: 10,
                   background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
                   borderRadius: '8px', padding: isCompact ? '8px' : '12px',
                   display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
@@ -1355,14 +1361,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   <button
                     onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
                     className={`sign ${teamACoachSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.coach')} {teamACoachSig ? '✓' : ''}
                   </button>
                   <button
                     onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
                     className={`sign ${teamACaptainSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.captain')} {teamACaptainSig ? '✓' : ''}
                   </button>
@@ -1372,68 +1378,73 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           </div>
         </div>
 
-        {/* Middle buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? 12 : 35, alignItems: 'center', alignSelf: 'stretch', padding: '0 4px' }}>
-          <div style={{ height: isCompact ? '40px' : '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: isCompact ? '24px' : '52px' }}>
-            <button className="secondary" onClick={switchTeams} style={{ padding: sizes.switchButtonPadding, fontSize: '20px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+        {/* Middle buttons - aligned with team rows via space-evenly */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 4px', justifyContent: 'space-evenly' }}>
+          {/* Switch Teams - aligned with team name row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button className="secondary" onClick={switchTeams} style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, fontWeight: 700, whiteSpace: 'nowrap', minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               ⇄ {t('coinToss.switchTeams')}
             </button>
           </div>
-          <div style={{ height: sizes.volleyballSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <button className="secondary" onClick={switchServe} style={{ padding: sizes.switchButtonPadding, fontSize: '20px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {/* Switch Serve - aligned with volleyball row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button className="secondary" onClick={switchServe} style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, fontWeight: 700, whiteSpace: 'nowrap', minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               ⇄ {t('coinToss.switchServe')}
             </button>
           </div>
+          {/* Spacer for signatures row */}
+          <div />
         </div>
 
         {/* Team B */}
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <h1 style={{ margin: 2, fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamB')}</h1>
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: isCompact ? '40px' : '80px', width: '100%' }}>
-            <div
-              style={{
-                background: teamBInfo.color,
-                color: isBrightColor(teamBInfo.color) ? '#000' : '#fff',
-                flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
-                fontWeight: 600, border: 'none', borderRadius: '8px',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                cursor: 'default'
-              }}
-              title={teamBInfo.name}
-            >
-              {getDisplayName(teamBInfo.name)}
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
+          {/* Row 1: Team label + Team name bar */}
+          <div style={{ width: '100%' }}>
+            <h1 style={{ margin: 0, marginBottom: Math.round(6 * vhScale), fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamB')}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
+              <div
+                style={{
+                  background: teamBInfo.color,
+                  color: isBrightColor(teamBInfo.color) ? '#000' : '#fff',
+                  flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
+                  fontWeight: 600, border: 'none', borderRadius: '8px',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  cursor: 'default'
+                }}
+                title={teamBInfo.name}
+              >
+                {getDisplayName(teamBInfo.name)}
+              </div>
             </div>
           </div>
-
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
-            {serveB ? volleyballImage : volleyballPlaceholder}
-          </div>
-
-          {/* Team B Roster Button */}
-          <div style={{ marginBottom: isCompact ? 12 : 16, display: 'flex', justifyContent: 'center' }}>
+          {/* Row 2: Volleyball + Roster Button */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(10 * vhScale) }}>
+            <div style={{ display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
+              {serveB ? volleyballImage : volleyballPlaceholder}
+            </div>
             <button
               type="button"
               className="secondary"
               onClick={() => setRosterModal('teamB')}
-              style={{ padding: sizes.rosterButtonPadding, fontSize: sizes.rosterButtonFont }}
+              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               {t('coinToss.showRoster')} ({teamBInfo.roster.length})
             </button>
           </div>
-
-          {/* Team B Signatures */}
-          <div style={{ marginTop: isCompact ? 16 : 20, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%' }}>
+          {/* Row 3: Signatures */}
+          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <button
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 className={`sign ${teamBCoachSig && teamBCaptainSig ? 'signed' : ''}`}
-                style={{ fontSize: sizes.signButtonFont, padding: sizes.signButtonPadding, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 {t('coinToss.signB')} {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
               </button>
               {signatureMenuB && (
                 <div style={{
-                  marginTop: '8px',
+                  position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                  marginTop: '8px', zIndex: 10,
                   background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
                   borderRadius: '8px', padding: isCompact ? '8px' : '12px',
                   display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
@@ -1441,14 +1452,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   <button
                     onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
                     className={`sign ${teamBCoachSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.coach')} {teamBCoachSig ? '✓' : ''}
                   </button>
                   <button
                     onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
                     className={`sign ${teamBCaptainSig ? 'signed' : ''}`}
-                    style={{ fontSize: isCompact ? '11px' : '14px', padding: isCompact ? '6px 10px' : '10px 16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {t('coinToss.captain')} {teamBCaptainSig ? '✓' : ''}
                   </button>
@@ -1459,9 +1470,9 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         </div>
       </div>
 
-      {/* Confirm Button */}
+      {/* Bottom buttons */}
 
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '1px 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: Math.round(8 * vhScale), flexShrink: 0 }}>
         <MenuList
           buttonLabel={isCompact ? "📄" : `📄 ${t('header.scoresheet')}`}
           buttonClassName="secondary"
@@ -1519,7 +1530,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           ]}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: sizes.marginBottom }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: isCompact ? 4 : 8, paddingBottom: isCompact ? 12 : 20, flexShrink: 0 }}>
         {isCoinTossConfirmed ? (
           <button onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont }}>
             {t('coinToss.returnToMatch')}
@@ -1709,22 +1720,32 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                                   <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
                                 )}
                               </select>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-                                <input
-                                  type="radio"
-                                  name={`${currentTeam}-captain-modal`}
-                                  checked={p.isCaptain || false}
-                                  onChange={e => {
-                                    const updated = roster.map((player, idx) => ({
-                                      ...player,
-                                      isCaptain: idx === originalIdx ? e.target.checked : false
-                                    }))
-                                    setRoster(updated)
-                                  }}
-                                  style={{ width: '12px', height: '12px', margin: 0, accentColor: 'var(--accent)' }}
-                                />
-                                <span style={{ fontSize: '10px', fontWeight: 600 }}>C</span>
-                              </label>
+                              <div
+                                onClick={() => {
+                                  const updated = roster.map((player, idx) => ({
+                                    ...player,
+                                    isCaptain: idx === originalIdx ? !player.isCaptain : false
+                                  }))
+                                  setRoster(updated)
+                                }}
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '4px',
+                                  border: p.isCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                                  background: p.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  color: p.isCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                                  userSelect: 'none'
+                                }}
+                              >
+                                C
+                              </div>
                             </div>
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '4px' }}>
@@ -2007,15 +2028,30 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                   {!roster.some(p => p.libero === 'libero2') && <option value="libero2">{t('roster.liberoFull2')}</option>}
                 </select>
               </div>
-              <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={captain}
-                    onChange={e => currentTeam === 'home' ? setHomeCaptain(e.target.checked) : setAwayCaptain(e.target.checked)}
-                  />
-                  <span>{t('coinToss.captain')}</span>
-                </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div
+                  onClick={() => currentTeam === 'home' ? setHomeCaptain(!captain) : setAwayCaptain(!captain)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '4px',
+                    border: captain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                    background: captain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: captain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                    userSelect: 'none'
+                  }}
+                >
+                  C
+                </div>
+                <span style={{ cursor: 'pointer' }} onClick={() => currentTeam === 'home' ? setHomeCaptain(!captain) : setAwayCaptain(!captain)}>
+                  {t('coinToss.captain')}
+                </span>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                 <button className="secondary" onClick={() => setAddPlayerModal(null)}>{t('common.cancel')}</button>

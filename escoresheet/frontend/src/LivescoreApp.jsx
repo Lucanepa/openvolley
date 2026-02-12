@@ -120,6 +120,7 @@ export default function LivescoreApp() {
     const sideA = game.side_a || 'left' // default Team A on left
     const isALeft = sideA === 'left'
     const isMatchEnded = game.match_status === 'ended' || game.match_status === 'final'
+    const isInSetInterval = !isMatchEnded && game.set_interval_active
 
     // When match is ended, show set score as main score
     const leftSets = isALeft ? (game.sets_won_a || 0) : (game.sets_won_b || 0)
@@ -140,14 +141,15 @@ export default function LivescoreApp() {
     return {
       leftName: isALeft ? (game.team_a_name || 'Team A') : (game.team_b_name || 'Team B'),
       rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
-      // Main score: show sets if match ended, otherwise points
-      leftScore: isMatchEnded ? leftSets : leftPoints,
-      rightScore: isMatchEnded ? rightSets : rightPoints,
+      // Main score: show sets if match ended or in set interval, otherwise points
+      leftScore: (isMatchEnded || isInSetInterval) ? leftSets : leftPoints,
+      rightScore: (isMatchEnded || isInSetInterval) ? rightSets : rightPoints,
       leftSets,
       rightSets,
       leftPoints,
       rightPoints,
       isMatchEnded,
+      isInSetInterval,
       // Serving: convert team key to side
       servingTeam: game.serving_team, // already 'left' or 'right'
       setResults

@@ -62,6 +62,29 @@ export default function MenuList({
             menu.style.top = `${buttonRect.bottom + 4}px`
             menu.style.bottom = 'auto'
           }
+
+          // Clamp to viewport bounds
+          const MARGIN = 8
+          const menuRect = menu.getBoundingClientRect()
+          if (menuRect.right > window.innerWidth - MARGIN) {
+            if (menu.style.left !== 'auto') {
+              menu.style.left = `${parseFloat(menu.style.left) - (menuRect.right - (window.innerWidth - MARGIN))}px`
+            } else {
+              menu.style.right = `${parseFloat(menu.style.right) + (menuRect.right - (window.innerWidth - MARGIN))}px`
+            }
+          }
+          if (menuRect.left < MARGIN) {
+            menu.style.left = `${MARGIN}px`
+            menu.style.right = 'auto'
+          }
+          if (menuRect.bottom > window.innerHeight - MARGIN) {
+            menu.style.bottom = `${MARGIN}px`
+            menu.style.top = 'auto'
+          }
+          if (menuRect.top < MARGIN) {
+            menu.style.top = `${MARGIN}px`
+            menu.style.bottom = 'auto'
+          }
         })
       }
 
