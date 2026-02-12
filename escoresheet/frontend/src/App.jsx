@@ -124,7 +124,7 @@ export default function App() {
     const saved = localStorage.getItem('offlineMode')
     return saved === 'true'
   })
-  // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
+  // Display mode: 'desktop' | 'tablet' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
     return saved || 'auto' // default to auto-detect
@@ -289,16 +289,14 @@ export default function App() {
   }, [])
 
   // Screen size detection for display mode
-  // < 768px = smartphone, 768-1024px = tablet, > 1024px = desktop
+  // <= 1024px = tablet, > 1024px = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
       const height = window.innerHeight
       let detected = 'desktop'
 
-      if (width < 768) {
-        detected = 'smartphone'
-      } else if (width <= 1024) {
+      if (width <= 1024) {
         detected = 'tablet'
       }
       // > 1024px = desktop (default)
@@ -315,7 +313,7 @@ export default function App() {
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [])
 
-  // Fullscreen for tablet/smartphone modes (orientation lock handled by Scoreboard/Scoresheet)
+  // Fullscreen for tablet mode
   const enterDisplayMode = useCallback((mode) => {
     // Request fullscreen
     if (document.documentElement.requestFullscreen) {
@@ -2902,7 +2900,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: 'relative', height: '100vh', width: 'auto', maxWidth: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => {
+    <div className="app-root" onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
       if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
         setShowConnectionMenu(false)
@@ -3071,29 +3069,43 @@ export default function App() {
           <div className="container" style={{
             minHeight: 0,
             flex: '1 1 auto',
-            width: 'auto',
+            width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
             height: 'auto',
             display: 'flex',
             flexDirection: 'column',
             position: 'relative',
-            alignItems: 'center',
+            alignItems: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? 'stretch' : 'center',
             margin: '0 auto',
-            padding: '5px',
-            overflow: 'hidden'
+            padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '0' : '5px',
+            overflowX: 'hidden',
+            overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto'
           }}>
             <div className="panel" style={{
               flex: '1 1 auto',
+              minHeight: 0,
               height: 'auto',
-              overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto',
+              overflowY: 'auto',
               overflowX: 'hidden',
-              width: 'auto',
+              width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
               maxWidth: '100%',
               padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
-              // Vertical centering for CoinToss and MatchSetup screens
-              ...(showCoinToss || showMatchSetup ? {
+              // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space)
+              ...(!matchId || showCoinToss || showMatchEnd ? {
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center'
+              } : {}),
+              // MatchSetup fills available space
+              ...(showMatchSetup ? {
+                display: 'block',
+                padding: '10px'
+              } : {}),
+              // Scoreboard active: flex column so match-record height: 100% resolves correctly
+              ...(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd ? {
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'hidden',
+                padding: '0'
               } : {})
             }}>
               {showCoinToss && matchId ? (

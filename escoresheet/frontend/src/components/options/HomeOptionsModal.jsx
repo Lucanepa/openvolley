@@ -337,8 +337,7 @@ export default function HomeOptionsModal({
 
   const modeDescriptions = {
     desktop: t('options.desktopDesc'),
-    tablet: t('options.tabletDesc'),
-    smartphone: t('options.smartphoneDesc')
+    tablet: t('options.tabletDesc')
   }
 
   return (
@@ -607,11 +606,11 @@ export default function HomeOptionsModal({
                 <InfoDot title={t('options.screenModeInfo')} />
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
+                {['auto', 'desktop', 'tablet'].map(mode => (
                   <button
                     key={mode}
                     onClick={() => {
-                      if (mode === 'tablet' || mode === 'smartphone') {
+                      if (mode === 'tablet') {
                         enterDisplayMode(mode)
                         return
                       }

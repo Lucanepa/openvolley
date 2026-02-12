@@ -1335,7 +1335,7 @@ export default function UploadRosterApp() {
               <span>{t('rosterSetup.firstName', 'First Name')}</span>
               <span>{t('rosterSetup.dob', 'DOB')}</span>
               <span>{t('rosterSetup.libero', 'Libero')}</span>
-              <span>{t('rosterSetup.captain', 'Captain')}</span>
+              <span>C</span>
               <span></span>
             </div>
 
@@ -1432,14 +1432,25 @@ export default function UploadRosterApp() {
                     <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
                     <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
                   </select>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      checked={player.isCaptain}
-                      onChange={(e) => handlePlayerChange(index, 'isCaptain', e.target.checked)}
-                      style={{ width: '18px', height: '18px' }}
-                    />
-                  </label>
+                  <div
+                    onClick={() => handlePlayerChange(index, 'isCaptain', !player.isCaptain)}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: player.isCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      background: player.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: player.isCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      userSelect: 'none',
+                      margin: '0 auto'
+                    }}
+                  >C</div>
                   <button
                     type="button"
                     onClick={() => handleDeletePlayer(index)}

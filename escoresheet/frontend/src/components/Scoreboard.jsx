@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
 import Modal from './Modal'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
@@ -49,6 +50,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const { vmin } = useScaledLayout()
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
   const cLogger = useComponentLogging('Scoreboard')
   const { syncState, syncSetEnd, resetSyncState } = useSequentialSync()
@@ -133,13 +135,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const saved = localStorage.getItem('scoreFont')
     return saved || 'default'
   })
-  // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
+  // Display mode: 'desktop' | 'tablet' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
     return saved || 'auto' // default to auto-detect
   })
   const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
-  const [displayModeSuggestion, setDisplayModeSuggestion] = useState(null) // null | 'tablet' | 'smartphone'
+  const [displayModeSuggestion, setDisplayModeSuggestion] = useState(null) // null | 'tablet'
   const [showDisplayModeSuggestion, setShowDisplayModeSuggestion] = useState(false)
   const [currentDateTime, setCurrentDateTime] = useState(() => new Date())
   const [leftTeamSanctionsExpanded, setLeftTeamSanctionsExpanded] = useState(false)
@@ -319,21 +321,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [autoDownloadAtSetEnd, setAutoDownloadAtSetEnd] = useState(true)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
-  // Compact mode: landscape (width >= height) = width <= 960 OR height < 768
-  //               portrait (height > width) = height <= 960 OR width < 768
   const isLandscape = viewportWidth >= viewportHeight
-  const isCompactMode = isLandscape
-    ? (viewportWidth <= 960 || viewportHeight < 768)
-    : (viewportHeight <= 960 || viewportWidth < 768)
-  const isVeryCompact = isLandscape
-    ? (viewportWidth <= 800 || viewportHeight < 600)
-    : (viewportHeight <= 800 || viewportWidth < 600)
-  // Laptop mode: between compact (960) and full desktop (1400) - smaller UI than full desktop
-  const isLaptopMode = !isCompactMode && viewportWidth > 960 && viewportWidth <= 1400
-  // Narrow mode: < 1000px - collapse buttons into dropdowns, column layout for counters
-  const isNarrowMode = viewportWidth < 1000
-  // Short height mode: < 900px - smaller counters, clickable TO counter, hide TO button
-  const isShortHeight = viewportHeight < 900
+  // These responsive modes are no longer automatic — always use full desktop layout.
+  // Compact/tablet view is available via the display mode option.
+  const isCompactMode = false
+  const isVeryCompact = false
+  const isLaptopMode = false
+  const isNarrowMode = false
+  const isShortHeight = false
   const wsRef = useRef(null) // Store WebSocket connection for use in callbacks
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
@@ -560,7 +555,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Screen size detection for display mode suggestions
   // Improved detection: check both screen size and touch capability
-  // < 600px + touch = smartphone, 600-900px + touch = tablet, > 900px or no touch = desktop
+  // <= 900px + touch = tablet, > 900px or no touch = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
@@ -569,13 +564,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       let detected = 'desktop'
       let suggestion = null
 
-      // Smartphone: narrow screen (<= 600px) with touch, or very narrow (<= 480px) even without touch
-      if ((width <= 600 && hasTouch) || width <= 480) {
-        detected = 'smartphone'
-        suggestion = 'smartphone'
-      }
-      // Tablet: medium screen (600-900px) with touch
-      else if (width <= 900 && hasTouch) {
+      // Tablet: medium screen (<= 900px) with touch
+      if (width <= 900 && hasTouch) {
         detected = 'tablet'
         suggestion = 'tablet'
       }
@@ -643,7 +633,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Update current datetime every second for fullscreen header display
   useEffect(() => {
-    if (activeDisplayMode === 'tablet' || activeDisplayMode === 'smartphone') {
+    if (activeDisplayMode === 'tablet') {
       const interval = setInterval(() => {
         setCurrentDateTime(new Date())
       }, 1000)
@@ -662,7 +652,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
   }
 
-  // Fullscreen and orientation lock for tablet/smartphone modes
+  // Fullscreen and orientation lock for tablet mode
   const enterDisplayMode = useCallback((mode) => {
     // Request fullscreen
     if (document.documentElement.requestFullscreen) {
@@ -1838,10 +1828,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const setWinner = eventData?.winner
         || (snapshot.pointsA > snapshot.pointsB ? snapshot.teamAKey : null)
         || (snapshot.pointsB > snapshot.pointsA ? snapshot.teamBKey : null)
-      const updatedSetScoreA = isSetInterval && setWinner
+      // Increment set score for both set_end (isSetInterval) and match_end events
+      const shouldIncrementSetScore = (isSetInterval || isMatchEnd) && setWinner
+      const updatedSetScoreA = shouldIncrementSetScore
         ? (setWinner === snapshot.teamAKey ? snapshot.setScoreA + 1 : snapshot.setScoreA)
         : snapshot.setScoreA
-      const updatedSetScoreB = isSetInterval && setWinner
+      const updatedSetScoreB = shouldIncrementSetScore
         ? (setWinner === snapshot.teamBKey ? snapshot.setScoreB + 1 : snapshot.setScoreB)
         : snapshot.setScoreB
 
@@ -3519,6 +3511,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return luminance > 0.5
   }, [])
 
+  const isWhiteOrGreyColor = useCallback(color => {
+    if (!color) return false
+    const hex = color.replace('#', '')
+    const r = parseInt(hex.substr(0, 2), 16)
+    const g = parseInt(hex.substr(2, 2), 16)
+    const b = parseInt(hex.substr(4, 2), 16)
+    const max = Math.max(r, g, b), min = Math.min(r, g, b)
+    const saturation = max === 0 ? 0 : (max - min) / max
+    const brightness = (r + g + b) / (3 * 255)
+    return saturation < 0.15 && brightness > 0.55
+  }, [])
+
+  const getPlayerCircleColors = useCallback((teamColor, isLibero) => {
+    if (isLibero) {
+      const useRed = isWhiteOrGreyColor(teamColor)
+      return { bg: useRed ? '#ef4444' : '#ffffff', text: useRed ? '#fff' : '#000' }
+    }
+    return { bg: teamColor || 'rgba(51, 65, 85, 0.6)', text: isBrightColor(teamColor) ? '#000' : '#fff' }
+  }, [isBrightColor, isWhiteOrGreyColor])
+
+  const getTeamColor = useCallback(teamKey => {
+    const isLeft = (leftIsHome && teamKey === 'home') || (!leftIsHome && teamKey === 'away')
+    return isLeft ? (leftTeam.color || '#ef4444') : (rightTeam.color || '#3b82f6')
+  }, [leftIsHome, leftTeam.color, rightTeam.color])
+
   // Helper function to get next sequence number for events (returns integer only)
   const getNextSeq = useCallback(async () => {
     const allEvents = await db.events.where('matchId').equals(matchId).toArray()
@@ -5025,7 +5042,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setSanctionConfirm({ side, type: 'delay_penalty' })
   }, [data?.match, data?.set, rallyStatus])
 
-  // Handle team sanction (for smartphone mode) - takes team key instead of side
+  // Handle team sanction - takes team key instead of side
   const handleTeamSanction = useCallback((teamKey, sanctionType) => {
     cLogger.logHandler('handleTeamSanction', { teamKey, sanctionType })
     if (!data?.match || rallyStatus !== 'idle') return
@@ -6584,6 +6601,144 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
+        // Determine who had serve BEFORE the original point was awarded
+        // This is needed to know if the new team should rotate (if they were receiving)
+        const pointEventsBefore = data.events
+          .filter(e => e.type === 'point' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
+          .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+
+        // Calculate first serve for current set
+        const setIndex = data.set.index
+        const set1FirstServe = data?.match?.firstServe || 'home'
+        let currentSetFirstServe
+        if (setIndex === 5 && data.match?.set5FirstServe) {
+          const teamAKey = data.match.coinTossTeamA || 'home'
+          const teamBKey = data.match.coinTossTeamB || 'away'
+          currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+        } else {
+          currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+        }
+
+        let serveBeforePoint = currentSetFirstServe
+        if (pointEventsBefore.length > 0) {
+          serveBeforePoint = pointEventsBefore[0].payload?.team || serveBeforePoint
+        }
+
+        // If the new team was receiving (didn't have serve), they need to rotate now
+        const newTeamHadServe = serveBeforePoint === newTeam
+        if (!newTeamHadServe) {
+          // Query the new team's current lineup
+          const newTeamLineupEvents = data.events
+            .filter(e => e.type === 'lineup' && e.payload?.team === newTeam && e.setIndex === data.set.index)
+            .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+
+          if (newTeamLineupEvents.length > 0) {
+            const currentLineup = newTeamLineupEvents[0].payload?.lineup
+            const liberoSubstitution = newTeamLineupEvents[0].payload?.liberoSubstitution
+
+            if (currentLineup) {
+              const rotatedLineup = rotateLineup(currentLineup)
+              if (rotatedLineup) {
+                // Rotate libero substitution position if exists
+                let rotatedLiberoSubstitution = null
+                if (liberoSubstitution) {
+                  const positionMap = { 'I': 'VI', 'II': 'I', 'III': 'II', 'IV': 'III', 'V': 'IV', 'VI': 'V' }
+                  const newPosition = positionMap[liberoSubstitution.position]
+                  if (newPosition) {
+                    rotatedLiberoSubstitution = { ...liberoSubstitution, position: newPosition }
+                  }
+                }
+
+                // Check if any libero is in front-row positions (II, III, IV) after rotation
+                const teamPlayers = newTeam === 'home' ? data.homePlayers : data.awayPlayers
+                const frontRowPositions = ['II', 'III', 'IV']
+                let liberoInFrontRow = null
+
+                for (const [pos, num] of Object.entries(rotatedLineup)) {
+                  if (frontRowPositions.includes(pos)) {
+                    const player = teamPlayers?.find(p => String(p.number) === String(num))
+                    if (player?.libero && player.libero !== '') {
+                      liberoInFrontRow = [pos, num]
+                      break
+                    }
+                  }
+                }
+
+                // If libero is in front row, automatically remove them
+                if (liberoInFrontRow) {
+                  const [position, liberoNumber] = liberoInFrontRow
+                  let originalPlayerNumber = null
+
+                  // First, try to use the rotated libero substitution if the libero matches
+                  if (rotatedLiberoSubstitution &&
+                    String(rotatedLiberoSubstitution.liberoNumber) === String(liberoNumber)) {
+                    originalPlayerNumber = rotatedLiberoSubstitution.playerNumber
+                  } else {
+                    // Search for the original libero substitution in lineup history
+                    for (const event of newTeamLineupEvents) {
+                      if (event.payload?.liberoSubstitution &&
+                        String(event.payload.liberoSubstitution.liberoNumber) === String(liberoNumber)) {
+                        originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
+                        break
+                      }
+                    }
+                  }
+
+                  // If we found the original player, restore them
+                  if (originalPlayerNumber) {
+                    rotatedLineup[position] = String(originalPlayerNumber)
+                    rotatedLiberoSubstitution = null // Clear libero substitution since libero is out
+
+                    // Log libero exit event
+                    const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(liberoNumber))
+                    const liberoExitSeq = await getNextSeq()
+                    await db.events.add({
+                      matchId,
+                      setIndex: data.set.index,
+                      type: 'libero_exit',
+                      payload: {
+                        team: newTeam,
+                        position: position,
+                        liberoOut: liberoNumber,
+                        playerIn: originalPlayerNumber,
+                        liberoType: liberoPlayer?.libero,
+                        reason: 'rotation_to_front_row_decision_change'
+                      },
+                      ts: new Date().toISOString(),
+                      seq: liberoExitSeq
+                    })
+                  }
+                }
+
+                // Log the rotation lineup event for the new team
+                const rotationSeq = await getNextSeq()
+                await db.events.add({
+                  matchId,
+                  setIndex: data.set.index,
+                  type: 'lineup',
+                  payload: {
+                    team: newTeam,
+                    lineup: rotatedLineup,
+                    isInitial: false,
+                    fromRotation: true,
+                    fromDecisionChange: true,
+                    liberoSubstitution: rotatedLiberoSubstitution
+                  },
+                  ts: new Date().toISOString(),
+                  seq: rotationSeq
+                })
+
+                console.log('[handleDecisionChange] Applied rotation to new team:', {
+                  newTeam,
+                  serveBeforePoint,
+                  rotatedLineup,
+                  liberoSubstitution: rotatedLiberoSubstitution
+                })
+              }
+            }
+          }
+        }
+
         // Sync to Supabase with fresh snapshot (data has changed)
         syncLiveStateToSupabase('decision_change', null, { reason: 'point_swap', fromTeam: oldTeam, toTeam: newTeam }, null)
 
@@ -6597,7 +6752,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, matchId, getNextSeq, handleReplayRally, syncLiveStateToSupabase])
+  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup])
 
 
 
@@ -6971,15 +7126,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const getReplacementBadgeStyle = (player) => {
     const baseStyle = {
       position: 'absolute',
-      top: '-1vmin',
-      right: '-1vmin',
-      width: '2vmin',
-      height: '2vmin',
-      borderRadius: '4px',
+      top: '-2cqh',
+      right: '-2cqh',
+      width: '5.5cqh',
+      height: '5.5cqh',
+      borderRadius: '1cqh',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      fontSize: '1.35vmin',
+      fontSize: '3.2cqh',
       fontWeight: 700,
       zIndex: 6
     }
@@ -7695,6 +7850,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Create custom drag image showing the player number
     const dragImage = document.createElement('div')
     dragImage.textContent = String(playerNumber)
+    const teamColor = getTeamColor(teamKey)
+    const circleColors = getPlayerCircleColors(teamColor, isLibero)
     dragImage.style.cssText = `
       position: absolute;
       top: -1000px;
@@ -7702,15 +7859,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       width: 50px;
       height: 50px;
       border-radius: 50%;
-      background: ${isLibero ? '#FFF8E7' : '#ef4444'};
-      color: #000;
+      background: ${circleColors.bg};
+      color: ${circleColors.text};
       font-size: 20px;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      border: 2px solid ${isLibero ? '#3b82f6' : '#dc2626'};
+      border: 2px solid rgba(0, 0, 0, 0.2);
     `
     document.body.appendChild(dragImage)
     e.dataTransfer.setDragImage(dragImage, 25, 25)
@@ -7718,7 +7875,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setTimeout(() => {
       document.body.removeChild(dragImage)
     }, 0)
-  }, [rallyStatus])
+  }, [rallyStatus, getTeamColor, getPlayerCircleColors])
 
   const handleBenchDragEnd = useCallback(() => {
     setDraggedPlayer(null)
@@ -9243,20 +9400,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // For left side teams, menu opens to the right
   // For right side teams, menu opens to the left
   const getCommonModalPosition = useCallback((element, menuX, menuY, side) => {
+    const DROPDOWN_WIDTH = 180
+    const DROPDOWN_HEIGHT = 250
+    const MARGIN = 8
     const rect = element?.getBoundingClientRect?.()
     const isRightSide = side === 'right'
+
+    let x, y
     if (rect) {
-      return {
-        x: isRightSide ? rect.left - 30 : rect.right + 30,
-        y: rect.top + rect.height / 2,
-        side
-      }
+      x = isRightSide ? rect.left - 30 : rect.right + 30
+      y = rect.top + rect.height / 2
+    } else {
+      x = isRightSide ? (menuX ?? window.innerWidth / 2) - 30 : (menuX ?? window.innerWidth / 2) + 30
+      y = menuY ?? window.innerHeight / 2
     }
-    return {
-      x: isRightSide ? menuX - 30 : menuX + 30,
-      y: menuY,
-      side
+
+    // Clamp horizontal position to viewport
+    if (isRightSide) {
+      if (x - DROPDOWN_WIDTH < MARGIN) x = DROPDOWN_WIDTH + MARGIN
+      if (x > window.innerWidth - MARGIN) x = window.innerWidth - MARGIN
+    } else {
+      if (x + DROPDOWN_WIDTH > window.innerWidth - MARGIN) x = window.innerWidth - MARGIN - DROPDOWN_WIDTH
+      if (x < MARGIN) x = MARGIN
     }
+
+    // Clamp vertical position (dropdown centered via translateY(-50%))
+    const halfHeight = DROPDOWN_HEIGHT / 2
+    if (y - halfHeight < MARGIN) y = halfHeight + MARGIN
+    if (y + halfHeight > window.innerHeight - MARGIN) y = window.innerHeight - MARGIN - halfHeight
+
+    return { x, y, side }
   }, [])
 
   // Open substitution modal from action menu
@@ -11956,7 +12129,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        height: '100vh',
+        height: '100dvh',
         background: 'var(--bg)',
         color: 'var(--text)',
         padding: '20px',
@@ -13052,8 +13225,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </div>
       )}
 
-      {/* Smartphone Mode Layout */}
-      {activeDisplayMode === 'smartphone' ? (() => {
+      {/* Smartphone mode removed — layout kept as dead code for now */}
+      {false ? (() => {
         // Calculate timeout and substitution counts for current set
         const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
         const currentRightTeamKey = leftIsHome ? 'away' : 'home'
@@ -13099,7 +13272,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           <div className="smartphone-layout" style={{
             display: 'flex',
             flexDirection: 'column',
-            height: 'calc(100vh - 40px)',
+            height: 'calc(100dvh - 40px)',
             width: '100%',
             background: 'var(--bg)',
             overflow: 'hidden',
@@ -14133,7 +14306,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </span>
             </div>
           )}
-          <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center', height: 'calc(100vh - 40px)', maxHeight: '100vh', overflow: 'hidden' } : {}}>
+          <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center' } : {}}>
           <ScoreboardTeamColumn side="left">
             <div className="team-info" style={{ overflow: 'hidden' }}>
               <div
@@ -15152,9 +15325,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               if (set.finished) {
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               }
+                              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
                                 <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
-                                  <td style={{ padding: '2px 1px', textAlign: 'center' }}>{set.index}</td>
+                                  <td style={{ padding: '2px 1px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftPoints}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{won}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{substitutions}</td>
@@ -15178,7 +15352,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{
               position: 'relative',
               width: '100%',
-              minHeight: '12vmin'
+              minHeight: vmin(12),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}>
               {/* Layer 1: Serve indicators - flex space-between */}
               <div style={{
@@ -15192,8 +15369,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-start',
-                  gap: '2vmin',
-                  minWidth: '10vmin'
+                  gap: vmin(2),
+                  minWidth: vmin(10)
                 }}>
                   {leftServing && (() => {
                     const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
@@ -15205,8 +15382,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           alt="Serving team"
                           style={{
                             ...serveBallBaseStyle,
-                            width: '8vmin',
-                            height: '8vmin'
+                            width: vmin(8),
+                            height: vmin(8)
                           }}
                         />
                       )
@@ -15221,20 +15398,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         pointerEvents: 'none'
                       }}>
                         <div style={{
-                          fontSize: '3vmin',
+                          fontSize: vmin(3),
                           fontWeight: 700,
-                          color: 'var(--text)',
+                          color: 'var(--accent)',
                           textTransform: 'uppercase',
                           letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
                         }}>
                           SERVE
                         </div>
                         <div style={{
-                          fontSize: '6vmin',
+                          fontSize: vmin(6),
                           fontWeight: 700,
                           color: 'var(--accent)',
-                          width: '8vmin',
-                          height: '8vmin',
+                          width: vmin(8),
+                          height: vmin(8),
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -15254,8 +15431,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-end',
-                  gap: '2vmin',
-                  minWidth: '10vmin'
+                  gap: vmin(2),
+                  minWidth: vmin(10)
                 }}>
                   {rightServing && (() => {
                     const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
@@ -15267,8 +15444,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           alt="Serving team"
                           style={{
                             ...serveBallBaseStyle,
-                            width: '8vmin',
-                            height: '8vmin'
+                            width: vmin(8),
+                            height: vmin(8)
                           }}
                         />
                       )
@@ -15283,20 +15460,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         pointerEvents: 'none'
                       }}>
                         <div style={{
-                          fontSize: '3vmin',
+                          fontSize: vmin(3),
                           fontWeight: 700,
-                          color: 'var(--text)',
+                          color: 'var(--accent)',
                           textTransform: 'uppercase',
                           letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
                         }}>
                           SERVE
                         </div>
                         <div style={{
-                          fontSize: '6vmin',
+                          fontSize: vmin(6),
                           fontWeight: 700,
                           color: 'var(--accent)',
-                          width: '8vmin',
-                          height: '8vmin',
+                          width: vmin(8),
+                          height: vmin(8),
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -15557,8 +15734,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? 'rgba(74, 222, 128, 0.5)'  // Bright green for valid touch target
                                   : isInvalidTouchDropZone
                                     ? 'rgba(239, 68, 68, 0.2)'  // Red tint for invalid
-                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : player.isLibero ? '#FFF8E7' : undefined,
-                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : getPlayerCircleColors(leftTeam.color, player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors(leftTeam.color, player.isLibero).text,
                                 position: 'relative',
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
@@ -15595,7 +15772,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 if (player.isLibero) {
                                   // Libero-captain ON COURT: show LC on white bg with green text
                                   return (
-                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '3cqh' }}>LC</span>
                                   )
                                 }
                                 return <span className="court-player-captain">C</span>
@@ -15608,14 +15785,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: player.isLibero ? '#3b82f6' : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
-                                    fontSize: player.isLibero ? '9px' : undefined
+                                    fontSize: player.isLibero ? '3cqh' : undefined
                                   }}
                                 >
                                   {player.isLibero ? 'LC' : 'C'}
                                 </span>
                               )}
                               {/* Libero indicator (bottom-left) - only if not captain */}
-                              {player.isLibero && !player.isCaptain && (() => {
+                              {player.isLibero && !player.isCaptain && !player.isCourtCaptain && (() => {
                                 const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                                 const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
                                 const liberoType = player.liberoType
@@ -15637,23 +15814,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
 
                                 return (
-                                  <span style={{
-                                    position: 'absolute',
-                                    bottom: '-1vmin',
-                                    left: '-1vmin',
-                                    width: '2vmin',
-                                    height: '2vmin',
+                                  <span className="court-player-captain" style={{
                                     background: '#3b82f6',
-                                    border: '2px solid rgba(255, 255, 255, 0.4)',
-                                    borderRadius: '4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '1.35vmin',
-                                    fontWeight: 700,
                                     color: '#fff',
-                                    zIndex: 5,
-                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                    borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
                                     <span style={{ position: 'relative', display: 'inline-block' }}>
                                       {baseLabel}
@@ -15679,31 +15843,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-1vmin',
-                                  right: '-1vmin',
+                                  bottom: vmin(-1),
+                                  right: vmin(-1),
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
+                                    <div style={{ position: 'relative', width: vmin(2), height: vmin(2) }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -15711,12 +15875,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
+                                    <div style={{ display: 'flex', gap: vmin(0.15) }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -15728,18 +15892,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-27px',
+                                    bottom: '-7cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '1px 4px',
-                                    fontSize: '9px',
+                                    padding: '0.3cqh 1cqh',
+                                    fontSize: '2.5cqh',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '68px',
+                                    minWidth: '18cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -15750,13 +15914,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: '2cqh', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${teamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${teamKey}-${player.number}` && (
-                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '2.2cqh', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -15825,8 +15989,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? 'rgba(74, 222, 128, 0.5)'
                                   : isInvalidTouchDropZone
                                     ? 'rgba(239, 68, 68, 0.2)'
-                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
-                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors(leftTeam.color, player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors(leftTeam.color, player.isLibero).text,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
                                 border: isTouchDropTargetCourt
@@ -15861,11 +16025,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    left: '-8vmin',
+                                    left: vmin(-8),
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: '8vmin',
-                                    height: '8vmin',
+                                    width: vmin(8),
+                                    height: vmin(8),
                                     zIndex: 5
                                   }}
                                 />
@@ -15881,7 +16045,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 if (player.isLibero) {
                                   // Libero-captain ON COURT: show LC on white bg with green text
                                   return (
-                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '3cqh' }}>LC</span>
                                   )
                                 }
                                 return <span className="court-player-captain">C</span>
@@ -15894,35 +16058,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: player.isLibero ? '#3b82f6' : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
-                                    fontSize: player.isLibero ? '9px' : undefined
+                                    fontSize: player.isLibero ? '3cqh' : undefined
                                   }}
                                 >
                                   {player.isLibero ? 'LC' : 'C'}
                                 </span>
                               )}
                               {/* Libero indicator (bottom-left) - only if not captain */}
-                              {player.isLibero && !player.isCaptain && (() => {
+                              {player.isLibero && !player.isCaptain && !player.isCourtCaptain && (() => {
                                 const teamPlayers = leftTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                                 const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
                                 const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
                                 return (
-                                  <span style={{
-                                    position: 'absolute',
-                                    bottom: '-1vmin',
-                                    left: '-1vmin',
-                                    width: '2vmin',
-                                    height: '2vmin',
+                                  <span className="court-player-captain" style={{
                                     background: '#3b82f6',
-                                    border: '2px solid rgba(255, 255, 255, 0.4)',
-                                    borderRadius: '4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '1.35vmin',
-                                    fontWeight: 700,
                                     color: '#fff',
-                                    zIndex: 5,
-                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                    borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
                                     {liberoLabel}
                                   </span>
@@ -15934,31 +16085,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-1vmin',
-                                  right: '-1vmin',
+                                  bottom: vmin(-1),
+                                  right: vmin(-1),
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
+                                    <div style={{ position: 'relative', width: vmin(2), height: vmin(2) }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -15966,12 +16117,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
+                                    <div style={{ display: 'flex', gap: vmin(0.15) }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -15983,18 +16134,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-27px',
+                                    bottom: '-7cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '1px 4px',
-                                    fontSize: '9px',
+                                    padding: '0.3cqh 1cqh',
+                                    fontSize: '2.5cqh',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '68px',
+                                    minWidth: '18cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -16005,13 +16156,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: '2cqh', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${leftTeamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${leftTeamKey}-${player.number}` && (
-                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '2.2cqh', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -16129,8 +16280,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
                                 opacity: isDragging ? 0.5 : undefined,
                                 transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                                background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
-                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors(rightTeam.color, player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors(rightTeam.color, player.isLibero).text,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
                                 border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
@@ -16161,7 +16312,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 if (player.isLibero) {
                                   // Libero-captain ON COURT: show LC on white bg with green text
                                   return (
-                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '3cqh' }}>LC</span>
                                   )
                                 }
                                 return <span className="court-player-captain">C</span>
@@ -16174,14 +16325,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: player.isLibero ? '#3b82f6' : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
-                                    fontSize: player.isLibero ? '9px' : undefined
+                                    fontSize: player.isLibero ? '3cqh' : undefined
                                   }}
                                 >
                                   {player.isLibero ? 'LC' : 'C'}
                                 </span>
                               )}
                               {/* Libero indicator (bottom-left) - only if not captain */}
-                              {player.isLibero && !player.isCaptain && (() => {
+                              {player.isLibero && !player.isCaptain && !player.isCourtCaptain && (() => {
                                 const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                                 const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
                                 const liberoType = player.liberoType
@@ -16203,23 +16354,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
 
                                 return (
-                                  <span style={{
-                                    position: 'absolute',
-                                    bottom: '-1vmin',
-                                    left: '-1vmin',
-                                    width: '2vmin',
-                                    height: '2vmin',
+                                  <span className="court-player-captain" style={{
                                     background: '#3b82f6',
-                                    border: '2px solid rgba(255, 255, 255, 0.4)',
-                                    borderRadius: '4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '1.35vmin',
-                                    fontWeight: 700,
                                     color: '#fff',
-                                    zIndex: 5,
-                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                    borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
                                     <span style={{ position: 'relative', display: 'inline-block' }}>
                                       {baseLabel}
@@ -16245,31 +16383,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-1vmin',
-                                  right: '-1vmin',
+                                  bottom: vmin(-1),
+                                  right: vmin(-1),
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
+                                    <div style={{ position: 'relative', width: vmin(2), height: vmin(2) }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -16277,12 +16415,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
+                                    <div style={{ display: 'flex', gap: vmin(0.15) }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -16294,18 +16432,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-27px',
+                                    bottom: '-7cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '1px 4px',
-                                    fontSize: '9px',
+                                    padding: '0.3cqh 1cqh',
+                                    fontSize: '2.5cqh',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '68px',
+                                    minWidth: '18cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -16316,13 +16454,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: '2cqh', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${teamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${teamKey}-${player.number}` && (
-                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '2.2cqh', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -16390,8 +16528,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? 'rgba(74, 222, 128, 0.5)'
                                   : isInvalidTouchDropZone
                                     ? 'rgba(239, 68, 68, 0.2)'
-                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : player.isLibero ? '#FFF8E7' : undefined,
-                                color: isRecentlySub ? '#000' : player.isLibero ? '#000' : undefined,
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors(rightTeam.color, player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors(rightTeam.color, player.isLibero).text,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
                                 border: isTouchDropTargetCourt
@@ -16426,11 +16564,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    right: '-8vmin',
+                                    right: vmin(-8),
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: '8vmin',
-                                    height: '8vmin',
+                                    width: vmin(8),
+                                    height: vmin(8),
                                     zIndex: 5
                                   }}
                                 />
@@ -16446,7 +16584,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 if (player.isLibero) {
                                   // Libero-captain ON COURT: show LC on white bg with green text
                                   return (
-                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '9px' }}>LC</span>
+                                    <span className="court-player-captain" style={{ background: '#fff', color: '#10b981', borderColor: '#10b981', fontSize: '3cqh' }}>LC</span>
                                   )
                                 }
                                 return <span className="court-player-captain">C</span>
@@ -16459,14 +16597,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: player.isLibero ? '#3b82f6' : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
-                                    fontSize: player.isLibero ? '9px' : undefined
+                                    fontSize: player.isLibero ? '3cqh' : undefined
                                   }}
                                 >
                                   {player.isLibero ? 'LC' : 'C'}
                                 </span>
                               )}
                               {/* Libero indicator (bottom-left) */}
-                              {player.isLibero && !player.isCaptain && (() => {
+                              {player.isLibero && !player.isCaptain && !player.isCourtCaptain && (() => {
                                 const teamPlayers = rightTeamKey === 'home' ? data?.homePlayers : data?.awayPlayers
                                 const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
                                 const liberoType = player.liberoType
@@ -16488,23 +16626,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
 
                                 return (
-                                  <span style={{
-                                    position: 'absolute',
-                                    bottom: '-1vmin',
-                                    left: '-1vmin',
-                                    width: '2vmin',
-                                    height: '2vmin',
+                                  <span className="court-player-captain" style={{
                                     background: '#3b82f6',
-                                    border: '2px solid rgba(255, 255, 255, 0.4)',
-                                    borderRadius: '4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '1.35vmin',
-                                    fontWeight: 700,
                                     color: '#fff',
-                                    zIndex: 5,
-                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)'
+                                    borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
                                     <span style={{ position: 'relative', display: 'inline-block' }}>
                                       {baseLabel}
@@ -16530,31 +16655,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {sanctions.length > 0 && (
                                 <div style={{
                                   position: 'absolute',
-                                  bottom: '-1vmin',
-                                  right: '-1vmin',
+                                  bottom: vmin(-1),
+                                  right: vmin(-1),
                                   zIndex: 10
                                 }}>
                                   {hasExpulsion ? (
                                     // Expulsion: overlapping rotated cards
-                                    <div style={{ position: 'relative', width: '2vmin', height: '2vmin' }}>
+                                    <div style={{ position: 'relative', width: vmin(2), height: vmin(2) }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         left: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
                                         borderRadius: '1px'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '1vmin',
-                                        height: '1.5vmin',
+                                        width: vmin(1),
+                                        height: vmin(1.5),
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
                                         position: 'absolute',
                                         right: '0',
-                                        top: '0.15vmin',
+                                        top: vmin(0.15),
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
                                         borderRadius: '1px'
@@ -16562,12 +16687,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     </div>
                                   ) : (
                                     // Other sanctions: separate cards
-                                    <div style={{ display: 'flex', gap: '0.15vmin' }}>
+                                    <div style={{ display: 'flex', gap: vmin(0.15) }}>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '1.3vmin', height: '1.8vmin', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: vmin(1.3), height: vmin(1.8), boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
                                       )}
                                     </div>
                                   )}
@@ -16579,18 +16704,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-27px',
+                                    bottom: '-7cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '1px 4px',
-                                    fontSize: '9px',
+                                    padding: '0.3cqh 1cqh',
+                                    fontSize: '2.5cqh',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '68px',
+                                    minWidth: '18cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -16601,13 +16726,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: '7px', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: '2cqh', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${rightTeamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${rightTeamKey}-${player.number}` && (
-                                    <div style={{ fontSize: '8px', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '2px', marginTop: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '2.2cqh', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -16794,12 +16919,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444' // Green if won, red if lost
                               }
 
+                              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
                                 <tr key={set.id} style={{
                                   borderBottom: '1px solid rgba(255,255,255,0.1)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{set.index}</td>
+                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftPoints}</td>
                                   <td style={{ padding: '4px 2px', textAlign: 'center' }}>{won}</td>
                                   <td style={{ padding: '4px 2px', textAlign: 'center' }}>{substitutions}</td>
@@ -16875,7 +17001,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       flexDirection: 'column',
                       alignItems: 'center',
                       gap: '10px',
-                      marginTop: '10vmin'
+                      marginTop: vmin(10)
                     }}>
                       <button
                         onClick={async () => {
@@ -17097,12 +17223,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           textAlign: 'center'
                         }}
                       >
-                        <div style={{ fontSize: '12px' }}>
-                          <span className="summary-label">{t('scoreboard.labels.rallyStatus')}: </span>
-                          <span className="summary-value" style={{ color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c' }}>
-                            {rallyStatus === 'in_play' ? t('scoreboard.labels.inPlay') : t('scoreboard.labels.notInPlay')}
-                          </span>
-                        </div>
                         {/* Last action - filtered to current set */}
                         {data?.events && data.events.length > 0 && data?.set && (() => {
                           // IMPORTANT: Only show events from the CURRENT SET
@@ -17247,12 +17367,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444' // Green if won, red if lost
                               }
 
+                              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
                                 <tr key={set.id} style={{
                                   borderBottom: '1px solid rgba(255,255,255,0.1)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{set.index}</td>
+                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightPoints}</td>
                                   <td style={{ padding: '4px 2px', textAlign: 'center' }}>{won}</td>
                                   <td style={{ padding: '4px 2px', textAlign: 'center' }}>{substitutions}</td>
@@ -18273,9 +18394,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               if (set.finished) {
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               }
+                              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
                                 <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
-                                  <td style={{ padding: '2px 1px', textAlign: 'center' }}>{set.index}</td>
+                                  <td style={{ padding: '2px 1px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightPoints}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{won}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{substitutions}</td>
@@ -26419,6 +26541,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           isMatchEnd={setEndTimeModal.isMatchEnd}
           homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'}
           awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'}
+          homeColor={data?.match?.homeColor || '#ef4444'}
+          awayColor={data?.match?.awayColor || '#3b82f6'}
           onConfirm={confirmSetEndTime}
           onDecisionChange={async () => {
             // Track that user dismissed via undo to prevent re-showing
@@ -27168,8 +27292,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                         alt="Serving team"
                         style={{
-                          width: '5vmin',
-                          height: '5vmin',
+                          width: vmin(5),
+                          height: vmin(5),
                           objectFit: 'contain',
                           filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
                           marginTop: '8px'
@@ -27200,8 +27324,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
                         alt="Serving team"
                         style={{
-                          width: '5vmin',
-                          height: '5vmin',
+                          width: vmin(5),
+                          height: vmin(5),
                           objectFit: 'contain',
                           filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))',
                           marginTop: '8px'
@@ -27723,7 +27847,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 function ScoreboardToolbar({ children, collapsed, onToggle }) {
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', zIndex: 101 }}>
       <div
         className="match-toolbar"
         style={{
@@ -28863,17 +28987,11 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
         </p>
         <div
           style={{
-            padding: '12px 16px',
             fontSize: '18px',
             fontWeight: 600,
             textAlign: 'center',
-            background: 'var(--bg-secondary)',
-            border: `2px solid rgba(255,255,255,0.2)`,
-            borderRadius: '8px',
             color: 'var(--text)',
             marginBottom: '24px',
-            width: '150px',
-            display: 'inline-block'
           }}
         >
           <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
@@ -29003,7 +29121,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
   )
 }
 
-function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, leftIsHome, isMatchEnd, homeTeamName, awayTeamName, onConfirm, onDecisionChange }) {
+function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, leftIsHome, isMatchEnd, homeTeamName, awayTeamName, homeColor, awayColor, onConfirm, onDecisionChange }) {
   const [time, setTime] = useState(() => {
     // Extract local time from UTC ISO string
     const { time: localTime } = splitLocalDateTime(defaultTime)
@@ -29011,14 +29129,32 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
   })
   const [isConfirming, setIsConfirming] = useState(false) // Prevent double-clicks
 
-  // Get winner team name
+  // Get winner team name and color
   const winnerTeamName = winner === 'home' ? homeTeamName : awayTeamName
+  const winnerColor = winner === 'home' ? homeColor : awayColor
 
-  // Calculate left and right team names and scores
+  // Calculate left and right team names, scores, and A/B labels
   const leftTeamName = leftIsHome ? homeTeamName : awayTeamName
   const rightTeamName = leftIsHome ? awayTeamName : homeTeamName
   const leftScore = leftIsHome ? homePoints : awayPoints
   const rightScore = leftIsHome ? awayPoints : homePoints
+  const leftColor = leftIsHome ? homeColor : awayColor
+  const rightColor = leftIsHome ? awayColor : homeColor
+  const leftIsTeamA = leftIsHome === (teamAKey === 'home')
+  const leftLabel = leftIsTeamA ? 'A' : 'B'
+  const rightLabel = leftIsTeamA ? 'B' : 'A'
+  const winnerLabel = winner === teamAKey ? 'A' : 'B'
+
+  // Determine contrasting text color for winner background
+  const getContrastColor = (hex) => {
+    if (!hex) return '#fff'
+    const c = hex.replace('#', '')
+    const r = parseInt(c.substring(0, 2), 16)
+    const g = parseInt(c.substring(2, 4), 16)
+    const b = parseInt(c.substring(4, 6), 16)
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return luminance > 0.5 ? '#000' : '#fff'
+  }
 
   const handleConfirm = () => {
     if (isConfirming) return // Prevent double-clicks
@@ -29039,31 +29175,33 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
       hideCloseButton={true}
     >
       <div style={{ padding: '24px', textAlign: 'center' }}>
-        <p style={{ marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
-          {leftTeamName} vs {rightTeamName}
-        </p>
-        <p style={{ marginBottom: '16px', fontSize: '36px', fontWeight: 700 }}>
-          {leftScore} : {rightScore}
-        </p>
-        <p style={{ marginBottom: '24px', fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}>
-          {isMatchEnd ? `${winnerTeamName} won the Match!` : `${winnerTeamName} wins!`}
+        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '18px', fontWeight: 700, color: leftColor }}>{leftLabel}</span>
+          <span style={{ fontSize: '36px', fontWeight: 700 }}>{leftScore} : {rightScore}</span>
+          <span style={{ fontSize: '18px', fontWeight: 700, color: rightColor }}>{rightLabel}</span>
+        </div>
+        <p style={{
+          marginBottom: '24px',
+          fontSize: '16px',
+          fontWeight: 700,
+          background: winnerColor,
+          color: getContrastColor(winnerColor),
+          padding: '8px 16px',
+          borderRadius: '8px',
+          display: 'inline-block'
+        }}>
+          {winnerTeamName} ({winnerLabel}) {isMatchEnd ? 'won the match' : 'won the set'}
         </p>
         <p style={{ marginBottom: '16px', fontSize: '16px' }}>
           Confirm the end time:
         </p>
         <div
           style={{
-            padding: '12px 16px',
             fontSize: '18px',
             fontWeight: 600,
             textAlign: 'center',
-            background: 'var(--bg-secondary)',
-            border: `2px solid rgba(255,255,255,0.2)`,
-            borderRadius: '8px',
             color: 'var(--text)',
             marginBottom: '24px',
-            width: '150px',
-            display: 'inline-block'
           }}
         >
           <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />

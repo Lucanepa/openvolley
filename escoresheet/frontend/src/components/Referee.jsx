@@ -4,6 +4,7 @@ import { useAlert } from '../contexts/AlertContext'
 import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -162,6 +163,7 @@ function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isS
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const { vmin } = useScaledLayout()
   const { syncStatus, retryErrors } = useSyncQueue()
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [attentionModalOpen, setAttentionModalOpen] = useState(false)
@@ -2315,7 +2317,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '8vmin',
+        fontSize: vmin(8),
         fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0,
@@ -2329,11 +2331,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             style={{
               position: 'absolute',
               // Position outside player box with vmin gap - responsive to viewport
-              left: team === rightTeam ? 'calc(100% + 1vmin)' : 'auto',
-              right: team === leftTeam ? 'calc(100% + 1vmin)' : 'auto',
+              left: team === rightTeam ? `calc(100% + ${vmin(1)}px)` : 'auto',
+              right: team === leftTeam ? `calc(100% + ${vmin(1)}px)` : 'auto',
               top: '50%',
               transform: 'translateY(-50%)',
-              width: '7vmin',
+              width: vmin(7),
               aspectRatio: '1/1',
               filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
             }}
@@ -2892,8 +2894,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             }}>
               {leftSetsWon}</div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <span style={{ fontSize: '3vmin', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
-              <span style={{ fontSize: '4vmin', fontWeight: 800 }}>{displaySetIndex}</span>
+              <span style={{ fontSize: vmin(3), color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
+              <span style={{ fontSize: vmin(4), fontWeight: 800 }}>{displaySetIndex}</span>
             </div>
             <div style={{
               padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)',
@@ -2976,19 +2978,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   alignItems: 'center',
                   gap: '2px'
                 }}>
-                  <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+                  <span style={{ fontSize: vmin(3), color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '1vmin',
+                    padding: vmin(1),
                     background: 'rgba(34, 197, 94, 0.15)',
                     border: '2px solid var(--accent)',
                     borderRadius: '8px',
                     aspectRatio: '1/1',
-                    minWidth: '6vmin'
+                    minWidth: vmin(6)
                   }}>
-                    <span style={{ fontSize: '7vmin', paddingBottom: '0.5vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: vmin(7), paddingBottom: vmin(0.5), fontWeight: 700, color: 'var(--accent)', lineHeight: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {typeof leftLineup?.I === 'object' ? leftLineup?.I?.number : leftLineup?.I || ''}
                     </span>
                   </div>
@@ -3007,7 +3009,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {/* Left Score */}
               <span style={{
                 fontFamily: getScoreFont(),
-                fontSize: '15vmin',
+                fontSize: vmin(15),
                 fontWeight: 600,
                 lineHeight: 1,
                 textAlign: 'right'
@@ -3017,13 +3019,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
               {/* Colon */}
               <span style={{
-                fontFamily: getScoreFont(), fontSize: '11vmin', fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: '-0.5vmin'
+                fontFamily: getScoreFont(), fontSize: vmin(11), fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: vmin(-0.5)
               }}>:</span>
 
               {/* Right Score */}
               < span style={{
                 fontFamily: getScoreFont(),
-                fontSize: '15vmin',
+                fontSize: vmin(15),
                 fontWeight: 600,
                 lineHeight: 1,
                 textAlign: 'left'
@@ -3046,19 +3048,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   alignItems: 'center',
                   gap: '2px'
                 }}>
-                  <span style={{ fontSize: '3vmin', color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
+                  <span style={{ fontSize: vmin(3), color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '0.5vmin',
+                    padding: vmin(0.5),
                     background: 'rgba(34, 197, 94, 0.15)',
                     border: '2px solid var(--accent)',
                     borderRadius: '8px',
                     aspectRatio: '1/1',
-                    minWidth: '6vmin'
+                    minWidth: vmin(6)
                   }}>
-                    <span style={{ fontSize: '8vmin', fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
+                    <span style={{ fontSize: vmin(8), fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
                       {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
                     </span>
                   </div>
@@ -3497,7 +3499,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     borderRadius: '8px'
                   }}>
                     <div style={{
-                      fontSize: 'clamp(3vmin, 6vmin, 12vmin)',
+                      fontSize: vmin(6),
                       fontWeight: 700,
                       color: '#22c55e',
                       textAlign: 'center'
@@ -3549,7 +3551,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '10px',
-            fontSize: 'clamp(16px, 4vmin, 23vmin)',
+            fontSize: vmin(4),
             fontWeight: 700
           }}>
             {/* TO counter */}
@@ -3771,7 +3773,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   style={{
                     width: '100%',
                     height: '100%',
-                    maxWidth: '20vmin',
+                    maxWidth: vmin(20),
                     aspectRatio: '1',
                     objectFit: 'contain',
                     opacity: 0.7
@@ -3934,7 +3936,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '10px',
-            fontSize: 'clamp(16px, 4vmin, 23vmin)',
+            fontSize: vmin(4),
             fontWeight: 700
           }}>
             {/* TO counter */}
@@ -4108,7 +4110,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           >
             <div style={{ padding: '24px', textAlign: 'center' }}>
               <div style={{ marginBottom: '16px', fontSize: '48px' }}>🔔</div>
-              <p style={{ marginBottom: '20px', fontSize: '3vmin', fontWeight: 700, color: '#ef4444' }}>
+              <p style={{ marginBottom: '20px', fontSize: vmin(3), fontWeight: 700, color: '#ef4444' }}>
                 Scorer Needs Attention!
               </p>
               <button

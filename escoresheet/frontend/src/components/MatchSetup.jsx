@@ -9,6 +9,7 @@ import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
 import mikasaVolleyball from '../mikasa_v200w.png'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = '/ball.png'
@@ -218,84 +219,57 @@ const OfficialCard = memo(function OfficialCard({
   setDob,
   hasDatabase = false,
   selectorKey = null,
-  isExpanded,
-  onToggleExpanded,
   onOpenDatabase,
   t
 }) {
-  const displayName = lastName || firstName
-    ? `${lastName || ''}${firstName ? ', ' + firstName.charAt(0) + '.' : ''}`
-    : t('matchSetup.notSet')
-
-  const cardRef = useRef(null)
-  useEffect(() => {
-    if (isExpanded && cardRef.current) {
-      setTimeout(() => {
-        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 100)
-    }
-  }, [isExpanded])
-
   return (
-    <div ref={cardRef} style={{
+    <div style={{
       border: '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '8px',
       background: 'rgba(15, 23, 42, 0.2)',
       overflow: 'hidden'
     }}>
       <div
-        onClick={onToggleExpanded}
         style={{
-          padding: '12px 16px',
+          padding: '10px 16px',
           background: 'rgba(255, 255, 255, 0.1)',
-          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '12px'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>{title}</span>
-          {!isExpanded && (
-            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayName}</span>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {hasDatabase && isExpanded && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpenDatabase(e, selectorKey)
-              }}
-              style={{
-                padding: '4px 8px',
-                fontSize: '11px',
-                fontWeight: 500,
-                background: 'rgba(59, 130, 246, 0.2)',
-                color: '#60a5fa',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('matchSetup.database')}
-            </button>
-          )}
-          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
+        <span style={{ fontWeight: 600, fontSize: '14px' }}>{title}</span>
+        {hasDatabase && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenDatabase(e, selectorKey)
+            }}
+            style={{
+              padding: '4px 8px',
+              fontSize: '11px',
+              fontWeight: 500,
+              background: 'rgba(59, 130, 246, 0.2)',
+              color: '#60a5fa',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            {t('matchSetup.database')}
+          </button>
+        )}
+      </div>
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div className="field"><label>{t('matchSetup.lastName')}</label><input className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+          <div className="field"><label>{t('matchSetup.firstName')}</label><input className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+          <div className="field"><label>{t('matchSetup.country')}</label><input style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
+          <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
         </div>
       </div>
-      {isExpanded && (
-        <div style={{ padding: '16px' }}>
-          <div className="row">
-            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="w-name capitalize" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="w-name capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.country')}</label><input className="w-90" value={country} onChange={e => setCountry(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input className="w-dob" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
-          </div>
-        </div>
-      )}
     </div>
   )
 })
@@ -310,61 +284,34 @@ const LineJudgesCard = memo(function LineJudgesCard({
   setLineJudge2,
   setLineJudge3,
   setLineJudge4,
-  isExpanded,
-  onToggleExpanded,
   t
 }) {
-  const filledCount = [lineJudge1, lineJudge2, lineJudge3, lineJudge4].filter(Boolean).length
-  const displayText = filledCount > 0 ? t('matchSetup.set', { count: filledCount }) : t('matchSetup.notSet')
-
-  const cardRef = useRef(null)
-  useEffect(() => {
-    if (isExpanded && cardRef.current) {
-      setTimeout(() => {
-        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 100)
-    }
-  }, [isExpanded])
-
   return (
-    <div ref={cardRef} style={{
+    <div style={{
       border: '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '8px',
       background: 'rgba(15, 23, 42, 0.2)',
       overflow: 'hidden'
     }}>
       <div
-        onClick={onToggleExpanded}
         style={{
-          padding: '12px 16px',
+          padding: '10px 16px',
           background: 'rgba(255, 255, 255, 0.1)',
-          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: '12px'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.lineJudges')}</span>
-          {!isExpanded && (
-            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>{displayText}</span>
-          )}
-        </div>
-        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{isExpanded ? '▲' : '▼'}</span>
+        <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.lineJudges')}</span>
       </div>
-      {isExpanded && (
-        <div style={{ padding: '16px' }}>
-          <div className="row">
-            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="w-name capitalize" value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="w-name capitalize" value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-          </div>
-          <div className="row">
-            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="w-name capitalize" value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="w-name capitalize" value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-          </div>
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+          <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+          <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+          <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
         </div>
-      )}
+      </div>
     </div>
   )
 })
@@ -405,6 +352,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile } = useAuth()
+  const { scaleFactor: baseScaleFactor } = useScaledLayout()
+  // MatchSetup uses 25% larger scale by default
+  const scaleFactor = baseScaleFactor * 1.25
+  // Helper for scaled pixel values
+  const s = (px) => Math.round(px * scaleFactor)
   const [home, setHome] = useState('')
   // Match created popup state
   const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin, refereePin, homeTeamPin, awayTeamPin }
@@ -3732,7 +3684,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div style={{ width: 80 }}></div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <OfficialCard
             title={t('matchSetup.referee1')}
             officialKey="ref1"
@@ -3746,8 +3698,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setDob={setRef1Dob}
             hasDatabase={true}
             selectorKey="ref1"
-            isExpanded={expandedOfficialId === 'ref1'}
-            onToggleExpanded={() => toggleOfficialExpanded('ref1')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
           />
@@ -3764,8 +3714,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setDob={setRef2Dob}
             hasDatabase={true}
             selectorKey="ref2"
-            isExpanded={expandedOfficialId === 'ref2'}
-            onToggleExpanded={() => toggleOfficialExpanded('ref2')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
           />
@@ -3782,8 +3730,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setDob={setScorerDob}
             hasDatabase={false}
             selectorKey="scorer"
-            isExpanded={expandedOfficialId === 'scorer'}
-            onToggleExpanded={() => toggleOfficialExpanded('scorer')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
           />
@@ -3798,24 +3744,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setFirstName={setAsstFirst}
             setCountry={setAsstCountry}
             setDob={setAsstDob}
-            isExpanded={expandedOfficialId === 'asst'}
-            onToggleExpanded={() => toggleOfficialExpanded('asst')}
             onOpenDatabase={handleOpenDatabase}
             t={t}
           />
-          <LineJudgesCard
-            lineJudge1={lineJudge1}
-            lineJudge2={lineJudge2}
-            lineJudge3={lineJudge3}
-            lineJudge4={lineJudge4}
-            setLineJudge1={setLineJudge1}
-            setLineJudge2={setLineJudge2}
-            setLineJudge3={setLineJudge3}
-            setLineJudge4={setLineJudge4}
-            isExpanded={expandedOfficialId === 'lineJudges'}
-            onToggleExpanded={() => toggleOfficialExpanded('lineJudges')}
-            t={t}
-          />
+          <div style={{ gridColumn: '1 / -1' }}>
+            <LineJudgesCard
+              lineJudge1={lineJudge1}
+              lineJudge2={lineJudge2}
+              lineJudge3={lineJudge3}
+              lineJudge4={lineJudge4}
+              setLineJudge1={setLineJudge1}
+              setLineJudge2={setLineJudge2}
+              setLineJudge3={setLineJudge3}
+              setLineJudge4={setLineJudge4}
+              t={t}
+            />
+          </div>
         </div>
         {/* Referee Selector */}
         <RefereeSelector
@@ -4358,21 +4302,43 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <label className="inline"><input type="radio" name="homeCaptain" checked={homeCaptain} onChange={() => setHomeCaptain(true)} /> {t('matchSetup.captain')}</label>
-              <button type="button" className="secondary" onClick={() => {
-                if (!homeLast || !homeFirst) return
-                const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
-                setHomeRoster(list => {
-                  const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                  const next = [...cleared, newPlayer].sort((a, b) => {
-                    const an = a.number ?? 999
-                    const bn = b.number ?? 999
-                    return an - bn
+              <div className="w-captain">
+                <div
+                  onClick={() => setHomeCaptain(!homeCaptain)}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '4px',
+                    border: homeCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                    background: homeCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: homeCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                    userSelect: 'none',
+                    flexShrink: 0
+                  }}
+                >C</div>
+              </div>
+              <div className="w-action">
+                <button type="button" className="secondary" onClick={() => {
+                  if (!homeLast || !homeFirst) return
+                  const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
+                  setHomeRoster(list => {
+                    const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                    const next = [...cleared, newPlayer].sort((a, b) => {
+                      const an = a.number ?? 999
+                      const bn = b.number ?? 999
+                      return an - bn
+                    })
+                    return next
                   })
-                  return next
-                })
-                setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
-              }}>{t('common.add')}</button>
+                  setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
+                }}>{t('common.add')}</button>
+              </div>
             </div>
           </div>
         )}
@@ -4384,8 +4350,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="w-name">{t('matchSetup.firstName')}</div>
             <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
             <div className="w-90" style={{ textAlign: 'center' }}>{t('matchSetup.role')}</div>
-            <div style={{ width: '70px', textAlign: 'center' }}>{t('matchSetup.captain')}</div>
-            <div style={{ width: '80px' }}></div>
+            <div className="w-captain">C</div>
+            <div className="w-action"></div>
           </div>
           {homeRoster.map((p, i) => {
             // Check if this player's number is a duplicate
@@ -4540,28 +4506,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <option value="libero2">{t('matchSetup.libero2')}</option>
                   )}
                 </select>
-                <label className="inline">
-                  <input
-                    type="radio"
-                    name="homeCaptain"
-                    checked={p.isCaptain || false}
-                    onChange={() => {
+                <div className="w-captain">
+                  <div
+                    onClick={() => {
                       const updated = homeRoster.map((player, idx) => ({
                         ...player,
-                        isCaptain: idx === i
+                        isCaptain: idx === i ? !player.isCaptain : false
                       }))
                       setHomeRoster(updated)
                     }}
-                  />
-                  {t('matchSetup.captain')}
-                </label>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
-                >
-                  {t('common.delete')}
-                </button>
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      background: (p.isCaptain || false) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: (p.isCaptain || false) ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      userSelect: 'none',
+                      flexShrink: 0
+                    }}
+                  >C</div>
+                </div>
+                <div className="w-action">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
+                  >
+                    {t('common.delete')}
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -4573,7 +4553,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div className="w-name">{t('matchSetup.lastName')}</div>
           <div className="w-name">{t('matchSetup.firstName')}</div>
           <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
-          <div style={{ width: '70px' }}></div>
+          <div className="w-action"></div>
         </div>
         {sortBenchByHierarchy(benchHome).map((m, i) => {
           const originalIdx = benchHome.findIndex(b => b === m)
@@ -4605,14 +4585,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
               <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
               <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
-              <button type="button" className="secondary" onClick={() => {
-                const updated = benchHome.filter((_, idx) => idx !== originalIdx)
-                setBenchHome(updated)
-                // Trigger save immediately
-                setTimeout(() => saveDraft(true), 100)
-              }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                {t('common.delete')}
-              </button>
+              <div className="w-action">
+                <button type="button" className="secondary" onClick={() => {
+                  const updated = benchHome.filter((_, idx) => idx !== originalIdx)
+                  setBenchHome(updated)
+                  // Trigger save immediately
+                  setTimeout(() => saveDraft(true), 100)
+                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                  {t('common.delete')}
+                </button>
+              </div>
             </div>
           )
         })}
@@ -5648,21 +5630,43 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <label className="inline"><input type="radio" name="awayCaptain" checked={awayCaptain} onChange={() => setAwayCaptain(true)} /> {t('matchSetup.captain')}</label>
-              <button type="button" className="secondary" onClick={() => {
-                if (!awayLast || !awayFirst) return
-                const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
-                setAwayRoster(list => {
-                  const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                  const next = [...cleared, newPlayer].sort((a, b) => {
-                    const an = a.number ?? 999
-                    const bn = b.number ?? 999
-                    return an - bn
+              <div className="w-captain">
+                <div
+                  onClick={() => setAwayCaptain(!awayCaptain)}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '4px',
+                    border: awayCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                    background: awayCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: awayCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                    userSelect: 'none',
+                    flexShrink: 0
+                  }}
+                >C</div>
+              </div>
+              <div className="w-action">
+                <button type="button" className="secondary" onClick={() => {
+                  if (!awayLast || !awayFirst) return
+                  const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
+                  setAwayRoster(list => {
+                    const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                    const next = [...cleared, newPlayer].sort((a, b) => {
+                      const an = a.number ?? 999
+                      const bn = b.number ?? 999
+                      return an - bn
+                    })
+                    return next
                   })
-                  return next
-                })
-                setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
-              }}>{t('common.add')}</button>
+                  setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
+                }}>{t('common.add')}</button>
+              </div>
             </div>
           </div>
         )}
@@ -5674,8 +5678,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="w-name">{t('matchSetup.firstName')}</div>
             <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
             <div className="w-90" style={{ textAlign: 'center' }}>{t('matchSetup.role')}</div>
-            <div style={{ width: '70px', textAlign: 'center' }}>{t('matchSetup.captain')}</div>
-            <div style={{ width: '80px' }}></div>
+            <div className="w-captain">C</div>
+            <div className="w-action"></div>
           </div>
           {awayRoster.map((p, i) => {
             // Check if this player's number is a duplicate
@@ -5830,28 +5834,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <option value="libero2">{t('matchSetup.libero2')}</option>
                   )}
                 </select>
-                <label className="inline">
-                  <input
-                    type="radio"
-                    name="awayCaptain"
-                    checked={p.isCaptain || false}
-                    onChange={() => {
+                <div className="w-captain">
+                  <div
+                    onClick={() => {
                       const updated = awayRoster.map((player, idx) => ({
                         ...player,
-                        isCaptain: idx === i
+                        isCaptain: idx === i ? !player.isCaptain : false
                       }))
                       setAwayRoster(updated)
                     }}
-                  />
-                  {t('matchSetup.captain')}
-                </label>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
-                >
-                  {t('common.delete')}
-                </button>
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      background: (p.isCaptain || false) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: (p.isCaptain || false) ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      userSelect: 'none',
+                      flexShrink: 0
+                    }}
+                  >C</div>
+                </div>
+                <div className="w-action">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
+                  >
+                    {t('common.delete')}
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -5863,7 +5881,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div className="w-name">{t('matchSetup.lastName')}</div>
           <div className="w-name">{t('matchSetup.firstName')}</div>
           <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
-          <div style={{ width: '70px' }}></div>
+          <div className="w-action"></div>
         </div>
         {sortBenchByHierarchy(benchAway).map((m, i) => {
           const originalIdx = benchAway.findIndex(b => b === m)
@@ -5895,14 +5913,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
               <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
               <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
-              <button type="button" className="secondary" onClick={() => {
-                const updated = benchAway.filter((_, idx) => idx !== originalIdx)
-                setBenchAway(updated)
-                // Trigger save immediately
-                setTimeout(() => saveDraft(true), 100)
-              }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                {t('common.delete')}
-              </button>
+              <div className="w-action">
+                <button type="button" className="secondary" onClick={() => {
+                  const updated = benchAway.filter((_, idx) => idx !== originalIdx)
+                  setBenchAway(updated)
+                  // Trigger save immediately
+                  setTimeout(() => saveDraft(true), 100)
+                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                  {t('common.delete')}
+                </button>
+              </div>
             </div>
           )
         })}
@@ -6502,14 +6522,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 18,
-        height: 18,
+        width: s(20),
+        height: s(20),
         borderRadius: '50%',
         backgroundColor: ready ? '#22c55e' : pending ? '#3b82f6' : '#f97316',
         color: ready || pending ? '#fff' : '#0b1120',
         fontWeight: 700,
-        fontSize: 12,
-        marginRight: 8
+        fontSize: s(14),
+        marginRight: s(8)
       }}
       aria-label={ready ? 'Complete' : pending ? 'Ready to confirm' : 'Incomplete'}
       title={ready ? 'Complete' : pending ? 'Ready to confirm' : 'Incomplete'}
@@ -6543,12 +6563,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '4px',
-          padding: '3px 8px',
+          gap: s(4),
+          padding: `${s(3)}px ${s(8)}px`,
           background: c.bg,
           border: `1px solid ${c.border}`,
-          borderRadius: '4px',
-          fontSize: '10px',
+          borderRadius: s(4),
+          fontSize: s(11),
           cursor: status !== 'synced' && onRetry ? 'pointer' : 'default',
           transition: 'all 0.2s'
         }}
@@ -6556,8 +6576,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       >
         <span style={{
           display: 'inline-block',
-          width: '6px',
-          height: '6px',
+          width: s(6),
+          height: s(6),
           borderRadius: '50%',
           background: c.dot,
           boxShadow: status === 'syncing' ? `0 0 4px 2px ${c.dot}` : 'none'
@@ -7183,21 +7203,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   return (
     <MatchSetupMainView>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>{t('matchSetup.title')}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(16), gap: s(16) }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: s(12) }}>
+          <h2 style={{ margin: 0, fontSize: s(24) }}>{t('matchSetup.title')}</h2>
           <button
             className="secondary"
             onClick={openScoresheet}
-            style={{ padding: '6px 12px', fontSize: '13px', background: '#22c55e', color: '#000' }}
+            style={{ padding: `${s(6)}px ${s(12)}px`, fontSize: s(13), background: '#22c55e', color: '#000' }}
           >
             📄 {t('matchSetup.scoresheet')}
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
           {onOpenOptions && (
-            <button className="secondary" onClick={onOpenOptions}>
+            <button className="secondary" onClick={onOpenOptions} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>
               {t('matchSetup.options')}
             </button>
           )}
@@ -7205,18 +7225,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       </div>
       <div className="setup-cards-grid setup-section">
         {/* Match Info Card */}
-        <div className="card" style={!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}}>
+        <div className="card" style={{ padding: s(20), ...(!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}) }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: s(4) }}>
                 <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
-                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>{t('matchSetup.matchInfo')}</h3>
+                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchInfo')}</h3>
               </div>
               <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
             <div
-              className="text-sm"
-              style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}
+              style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: s(6), columnGap: s(10), marginTop: s(10), fontSize: s(14) }}
             >
               {/* Home Team row with color indicator */}
               <div
@@ -7227,7 +7246,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               >
                 <span>{t('matchSetup.homeTeam')}:</span>
               </div>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: '2px 0' }} title={home}>{home || t('common.notSet')}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: `${s(2)}px 0` }} title={home}>{home || t('common.notSet')}</span>
 
               <div
                 style={{
@@ -7237,7 +7256,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               >
                 <span>{t('matchSetup.awayTeam')}:</span>
               </div>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: '2px 0' }} title={away}>{away || t('common.notSet')}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: `${s(2)}px 0` }} title={away}>{away || t('common.notSet')}</span>
 
               <span>{t('matchSetup.date')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || t('common.notSet')}</span>
@@ -7251,11 +7270,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           <div className="actions">
             {matchInfoConfirmed ? (
-              <button className="secondary" onClick={() => setCurrentView('info')}>{t('common.edit')}</button>
+              <button className="secondary" onClick={() => setCurrentView('info')} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('common.edit')}</button>
             ) : (
               <button
                 className="primary"
                 onClick={() => setCurrentView('info')}
+                style={{ padding: `${s(10)}px ${s(20)}px`, fontSize: s(15) }}
               >
                 {t('matchSetup.createMatch')}
               </button>
@@ -7264,16 +7284,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
 
         {/* Match Officials Card */}
-        <div className="card" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+        <div className="card" style={{ padding: s(20), ...(!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: s(4) }}>
                 <StatusBadge ready={officialsConfigured} />
-                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>{t('matchSetup.matchOfficials')}</h3>
+                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchOfficials')}</h3>
               </div>
               <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
             </div>
-            <div className="text-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 4, columnGap: 8, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: s(6), columnGap: s(10), marginTop: s(10), fontSize: s(14) }}>
               <span>{t('matchSetup.referee1')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
               <span>{t('matchSetup.referee2')}:</span>
@@ -7293,22 +7313,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
           <div className="actions">
-            <button className="secondary" onClick={() => setCurrentView('officials')} disabled={!matchInfoConfirmed}>{t('common.edit')}</button>
+            <button className="secondary" onClick={() => setCurrentView('officials')} disabled={!matchInfoConfirmed} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('common.edit')}</button>
           </div>
         </div>
       </div>
       {/* Dashboard Connections Row */}
       <div className="setup-section" style={{
-        padding: '16px',
+        padding: s(16),
         background: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: '8px',
+        borderRadius: s(8),
         border: '1px solid rgba(255, 255, 255, 0.08)',
         ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' })
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-          <span style={{ fontWeight: 600, fontSize: '14px', textAlign: 'center', alignItems: 'center' }}>{t('matchSetup.dashboards')}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: s(8), marginBottom: s(4) }}>
+          <span style={{ fontWeight: 600, fontSize: s(14), textAlign: 'center', alignItems: 'center' }}>{t('matchSetup.dashboards')}</span>
         </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: s(10), flexWrap: 'wrap' }}>
           <ConnectionBanner
             team="referee"
             enabled={refereeConnectionEnabled}
@@ -7325,17 +7345,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       </div>
 
       <div className="grid-4 setup-section" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
-        <div className="card" style={{ order: 1 }}>
+        <div className="card" style={{ order: 1, padding: s(20) }}>
           {/* Row 1: Status + Team Name + Sync Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: s(8) }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
               <StatusBadge ready={homeConfigured} />
               <h1 style={{
                 margin: 0,
                 background: homeColor,
                 color: getContrastColor(homeColor),
-                padding: '6px 16px',
-                borderRadius: '8px'
+                padding: `${s(6)}px ${s(16)}px`,
+                borderRadius: s(8),
+                fontSize: s(22)
               }}>
                 {home && home !== 'Home' ? home.toUpperCase() : t('matchSetup.homeTeam').toUpperCase()}
               </h1>
@@ -7344,15 +7365,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Row 2: Stats */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 30 }}>
+          <div style={{ display: 'flex', gap: s(10), alignItems: 'center', flexWrap: 'wrap', marginTop: s(30) }}>
             <div style={{
               background: 'rgb(0, 0, 0)',
-              borderRadius: 6,
-              padding: '4px 10px',
+              borderRadius: s(6),
+              padding: `${s(4)}px ${s(10)}px`,
               fontWeight: 500,
               color: '#fff',
-              fontSize: 13,
-              height: 24,
+              fontSize: s(13),
+              height: s(24),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7361,12 +7382,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div style={{
               background: 'rgb(255, 255, 255)',
-              borderRadius: 6,
-              padding: '4px 10px',
+              borderRadius: s(6),
+              padding: `${s(4)}px ${s(10)}px`,
               fontWeight: 500,
               color: '#000',
-              fontSize: 13,
-              height: 24,
+              fontSize: s(13),
+              height: s(24),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7375,12 +7396,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div style={{
               background: 'rgba(34, 197, 94, 0.10)',
-              borderRadius: 6,
-              padding: '4px 10px',
+              borderRadius: s(6),
+              padding: `${s(4)}px ${s(10)}px`,
               fontWeight: 500,
               color: '#4ade80',
-              fontSize: 13,
-              height: 24,
+              fontSize: s(13),
+              height: s(24),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7390,11 +7411,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Row 3: Color selector + Shirt + Roster */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30 }}>
-            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: s(12), marginTop: s(30) }}>
+            <span style={{ fontSize: s(13), color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
             <div
               className="shirt"
-              style={{ background: homeColor, cursor: 'pointer', transform: 'scale(0.85)' }}
+              style={{ background: homeColor, cursor: 'pointer', transform: `scale(${scaleFactor})` }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
@@ -7408,21 +7429,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
             </div>
             <div style={{ flex: 1 }} />
-            <button className="secondary" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</button>
+            <button className="secondary" onClick={() => setCurrentView('home')} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('matchSetup.editRoster')}</button>
           </div>
         </div>
 
-        <div className="card" style={{ order: 2 }}>
+        <div className="card" style={{ order: 2, padding: s(20) }}>
           {/* Row 1: Status + Team Name + Sync Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: s(8) }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
               <StatusBadge ready={awayConfigured} />
               <h1 style={{
                 margin: 0,
                 background: awayColor,
                 color: getContrastColor(awayColor),
-                padding: '6px 16px',
-                borderRadius: '8px'
+                padding: `${s(6)}px ${s(16)}px`,
+                borderRadius: s(8),
+                fontSize: s(22)
               }}>
                 {away && away !== 'Away' ? away.toUpperCase() : t('matchSetup.awayTeam').toUpperCase()}
               </h1>
@@ -7431,15 +7453,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Row 2: Stats */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 30 }}>
+          <div style={{ display: 'flex', gap: s(10), alignItems: 'center', flexWrap: 'wrap', marginTop: s(30) }}>
             <div style={{
               background: 'rgb(0, 0, 0)',
-              borderRadius: 6,
-              padding: '4px 10px',
+              borderRadius: s(6),
+              padding: `${s(4)}px ${s(10)}px`,
               fontWeight: 500,
               color: '#fff',
-              fontSize: 13,
-              height: 24,
+              fontSize: s(13),
+              height: s(24),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7448,12 +7470,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div style={{
               background: 'rgb(255, 255, 255)',
-              borderRadius: 6,
-              padding: '4px 10px',
+              borderRadius: s(6),
+              padding: `${s(4)}px ${s(10)}px`,
               fontWeight: 500,
               color: '#000',
-              fontSize: 13,
-              height: 24,
+              fontSize: s(13),
+              height: s(24),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7462,12 +7484,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div style={{
               background: 'rgba(34, 197, 94, 0.10)',
-              borderRadius: 6,
-              padding: '4px 10px',
+              borderRadius: s(6),
+              padding: `${s(4)}px ${s(10)}px`,
               fontWeight: 500,
               color: '#4ade80',
-              fontSize: 13,
-              height: 24,
+              fontSize: s(13),
+              height: s(24),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7477,11 +7499,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Row 3: Color selector + Shirt + Roster */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30 }}>
-            <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: s(12), marginTop: s(30) }}>
+            <span style={{ fontSize: s(13), color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
             <div
               className="shirt"
-              style={{ background: awayColor, cursor: 'pointer', transform: 'scale(0.85)' }}
+              style={{ background: awayColor, cursor: 'pointer', transform: `scale(${scaleFactor})` }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
@@ -7495,7 +7517,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
             </div>
             <div style={{ flex: 1 }} />
-            <button className="secondary" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</button>
+            <button className="secondary" onClick={() => setCurrentView('away')} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('matchSetup.editRoster')}</button>
           </div>
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
@@ -7600,14 +7622,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 1, alignItems: 'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: s(16), alignItems: 'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
         <button
           className="secondary"
           style={{
             background: '#ffe066',
             color: '#222',
             border: '1px solid #ffd700',
-            fontWeight: 700
+            fontWeight: 700,
+            padding: `${s(10)}px ${s(20)}px`,
+            fontSize: s(14)
           }}
           onClick={() => setShowBothRosters(!showBothRosters)}
           disabled={!matchInfoConfirmed}
@@ -7615,13 +7639,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {showBothRosters ? t('scoreboard.hideRosters') : t('scoreboard.showRosters')}
         </button>
         {isMatchOngoing && onReturn ? (
-          <button onClick={onReturn}>{t('scoreboard.returnToMatch')}</button>
+          <button onClick={onReturn} style={{ padding: `${s(10)}px ${s(20)}px`, fontSize: s(14) }}>{t('scoreboard.returnToMatch')}</button>
         ) : (
           <button
             disabled={!canProceedToCoinToss}
             style={{
               opacity: canProceedToCoinToss ? 1 : 0.5,
-              cursor: canProceedToCoinToss ? 'pointer' : 'not-allowed'
+              cursor: canProceedToCoinToss ? 'pointer' : 'not-allowed',
+              padding: `${s(10)}px ${s(20)}px`,
+              fontSize: s(14)
             }}
             onClick={async () => {
               // Check if match has no data (no sets, no signatures)
@@ -7835,228 +7861,232 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         const paddedHomeBench = [...homeBench, ...Array(maxBench - homeBench.length).fill(null)]
         const paddedAwayBench = [...awayBench, ...Array(maxBench - awayBench.length).fill(null)]
 
+        // Scaled table cell styles
+        const thStyle = { padding: `${s(8)}px ${s(12)}px`, fontSize: s(13), fontWeight: 600 }
+        const tdStyle = { padding: `${s(6)}px ${s(12)}px`, fontSize: s(14) }
+        const numberStyle = { ...tdStyle, width: s(60), textAlign: 'center', fontWeight: 600 }
+        const nameStyle = { ...tdStyle, minWidth: s(180) }
+        const dobStyle = { ...tdStyle, width: s(100), textAlign: 'center' }
+        const emptyRowStyle = { height: s(36) }
+        const sectionTitleStyle = { display: 'block', marginBottom: s(8), fontSize: s(14), fontWeight: 600 }
+        const panelTitleStyle = { fontSize: s(18), marginBottom: s(12) }
+
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
-            <div className="panel">
-              <h3>{t('roster.titleWithTeam', { team: home || t('common.home') })}</h3>
-              {/* Players Section */}
-              <div style={{ marginBottom: 16 }}>
-                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.players')}</strong>
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>{t('roster.name')}</th>
-                      <th>{t('roster.dob')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paddedHomePlayers.map((player, idx) => (
-                      <tr key={player ? `p-${idx}` : `empty-${idx}`}>
-                        {player ? (
-                          <>
-                            <td className="roster-number">
-                              <span>{player.number ?? '—'}</span>
-                              <span className="roster-role">
-                                {player.isCaptain && <span className="roster-badge captain">C</span>}
-                              </span>
-                            </td>
-                            <td className="roster-name">
-                              {player.lastName || ''} {player.firstName || ''}
-                            </td>
-                            <td className="roster-dob">{player.dob || '—'}</td>
-                          </>
-                        ) : (
-                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {/* Liberos Section */}
-              {(maxLiberos > 0) && (
-                <div style={{ marginBottom: 16 }}>
-                  <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.liberos')}</strong>
-                  <table className="roster-table">
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: s(24) }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: s(24), maxWidth: s(1200), width: '100%' }}>
+              <div className="panel" style={{ padding: s(20) }}>
+                <h3 style={panelTitleStyle}>{t('roster.titleWithTeam', { team: home || t('common.home') })}</h3>
+                {/* Players Section */}
+                <div style={{ marginBottom: s(16) }}>
+                  <strong style={sectionTitleStyle}>{t('roster.players')}</strong>
+                  <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
-                        <th>#</th>
-                        <th>{t('roster.name')}</th>
-                        <th>{t('roster.dob')}</th>
+                        <th style={thStyle}>#</th>
+                        <th style={thStyle}>{t('roster.name')}</th>
+                        <th style={thStyle}>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {paddedHomeLiberos.map((player, idx) => (
-                        <tr key={player ? `l-${idx}` : `empty-libero-${idx}`}>
+                      {paddedHomePlayers.map((player, idx) => (
+                        <tr key={player ? `p-${idx}` : `empty-${idx}`}>
                           {player ? (
                             <>
-                              <td className="roster-number">
+                              <td style={numberStyle}>
                                 <span>{player.number ?? '—'}</span>
-                                <span className="roster-role">
-                                  {player.isCaptain && <span className="roster-badge captain">C</span>}
-                                  <span className="roster-badge libero">
-                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
-                                  </span>
-                                </span>
+                                {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
                               </td>
-                              <td className="roster-name">
+                              <td style={nameStyle}>
                                 {player.lastName || ''} {player.firstName || ''}
                               </td>
-                              <td className="roster-dob">{player.dob || '—'}</td>
+                              <td style={dobStyle}>{player.dob || '—'}</td>
                             </>
                           ) : (
-                            <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
+                            <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
                           )}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
-              {/* Bench Officials Section */}
-              <div>
-                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.bench')}</strong>
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th>{t('roster.role')}</th>
-                      <th>{t('roster.name')}</th>
-                      <th>{t('roster.dob')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paddedHomeBench.map((official, idx) => (
-                      <tr key={official ? `b-${idx}` : `empty-bench-${idx}`}>
-                        {official ? (
-                          <>
-                            <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
-                            <td>{official.lastName || ''} {official.firstName || ''}</td>
-                            <td>{official.dob || '—'}</td>
-                          </>
-                        ) : (
-                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                        )}
-                      </tr>
-                    ))}
-                    {maxBench === 0 && (
-                      <tr>
-                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('roster.noBenchOfficials')}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="panel">
-              <h3>{t('roster.titleWithTeam', { team: away || t('common.away') })}</h3>
-              {/* Players Section */}
-              <div style={{ marginBottom: 16 }}>
-                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.players')}</strong>
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>{t('roster.name')}</th>
-                      <th>{t('roster.dob')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paddedAwayPlayers.map((player, idx) => (
-                      <tr key={player ? `p-${idx}` : `empty-${idx}`}>
-                        {player ? (
-                          <>
-                            <td className="roster-number">
-                              <span>{player.number ?? '—'}</span>
-                              <span className="roster-role">
-                                {player.isCaptain && <span className="roster-badge captain">C</span>}
-                              </span>
-                            </td>
-                            <td className="roster-name">
-                              {player.lastName || ''} {player.firstName || ''}
-                            </td>
-                            <td className="roster-dob">{player.dob || '—'}</td>
-                          </>
-                        ) : (
-                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {/* Liberos Section */}
-              {(maxLiberos > 0) && (
-                <div style={{ marginBottom: 16 }}>
-                  <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.liberos')}</strong>
-                  <table className="roster-table">
+                {/* Liberos Section */}
+                {(maxLiberos > 0) && (
+                  <div style={{ marginBottom: s(16) }}>
+                    <strong style={sectionTitleStyle}>{t('roster.liberos')}</strong>
+                    <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>#</th>
+                          <th style={thStyle}>{t('roster.name')}</th>
+                          <th style={thStyle}>{t('roster.dob')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paddedHomeLiberos.map((player, idx) => (
+                          <tr key={player ? `l-${idx}` : `empty-libero-${idx}`}>
+                            {player ? (
+                              <>
+                                <td style={numberStyle}>
+                                  <span>{player.number ?? '—'}</span>
+                                  {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
+                                  <span style={{ marginLeft: s(4), background: '#22c55e', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>
+                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
+                                  </span>
+                                </td>
+                                <td style={nameStyle}>
+                                  {player.lastName || ''} {player.firstName || ''}
+                                </td>
+                                <td style={dobStyle}>{player.dob || '—'}</td>
+                              </>
+                            ) : (
+                              <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {/* Bench Officials Section */}
+                <div>
+                  <strong style={sectionTitleStyle}>{t('roster.bench')}</strong>
+                  <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
-                        <th>#</th>
-                        <th>{t('roster.name')}</th>
-                        <th>{t('roster.dob')}</th>
+                        <th style={thStyle}>{t('roster.role')}</th>
+                        <th style={thStyle}>{t('roster.name')}</th>
+                        <th style={thStyle}>{t('roster.dob')}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {paddedAwayLiberos.map((player, idx) => (
-                        <tr key={player ? `l-${idx}` : `empty-libero-${idx}`}>
-                          {player ? (
+                      {paddedHomeBench.map((official, idx) => (
+                        <tr key={official ? `b-${idx}` : `empty-bench-${idx}`}>
+                          {official ? (
                             <>
-                              <td className="roster-number">
-                                <span>{player.number ?? '—'}</span>
-                                <span className="roster-role">
-                                  {player.isCaptain && <span className="roster-badge captain">C</span>}
-                                  <span className="roster-badge libero">
-                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
-                                  </span>
-                                </span>
-                              </td>
-                              <td className="roster-name">
-                                {player.lastName || ''} {player.firstName || ''}
-                              </td>
-                              <td className="roster-dob">{player.dob || '—'}</td>
+                              <td style={{ ...tdStyle, textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
+                              <td style={tdStyle}>{official.lastName || ''} {official.firstName || ''}</td>
+                              <td style={dobStyle}>{official.dob || '—'}</td>
                             </>
                           ) : (
-                            <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
+                            <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                          )}
+                        </tr>
+                      ))}
+                      {maxBench === 0 && (
+                        <tr>
+                          <td colSpan="3" style={{ ...tdStyle, textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('roster.noBenchOfficials')}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="panel" style={{ padding: s(20) }}>
+                <h3 style={panelTitleStyle}>{t('roster.titleWithTeam', { team: away || t('common.away') })}</h3>
+                {/* Players Section */}
+                <div style={{ marginBottom: s(16) }}>
+                  <strong style={sectionTitleStyle}>{t('roster.players')}</strong>
+                  <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>#</th>
+                        <th style={thStyle}>{t('roster.name')}</th>
+                        <th style={thStyle}>{t('roster.dob')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paddedAwayPlayers.map((player, idx) => (
+                        <tr key={player ? `p-${idx}` : `empty-${idx}`}>
+                          {player ? (
+                            <>
+                              <td style={numberStyle}>
+                                <span>{player.number ?? '—'}</span>
+                                {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
+                              </td>
+                              <td style={nameStyle}>
+                                {player.lastName || ''} {player.firstName || ''}
+                              </td>
+                              <td style={dobStyle}>{player.dob || '—'}</td>
+                            </>
+                          ) : (
+                            <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
                           )}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
-              {/* Bench Officials Section */}
-              <div>
-                <strong style={{ display: 'block', marginBottom: 8 }}>{t('roster.bench')}</strong>
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th>{t('roster.role')}</th>
-                      <th>{t('roster.name')}</th>
-                      <th>{t('roster.dob')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paddedAwayBench.map((official, idx) => (
-                      <tr key={official ? `b-${idx}` : `empty-bench-${idx}`}>
-                        {official ? (
-                          <>
-                            <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
-                            <td>{official.lastName || ''} {official.firstName || ''}</td>
-                            <td>{official.dob || '—'}</td>
-                          </>
-                        ) : (
-                          <td colSpan="3" style={{ height: '36px' }}>&nbsp;</td>
-                        )}
-                      </tr>
-                    ))}
-                    {maxBench === 0 && (
+                {/* Liberos Section */}
+                {(maxLiberos > 0) && (
+                  <div style={{ marginBottom: s(16) }}>
+                    <strong style={sectionTitleStyle}>{t('roster.liberos')}</strong>
+                    <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>#</th>
+                          <th style={thStyle}>{t('roster.name')}</th>
+                          <th style={thStyle}>{t('roster.dob')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paddedAwayLiberos.map((player, idx) => (
+                          <tr key={player ? `l-${idx}` : `empty-libero-${idx}`}>
+                            {player ? (
+                              <>
+                                <td style={numberStyle}>
+                                  <span>{player.number ?? '—'}</span>
+                                  {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
+                                  <span style={{ marginLeft: s(4), background: '#22c55e', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>
+                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
+                                  </span>
+                                </td>
+                                <td style={nameStyle}>
+                                  {player.lastName || ''} {player.firstName || ''}
+                                </td>
+                                <td style={dobStyle}>{player.dob || '—'}</td>
+                              </>
+                            ) : (
+                              <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {/* Bench Officials Section */}
+                <div>
+                  <strong style={sectionTitleStyle}>{t('roster.bench')}</strong>
+                  <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
                       <tr>
-                        <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('roster.noBenchOfficials')}</td>
+                        <th style={thStyle}>{t('roster.role')}</th>
+                        <th style={thStyle}>{t('roster.name')}</th>
+                        <th style={thStyle}>{t('roster.dob')}</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {paddedAwayBench.map((official, idx) => (
+                        <tr key={official ? `b-${idx}` : `empty-bench-${idx}`}>
+                          {official ? (
+                            <>
+                              <td style={{ ...tdStyle, textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
+                              <td style={tdStyle}>{official.lastName || ''} {official.firstName || ''}</td>
+                              <td style={dobStyle}>{official.dob || '—'}</td>
+                            </>
+                          ) : (
+                            <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                          )}
+                        </tr>
+                      ))}
+                      {maxBench === 0 && (
+                        <tr>
+                          <td colSpan="3" style={{ ...tdStyle, textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('roster.noBenchOfficials')}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -8596,11 +8626,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   )
 }
 
-// Shared styles for wider layout and sticking to top
+// Shared styles for full-width layout (vertically centered by App.jsx)
 const setupViewStyle = {
-  maxWidth: '1200px',
-  alignSelf: 'flex-start',
-  marginTop: '10px'
+  // No maxWidth restriction - allow content to fill available space
 }
 
 function MatchSetupMainView({ children }) {

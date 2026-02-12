@@ -3,48 +3,9 @@ import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getApiUrl } from '../utils/backendConfig'
 import { useAlert } from '../contexts/AlertContext'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 
-// Styles
-const selectStyle = {
-  width: 'auto',
-  minWidth: '80px',
-  padding: '10px 32px 10px 12px',
-  fontSize: '14px',
-  background: '#000000',
-  border: '1px solid rgba(255,255,255,0.3)',
-  borderRadius: '8px',
-  color: '#ffffff',
-  cursor: 'pointer',
-  appearance: 'none',
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: 'right 12px center'
-}
-
-const labelStyle = {
-  display: 'block',
-  fontSize: '12px',
-  fontWeight: 600,
-  color: 'rgba(255,255,255,0.7)',
-  marginBottom: '6px'
-}
-
-const filterButtonStyle = {
-  padding: '6px 12px',
-  fontSize: '12px',
-  background: 'rgba(255,255,255,0.1)',
-  border: '1px solid rgba(255,255,255,0.2)',
-  borderRadius: '6px',
-  color: '#ffffff',
-  cursor: 'pointer',
-  transition: 'all 0.15s'
-}
-
-const filterButtonActiveStyle = {
-  ...filterButtonStyle,
-  background: 'rgba(59, 130, 246, 0.3)',
-  borderColor: 'rgba(59, 130, 246, 0.5)'
-}
+// Styles will be generated dynamically with scaleFactor
 
 /**
  * Format league code for display
@@ -147,6 +108,49 @@ function isTomorrow(isoString) {
 export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const { scaleFactor } = useScaledLayout()
+
+  // Scaled styles
+  const selectStyle = {
+    width: 'auto',
+    minWidth: `${Math.round(80 * scaleFactor)}px`,
+    padding: `${Math.round(10 * scaleFactor)}px ${Math.round(32 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
+    fontSize: `${Math.round(14 * scaleFactor)}px`,
+    background: '#000000',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: `${Math.round(8 * scaleFactor)}px`,
+    color: '#ffffff',
+    cursor: 'pointer',
+    appearance: 'none',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: `right ${Math.round(12 * scaleFactor)}px center`
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: `${Math.round(12 * scaleFactor)}px`,
+    fontWeight: 600,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: `${Math.round(6 * scaleFactor)}px`
+  }
+
+  const filterButtonStyle = {
+    padding: `${Math.round(6 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
+    fontSize: `${Math.round(12 * scaleFactor)}px`,
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: `${Math.round(6 * scaleFactor)}px`,
+    color: '#ffffff',
+    cursor: 'pointer',
+    transition: 'all 0.15s'
+  }
+
+  const filterButtonActiveStyle = {
+    ...filterButtonStyle,
+    background: 'rgba(59, 130, 246, 0.3)',
+    borderColor: 'rgba(59, 130, 246, 0.5)'
+  }
 
   // Dynamic leagues from backend
   const [allLeagues, setAllLeagues] = useState([])
@@ -325,7 +329,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     }
   }, [open])
 
-  const gridColumns = '80px 90px 55px 1fr'
+  const gridColumns = `${Math.round(80 * scaleFactor)}px ${Math.round(90 * scaleFactor)}px ${Math.round(55 * scaleFactor)}px 1fr`
 
   return (
     <Modal
@@ -338,29 +342,29 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       {/* Sticky Header */}
       <div style={{
         position: 'sticky',
-        top: -16,
+        top: Math.round(-16 * scaleFactor),
         background: '#111827',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
-        padding: '12px 0 12px 0',
-        marginBottom: '16px',
+        padding: `${Math.round(12 * scaleFactor)}px 0`,
+        marginBottom: `${Math.round(16 * scaleFactor)}px`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         zIndex: 10
       }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
+        <h2 style={{ margin: 0, fontSize: `${Math.round(18 * scaleFactor)}px`, fontWeight: 600 }}>
           {t('loadOfficialMatch.title', 'Load Match from Schedule')}
         </h2>
         <button
           onClick={onClose}
           style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '6px',
+            width: `${Math.round(32 * scaleFactor)}px`,
+            height: `${Math.round(32 * scaleFactor)}px`,
+            borderRadius: `${Math.round(6 * scaleFactor)}px`,
             background: 'rgba(255,255,255,0.1)',
             border: 'none',
             color: 'var(--text)',
-            fontSize: '18px',
+            fontSize: `${Math.round(18 * scaleFactor)}px`,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -372,15 +376,15 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       </div>
 
       {/* Filters - 2 Dropdowns */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
         {loadingConfig ? (
-          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
+          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: `${Math.round(14 * scaleFactor)}px` }}>
             {t('loadOfficialMatch.loading', 'Loading...')}
           </div>
         ) : (
           <div style={{
             display: 'flex',
-            gap: '12px',
+            gap: `${Math.round(12 * scaleFactor)}px`,
             alignItems: 'flex-end'
           }}>
             {/* Gender Dropdown */}
@@ -419,14 +423,14 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         {gender && (
           <div style={{
             borderTop: '1px solid rgba(255,255,255,0.2)',
-            marginTop: '12px',
-            paddingTop: '10px'
+            marginTop: `${Math.round(12 * scaleFactor)}px`,
+            paddingTop: `${Math.round(10 * scaleFactor)}px`
           }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              fontSize: '13px',
+              gap: `${Math.round(8 * scaleFactor)}px`,
+              fontSize: `${Math.round(13 * scaleFactor)}px`,
               color: 'rgba(255,255,255,0.8)'
             }}>
               <span>
@@ -446,14 +450,14 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       {/* Search and Date Filters - shown when matches are loaded */}
       {matches.length > 0 && (
         <div style={{
-          marginBottom: '12px',
+          marginBottom: `${Math.round(12 * scaleFactor)}px`,
           display: 'flex',
-          gap: '12px',
+          gap: `${Math.round(12 * scaleFactor)}px`,
           alignItems: 'center',
           flexWrap: 'wrap'
         }}>
           {/* Search Input */}
-          <div style={{ flex: 1, minWidth: '150px' }}>
+          <div style={{ flex: 1, minWidth: `${Math.round(150 * scaleFactor)}px` }}>
             <input
               type="text"
               value={searchQuery}
@@ -461,11 +465,11 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               placeholder={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                fontSize: '13px',
+                padding: `${Math.round(8 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
+                fontSize: `${Math.round(13 * scaleFactor)}px`,
                 background: '#000000',
                 border: '1px solid rgba(255,255,255,0.3)',
-                borderRadius: '6px',
+                borderRadius: `${Math.round(6 * scaleFactor)}px`,
                 color: '#ffffff',
                 outline: 'none'
               }}
@@ -473,7 +477,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
           </div>
 
           {/* Date Filter Buttons */}
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: `${Math.round(6 * scaleFactor)}px`, alignItems: 'center' }}>
             <button
               onClick={() => setDateFilter(dateFilter === 'today' ? '' : 'today')}
               style={dateFilter === 'today' ? filterButtonActiveStyle : filterButtonStyle}
@@ -491,7 +495,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 onClick={() => setDateFilter('')}
                 style={{
                   ...filterButtonStyle,
-                  padding: '6px 8px',
+                  padding: `${Math.round(6 * scaleFactor)}px ${Math.round(8 * scaleFactor)}px`,
                   background: 'rgba(239, 68, 68, 0.2)',
                   borderColor: 'rgba(239, 68, 68, 0.3)'
                 }}
@@ -505,10 +509,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       )}
 
       {/* Matches Table */}
-      <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+      <div style={{ maxHeight: `${Math.round(350 * scaleFactor)}px`, overflowY: 'auto' }}>
         {loading && (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
-            <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
+          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'rgba(255,255,255,0.6)' }}>
+            <div style={{ fontSize: `${Math.round(24 * scaleFactor)}px`, marginBottom: `${Math.round(8 * scaleFactor)}px` }}>⏳</div>
             {t('loadOfficialMatch.loading', 'Loading matches...')}
           </div>
         )}
@@ -516,23 +520,23 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         {error && (
           <div style={{
             textAlign: 'center',
-            padding: '40px',
+            padding: `${Math.round(40 * scaleFactor)}px`,
             color: '#ef4444',
             background: 'rgba(239, 68, 68, 0.1)',
-            borderRadius: '8px'
+            borderRadius: `${Math.round(8 * scaleFactor)}px`
           }}>
             {error}
           </div>
         )}
 
         {!loading && !error && league && matches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'rgba(255,255,255,0.6)' }}>
             {t('loadOfficialMatch.noUpcomingMatches', 'No upcoming matches found')}
           </div>
         )}
 
         {!loading && !error && matches.length > 0 && filteredMatches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'rgba(255,255,255,0.6)' }}>
             {t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
           </div>
         )}
@@ -543,13 +547,13 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
             <div style={{
               display: 'grid',
               gridTemplateColumns: gridColumns,
-              gap: '8px',
-              padding: '8px 10px',
-              fontSize: '11px',
+              gap: `${Math.round(8 * scaleFactor)}px`,
+              padding: `${Math.round(8 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px`,
+              fontSize: `${Math.round(11 * scaleFactor)}px`,
               fontWeight: 600,
               color: 'rgba(255,255,255,0.5)',
               borderBottom: '2px solid rgba(255,255,255,0.2)',
-              marginBottom: '2px',
+              marginBottom: `${Math.round(2 * scaleFactor)}px`,
               alignItems: 'center'
             }}>
               <span style={{ textAlign: 'center' }}>{t('loadOfficialMatch.gameN', 'Game #')}</span>
@@ -566,34 +570,34 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 style={{
                   display: 'grid',
                   gridTemplateColumns: gridColumns,
-                  gap: '8px',
+                  gap: `${Math.round(8 * scaleFactor)}px`,
                   alignItems: 'center',
-                  padding: '10px',
+                  padding: `${Math.round(10 * scaleFactor)}px`,
                   background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
                   cursor: 'pointer',
-                  borderRadius: '4px',
+                  borderRadius: `${Math.round(4 * scaleFactor)}px`,
                   transition: 'background 0.15s'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
                 onMouseLeave={e => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
               >
-                <span style={{ fontWeight: 600, textAlign: 'center', fontSize: '12px' }}>
+                <span style={{ fontWeight: 600, textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
                   {match.gameN}
                 </span>
-                <span style={{ textAlign: 'center', fontSize: '12px' }}>
+                <span style={{ textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
                   {formatDisplayDate(match.dtstart)}
                 </span>
-                <span style={{ textAlign: 'center', fontSize: '12px' }}>
+                <span style={{ textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
                   {formatDisplayTime(match.dtstart)}
                 </span>
                 <span style={{
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  fontSize: '12px'
+                  fontSize: `${Math.round(12 * scaleFactor)}px`
                 }}>
                   <span style={{ fontWeight: 600 }}>{match.home}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.5)', margin: '0 6px' }}>{t('common.vs', 'vs')}</span>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', margin: `0 ${Math.round(6 * scaleFactor)}px` }}>{t('common.vs', 'vs')}</span>
                   <span style={{ fontWeight: 600 }}>{match.away}</span>
                 </span>
               </div>

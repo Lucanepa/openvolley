@@ -2663,7 +2663,6 @@ export default function InteractiveGuide({ open, onClose }) {
               <ul style={{ paddingLeft: 20 }}>
                 <li><strong>{t('interactiveGuide.settings.desktop')}</strong> - {t('interactiveGuide.settings.desktopDesc')}</li>
                 <li><strong>{t('interactiveGuide.settings.tablet')}</strong> - {t('interactiveGuide.settings.tabletDesc')}</li>
-                <li><strong>{t('interactiveGuide.settings.smartphone')}</strong> - {t('interactiveGuide.settings.smartphoneDesc')}</li>
               </ul>
             </Section>
 

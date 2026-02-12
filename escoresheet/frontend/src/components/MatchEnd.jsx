@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import Modal from './Modal'
@@ -255,9 +256,7 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
 // Page wrapper - matches MatchSetup styling, expand width unless compact
 const setupViewStyle = {
   maxWidth: '1400px',
-  width: '100%',
-  alignSelf: 'flex-start',
-  marginTop: '10px'
+  width: '100%'
 }
 
 function MatchEndPageView({ children }) {
@@ -266,6 +265,7 @@ function MatchEndPageView({ children }) {
 
 export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualAdjustments }) {
   const cLogger = useComponentLogging('MatchEnd')
+  const { vmin } = useScaledLayout()
   const data = useLiveQuery(async () => {
     const match = await db.matches.get(matchId)
     if (!match) return null
@@ -1115,64 +1115,53 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
-          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '4vmin', aspectRatio: '1' }} />
+          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
           <h1 style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h1>
-          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: '4vmin', aspectRatio: '1' }} />
+          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
         </div>
 
       </div>
 
-      {/* Winner Card */}
-      <div className="card" style={{ marginBottom: '16px', padding: '20px' }}>
-        <h3 style={{ margin: 0, textAlign: 'center' }}>{t('matchEnd.winner', 'Winner')}</h3>
-        {/* Team Name with background */}
-        <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '26px', fontWeight: 700, marginBottom: '20px' }}>
-          {winner}
-        </div>
-        {/* Score and Set Results */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px' }}>
-          {/* Main Score */}
-          <div style={{ fontSize: '10vmin', fontWeight: 800, color: 'var(--accent)' }}>
-            {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
-          </div>
-          {/* Set Scores - Vertical List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '1.5vmin' }}>
-            {finishedSets.map((set, idx) => {
-              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
-              return (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '15px', color: 'var(--muted)'}}>
-                  <span style={{ width: '24px', fontSize: '1.5vmin', color: 'var(--muted)', marginRight: '15px', textAlign: 'center' }}>{romanNumerals[idx]}</span>
-                  <span style={{ fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)',  }}>
-                    {set.homePoints}
-                  </span>
-                  <span>:</span>
-                  <span style={{ fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
-                    {set.awayPoints}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Captain Signatures - Right after winner */}
-      {!isApproved && (
-        <div className="card" style={{ marginBottom: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <SignatureBox role="captain-a" />
-            <SignatureBox role="captain-b" />
-          </div>
-        </div>
-      )}
-
-      {/* Results and Sanctions - Side by side, clickable to zoom */}
+      {/* Winner, Results and Sanctions - All side by side on larger screens */}
       <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+        {/* Winner Card */}
+        <div className="card" style={{ flex: '1 1 280px', minWidth: '260px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ margin: 0, textAlign: 'center' }}>{t('matchEnd.winner', 'Winner')}</h3>
+          {/* Team Name with background */}
+          <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>
+            {winner}
+          </div>
+          {/* Score and Set Results */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', flex: 1 }}>
+            {/* Main Score */}
+            <div style={{ fontSize: vmin(8), fontWeight: 800, color: 'var(--accent)' }}>
+              {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
+            </div>
+            {/* Set Scores - Vertical List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: vmin(1.5) }}>
+              {finishedSets.map((set, idx) => {
+                const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
+                return (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--muted)'}}>
+                    <span style={{ width: '20px', fontSize: vmin(1.3), color: 'var(--muted)', textAlign: 'center' }}>{romanNumerals[idx]}</span>
+                    <span style={{ fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)',  }}>
+                      {set.homePoints}
+                    </span>
+                    <span>:</span>
+                    <span style={{ fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
+                      {set.awayPoints}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
         {/* Results Card */}
         <div
           className="card"
-          style={{ flex: '1 1 300px', minWidth: '280px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+          style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('results')}
         >
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.results', 'Results')}</h3>
@@ -1191,7 +1180,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         {/* Sanctions Card */}
         <div
           className="card"
-          style={{ flex: '1 1 300px', minWidth: '280px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+          style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('sanctions')}
         >
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3>
@@ -1203,6 +1192,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           </div>
         </div>
       </div>
+
+      {/* Captain Signatures */}
+      {!isApproved && (
+        <div className="card" style={{ marginBottom: '16px' }}>
+          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <SignatureBox role="captain-a" />
+            <SignatureBox role="captain-b" />
+          </div>
+        </div>
+      )}
 
       {/* Remarks Card */}
       <div className="card" style={{ marginBottom: '16px' }}>

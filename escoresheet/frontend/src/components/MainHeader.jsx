@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
 import UserButton from './auth/UserButton'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 
 
 const FlagBox = ({ children }) => (
@@ -112,8 +113,13 @@ export default function MainHeader({
   onOpenGuide = null, // Open the interactive app guide
 }) {
   const { t } = useTranslation()
+  const { scaleFactor, userScaleOverride, setUserScaleOverride } = useScaledLayout()
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
+  const [scaleMenuOpen, setScaleMenuOpen] = useState(false)
+
+  // Scale options: 50%, 75%, 100%, 125%, 150% (25% steps, max 150%)
+  const scaleOptions = [0.5, 0.75, 1.0, 1.25, 1.5]
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [editingSize, setEditingSize] = useState({ width: '', height: '' })
   const [isEditing, setIsEditing] = useState(false)
@@ -398,7 +404,8 @@ export default function MainHeader({
         alignItems: 'center',
         position: 'relative',
         width: 'auto',
-        height: '32px'
+        height: '32px',
+        gap: '6px'
       }}>
         <button
           data-match-info-menu
@@ -440,6 +447,41 @@ export default function MainHeader({
           </span>
         </button>
 
+        {/* Header collapse toggle button */}
+        {collapsible && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsCollapsed(!isCollapsed)
+            }}
+            style={{
+              padding: '4px 8px',
+              fontSize: '12px',
+              fontWeight: 700,
+              background: 'rgba(34, 197, 94, 0.2)',
+              color: '#22c55e',
+              border: '1px solid rgba(34, 197, 94, 0.4)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '20px',
+              maxHeight: '30px'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
+            }}
+            title={isCollapsed ? 'Show header' : 'Hide header'}
+          >
+            <span style={{ transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>▲</span>
+          </button>
+        )}
+
         {/* Collapsible Match Info Menu - hide when header is collapsed */}
         {matchInfoMenuOpen && matchInfoData && !effectivelyCollapsed && renderMatchInfoMenu(match, matchInfoData)}
       </div>
@@ -478,18 +520,19 @@ export default function MainHeader({
         ref={headerRef}
         style={{
           display: 'flex',
-          height: effectivelyCollapsed ? '0px' : '40px',
-          minHeight: effectivelyCollapsed ? '0px' : '40px',
-          maxHeight: effectivelyCollapsed ? '0px' : '40px',
+          height: effectivelyCollapsed ? '0px' : `${40 * scaleFactor}px`,
+          minHeight: effectivelyCollapsed ? '0px' : `${40 * scaleFactor}px`,
+          maxHeight: effectivelyCollapsed ? '0px' : `${40 * scaleFactor}px`,
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: effectivelyCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
+          padding: effectivelyCollapsed ? '0' : `0 ${Math.round(12 * scaleFactor)}px`,
           background: 'rgba(0, 0, 0, 0.2)',
           borderBottom: effectivelyCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           flexShrink: 0,
-          gap: 'clamp(8px, 1.5vw, 16px)',
+          gap: `${Math.round(10 * scaleFactor)}px`,
           overflow: effectivelyCollapsed ? 'hidden' : 'visible',
-          transition: 'all 0.3s ease-in-out'
+          transition: 'all 0.3s ease-in-out',
+          fontSize: `${Math.round(14 * scaleFactor)}px`
         }}>
         {/* Left: Online/Offline Toggle + Connection Status */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1059,6 +1102,102 @@ export default function MainHeader({
                       </div>
                     )}
 
+                    {/* Display Scale Selector - Compact Mode */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setScaleMenuOpen(!scaleMenuOpen)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: scaleMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        width: '100%',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!scaleMenuOpen) {
+                          e.currentTarget.style.background = 'transparent'
+                        }
+                      }}
+                    >
+                      <span>🔍</span>
+                      <span>{t('header.scale', 'Scale')}</span>
+                      <span style={{
+                        marginLeft: 'auto',
+                        padding: '2px 6px',
+                        background: 'rgba(59, 130, 246, 0.2)',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        color: '#3b82f6'
+                      }}>
+                        {Math.round(scaleFactor * 100)}%
+                      </span>
+                    </button>
+
+                    {/* Scale Options - nested dropdown (Compact) */}
+                    {scaleMenuOpen && (
+                      <div
+                        style={{
+                          padding: '8px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        {scaleOptions.map((scale) => (
+                          <button
+                            key={scale}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setUserScaleOverride(scale === 1.0 ? null : scale)
+                              setScaleMenuOpen(false)
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '100%',
+                              padding: '6px 10px',
+                              fontSize: '12px',
+                              fontWeight: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 600 : 400,
+                              background: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                              color: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? '#3b82f6' : '#fff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              textAlign: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!(userScaleOverride === scale || (userScaleOverride === null && scale === 1.0))) {
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!(userScaleOverride === scale || (userScaleOverride === null && scale === 1.0))) {
+                                e.currentTarget.style.background = 'transparent'
+                              }
+                            }}
+                          >
+                            <span>{Math.round(scale * 100)}%{scale === 1.0 ? ` (${t('header.default', 'Default')})` : ''}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Home Action - only show when not on home screen */}
                     {matchId && onOpenSetup && (
                       <button
@@ -1228,6 +1367,7 @@ export default function MainHeader({
                     setActionsMenuOpen(!actionsMenuOpen)
                     setLanguageMenuOpen(false)
                     setVersionMenuOpen(false)
+                    setScaleMenuOpen(false)
                   }}
                   style={{
                     display: 'flex',
@@ -1452,6 +1592,104 @@ export default function MainHeader({
                       </div>
                     )}
 
+                    {/* Display Scale Selector */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setScaleMenuOpen(!scaleMenuOpen)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: scaleMenuOpen ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        width: '100%',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!scaleMenuOpen) {
+                          e.currentTarget.style.background = 'transparent'
+                        }
+                      }}
+                    >
+                      <span>🔍</span>
+                      <span style={{ flex: 1 }}>{t('header.scale', 'Scale')}</span>
+                      <span style={{
+                        padding: '2px 6px',
+                        background: 'rgba(59, 130, 246, 0.2)',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#3b82f6'
+                      }}>
+                        {Math.round(scaleFactor * 100)}%
+                      </span>
+                      <span style={{
+                        fontSize: '10px',
+                        transform: scaleMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s'
+                      }}>▼</span>
+                    </button>
+
+                    {/* Scale Options - nested */}
+                    {scaleMenuOpen && (
+                      <div style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '6px',
+                        padding: '4px'
+                      }}>
+                        {scaleOptions.map((scale) => (
+                          <button
+                            key={scale}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setUserScaleOverride(scale === 1.0 ? null : scale)
+                              setScaleMenuOpen(false)
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '12px',
+                              fontWeight: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 600 : 400,
+                              background: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                              color: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? '#3b82f6' : 'rgba(255, 255, 255, 0.8)',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              textAlign: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!(userScaleOverride === scale || (userScaleOverride === null && scale === 1.0))) {
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!(userScaleOverride === scale || (userScaleOverride === null && scale === 1.0))) {
+                                e.currentTarget.style.background = 'transparent'
+                              }
+                            }}
+                          >
+                            <span>{Math.round(scale * 100)}%{scale === 1.0 ? ` (${t('header.default', 'Default')})` : ''}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Version / Changelog */}
                     <button
                       onClick={(e) => {
@@ -1538,54 +1776,25 @@ export default function MainHeader({
         </div>
 
       </div>
-      {/* Collapse/Expand button at bottom center - only shown when collapsible */}
-      {/* Uses drag handle style on touch devices, arrow on desktop */}
-      {collapsible && (
+      {/* Show expand button when header is collapsed */}
+      {effectivelyCollapsed && (
         <div
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-          onMouseLeave={(e) => e.currentTarget.style.opacity = '0.25'}
+          onClick={() => setIsCollapsed(false)}
           style={{
-            position: 'absolute',
-            top: isCollapsed ? '0' : '40px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: isCompactMode ? '60px' : '40px',
-            height: isCompactMode ? '20px' : '24px',
-            background: '#22c55e',
-            borderRadius: '0 0 8px 8px',
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
-            flexDirection: 'column',
-            gap: '3px',
-            cursor: isCompactMode ? 'grab' : 'pointer',
-            zIndex: 1001,
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-            transition: 'all 0.2s ease',
-            opacity: 0.25
+            alignItems: 'center',
+            width: '100%',
+            height: '16px',
+            cursor: 'pointer',
+            background: 'rgba(0, 0, 0, 0.3)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            transition: 'all 0.2s'
           }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'}
         >
-          {isCompactMode ? (
-            /* Drag handle for touch - horizontal line like iOS sheet handle */
-            <div style={{
-              width: '32px',
-              height: '4px',
-              background: 'rgba(0, 0, 0, 0.4)',
-              borderRadius: '2px'
-            }} />
-          ) : (
-            /* Arrow for desktop */
-            <span style={{
-              fontSize: '14px',
-              color: '#000',
-              fontWeight: 700,
-              transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease'
-            }}>
-              ▲
-            </span>
-          )}
+          <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: 700 }}>▼</span>
         </div>
       )}
     </div>
