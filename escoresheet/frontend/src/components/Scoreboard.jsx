@@ -3786,6 +3786,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [matchId, data?.match, data?.homeTeam, data?.awayTeam, data?.homePlayers, data?.awayPlayers])
 
   // Helper function to log manual changes for the summary
+  // Notify scoresheet window about data changes via BroadcastChannel
+  const notifyScoresheetUpdate = useCallback((reason) => {
+    try {
+      const channel = new BroadcastChannel('escoresheet-updates')
+      channel.postMessage({ type: 'MANUAL_ADJUSTMENT', matchId, reason })
+      channel.close()
+    } catch (e) { /* BroadcastChannel not supported */ }
+  }, [matchId])
+
   const logManualChange = useCallback((category, field, before, after, description) => {
     const change = {
       ts: new Date().toISOString(),
@@ -3797,6 +3806,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     console.log('[ManualChange] New change:', change)
     setManualChangesLog(prev => [...prev, change])
+
+    // Notify scoresheet window about the change
+    notifyScoresheetUpdate(`manual_change:${category}:${field}`)
 
     // Also update the match record with the new change
     if (matchId && data?.match) {
@@ -3834,7 +3846,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     return change
-  }, [matchId, data?.match, supabase])
+  }, [matchId, data?.match, supabase, notifyScoresheetUpdate])
 
   const logEvent = useCallback(
     async (type, payload = {}, options = {}) => {
@@ -6379,8 +6391,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Sync to Referee and Supabase after undo
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
+      notifyScoresheetUpdate('undo')
     }
-  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, syncToReferee, syncLiveStateToSupabase])
+  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -6512,13 +6525,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Sync to Supabase with fresh snapshot (data has changed)
       syncLiveStateToSupabase('replay', null, { reason: 'point_replay', undoneTeam }, null)
+      notifyScoresheetUpdate('replay')
 
     } catch (error) {
       // Error during replay - silently handle
     } finally {
       setReplayRallyConfirm(null)
     }
-  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq, syncLiveStateToSupabase])
+  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
@@ -6741,6 +6755,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Sync to Supabase with fresh snapshot (data has changed)
         syncLiveStateToSupabase('decision_change', null, { reason: 'point_swap', fromTeam: oldTeam, toTeam: newTeam }, null)
+        notifyScoresheetUpdate('decision_change')
 
       } catch (error) {
         console.error('[handleDecisionChange] Error swapping point:', error)
@@ -6752,7 +6767,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup])
+  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate])
 
 
 
@@ -14311,29 +14326,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div className="team-info" style={{ overflow: 'hidden' }}>
               <div
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: isCompactMode ? '4px 8px' : '6px 12px',
+                  justifyContent: 'center',
+                  gap: '0.5vh',
+                  padding: '0.5vh 0.8vh',
                   background: leftTeam.color || '#ef4444',
                   color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
                   borderRadius: '6px',
                   fontWeight: 600,
-                  fontSize: isCompactMode ? '11px' : '14px',
-                  marginBottom: '8px',
-                  maxWidth: '100%',
+                  fontSize: '1.6vh',
+                  marginBottom: '1vh',
+                  width: '100%',
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
-                  textOverflow: 'ellipsis'
+                  boxSizing: 'border-box'
                 }}
               >
                 <span style={{ flexShrink: 0 }}>{teamALabel}</span>
                 <span style={{ flexShrink: 0 }}>-</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: isNarrowMode ? '30px' : '40px' }}>{teamAShortName}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{teamAShortName}</span>
                 {(isCompactMode || headerCollapsed) && (
                   <span style={{
-                    marginLeft: '4px',
-                    padding: '2px 6px',
+                    marginLeft: '2px',
+                    padding: '1px 4px',
                     background: 'rgba(255, 255, 255, 0.2)',
                     borderRadius: '4px',
                     fontWeight: 700,
@@ -17395,29 +17411,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div className="team-info" style={{ overflow: 'hidden' }}>
               <div
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: isCompactMode ? '4px 8px' : '6px 12px',
+                  justifyContent: 'center',
+                  gap: '0.5vh',
+                  padding: '0.5vh 0.8vh',
                   background: rightTeam.color || '#3b82f6',
                   color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
                   borderRadius: '6px',
                   fontWeight: 600,
-                  fontSize: isCompactMode ? '11px' : '14px',
-                  marginBottom: '8px',
-                  maxWidth: '100%',
+                  fontSize: '1.6vh',
+                  marginBottom: '1vh',
+                  width: '100%',
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
-                  textOverflow: 'ellipsis'
+                  boxSizing: 'border-box'
                 }}
               >
                 <span style={{ flexShrink: 0 }}>{teamBLabel}</span>
                 <span style={{ flexShrink: 0 }}>-</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: isNarrowMode ? '30px' : '40px' }}>{teamBShortName}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{teamBShortName}</span>
                 {(isCompactMode || headerCollapsed) && (
                   <span style={{
-                    marginLeft: '4px',
-                    padding: '2px 6px',
+                    marginLeft: '2px',
+                    padding: '1px 4px',
                     background: 'rgba(255, 255, 255, 0.2)',
                     borderRadius: '4px',
                     fontWeight: 700,
@@ -19502,7 +19519,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <Modal
           title={t('scoreboard.menu.manualChanges')}
           open={true}
-          onClose={() => setShowManualPanel(false)}
+          onClose={() => {
+            setShowManualPanel(false)
+            // Notify scoresheet to refresh after manual panel is closed
+            notifyScoresheetUpdate('manual_panel_closed')
+          }}
           width={650}
         >
           <div style={{ padding: '16px', maxHeight: '80vh', overflowY: 'auto' }}>
@@ -19898,6 +19919,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                                     // Update Live State immediately
                                     syncLiveStateToSupabase('manual_score_update')
+                                    notifyScoresheetUpdate('manual_score_update_left')
                                   }}
                                   style={{
                                     width: '60px',
@@ -19935,6 +19957,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                                     // Update Live State immediately
                                     syncLiveStateToSupabase('manual_score_update')
+                                    notifyScoresheetUpdate('manual_score_update_right')
                                   }}
                                   style={{
                                     width: '60px',
@@ -20075,6 +20098,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         await supabase.from('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
+                                    notifyScoresheetUpdate('edit_all_sets_home')
                                   }}
                                   style={{
                                     width: '50px',
@@ -20103,6 +20127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         await supabase.from('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
+                                    notifyScoresheetUpdate('edit_all_sets_away')
                                   }}
                                   style={{
                                     width: '50px',
@@ -20128,6 +20153,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         await supabase.from('sets').update({ finished: e.target.checked, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
+                                    notifyScoresheetUpdate('edit_all_sets_finished')
                                   }}
                                   style={{
                                     width: '18px',
@@ -20362,6 +20388,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     await db.events.update(event.id, {
                                       payload: { ...event.payload, team: e.target.value }
                                     })
+                                    notifyScoresheetUpdate('edit_point_team')
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -20382,6 +20409,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(`Delete this point event?`)) {
                                       await db.events.delete(event.id)
+                                      notifyScoresheetUpdate('delete_point_event')
                                     }
                                   }}
                                   style={{
@@ -22755,6 +22783,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           syncToReferee()
           // Also sync to Supabase match_live_state
           syncLiveStateToSupabase('lineup', lineupModal?.team || null, null)
+          // Notify scoresheet window about lineup change
+          notifyScoresheetUpdate('lineup_change')
         }}
       />}
 
@@ -25830,6 +25860,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     await db.matches.update(matchId, { status: 'live' })
                   }
 
+                  notifyScoresheetUpdate('reopen_set')
                   setReopenSetConfirm(null)
                 }}
                 style={{
@@ -27857,40 +27888,46 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
       >
         {children}
       </div>
-      {/* Collapse/Expand arrow button at bottom center */}
-      <div
-        onClick={onToggle}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.25'}
-        style={{
-          position: 'absolute',
-          top: collapsed ? '0' : '100%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '40px',
-          height: '24px',
-          background: '#22c55e',
-          borderRadius: '0 0 8px 8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          zIndex: 100,
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-          transition: 'all 0.2s ease',
-          opacity: 0.25
-        }}
-      >
-        <span style={{
-          fontSize: '14px',
-          color: '#000',
-          fontWeight: 700,
-          transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.2s ease'
-        }}>
-          ▲
-        </span>
-      </div>
+      {/* Thin collapse/expand bar at bottom center */}
+      {collapsed ? (
+        <div
+          onClick={onToggle}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            width: '100%',
+            height: '16px',
+            cursor: 'pointer',
+            background: 'rgba(0, 0, 0, 0.3)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'}
+        >
+          <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: 700 }}>▼</span>
+        </div>
+      ) : (
+        <div
+          onClick={onToggle}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            width: '100%',
+            height: '16px',
+            cursor: 'pointer',
+            background: 'rgba(0, 0, 0, 0.3)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'}
+        >
+          <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: 700 }}>▲</span>
+        </div>
+      )}
     </div>
   )
 }

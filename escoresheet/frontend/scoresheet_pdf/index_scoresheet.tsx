@@ -214,15 +214,40 @@ const initialAction = getActionFromUrl();
 const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ initialMatchData, action }) => {
   const matchId = initialMatchData?.match?.id;
 
+  // Version counter to force re-queries when notified of changes via BroadcastChannel
+  const [refreshVersion, setRefreshVersion] = React.useState(0);
+
+  React.useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('escoresheet-updates');
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'MANUAL_ADJUSTMENT' || event.data?.type === 'DATA_CHANGED') {
+          // If matchId matches or no matchId filter, force re-query all data
+          if (!event.data.matchId || event.data.matchId === matchId) {
+            setRefreshVersion(v => v + 1);
+          }
+        }
+      };
+    } catch (e) {
+      // BroadcastChannel not supported, fall back to storage event
+      const onStorage = () => setRefreshVersion(v => v + 1);
+      window.addEventListener('storage', onStorage);
+      return () => window.removeEventListener('storage', onStorage);
+    }
+    return () => { channel?.close(); };
+  }, [matchId]);
+
   // Use live queries to get real-time data from IndexedDB
   // useLiveQuery returns undefined while loading, null/result after query completes
+  // refreshVersion is included in deps to force re-query on BroadcastChannel notifications
   const match = useLiveQuery(
     async () => {
       if (!matchId) return null;
       const result = await (db as any).matches.get(matchId);
       return result || null; // Return null if not found (deleted)
     },
-    [matchId]
+    [matchId, refreshVersion]
   );
 
   // Track if initial load is complete (match query has run at least once)
@@ -235,7 +260,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.homeTeamId) return null;
       return await (db as any).teams.get(match.homeTeamId);
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const awayTeam = useLiveQuery(
@@ -244,7 +269,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.awayTeamId) return null;
       return await (db as any).teams.get(match.awayTeamId);
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const homePlayers = useLiveQuery(
@@ -253,7 +278,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.homeTeamId) return [];
       return await (db as any).players.where('teamId').equals(match.homeTeamId).toArray();
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const awayPlayers = useLiveQuery(
@@ -262,7 +287,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.awayTeamId) return [];
       return await (db as any).players.where('teamId').equals(match.awayTeamId).toArray();
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const sets = useLiveQuery(
@@ -270,7 +295,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!matchId || isMatchDeleted) return [];
       return await (db as any).sets.where('matchId').equals(matchId).sortBy('index');
     },
-    [matchId, isMatchDeleted]
+    [matchId, isMatchDeleted, refreshVersion]
   );
 
   const events = useLiveQuery(
@@ -278,7 +303,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!matchId || isMatchDeleted) return [];
       return await (db as any).events.where('matchId').equals(matchId).sortBy('seq');
     },
-    [matchId, isMatchDeleted]
+    [matchId, isMatchDeleted, refreshVersion]
   );
 
   // Show loading state while initial data is being fetched
@@ -318,8 +343,10 @@ const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' |
 
 // URL matchId scoresheet component - loads from IndexedDB by matchId
 const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ matchId, action }) => {
+  // Convert matchId to number if it's a numeric string (IndexedDB uses auto-increment integer IDs)
+  const numericMatchId = !isNaN(Number(matchId)) ? parseInt(matchId, 10) : matchId;
   // Use the LiveScoresheet component with a minimal initial data object
-  const initialData = { match: { id: matchId } };
+  const initialData = { match: { id: numericMatchId } };
   return <LiveScoresheet initialMatchData={initialData} action={action} />;
 };
 
@@ -709,7 +736,107 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Priority: 1. URL matchId param, 2. Storage params (?date=...&game=...), 3. List view (?list), 4. sessionStorage, 5. No data
+// Import scoresheet component - allows uploading JSON data to render a scoresheet
+const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ action }) => {
+  const [matchData, setMatchData] = React.useState<any>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const data = JSON.parse(text);
+
+        // Basic validation: check that it has the expected structure
+        if (!data.match && !data.sets && !data.events) {
+          setError('Invalid scoresheet data: missing match, sets, or events fields.');
+          return;
+        }
+
+        setMatchData(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to parse JSON file');
+      }
+    };
+    reader.onerror = () => {
+      setError('Failed to read file');
+    };
+    reader.readAsText(file);
+  };
+
+  if (matchData) {
+    return <App matchData={matchData} autoAction={action} />;
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      flexDirection: 'column',
+      gap: '20px',
+      fontFamily: 'system-ui, sans-serif'
+    }}>
+      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>
+        Scoresheet Viewer
+      </div>
+      <div style={{ color: '#666', textAlign: 'center', maxWidth: '400px' }}>
+        Upload a scoresheet JSON file to view, print, or save it as a PDF.
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+      />
+
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        style={{
+          padding: '12px 24px',
+          fontSize: '16px',
+          fontWeight: '500',
+          background: '#3b82f6',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}
+      >
+        Import game data
+      </button>
+
+      {error && (
+        <div style={{
+          color: '#ef4444',
+          fontSize: '14px',
+          textAlign: 'center',
+          maxWidth: '500px',
+          padding: '12px',
+          background: '#fef2f2',
+          borderRadius: '8px',
+          border: '1px solid #fecaca'
+        }}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Priority: 1. URL matchId param, 2. Storage params (?date=...&game=...), 3. List view (?list), 4. sessionStorage, 5. Import/No data
 if (urlMatchId) {
   // Load from IndexedDB using matchId from URL
   root.render(
@@ -794,36 +921,12 @@ if (urlMatchId) {
     );
   }
 } else {
+  // No data from any source - show import screen
   root.render(
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100vh',
-      flexDirection: 'column',
-      gap: '20px',
-      fontFamily: 'system-ui, sans-serif'
-    }}>
-      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-        No Match Data Found
-      </div>
-      <div style={{ color: '#666' }}>
-        Please generate the scoresheet from the match end screen.
-      </div>
-      <button
-        onClick={() => window.close()}
-        style={{
-          padding: '10px 20px',
-          fontSize: '16px',
-          background: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: 'pointer'
-        }}
-      >
-        Close Window
-      </button>
-    </div>
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ImportScoresheet action={initialAction} />
+      </ErrorBoundary>
+    </React.StrictMode>
   );
 }
