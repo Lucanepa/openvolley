@@ -16,6 +16,25 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 
+// Generate a placeholder signature image (wavy line) for test matches
+function generatePlaceholderSignature() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 200
+  canvas.height = 60
+  const ctx = canvas.getContext('2d')
+  ctx.strokeStyle = '#333'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  const startX = 20
+  const startY = 35
+  ctx.moveTo(startX, startY)
+  for (let x = startX; x < 180; x += 5) {
+    ctx.lineTo(x, startY + Math.sin((x - startX) * 0.1) * 8 + (Math.random() - 0.5) * 4)
+  }
+  ctx.stroke()
+  return canvas.toDataURL('image/png')
+}
+
 // Helper to generate short name from team name (e.g., "VBC Zürich" -> "VBC")
 function generateShortName(name) {
   if (!name) return ''
@@ -118,8 +137,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
 
-  // Check if compact mode
-  const isCompact = useCompactMode()
+  // Compact mode disabled - always use full layout
+  const isCompact = false
 
   // Responsive sizing - scales with viewport height
   const vh = typeof window !== 'undefined' ? window.innerHeight : 768
@@ -487,6 +506,15 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           setAwayCaptainSignature(match.awayCaptainSignature)
           setSavedSignatures(prev => ({ ...prev, awayCaptain: match.awayCaptainSignature }))
         }
+
+        // For test matches, pre-fill placeholder signatures so buttons show ✓
+        if (match.test && !match.homeCoachSignature) {
+          const placeholder = generatePlaceholderSignature()
+          setHomeCoachSignature(placeholder)
+          setHomeCaptainSignature(placeholder)
+          setAwayCoachSignature(placeholder)
+          setAwayCaptainSignature(placeholder)
+        }
       } catch (error) {
         console.error('Error loading coin toss data:', error)
       }
@@ -545,12 +573,18 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         coinTossConfirmed: true  // Mark coin toss as confirmed
       }
 
-      // Only save signatures for official matches
+      // Save signatures - use actual signatures for official matches, placeholder for test
       if (!match?.test) {
         updateData.homeCoachSignature = homeCoachSignature
         updateData.homeCaptainSignature = homeCaptainSignature
         updateData.awayCoachSignature = awayCoachSignature
         updateData.awayCaptainSignature = awayCaptainSignature
+      } else {
+        // Use placeholder signatures for test matches
+        updateData.homeCoachSignature = homeCoachSignature || generatePlaceholderSignature()
+        updateData.homeCaptainSignature = homeCaptainSignature || generatePlaceholderSignature()
+        updateData.awayCoachSignature = awayCoachSignature || generatePlaceholderSignature()
+        updateData.awayCaptainSignature = awayCaptainSignature || generatePlaceholderSignature()
       }
 
       await db.matches.update(matchId, updateData)
@@ -1298,13 +1332,39 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: Math.round(4 * vhScale), flexShrink: 0 }}>
         <button className="secondary" onClick={onBack}>← {t('common.back')}</button>
         <h1 style={{ margin: 0, fontSize: `${Math.round(46 * vhScale)}px`, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.title')}</h1>
         <div style={{ width: '80px' }}></div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
+      {/* Switch buttons row */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
+        <button
+          onClick={switchTeams}
+          style={{
+            padding: '8px 20px', fontSize: '1.5em', fontWeight: 800,
+            background: '#000', color: 'var(--accent)', border: 'none', borderRadius: '8px',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+            minHeight: sizes.actionButtonMinHeight
+          }}
+        >
+          <span style={{ fontSize: '1.5em' }}>⇄</span> {t('coinToss.switchTeams')}
+        </button>
+        <button
+          onClick={switchServe}
+          style={{
+            padding: '8px 20px', fontSize: '1.5em', fontWeight: 800,
+            background: '#000', color: 'var(--accent)', border: 'none', borderRadius: '8px',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+            minHeight: sizes.actionButtonMinHeight
+          }}
+        >
+          <img src={ballImage} onError={(e) => { e.target.src = mikasaVolleyball }} alt="" style={{ width: '2.5em', height: '2.5em' }} /> {t('coinToss.switchServe')}
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
         {/* Team A */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
           {/* Row 1: Team label + Team name bar */}
@@ -1326,22 +1386,21 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               </div>
             </div>
           </div>
-          {/* Row 2: Volleyball + Roster Button */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(10 * vhScale) }}>
-            <div style={{ display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
-              {serveA ? volleyballImage : volleyballPlaceholder}
-            </div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setRosterModal('teamA')}
-              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              {t('coinToss.showRoster')} ({teamAInfo.roster.length})
-            </button>
+          {/* Row 2: Volleyball (vertically centered between team label and roster button) */}
+          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
-          {/* Row 3: Signatures */}
-          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative' }}>
+          {/* Row 3: Roster Button */}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setRosterModal('teamA')}
+            style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            {t('coinToss.showRoster')} ({teamAInfo.roster.length})
+          </button>
+          {/* Row 4: Signatures */}
+          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <button
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
@@ -1378,23 +1437,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           </div>
         </div>
 
-        {/* Middle buttons - aligned with team rows via space-evenly */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 4px', justifyContent: 'space-evenly' }}>
-          {/* Switch Teams - aligned with team name row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <button className="secondary" onClick={switchTeams} style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, fontWeight: 700, whiteSpace: 'nowrap', minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              ⇄ {t('coinToss.switchTeams')}
-            </button>
-          </div>
-          {/* Switch Serve - aligned with volleyball row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <button className="secondary" onClick={switchServe} style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, fontWeight: 700, whiteSpace: 'nowrap', minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              ⇄ {t('coinToss.switchServe')}
-            </button>
-          </div>
-          {/* Spacer for signatures row */}
-          <div />
-        </div>
+        {/* Middle spacer */}
+        <div style={{ width: '16px' }} />
 
         {/* Team B */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
@@ -1417,22 +1461,21 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               </div>
             </div>
           </div>
-          {/* Row 2: Volleyball + Roster Button */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(10 * vhScale) }}>
-            <div style={{ display: 'flex', justifyContent: 'center', height: sizes.volleyballSize, alignItems: 'center' }}>
-              {serveB ? volleyballImage : volleyballPlaceholder}
-            </div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setRosterModal('teamB')}
-              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              {t('coinToss.showRoster')} ({teamBInfo.roster.length})
-            </button>
+          {/* Row 2: Volleyball (vertically centered between team label and roster button) */}
+          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
+          {/* Row 3: Roster Button */}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setRosterModal('teamB')}
+            style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            {t('coinToss.showRoster')} ({teamBInfo.roster.length})
+          </button>
           {/* Row 3: Signatures */}
-          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <button
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}

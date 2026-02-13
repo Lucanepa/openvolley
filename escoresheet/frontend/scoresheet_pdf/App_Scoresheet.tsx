@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as htmlToImage from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -7,9 +7,11 @@ import { StandardSet } from './components/StandardSet';
 import { SetFive } from './components/SetFive';
 import { Sanctions, Results, Approvals, Roster, Remarks } from './components/FooterSection';
 import { LeftInfoBox } from './components/LeftInfoBox';
+import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
 import { sanitizeSimple } from '../src/utils/stringUtils';
 import { formatTimeLocal } from '../src/utils/timeUtils';
+import { extractLiberoData } from './utils/extractLiberoData';
 
 interface AppScoresheetProps {
   matchData: {
@@ -28,6 +30,19 @@ interface AppScoresheetProps {
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const { t } = useTranslation();
   const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, sanctions = [] } = matchData;
+
+  console.log('[Scoresheet] matchData received:', {
+    matchId: match?.id,
+    status: match?.status,
+    coinTossTeamA: match?.coinTossTeamA,
+    coinTossConfirmedField: match?.coinTossConfirmed,
+    homeTeam: homeTeam?.name,
+    awayTeam: awayTeam?.name,
+    homePlayers: homePlayers?.length,
+    awayPlayers: awayPlayers?.length,
+    sets: sets?.length,
+    events: events?.length
+  });
 
   // Helper function to format players for scoresheet
   const formatPlayers = (players: any[]): Player[] => {
@@ -49,7 +64,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const teamBKey = teamAKey === 'home' ? 'away' : 'home';
 
   // Calculate if coin toss is confirmed (all coin toss fields are set)
-  const coinTossConfirmed = match?.coinTossTeamA !== null &&
+  // Also treat as confirmed if match is live/ended/final (coin toss must have been completed to reach these states)
+  const coinTossFieldsSet = match?.coinTossTeamA !== null &&
     match?.coinTossTeamA !== undefined &&
     match?.coinTossTeamB !== null &&
     match?.coinTossTeamB !== undefined &&
@@ -57,6 +73,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     match?.coinTossServeA !== undefined &&
     match?.coinTossServeB !== null &&
     match?.coinTossServeB !== undefined;
+  const coinTossConfirmed = coinTossFieldsSet ||
+    match?.status === 'live' || match?.status === 'ended' || match?.status === 'final';
 
   const teamAPlayers = formatPlayers(teamAKey === 'home' ? homePlayers : awayPlayers);
   const teamBPlayers = formatPlayers(teamBKey === 'home' ? homePlayers : awayPlayers);
@@ -68,6 +86,27 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   // Use short names for set labels and rosters - show empty if not set (don't fallback to full name)
   const teamAShortName = (teamAKey === 'home' ? match?.homeShortName : match?.awayShortName) || '';
   const teamBShortName = (teamBKey === 'home' ? match?.homeShortName : match?.awayShortName) || '';
+
+  // Compute Libero Control Sheet data from events
+  const lcsData = useMemo(() => {
+    return extractLiberoData(events || [], sets || [], teamAKey as 'home' | 'away', teamAPlayers, teamBPlayers);
+  }, [events, sets, teamAKey, teamAPlayers, teamBPlayers]);
+
+  // Check if LCS button should be visible: at least one team has a libero AND there is libero activity
+  const hasLiberoActivity = useMemo(() => {
+    const hasLiberos = lcsData.teamALiberos.length > 0 || lcsData.teamBLiberos.length > 0;
+    if (!hasLiberos) return false;
+    const hasReplacements = lcsData.sets.some(s =>
+      s.teamAReplacements.length > 0 ||
+      s.teamBReplacements.length > 0 ||
+      (s.teamAReplacements_After && s.teamAReplacements_After.length > 0) ||
+      (s.teamBReplacements_After && s.teamBReplacements_After.length > 0)
+    );
+    return hasReplacements;
+  }, [lcsData]);
+
+  // Toggle between scoresheet and LCS view
+  const [showLCS, setShowLCS] = useState(false);
 
   // Helper function to get set data from events and sets
   const getSetData = (setNumber: number, isSwapped: boolean = false) => {
@@ -91,9 +130,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     }
 
     // Get starting lineup from events
+    // Use the most recent lineup event for each team (manual overrides have higher seq)
     const setEvents = events?.filter(e => e.setIndex === setNumber) || [];
-    const homeLineupEvent = setEvents.find(e => e.type === 'lineup' && e.payload?.team === 'home');
-    const awayLineupEvent = setEvents.find(e => e.type === 'lineup' && e.payload?.team === 'away');
+    const homeLineupEvents = setEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home');
+    const awayLineupEvents = setEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away');
+    const homeLineupEvent = homeLineupEvents.length > 0 ? homeLineupEvents[homeLineupEvents.length - 1] : undefined;
+    const awayLineupEvent = awayLineupEvents.length > 0 ? awayLineupEvents[awayLineupEvents.length - 1] : undefined;
 
     // Extract lineup arrays (positions I-VI)
     const homeLineupObj = homeLineupEvent?.payload?.lineup || {};
@@ -2251,7 +2293,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const positionBoxSet5Ref = useRef<HTMLDivElement>(null);
   const buttonsContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Zoom state for tablet/viewport control
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -2351,37 +2392,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handlePrint = () => {
-    // Store current zoom level and document title
-    const savedZoomLevel = zoomLevel;
-    const originalTitle = document.title;
-
-    // Generate filename for PDF (browsers use document title as default filename)
-    const matchNum = match?.gameNumber || match?.externalId || match?.game_n?.toString() || 'match';
-    const homeShort = match?.homeShortName || homeTeam?.name || 'Home';
-    const awayShort = match?.awayShortName || awayTeam?.name || 'Away';
-    const date = match?.scheduledAt
-      ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
-      : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const filename = `${matchNum}_${sanitizeSimple(homeShort, 20)}_${sanitizeSimple(awayShort, 20)}_${date}`;
-
-    // Set document title to filename (browser uses this for PDF name)
-    document.title = filename;
-
-    // Reset zoom to 100% for printing
-    setZoomLevel(1);
-
-    // Wait for zoom to apply, then print
-    setTimeout(() => {
-      window.print();
-      // Restore title and zoom after print dialog closes
-      setTimeout(() => {
-        document.title = originalTitle;
-        setZoomLevel(savedZoomLevel);
-      }, 500);
-    }, 100);
-  };
-
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
@@ -2456,7 +2466,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     }
   };
 
-  // Auto-trigger print or save based on autoAction prop
+  // Auto-trigger save based on autoAction prop
   useEffect(() => {
     if (!autoAction || autoAction === 'preview') return;
 
@@ -2464,9 +2474,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     const timer = setTimeout(async () => {
       await document.fonts.ready;
 
-      if (autoAction === 'print') {
-        handlePrint();
-      } else if (autoAction === 'save') {
+      if (autoAction === 'print' || autoAction === 'save') {
         handleSavePdf();
       } else if (autoAction === 'getBlob') {
         // Generate PDF blob and send to parent window
@@ -2489,46 +2497,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAction]);
 
-  // Handle Import JSON - load match data from exported JSON file
-  const handleImportJson = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const importedData = JSON.parse(text);
-
-      // Transform exported format to scoresheet format
-      // Exported format: { match: { ...matchData, homeTeam, awayTeam }, homePlayers, awayPlayers, sets, events }
-      // Scoresheet format: { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
-      const scoresheetData = {
-        match: importedData.match || {},
-        homeTeam: importedData.match?.homeTeam || importedData.homeTeam || null,
-        awayTeam: importedData.match?.awayTeam || importedData.awayTeam || null,
-        homePlayers: importedData.homePlayers || [],
-        awayPlayers: importedData.awayPlayers || [],
-        sets: importedData.sets || [],
-        events: importedData.events || [],
-        sanctions: importedData.sanctions || []
-      };
-
-      // Store in sessionStorage and reload
-      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData));
-      window.location.reload();
-    } catch (error) {
-      console.error('Error importing JSON:', error);
-      alert('Failed to import JSON file. Please check the file format.');
-    }
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
 
   return (
     <>
@@ -2690,15 +2658,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             {isFullscreen ? '⤓' : '⤢'}
           </button>
 
-          {/* Print / Save as PDF button */}
-          <button
-            onClick={handlePrint}
-            className="bg-green-500 hover:bg-green-700 text-white px-3 py-1 rounded text-sm shadow"
-            title={t('scoresheetPdf.printPdfTooltip', 'Print or Save as PDF (use browser\'s Save as PDF option)')}
-          >
-            {t('scoresheetPdf.printPdf', 'Print / PDF')}
-          </button>
-
           {/* Save PDF button (one-click, no dialog) */}
           <button
             onClick={() => handleSavePdf()}
@@ -2709,27 +2668,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             {isGeneratingPdf ? t('scoresheetPdf.generating', 'Generating...') : t('scoresheetPdf.savePdf', 'Save PDF')}
           </button>
 
-          {/* Divider */}
-          <div className="w-px h-6 bg-gray-400 mx-2"></div>
-
-          {/* Import JSON button */}
-          <button
-            onClick={handleImportJson}
-            className="bg-orange-500 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm shadow"
-            title={t('scoresheetPdf.importJsonTooltip', 'Import match data from JSON file')}
-          >
-            {t('scoresheetPdf.importJson', 'Import JSON')}
-          </button>
-
-          {/* Hidden file input for JSON import */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            onChange={handleFileChange}
-            style={{ display: 'none' }}
-            aria-label={t('scoresheetPdf.importJsonFile', 'Import JSON file')}
-          />
+          {/* Libero Control Sheet toggle button - only shown when there is libero activity */}
+          {hasLiberoActivity && (
+            <button
+              onClick={() => setShowLCS(prev => !prev)}
+              className={`${showLCS ? 'bg-teal-700' : 'bg-teal-600 hover:bg-teal-700'} text-white px-3 py-1 rounded text-sm shadow`}
+              title={showLCS ? t('scoresheetPdf.backToScoresheet', 'Back to Scoresheet') : t('scoresheetPdf.lcsTooltip', 'View Libero Control Sheet')}
+            >
+              {showLCS ? t('scoresheetPdf.backToScoresheet', 'Scoresheet') : t('scoresheetPdf.lcs', 'Libero Control Sheet')}
+            </button>
+          )}
         </div>
       </div>
       <style>{`
@@ -2759,6 +2707,30 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         className="scoresheet-scroll-container min-h-screen bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white"
         style={{ touchAction: 'pan-x pan-y' }}
       >
+        {/* LCS View */}
+        {showLCS && (
+          <div
+            className="flex flex-col items-center gap-4"
+            style={{
+              transform: `scale(${zoomLevel})`,
+              transformOrigin: 'top center',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <LiberoControlSheet
+              match={match}
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              teamAName={teamAName}
+              teamBName={teamBName}
+              teamAKey={teamAKey as 'home' | 'away'}
+              lcsData={lcsData}
+              coinTossConfirmed={coinTossConfirmed}
+            />
+          </div>
+        )}
+
+        {/* Scoresheet View */}
         <div
           ref={containerRef}
           className="scoresheet-container w-[410mm] h-[287mm] bg-white shadow-xl print:shadow-none p-3 print:p-3 relative"
@@ -2766,7 +2738,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             boxSizing: 'border-box',
             transform: `scale(${zoomLevel})`,
             transformOrigin: 'top center',
-            transition: 'transform 0.2s ease'
+            transition: 'transform 0.2s ease',
+            display: showLCS ? 'none' : undefined,
           }}
         >
           <div className="h-full" style={{ padding: '4mm 7mm 6mm 5mm' }}>
@@ -3096,6 +3069,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           </div>
         </div>
       </div>
+
     </>
   );
 };

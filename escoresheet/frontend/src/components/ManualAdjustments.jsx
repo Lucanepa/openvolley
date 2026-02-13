@@ -634,6 +634,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         await syncToSupabase()
       }
 
+      // Notify scoresheet window (and any other listeners) about the changes
+      try {
+        const channel = new BroadcastChannel('escoresheet-updates')
+        channel.postMessage({ type: 'MANUAL_ADJUSTMENT', matchId, changes })
+        channel.close()
+      } catch (e) { /* BroadcastChannel not supported */ }
+
       showAlert(t('manualAdjustmentsEditor.saved', 'Changes saved successfully'), 'success')
       if (onSave) onSave(changes)
       if (onClose) onClose()

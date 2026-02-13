@@ -63,3 +63,35 @@ export interface MatchResult {
   winner: string;
   result: string; // e.g. 3-1
 }
+
+// Libero Control Sheet types
+export interface LiberoReplacement {
+  liberoNumber: number;
+  replacedPlayer: number;
+  score: string; // "teamScore:opponentScore"
+  isExchange?: boolean; // true if this is part of a libero-to-libero exchange
+}
+
+export interface LiberoSetData {
+  setNumber: number;
+  teamAReplacements: LiberoReplacement[];
+  teamBReplacements: LiberoReplacement[];
+  // For Set 5: after court change at 8 points
+  teamAReplacements_After?: LiberoReplacement[];
+  teamBReplacements_After?: LiberoReplacement[];
+}
+
+export interface LiberoRedesignation {
+  team: 'A' | 'B';
+  outNumber: number;
+  inNumber: number;
+  setNumber: number;
+  score: string;
+}
+
+export interface LCSData {
+  teamALiberos: { number: number; type: string }[];
+  teamBLiberos: { number: number; type: string }[];
+  sets: LiberoSetData[];
+  redesignations: LiberoRedesignation[];
+}

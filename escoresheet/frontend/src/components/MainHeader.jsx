@@ -490,32 +490,6 @@ export default function MainHeader({
 
   return (
     <div style={{ position: 'relative', zIndex: 1000 }}>
-      {/* Collapsed header indicator - tap to expand (only when collapsible) */}
-      {collapsible && isCompactMode && isCollapsed && (
-        <div
-          onClick={() => setIsCollapsed(false)}
-          style={{
-            position: 'sticky',
-            top: 0,
-            width: '100%',
-            height: '8px',
-            background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, transparent 100%)',
-            cursor: 'pointer',
-            zIndex: 999,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'flex-end',
-            paddingBottom: '2px'
-          }}
-        >
-          <div style={{
-            width: '40px',
-            height: '3px',
-            background: 'rgba(255, 255, 255, 0.4)',
-            borderRadius: '2px'
-          }} />
-        </div>
-      )}
       <div
         ref={headerRef}
         style={{
@@ -1776,7 +1750,7 @@ export default function MainHeader({
         </div>
 
       </div>
-      {/* Show expand button when header is collapsed */}
+      {/* Show thin expand bar when header is collapsed */}
       {effectivelyCollapsed && (
         <div
           onClick={() => setIsCollapsed(false)}
