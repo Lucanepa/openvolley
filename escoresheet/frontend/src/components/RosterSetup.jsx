@@ -41,6 +41,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
   const [captainSignature, setCaptainSignature] = useState(null)
   const [openSignature, setOpenSignature] = useState(null) // 'coach' | 'captain' | null
 
+  const [lfpEnabled] = useState(() => localStorage.getItem('lfpTrackingEnabled') === 'true')
+
   const [match, setMatch] = useState(matchData)
 
   // Get pending roster from match data
@@ -69,7 +71,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         lastName: p.lastName || p.name || '',
         dob: p.dob || '',
         libero: p.libero || '',
-        isCaptain: p.isCaptain || false
+        isCaptain: p.isCaptain || false,
+        isLfp: p.isLfp || false
       }))))
 
     const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
@@ -115,12 +118,12 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       })
       setTeamId(-1) // Mock team ID for test mode
       setPlayers([
-        { id: 1, number: 1, firstName: 'Test', lastName: 'Player 1', dob: '', libero: '', isCaptain: true },
-        { id: 2, number: 5, firstName: 'Test', lastName: 'Player 2', dob: '', libero: '', isCaptain: false },
-        { id: 3, number: 7, firstName: 'Test', lastName: 'Player 3', dob: '', libero: '', isCaptain: false },
-        { id: 4, number: 10, firstName: 'Test', lastName: 'Player 4', dob: '', libero: '', isCaptain: false },
-        { id: 5, number: 12, firstName: 'Test', lastName: 'Player 5', dob: '', libero: 'libero1', isCaptain: false },
-        { id: 6, number: 15, firstName: 'Test', lastName: 'Player 6', dob: '', libero: '', isCaptain: false }
+        { id: 1, number: 1, firstName: 'Test', lastName: 'Player 1', dob: '', libero: '', isCaptain: true, isLfp: true },
+        { id: 2, number: 5, firstName: 'Test', lastName: 'Player 2', dob: '', libero: '', isCaptain: false, isLfp: true },
+        { id: 3, number: 7, firstName: 'Test', lastName: 'Player 3', dob: '', libero: '', isCaptain: false, isLfp: false },
+        { id: 4, number: 10, firstName: 'Test', lastName: 'Player 4', dob: '', libero: '', isCaptain: false, isLfp: true },
+        { id: 5, number: 12, firstName: 'Test', lastName: 'Player 5', dob: '', libero: 'libero1', isCaptain: false, isLfp: true },
+        { id: 6, number: 15, firstName: 'Test', lastName: 'Player 6', dob: '', libero: '', isCaptain: false, isLfp: false }
       ])
       setBenchOfficials([
         { role: 'Coach', firstName: 'Test', lastName: 'Coach', dob: '' },
@@ -216,7 +219,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         lastName: p.lastName || '',
         dob: p.dob || '',
         libero: p.libero || '',
-        isCaptain: p.isCaptain || false
+        isCaptain: p.isCaptain || false,
+        isLfp: p.isLfp || false
       }))))
       setBenchOfficials(importedBench.map(b => ({
         role: b.role || '',
@@ -249,6 +253,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
               dob: p.dob || null,
               libero: p.libero || '',
               isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp,
               role: null,
               createdAt: new Date().toISOString()
             }))
@@ -369,7 +374,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       lastName: '',
       dob: '',
       libero: '',
-      isCaptain: false
+      isCaptain: false,
+      isLfp: false
     }])
   }
 
@@ -431,7 +437,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         lastName: parsedPlayer.lastName || '',
         dob: parsedPlayer.dob || '',
         libero: '',
-        isCaptain: false
+        isCaptain: false,
+        isLfp: parsedPlayer.isLfp || false
       }))
       
 
@@ -486,11 +493,12 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             dob: p.dob || null,
             libero: p.libero || '',
             isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
             role: null,
             createdAt: new Date().toISOString()
           }))
         )
-        
+
         // Overwrite bench officials in database with imported data
         const benchKey = team === 'home' ? 'bench_home' : 'bench_away'
         await db.matches.update(matchId, {
@@ -569,7 +577,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
               name: `${player.lastName} ${player.firstName}`,
               dob: player.dob || null,
               libero: player.libero || '',
-              isCaptain: !!player.isCaptain
+              isCaptain: !!player.isCaptain,
+              isLfp: !!player.isLfp
             })
           } else {
             // Add new player
@@ -582,6 +591,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
               dob: player.dob || null,
               libero: player.libero || '',
               isCaptain: !!player.isCaptain,
+              isLfp: !!player.isLfp,
               role: null,
               createdAt: new Date().toISOString()
             })
@@ -609,6 +619,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             dob: p.dob || null,
             libero: p.libero || '',
             isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
             role: null,
             createdAt: new Date().toISOString()
           }))
@@ -637,7 +648,8 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
             lastName: p.lastName,
             dob: p.dob || '',
             libero: p.libero || '',
-            isCaptain: !!p.isCaptain
+            isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp
           })),
           bench: benchOfficials.map(o => ({
             role: o.role,
@@ -995,6 +1007,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
               <div className="w-dob">{t('rosterSetup.dob')}</div>
               <div className="w-90" style={{ textAlign: 'center' }}>{t('rosterSetup.libero')}</div>
               <div className="w-captain">C</div>
+              {lfpEnabled && <div className="w-captain" style={{ textAlign: 'center' }}>LFP</div>}
               <div className="w-action"></div>
             </div>
             {players.map((player, index) => {
@@ -1093,6 +1106,29 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
                       }}
                     >C</div>
                   </div>
+                  {lfpEnabled && (
+                    <div className="w-captain">
+                      <div
+                        onClick={() => handleUpdatePlayer(index, 'isLfp', !player.isLfp)}
+                        style={{
+                          width: '32px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          border: player.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                          background: player.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: player.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                          userSelect: 'none',
+                          flexShrink: 0
+                        }}
+                      >{player.isLfp ? 'LFP' : '—'}</div>
+                    </div>
+                  )}
                   <div className="w-action">
                     <button
                       type="button"

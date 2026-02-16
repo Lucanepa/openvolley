@@ -175,6 +175,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const saved = localStorage.getItem('scoreFont')
     return saved || 'default'
   })
+  const [lfpTrackingEnabled] = useState(() => {
+    return localStorage.getItem('lfpTrackingEnabled') === 'true'
+  })
   const getScoreFont = () => {
     const fonts = {
       'default': 'inherit',
@@ -2200,6 +2203,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     let isLibero, shouldShowBall, liberoReplacedPlayer, isSubstituted, substitutedFor
     let hasWarning, hasPenalty, hasExpulsion, hasDisqualification
     let isCaptain, isCourtCaptain
+    let isLfp
 
     if (isRichFormat) {
       // Rich format - all data is embedded in positionData
@@ -2210,6 +2214,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       substitutedFor = positionData.substitutedFor || null
       isCaptain = positionData.isCaptain || false
       isCourtCaptain = positionData.isCourtCaptain || false
+      isLfp = positionData.isLfp || false
 
       // Sanctions from rich format
       const sanctions = positionData.sanctions || []
@@ -2243,6 +2248,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       const teamCourtCaptain = team === 'home' ? data.match?.homeCourtCaptain : data.match?.awayCourtCaptain
       isCaptain = player?.isCaptain || player?.captain || (teamCaptain && String(teamCaptain) === String(number))
       isCourtCaptain = !isCaptain && teamCourtCaptain && String(teamCourtCaptain) === String(number)
+      isLfp = player?.isLfp || player?.is_lfp || false
     }
 
     // Check if this player was recently substituted in (for flashing effect)
@@ -2361,6 +2367,31 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }}>
           {position}
         </span>
+
+        {/* Top-center: LFP indicator */}
+        {lfpTrackingEnabled && (
+          <span style={{
+            position: 'absolute',
+            top: '-6px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '0 4px',
+            height: 'clamp(14px, 3.5vw, 18px)',
+            background: isLfp ? 'rgba(249, 115, 22, 0.95)' : 'rgba(147, 51, 234, 0.95)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            borderRadius: '3px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 'clamp(7px, 1.6vw, 9px)',
+            fontWeight: 700,
+            color: '#fff',
+            whiteSpace: 'nowrap',
+            zIndex: 3
+          }}>
+            {isLfp ? 'LFP' : '!LFP'}
+          </span>
+        )}
 
         {/* Top-right: Replaced player badge (white for libero replacement, yellow for substitution) */}
         {topRightBadge && (

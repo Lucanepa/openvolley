@@ -740,8 +740,8 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
   align-items: center;
-  gap: calc(8px * var(--scale-factor));
-  padding: calc(14px * var(--scale-factor)) calc(16px * var(--scale-factor));
+  gap: 0.76cqw;
+  padding: 0.6cqw 0.85cqw;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: calc(12px * var(--scale-factor));
@@ -749,37 +749,39 @@ button:disabled {
   top: 0;
   z-index: 100;
   flex-shrink: 0;
+  container-type: inline-size;
+  container-name: match-toolbar;
 }
 
 @media (max-width: 1400px) {
   .match-toolbar {
-    padding: calc(10px * var(--scale-factor)) calc(12px * var(--scale-factor));
+    padding: 0.42cqw 0.6cqw;
   }
 }
 
 .toolbar-left {
   display: inline-flex;
   align-items: center;
-  gap: calc(12px * var(--scale-factor));
+  gap: 1.2cqw;
   flex-wrap: wrap;
 }
 
 .status-indicator {
   display: inline-flex;
   align-items: center;
-  gap: calc(6px * var(--scale-factor));
+  gap: 0.5cqw;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  font-size: calc(13px * var(--scale-factor));
+  font-size: 1.2cqw;
 }
 
 .status-dot {
-  width: calc(10px * var(--scale-factor));
-  height: calc(10px * var(--scale-factor));
+  width: 0.85cqw;
+  height: 0.85cqw;
   border-radius: 999px;
   background: var(--danger);
-  box-shadow: 0 0 calc(8px * var(--scale-factor)) rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 0.8cqw rgba(239, 68, 68, 0.6);
   flex-shrink: 0;
 }
 
@@ -838,7 +840,7 @@ button:disabled {
 
 .toolbar-divider {
   width: 1px;
-  height: calc(18px * var(--scale-factor));
+  height: 1cqw;
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -851,21 +853,21 @@ button:disabled {
 .toolbar-center {
   display: flex;
   flex-direction: column;
-  gap: calc(4px * var(--scale-factor));
+  gap: 0.25cqw;
   align-items: center;
   flex: 1;
-  min-width: calc(200px * var(--scale-factor));
+  min-width: 12cqw;
 }
 
 .toolbar-title {
   margin: 0;
-  font-size: calc(19px * var(--scale-factor));
+  font-size: 1cqw;
 }
 
 .toolbar-score-section {
   display: flex;
   align-items: center;
-  gap: calc(16px * var(--scale-factor));
+  gap: 1cqw;
   width: 100%;
   justify-content: space-between;
 }
@@ -874,7 +876,7 @@ button:disabled {
 .toolbar-team-right {
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--scale-factor));
+  gap: 0.5cqw;
   flex: 1;
 }
 
@@ -886,35 +888,35 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: calc(32px * var(--scale-factor));
-  height: calc(32px * var(--scale-factor));
-  border-radius: calc(6px * var(--scale-factor));
+  width: 1.7cqw;
+  height: 1.7cqw;
+  border-radius: 0.34cqw;
   font-weight: 700;
-  font-size: calc(17px * var(--scale-factor));
-  box-shadow: 0 calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor)) rgba(0, 0, 0, 0.2);
+  font-size: 0.85cqw;
+  box-shadow: 0 0.1cqw 0.5cqw rgba(0, 0, 0, 0.2);
 }
 
 .toolbar-team-name {
   font-weight: 600;
-  font-size: calc(15px * var(--scale-factor));
+  font-size: 0.85cqw;
 }
 
 .toolbar-score-display {
-  font-size: calc(49px * var(--scale-factor));
+  font-size: 2.55cqw;
   font-weight: 800;
-  letter-spacing: calc(2px * var(--scale-factor));
+  letter-spacing: 0.1cqw;
   background: rgba(15, 23, 42, 0.8);
-  padding: calc(12px * var(--scale-factor)) calc(24px * var(--scale-factor));
-  border-radius: calc(12px * var(--scale-factor));
-  border: calc(2px * var(--scale-factor)) solid rgba(255, 255, 255, 0.1);
-  min-width: calc(140px * var(--scale-factor));
+  padding: 0.6cqw 1.3cqw;
+  border-radius: 0.6cqw;
+  border: 0.1cqw solid rgba(255, 255, 255, 0.1);
+  min-width: 7.2cqw;
   text-align: center;
 }
 
 .toolbar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: calc(8px * var(--scale-factor));
+  gap: 0.5cqw;
   justify-content: flex-end;
 }
 
@@ -1145,6 +1147,8 @@ button:disabled {
   max-width: 100%;
   overflow-y: auto;
   height: auto;
+  container-type: inline-size;
+  container-name: team-toolbar;
 }
 
 /* Custom scrollbar for team controls */
@@ -2148,24 +2152,24 @@ button.start-rally-button {
 @keyframes rollDown {
   from {
     opacity: 0;
-    transform: translateY(-30px) scale(0.8);
+    transform: translateY(-30px) scale(1.2);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1.5);
   }
 }
 
 @keyframes rollUp {
   from {
     opacity: 0;
-    transform: translateY(30px) scale(0.8);
+    transform: translateY(30px) scale(1.2);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1.5);
   }
 }
 

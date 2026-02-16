@@ -1199,7 +1199,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             lastName: p.lastName || p.name || '',
             dob: p.dob || '',
             libero: p.libero || '',
-            isCaptain: p.isCaptain || false
+            isCaptain: p.isCaptain || false,
+            isLfp: p.isLfp || false
           })))
         }
         if (match.awayTeamId && !rosterLoadedFromDraft.current.away) {
@@ -1211,7 +1212,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             lastName: p.lastName || p.name || '',
             dob: p.dob || '',
             libero: p.libero || '',
-            isCaptain: p.isCaptain || false
+            isCaptain: p.isCaptain || false,
+            isLfp: p.isLfp || false
           })))
         }
 
@@ -2368,7 +2370,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             last_name: p.lastName,
             dob: formatDobForSync(p.dob),
             libero: p.libero || null,
-            is_captain: !!p.isCaptain
+            is_captain: !!p.isCaptain,
+            is_lfp: !!p.isLfp
           })),
           players_away: awayRoster.map(p => ({
             number: p.number,
@@ -2376,7 +2379,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             last_name: p.lastName,
             dob: formatDobForSync(p.dob),
             libero: p.libero || null,
-            is_captain: !!p.isCaptain
+            is_captain: !!p.isCaptain,
+            is_lfp: !!p.isLfp
           })),
           bench_home: benchHome || [],
           bench_away: benchAway || [],
@@ -2429,6 +2433,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             dob: p.dob || null,
             libero: p.libero || '',
             isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
             role: null,
             createdAt: new Date().toISOString()
           }))
@@ -2445,6 +2450,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             dob: p.dob || null,
             libero: p.libero || '',
             isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
             role: null,
             createdAt: new Date().toISOString()
           }))
@@ -2646,7 +2652,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               last_name: p.lastName || '',
               dob: p.dob || null,
               is_captain: !!p.isCaptain,
-              libero: p.libero || null
+              libero: p.libero || null,
+              is_lfp: !!p.isLfp
             })),
             players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
               number: p.number || null,
@@ -2654,7 +2661,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               last_name: p.lastName || '',
               dob: p.dob || null,
               is_captain: !!p.isCaptain,
-              libero: p.libero || null
+              libero: p.libero || null,
+              is_lfp: !!p.isLfp
             })),
             bench_home: benchHome || [],
             bench_away: benchAway || [],
@@ -2689,7 +2697,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               firstName: p.firstName,
               dob: p.dob || null,
               libero: p.libero || '',
-              isCaptain: !!p.isCaptain
+              isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp
             })
           } else {
             // Add new player
@@ -2702,6 +2711,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               dob: p.dob || null,
               libero: p.libero || '',
               isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp,
               role: null,
               createdAt: new Date().toISOString()
             })
@@ -2732,7 +2742,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               firstName: p.firstName,
               dob: p.dob || null,
               libero: p.libero || '',
-              isCaptain: !!p.isCaptain
+              isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp
             })
           } else {
             // Add new player
@@ -2745,6 +2756,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               dob: p.dob || null,
               libero: p.libero || '',
               isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp,
               role: null,
               createdAt: new Date().toISOString()
             })
@@ -2953,7 +2965,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         lastName: parsedPlayer.lastName || '',
         dob: parsedPlayer.dob || '',
         libero: '',
-        isCaptain: false
+        isCaptain: false,
+        isLfp: parsedPlayer.isLfp || false
       }))
 
       setHomeRoster(mergedPlayers)
@@ -3004,6 +3017,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             dob: p.dob || null,
             libero: p.libero || '',
             isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
             role: null,
             createdAt: new Date().toISOString()
           }))
@@ -3056,7 +3070,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         lastName: parsedPlayer.lastName || '',
         dob: parsedPlayer.dob || '',
         libero: '',
-        isCaptain: false
+        isCaptain: false,
+        isLfp: parsedPlayer.isLfp || false
       }))
 
       setAwayRoster(mergedPlayers)
@@ -3107,6 +3122,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             dob: p.dob || null,
             libero: p.libero || '',
             isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
             role: null,
             createdAt: new Date().toISOString()
           }))
@@ -4180,6 +4196,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                                     dob: p.dob || null,
                                     libero: p.libero || '',
                                     isCaptain: !!p.isCaptain,
+                                    isLfp: !!p.isLfp,
                                     role: null,
                                     createdAt: new Date().toISOString()
                                   }))
@@ -4326,7 +4343,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="w-action">
                 <button type="button" className="secondary" onClick={() => {
                   if (!homeLast || !homeFirst) return
-                  const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain }
+                  const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain, isLfp: false }
                   setHomeRoster(list => {
                     const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
                     const next = [...cleared, newPlayer].sort((a, b) => {
@@ -4798,7 +4815,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       firstName: rosterPlayer.firstName,
                       dob: rosterPlayer.dob || null,
                       libero: rosterPlayer.libero || '',
-                      isCaptain: !!rosterPlayer.isCaptain
+                      isCaptain: !!rosterPlayer.isCaptain,
+                      isLfp: !!rosterPlayer.isLfp
                     })
                   } else {
                     // Add new player (including newly added players after unlock)
@@ -4811,6 +4829,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       dob: rosterPlayer.dob || null,
                       libero: rosterPlayer.libero || '',
                       isCaptain: !!rosterPlayer.isCaptain,
+                      isLfp: !!rosterPlayer.isLfp,
                       role: null,
                       createdAt: new Date().toISOString()
                     })
@@ -4871,7 +4890,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       last_name: p.lastName || '',
                       dob: formatDobForSync(p.dob),
                       is_captain: !!p.isCaptain,
-                      libero: p.libero || null
+                      libero: p.libero || null,
+                      is_lfp: !!p.isLfp
                     })),
                     bench_home: benchHome || []
                   },
@@ -5498,6 +5518,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                                     dob: p.dob || null,
                                     libero: p.libero || '',
                                     isCaptain: !!p.isCaptain,
+                                    isLfp: !!p.isLfp,
                                     role: null,
                                     createdAt: new Date().toISOString()
                                   }))
@@ -5654,7 +5675,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="w-action">
                 <button type="button" className="secondary" onClick={() => {
                   if (!awayLast || !awayFirst) return
-                  const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain }
+                  const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain, isLfp: false }
                   setAwayRoster(list => {
                     const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
                     const next = [...cleared, newPlayer].sort((a, b) => {
@@ -6126,7 +6147,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       firstName: rosterPlayer.firstName,
                       dob: rosterPlayer.dob || null,
                       libero: rosterPlayer.libero || '',
-                      isCaptain: !!rosterPlayer.isCaptain
+                      isCaptain: !!rosterPlayer.isCaptain,
+                      isLfp: !!rosterPlayer.isLfp
                     })
                   } else {
                     // Add new player (including newly added players after unlock)
@@ -6139,6 +6161,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       dob: rosterPlayer.dob || null,
                       libero: rosterPlayer.libero || '',
                       isCaptain: !!rosterPlayer.isCaptain,
+                      isLfp: !!rosterPlayer.isLfp,
                       role: null,
                       createdAt: new Date().toISOString()
                     })
@@ -6199,7 +6222,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       last_name: p.lastName || '',
                       dob: formatDobForSync(p.dob),
                       is_captain: !!p.isCaptain,
-                      libero: p.libero || null
+                      libero: p.libero || null,
+                      is_lfp: !!p.isLfp
                     })),
                     bench_away: benchAway || []
                   },
@@ -7725,6 +7749,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         dob: p.dob || null,
                         libero: p.libero || '',
                         isCaptain: !!p.isCaptain,
+                        isLfp: !!p.isLfp,
                         role: null,
                         createdAt: new Date().toISOString()
                       }))
@@ -7743,6 +7768,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         dob: p.dob || null,
                         libero: p.libero || '',
                         isCaptain: !!p.isCaptain,
+                        isLfp: !!p.isLfp,
                         role: null,
                         createdAt: new Date().toISOString()
                       }))

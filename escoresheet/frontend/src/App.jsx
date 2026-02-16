@@ -166,6 +166,13 @@ export default function App() {
     const saved = localStorage.getItem('keybindingsEnabled')
     return saved === 'true' // default false
   })
+  const [lfpTrackingEnabled, setLfpTrackingEnabled] = useState(() => {
+    return localStorage.getItem('lfpTrackingEnabled') === 'true' // default false
+  })
+  const [lfpMinimumOnCourt, setLfpMinimumOnCourt] = useState(() => {
+    const saved = localStorage.getItem('lfpMinimumOnCourt')
+    return saved ? parseInt(saved, 10) : 3 // default 3
+  })
 
   // Wake lock refs and state
   const wakeLockRef = useRef(null)
@@ -4082,7 +4089,11 @@ export default function App() {
                 setIntervalDuration,
                 setSetIntervalDuration,
                 keybindingsEnabled,
-                setKeybindingsEnabled
+                setKeybindingsEnabled,
+                lfpTrackingEnabled,
+                setLfpTrackingEnabled,
+                lfpMinimumOnCourt,
+                setLfpMinimumOnCourt
               }}
               displayOptions={{
                 displayMode,

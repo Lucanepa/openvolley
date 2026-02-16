@@ -148,8 +148,9 @@ function parseRosterText(text) {
       // Example French: "323547 | Theresa | Hauck | F | 19.08.1999"
       // Use normalized text for consistent spacing, but also try original text for dates with spaces
       // Note: H = Homme (French for Male), M = Male, F = Female
-    const svPlayerPattern = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}[./]\\s*\\d{1,2}[./]\\s*\\d{4})`, 'gi')
-    
+    // Extended pattern: capture trailing text after DOB to detect GFL/LAS/JFL/LFP "X" marker
+    const svPlayerPattern = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}[./]\\s*\\d{1,2}[./]\\s*\\d{4})([^\\d]{0,40})`, 'gi')
+
     // Reset regex lastIndex to avoid issues
     svPlayerPattern.lastIndex = 0
     while ((match = svPlayerPattern.exec(normalizedText)) !== null) {
@@ -158,20 +159,24 @@ function parseRosterText(text) {
       const lastName = match[3].trim()
       // Normalize date - remove spaces and normalize separators
       const dob = normalizeDate(match[4].replace(/\s+/g, '').trim())
+      // Check for GFL/LAS/JFL/LFP "X" marker in trailing text after DOB
+      const trailingText = match[5] || ''
+      const isLfp = /\bX\b/.test(trailingText)
 
       // Don't assign automatic numbers - user should see which players need numbers
       svFormatPlayers.push({
         number: null,
         firstName,
         lastName,
-        dob
+        dob,
+        isLfp
       })
     }
     
     // If still no SV format players, try with original text (not normalized) to catch dates with spaces
     if (svFormatPlayers.length === 0) {
-      const svPlayerPatternOriginal = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}\\s*[./]\\s*\\d{1,2}\\s*[./]\\s*\\d{4})`, 'gi')
-      
+      const svPlayerPatternOriginal = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}\\s*[./]\\s*\\d{1,2}\\s*[./]\\s*\\d{4})([^\\d]{0,40})`, 'gi')
+
       let matchOriginal
       while ((matchOriginal = svPlayerPatternOriginal.exec(text)) !== null) {
         const svNumber = matchOriginal[1]
@@ -179,13 +184,17 @@ function parseRosterText(text) {
         const lastName = matchOriginal[3].trim()
         // Normalize date - remove spaces and normalize separators
         const dob = normalizeDate(matchOriginal[4].replace(/\s+/g, '').trim())
+        // Check for GFL/LAS/JFL/LFP "X" marker in trailing text after DOB
+        const trailingText = matchOriginal[5] || ''
+        const isLfp = /\bX\b/.test(trailingText)
 
         // Don't assign automatic numbers - user should see which players need numbers
         svFormatPlayers.push({
           number: null,
           firstName,
           lastName,
-          dob
+          dob,
+          isLfp
         })
       }
     }
