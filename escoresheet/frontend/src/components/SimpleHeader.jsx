@@ -452,11 +452,6 @@ export default function SimpleHeader({
                   >
                     <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>📋</span>
                     <span style={{ flex: 1 }}>Version {currentVersion}</span>
-                    <span style={{
-                      fontSize: '8px',
-                      transform: versionExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s'
-                    }}>▼</span>
                   </button>
 
                   {/* Version history removed */}

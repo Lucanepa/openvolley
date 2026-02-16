@@ -1697,11 +1697,6 @@ export default function MainHeader({
                     >
                       <span>📋</span>
                       <span style={{ flex: 1 }}>v{currentVersion}</span>
-                      <span style={{
-                        fontSize: '10px',
-                        transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                        transition: 'transform 0.2s'
-                      }}>▼</span>
                     </button>
 
                     {/* Version history removed */}
